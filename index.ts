@@ -350,14 +350,21 @@ function waitForSteadyState(
   subscribeRequest.addServices(service);
   const subscribeStream = client.subscribe(subscribeRequest);
   return new Promise<void>((resolve, reject) => {
-    subscribeStream.on("data", (event) => {
-      console.log(event);
-      // if (event.getEvent() === pb.Event.STEADY_STATE) {
-      //   resolve();
-      // }
-    });
     subscribeStream.on("error", (err) => {
       reject(err);
+    });
+    subscribeStream.on("data", (event: pb.SubscribeResponse) => {
+      switch (event.getState()) {
+        case pb.ServiceState.BUILD_FAILED:
+        case pb.ServiceState.DEPLOYMENT_FAILED:
+          reject(new Error(`Update failed: ${event.getStatus()}`));
+          break;
+        case pb.ServiceState.DEPLOYMENT_COMPLETED:
+          resolve();
+          break;
+        default:
+          console.debug(event.getStatus());
+      }
     });
   });
 }
