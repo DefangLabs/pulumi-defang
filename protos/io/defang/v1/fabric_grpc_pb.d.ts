@@ -23,6 +23,7 @@ interface IFabricControllerService extends grpc.ServiceDefinition<grpc.UntypedSe
   generateFiles: grpc.MethodDefinition<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
   startGenerate: grpc.MethodDefinition<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.StartGenerateResponse>;
   generateStatus: grpc.MethodDefinition<io_defang_v1_fabric_pb.GenerateStatusRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
+  debug: grpc.MethodDefinition<io_defang_v1_fabric_pb.DebugRequest, io_defang_v1_fabric_pb.DebugResponse>;
   signEULA: grpc.MethodDefinition<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   checkToS: grpc.MethodDefinition<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   putSecret: grpc.MethodDefinition<io_defang_v1_fabric_pb.SecretValue, google_protobuf_empty_pb.Empty>;
@@ -54,6 +55,7 @@ export interface IFabricControllerServer extends grpc.UntypedServiceImplementati
   generateFiles: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
   startGenerate: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.StartGenerateResponse>;
   generateStatus: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GenerateStatusRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
+  debug: grpc.handleUnaryCall<io_defang_v1_fabric_pb.DebugRequest, io_defang_v1_fabric_pb.DebugResponse>;
   signEULA: grpc.handleUnaryCall<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   checkToS: grpc.handleUnaryCall<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   putSecret: grpc.handleUnaryCall<io_defang_v1_fabric_pb.SecretValue, google_protobuf_empty_pb.Empty>;
@@ -112,6 +114,9 @@ export class FabricControllerClient extends grpc.Client {
   generateStatus(argument: io_defang_v1_fabric_pb.GenerateStatusRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GenerateFilesResponse>): grpc.ClientUnaryCall;
   generateStatus(argument: io_defang_v1_fabric_pb.GenerateStatusRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GenerateFilesResponse>): grpc.ClientUnaryCall;
   generateStatus(argument: io_defang_v1_fabric_pb.GenerateStatusRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GenerateFilesResponse>): grpc.ClientUnaryCall;
+  debug(argument: io_defang_v1_fabric_pb.DebugRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.DebugResponse>): grpc.ClientUnaryCall;
+  debug(argument: io_defang_v1_fabric_pb.DebugRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.DebugResponse>): grpc.ClientUnaryCall;
+  debug(argument: io_defang_v1_fabric_pb.DebugRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.DebugResponse>): grpc.ClientUnaryCall;
   signEULA(argument: google_protobuf_empty_pb.Empty, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
   signEULA(argument: google_protobuf_empty_pb.Empty, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
   signEULA(argument: google_protobuf_empty_pb.Empty, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
