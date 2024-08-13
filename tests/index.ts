@@ -8,6 +8,7 @@ const fromDir = new DefangService("test1", {
       DNS: `defang-test1.prod1.defang.dev`,
     },
   },
+  waitForSteadyState: true,
 });
 
 export const test1etag = fromDir.etag;

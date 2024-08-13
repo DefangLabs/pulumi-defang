@@ -314,6 +314,13 @@ async function upsert(
     const serviceInfo = await new Promise<pb.ServiceInfo>((resolve, reject) =>
       client.update(service, (err, res) => (err ? reject(err) : resolve(res!)))
     );
+    if (inputs.waitForSteadyState) {
+      await waitForSteadyState(
+        client,
+        serviceInfo.getEtag(),
+        serviceInfo.getService()!.getName()
+      );
+    }
     // A service with a domainname but no zoneId is using Let's Encrypt
     if (serviceInfo.getService()?.getDomainname() && !serviceInfo.getZoneId()) {
       pulumi.log.warn(
@@ -331,6 +338,28 @@ async function upsert(
   } finally {
     client.close();
   }
+}
+
+function waitForSteadyState(
+  client: fabric.FabricControllerClient,
+  etag: string,
+  service: string
+) {
+  const subscribeRequest = new pb.SubscribeRequest();
+  subscribeRequest.setEtag(etag);
+  subscribeRequest.addServices(service);
+  const subscribeStream = client.subscribe(subscribeRequest);
+  return new Promise<void>((resolve, reject) => {
+    subscribeStream.on("data", (event) => {
+      console.log(event);
+      // if (event.getEvent() === pb.Event.STEADY_STATE) {
+      //   resolve();
+      // }
+    });
+    subscribeStream.on("error", (err) => {
+      reject(err);
+    });
+  });
 }
 
 function convertProtocol(protocol?: Protocol) {
@@ -383,6 +412,7 @@ interface DefangServiceInputs {
   secrets?: pulumi.Unwrap<Secret>[];
   x_redis?: unknown;
   x_static_files?: StaticFiles;
+  waitForSteadyState?: boolean;
 }
 
 interface DefangServiceOutputs {
@@ -779,6 +809,8 @@ export interface DefangServiceArgs {
   x_redis?: pulumi.Input<unknown>;
   /** experimental: mark this service as serving static files */
   x_static_files?: pulumi.Input<StaticFiles>;
+  /** If true, this provider will wait for the service to reach a steady state before continuing */
+  waitForSteadyState?: pulumi.Input<boolean>;
 }
 
 /**
