@@ -19,6 +19,28 @@ function deserialize_google_protobuf_Empty(buffer_arg) {
   return google_protobuf_empty_pb.Empty.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_DebugRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.DebugRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.DebugRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_DebugRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.DebugRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_DebugResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.DebugResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.DebugResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_DebugResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.DebugResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_DelegateSubdomainZoneRequest(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.DelegateSubdomainZoneRequest)) {
     throw new Error('Expected argument of type io.defang.v1.DelegateSubdomainZoneRequest');
@@ -510,7 +532,19 @@ startGenerate: {
     responseSerialize: serialize_io_defang_v1_GenerateFilesResponse,
     responseDeserialize: deserialize_io_defang_v1_GenerateFilesResponse,
   },
-  signEULA: {
+  debug: {
+    path: '/io.defang.v1.FabricController/Debug',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.DebugRequest,
+    responseType: io_defang_v1_fabric_pb.DebugResponse,
+    requestSerialize: serialize_io_defang_v1_DebugRequest,
+    requestDeserialize: deserialize_io_defang_v1_DebugRequest,
+    responseSerialize: serialize_io_defang_v1_DebugResponse,
+    responseDeserialize: deserialize_io_defang_v1_DebugResponse,
+  },
+  // TEST
+signEULA: {
     path: '/io.defang.v1.FabricController/SignEULA',
     requestStream: false,
     responseStream: false,
