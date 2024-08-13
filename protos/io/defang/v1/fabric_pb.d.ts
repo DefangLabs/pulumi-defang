@@ -5,6 +5,136 @@ import * as jspb from "google-protobuf";
 import * as google_protobuf_empty_pb from "google-protobuf/google/protobuf/empty_pb";
 import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb";
 
+export class DebugRequest extends jspb.Message {
+  clearFilesList(): void;
+  getFilesList(): Array<File>;
+  setFilesList(value: Array<File>): void;
+  addFiles(value?: File, index?: number): File;
+
+  getEtag(): string;
+  setEtag(value: string): void;
+
+  getProject(): string;
+  setProject(value: string): void;
+
+  getLogs(): string;
+  setLogs(value: string): void;
+
+  clearServicesList(): void;
+  getServicesList(): Array<string>;
+  setServicesList(value: Array<string>): void;
+  addServices(value: string, index?: number): string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): DebugRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: DebugRequest): DebugRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: DebugRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): DebugRequest;
+  static deserializeBinaryFromReader(message: DebugRequest, reader: jspb.BinaryReader): DebugRequest;
+}
+
+export namespace DebugRequest {
+  export type AsObject = {
+    filesList: Array<File.AsObject>,
+    etag: string,
+    project: string,
+    logs: string,
+    servicesList: Array<string>,
+  }
+}
+
+export class DebugResponse extends jspb.Message {
+  getGeneral(): string;
+  setGeneral(value: string): void;
+
+  clearIssuesList(): void;
+  getIssuesList(): Array<Issue>;
+  setIssuesList(value: Array<Issue>): void;
+  addIssues(value?: Issue, index?: number): Issue;
+
+  clearRequestsList(): void;
+  getRequestsList(): Array<string>;
+  setRequestsList(value: Array<string>): void;
+  addRequests(value: string, index?: number): string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): DebugResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: DebugResponse): DebugResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: DebugResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): DebugResponse;
+  static deserializeBinaryFromReader(message: DebugResponse, reader: jspb.BinaryReader): DebugResponse;
+}
+
+export namespace DebugResponse {
+  export type AsObject = {
+    general: string,
+    issuesList: Array<Issue.AsObject>,
+    requestsList: Array<string>,
+  }
+}
+
+export class Issue extends jspb.Message {
+  getType(): string;
+  setType(value: string): void;
+
+  getSeverity(): string;
+  setSeverity(value: string): void;
+
+  getDetails(): string;
+  setDetails(value: string): void;
+
+  clearCodeChangesList(): void;
+  getCodeChangesList(): Array<CodeChange>;
+  setCodeChangesList(value: Array<CodeChange>): void;
+  addCodeChanges(value?: CodeChange, index?: number): CodeChange;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): Issue.AsObject;
+  static toObject(includeInstance: boolean, msg: Issue): Issue.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: Issue, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): Issue;
+  static deserializeBinaryFromReader(message: Issue, reader: jspb.BinaryReader): Issue;
+}
+
+export namespace Issue {
+  export type AsObject = {
+    type: string,
+    severity: string,
+    details: string,
+    codeChangesList: Array<CodeChange.AsObject>,
+  }
+}
+
+export class CodeChange extends jspb.Message {
+  getFile(): string;
+  setFile(value: string): void;
+
+  getChange(): string;
+  setChange(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): CodeChange.AsObject;
+  static toObject(includeInstance: boolean, msg: CodeChange): CodeChange.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: CodeChange, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): CodeChange;
+  static deserializeBinaryFromReader(message: CodeChange, reader: jspb.BinaryReader): CodeChange;
+}
+
+export namespace CodeChange {
+  export type AsObject = {
+    file: string,
+    change: string,
+  }
+}
+
 export class TrackRequest extends jspb.Message {
   getAnonId(): string;
   setAnonId(value: string): void;
@@ -46,6 +176,9 @@ export class DeployRequest extends jspb.Message {
   setServicesList(value: Array<Service>): void;
   addServices(value?: Service, index?: number): Service;
 
+  getProject(): string;
+  setProject(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): DeployRequest.AsObject;
   static toObject(includeInstance: boolean, msg: DeployRequest): DeployRequest.AsObject;
@@ -59,6 +192,7 @@ export class DeployRequest extends jspb.Message {
 export namespace DeployRequest {
   export type AsObject = {
     servicesList: Array<Service.AsObject>,
+    project: string,
   }
 }
 
@@ -94,6 +228,9 @@ export class DeleteRequest extends jspb.Message {
   setNamesList(value: Array<string>): void;
   addNames(value: string, index?: number): string;
 
+  getProject(): string;
+  setProject(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): DeleteRequest.AsObject;
   static toObject(includeInstance: boolean, msg: DeleteRequest): DeleteRequest.AsObject;
@@ -107,6 +244,7 @@ export class DeleteRequest extends jspb.Message {
 export namespace DeleteRequest {
   export type AsObject = {
     namesList: Array<string>,
+    project: string,
   }
 }
 
@@ -336,8 +474,8 @@ export class ServiceInfo extends jspb.Message {
   getUseAcmeCert(): boolean;
   setUseAcmeCert(value: boolean): void;
 
-  getLbDns(): string;
-  setLbDns(value: string): void;
+  getState(): ServiceStateMap[keyof ServiceStateMap];
+  setState(value: ServiceStateMap[keyof ServiceStateMap]): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ServiceInfo.AsObject;
@@ -364,7 +502,7 @@ export namespace ServiceInfo {
     updatedAt?: google_protobuf_timestamp_pb.Timestamp.AsObject,
     zoneId: string,
     useAcmeCert: boolean,
-    lbDns: string,
+    state: ServiceStateMap[keyof ServiceStateMap],
   }
 }
 
@@ -533,8 +671,10 @@ export namespace Version {
 }
 
 export class TailRequest extends jspb.Message {
-  getService(): string;
-  setService(value: string): void;
+  clearServicesList(): void;
+  getServicesList(): Array<string>;
+  setServicesList(value: Array<string>): void;
+  addServices(value: string, index?: number): string;
 
   hasSince(): boolean;
   clearSince(): void;
@@ -556,7 +696,7 @@ export class TailRequest extends jspb.Message {
 
 export namespace TailRequest {
   export type AsObject = {
-    service: string,
+    servicesList: Array<string>,
     since?: google_protobuf_timestamp_pb.Timestamp.AsObject,
     etag: string,
   }
@@ -574,6 +714,15 @@ export class LogEntry extends jspb.Message {
   getStderr(): boolean;
   setStderr(value: boolean): void;
 
+  getService(): string;
+  setService(value: string): void;
+
+  getEtag(): string;
+  setEtag(value: string): void;
+
+  getHost(): string;
+  setHost(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): LogEntry.AsObject;
   static toObject(includeInstance: boolean, msg: LogEntry): LogEntry.AsObject;
@@ -589,6 +738,9 @@ export namespace LogEntry {
     message: string,
     timestamp?: google_protobuf_timestamp_pb.Timestamp.AsObject,
     stderr: boolean,
+    service: string,
+    etag: string,
+    host: string,
   }
 }
 
@@ -632,6 +784,9 @@ export class ListServicesResponse extends jspb.Message {
   setServicesList(value: Array<ServiceInfo>): void;
   addServices(value?: ServiceInfo, index?: number): ServiceInfo;
 
+  getProject(): string;
+  setProject(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ListServicesResponse.AsObject;
   static toObject(includeInstance: boolean, msg: ListServicesResponse): ListServicesResponse.AsObject;
@@ -645,6 +800,37 @@ export class ListServicesResponse extends jspb.Message {
 export namespace ListServicesResponse {
   export type AsObject = {
     servicesList: Array<ServiceInfo.AsObject>,
+    project: string,
+  }
+}
+
+export class ProjectUpdate extends jspb.Message {
+  clearServicesList(): void;
+  getServicesList(): Array<ServiceInfo>;
+  setServicesList(value: Array<ServiceInfo>): void;
+  addServices(value?: ServiceInfo, index?: number): ServiceInfo;
+
+  getAlbArn(): string;
+  setAlbArn(value: string): void;
+
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ProjectUpdate.AsObject;
+  static toObject(includeInstance: boolean, msg: ProjectUpdate): ProjectUpdate.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ProjectUpdate, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ProjectUpdate;
+  static deserializeBinaryFromReader(message: ProjectUpdate, reader: jspb.BinaryReader): ProjectUpdate;
+}
+
+export namespace ProjectUpdate {
+  export type AsObject = {
+    servicesList: Array<ServiceInfo.AsObject>,
+    albArn: string,
+    project: string,
   }
 }
 
@@ -960,6 +1146,11 @@ export class Service extends jspb.Message {
   getRedis(): Redis | undefined;
   setRedis(value?: Redis): void;
 
+  hasPostgres(): boolean;
+  clearPostgres(): void;
+  getPostgres(): Postgres | undefined;
+  setPostgres(value?: Postgres): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): Service.AsObject;
   static toObject(includeInstance: boolean, msg: Service): Service.AsObject;
@@ -989,6 +1180,7 @@ export namespace Service {
     staticFiles?: StaticFiles.AsObject,
     networks: NetworkMap[keyof NetworkMap],
     redis?: Redis.AsObject,
+    postgres?: Postgres.AsObject,
   }
 }
 
@@ -1030,6 +1222,22 @@ export class Redis extends jspb.Message {
 }
 
 export namespace Redis {
+  export type AsObject = {
+  }
+}
+
+export class Postgres extends jspb.Message {
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): Postgres.AsObject;
+  static toObject(includeInstance: boolean, msg: Postgres): Postgres.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: Postgres, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): Postgres;
+  static deserializeBinaryFromReader(message: Postgres, reader: jspb.BinaryReader): Postgres;
+}
+
+export namespace Postgres {
   export type AsObject = {
   }
 }
@@ -1113,8 +1321,13 @@ export namespace PublishRequest {
 }
 
 export class SubscribeRequest extends jspb.Message {
-  getService(): string;
-  setService(value: string): void;
+  clearServicesList(): void;
+  getServicesList(): Array<string>;
+  setServicesList(value: Array<string>): void;
+  addServices(value: string, index?: number): string;
+
+  getEtag(): string;
+  setEtag(value: string): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): SubscribeRequest.AsObject;
@@ -1128,15 +1341,25 @@ export class SubscribeRequest extends jspb.Message {
 
 export namespace SubscribeRequest {
   export type AsObject = {
-    service: string,
+    servicesList: Array<string>,
+    etag: string,
   }
 }
 
 export class SubscribeResponse extends jspb.Message {
-  clearServicesList(): void;
-  getServicesList(): Array<ServiceInfo>;
-  setServicesList(value: Array<ServiceInfo>): void;
-  addServices(value?: ServiceInfo, index?: number): ServiceInfo;
+  hasService(): boolean;
+  clearService(): void;
+  getService(): ServiceInfo | undefined;
+  setService(value?: ServiceInfo): void;
+
+  getName(): string;
+  setName(value: string): void;
+
+  getStatus(): string;
+  setStatus(value: string): void;
+
+  getState(): ServiceStateMap[keyof ServiceStateMap];
+  setState(value: ServiceStateMap[keyof ServiceStateMap]): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): SubscribeResponse.AsObject;
@@ -1150,7 +1373,10 @@ export class SubscribeResponse extends jspb.Message {
 
 export namespace SubscribeResponse {
   export type AsObject = {
-    servicesList: Array<ServiceInfo.AsObject>,
+    service?: ServiceInfo.AsObject,
+    name: string,
+    status: string,
+    state: ServiceStateMap[keyof ServiceStateMap],
   }
 }
 
@@ -1227,6 +1453,23 @@ export namespace WhoAmIResponse {
     userId: string,
   }
 }
+
+export interface ServiceStateMap {
+  NOT_SPECIFIED: 0;
+  BUILD_QUEUED: 1;
+  BUILD_PROVISIONING: 2;
+  BUILD_PENDING: 3;
+  BUILD_ACTIVATING: 4;
+  BUILD_RUNNING: 5;
+  BUILD_STOPPING: 6;
+  UPDATE_QUEUED: 7;
+  DEPLOYMENT_PENDING: 8;
+  DEPLOYMENT_COMPLETED: 9;
+  DEPLOYMENT_FAILED: 10;
+  BUILD_FAILED: 11;
+}
+
+export const ServiceState: ServiceStateMap;
 
 export interface PlatformMap {
   LINUX_AMD64: 0;

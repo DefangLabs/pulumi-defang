@@ -8,6 +8,11 @@ const fromDir = new DefangService("test1", {
       DNS: `defang-test1.prod1.defang.dev`,
     },
   },
+  healthcheck: {
+    test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"],
+    retries: 1,
+  },
+  waitForSteadyState: true,
 });
 
 export const test1etag = fromDir.etag;
