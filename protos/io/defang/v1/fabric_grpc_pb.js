@@ -1,11 +1,12 @@
 // GENERATED CODE -- DO NOT EDIT!
 
 // Original file comments:
-// protos/v1/fabric.proto
+// protos/io/defang/v1/fabric.proto
 'use strict';
 var grpc = require('@grpc/grpc-js');
 var io_defang_v1_fabric_pb = require('../../../io/defang/v1/fabric_pb.js');
 var google_protobuf_empty_pb = require('google-protobuf/google/protobuf/empty_pb.js');
+var google_protobuf_struct_pb = require('google-protobuf/google/protobuf/struct_pb.js');
 var google_protobuf_timestamp_pb = require('google-protobuf/google/protobuf/timestamp_pb.js');
 
 function serialize_google_protobuf_Empty(arg) {
@@ -61,6 +62,17 @@ function serialize_io_defang_v1_DelegateSubdomainZoneResponse(arg) {
 
 function deserialize_io_defang_v1_DelegateSubdomainZoneResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_DeleteConfigsRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.DeleteConfigsRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.DeleteConfigsRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_DeleteConfigsRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.DeleteConfigsRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_DeleteRequest(arg) {
@@ -140,6 +152,50 @@ function deserialize_io_defang_v1_GenerateStatusRequest(buffer_arg) {
   return io_defang_v1_fabric_pb.GenerateStatusRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_GetConfigsRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetConfigsRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.GetConfigsRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetConfigsRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetConfigsRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_GetConfigsResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetConfigsResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.GetConfigsResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetConfigsResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_ListConfigsRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.ListConfigsRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.ListConfigsRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_ListConfigsRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.ListConfigsRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_ListConfigsResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.ListConfigsResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.ListConfigsResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_ListConfigsResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.ListConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_ListServicesResponse(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.ListServicesResponse)) {
     throw new Error('Expected argument of type io.defang.v1.ListServicesResponse');
@@ -160,6 +216,17 @@ function serialize_io_defang_v1_PublishRequest(arg) {
 
 function deserialize_io_defang_v1_PublishRequest(buffer_arg) {
   return io_defang_v1_fabric_pb.PublishRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_PutConfigRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.PutConfigRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.PutConfigRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_PutConfigRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.PutConfigRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_SecretValue(arg) {
@@ -429,8 +496,7 @@ revokeToken: {
     responseSerialize: serialize_io_defang_v1_ServiceInfo,
     responseDeserialize: deserialize_io_defang_v1_ServiceInfo,
   },
-  // deprecated; use Deploy
-deploy: {
+  deploy: {
     path: '/io.defang.v1.FabricController/Deploy',
     requestStream: false,
     responseStream: false,
@@ -463,8 +529,7 @@ deploy: {
     responseSerialize: serialize_io_defang_v1_DeleteResponse,
     responseDeserialize: deserialize_io_defang_v1_DeleteResponse,
   },
-  // deprecated; use Deploy
-publish: {
+  publish: {
     path: '/io.defang.v1.FabricController/Publish',
     requestStream: false,
     responseStream: false,
@@ -543,8 +608,7 @@ startGenerate: {
     responseSerialize: serialize_io_defang_v1_DebugResponse,
     responseDeserialize: deserialize_io_defang_v1_DebugResponse,
   },
-  // TEST
-signEULA: {
+  signEULA: {
     path: '/io.defang.v1.FabricController/SignEULA',
     requestStream: false,
     responseStream: false,
@@ -567,7 +631,8 @@ checkToS: {
     responseSerialize: serialize_google_protobuf_Empty,
     responseDeserialize: deserialize_google_protobuf_Empty,
   },
-  putSecret: {
+  // deprecate - change to use *Config functions
+putSecret: {
     path: '/io.defang.v1.FabricController/PutSecret',
     requestStream: false,
     responseStream: false,
@@ -599,6 +664,50 @@ checkToS: {
     requestDeserialize: deserialize_google_protobuf_Empty,
     responseSerialize: serialize_io_defang_v1_Secrets,
     responseDeserialize: deserialize_io_defang_v1_Secrets,
+  },
+  getConfigs: {
+    path: '/io.defang.v1.FabricController/GetConfigs',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.GetConfigsRequest,
+    responseType: io_defang_v1_fabric_pb.GetConfigsResponse,
+    requestSerialize: serialize_io_defang_v1_GetConfigsRequest,
+    requestDeserialize: deserialize_io_defang_v1_GetConfigsRequest,
+    responseSerialize: serialize_io_defang_v1_GetConfigsResponse,
+    responseDeserialize: deserialize_io_defang_v1_GetConfigsResponse,
+  },
+  putConfig: {
+    path: '/io.defang.v1.FabricController/PutConfig',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.PutConfigRequest,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_io_defang_v1_PutConfigRequest,
+    requestDeserialize: deserialize_io_defang_v1_PutConfigRequest,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  deleteConfigs: {
+    path: '/io.defang.v1.FabricController/DeleteConfigs',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.DeleteConfigsRequest,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_io_defang_v1_DeleteConfigsRequest,
+    requestDeserialize: deserialize_io_defang_v1_DeleteConfigsRequest,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  listConfigs: {
+    path: '/io.defang.v1.FabricController/ListConfigs',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.ListConfigsRequest,
+    responseType: io_defang_v1_fabric_pb.ListConfigsResponse,
+    requestSerialize: serialize_io_defang_v1_ListConfigsRequest,
+    requestDeserialize: deserialize_io_defang_v1_ListConfigsRequest,
+    responseSerialize: serialize_io_defang_v1_ListConfigsResponse,
+    responseDeserialize: deserialize_io_defang_v1_ListConfigsResponse,
   },
   createUploadURL: {
     path: '/io.defang.v1.FabricController/CreateUploadURL',

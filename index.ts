@@ -278,6 +278,7 @@ async function upsert(
   force: boolean = false
 ): Promise<pb.ServiceInfo> {
   const service = convertServiceInputs(inputs);
+  service.setProject(pulumi.getProject());
   const client = await connect(inputs.fabricDNS);
   try {
     // Upload the build context, if provided
@@ -301,6 +302,7 @@ async function upsert(
           return;
         }
         const sv = new pb.SecretValue();
+        sv.setProject(pulumi.getProject());
         sv.setName(secret.source);
         sv.setValue(secret.value);
         return new Promise((resolve, reject) =>
@@ -346,6 +348,7 @@ function waitForSteadyState(
   service: string
 ) {
   const subscribeRequest = new pb.SubscribeRequest();
+  // subscribeRequest.setProject(pulumi.getProject());
   subscribeRequest.setEtag(etag);
   subscribeRequest.addServices(service);
   const subscribeStream = client.subscribe(subscribeRequest);
@@ -609,6 +612,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
   },
   async delete(id: string, olds: DefangServiceOutputs): Promise<void> {
     const serviceIds = new pb.DeleteRequest();
+    serviceIds.setProject(pulumi.getProject());
     serviceIds.addNames(id);
     const client = await connect(olds.fabricDNS);
     try {
@@ -693,6 +697,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     olds?: DefangServiceOutputs
   ): Promise<pulumi.dynamic.ReadResult<DefangServiceOutputs>> {
     const serviceId = new pb.ServiceID();
+    // serviceId.setProject(pulumi.getProject());
     serviceId.setName(id);
     assert(olds?.fabricDNS, "fabricDNS is required");
     const client = await connect(olds.fabricDNS);
