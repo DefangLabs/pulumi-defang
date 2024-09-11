@@ -278,7 +278,7 @@ async function upsert(
   force: boolean = false
 ): Promise<pb.ServiceInfo> {
   const service = convertServiceInputs(inputs);
-  service.setProject(pulumi.getProject());
+  service.setProject(inputs.project);
   const client = await connect(inputs.fabricDNS);
   try {
     // Upload the build context, if provided
@@ -302,7 +302,7 @@ async function upsert(
           return;
         }
         const sv = new pb.SecretValue();
-        sv.setProject(pulumi.getProject());
+        sv.setProject(inputs.project);
         sv.setName(secret.source);
         sv.setValue(secret.value);
         return new Promise((resolve, reject) =>
@@ -348,7 +348,7 @@ function waitForSteadyState(
   service: string
 ) {
   const subscribeRequest = new pb.SubscribeRequest();
-  // subscribeRequest.setProject(pulumi.getProject());
+  // subscribeRequest.setProject(project);
   subscribeRequest.setEtag(etag);
   subscribeRequest.addServices(service);
   const subscribeStream = client.subscribe(subscribeRequest);
@@ -419,10 +419,11 @@ interface DefangServiceInputs {
   networks?: [Network];
   platform?: Platform;
   ports?: Port[];
+  project: string;
   secrets?: pulumi.Unwrap<Secret>[];
+  waitForSteadyState?: boolean;
   x_redis?: unknown;
   x_static_files?: StaticFiles;
-  waitForSteadyState?: boolean;
 }
 
 interface DefangServiceOutputs {
@@ -612,7 +613,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
   },
   async delete(id: string, olds: DefangServiceOutputs): Promise<void> {
     const serviceIds = new pb.DeleteRequest();
-    serviceIds.setProject(pulumi.getProject());
+    serviceIds.setProject(olds.service.project);
     serviceIds.addNames(id);
     const client = await connect(olds.fabricDNS);
     try {
@@ -697,7 +698,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     olds?: DefangServiceOutputs
   ): Promise<pulumi.dynamic.ReadResult<DefangServiceOutputs>> {
     const serviceId = new pb.ServiceID();
-    // serviceId.setProject(pulumi.getProject());
+    // serviceId.setProject(project);
     serviceId.setName(id);
     assert(olds?.fabricDNS, "fabricDNS is required");
     const client = await connect(olds.fabricDNS);
@@ -821,8 +822,10 @@ export interface DefangServiceArgs {
   x_redis?: pulumi.Input<unknown>;
   /** experimental: mark this service as serving static files */
   x_static_files?: pulumi.Input<StaticFiles>;
-  /** If true, this provider will wait for the service to reach a steady state before continuing */
+  /** if true, this provider will wait for the service to reach a steady state before continuing */
   waitForSteadyState?: pulumi.Input<boolean>;
+  /** the project to deploy the service to */
+  project?: pulumi.Input<string>;
 }
 
 /**
@@ -863,6 +866,9 @@ export class DefangService extends pulumi.dynamic.Resource {
     }
     if (!args.fabricDNS) {
       args.fabricDNS = defaultFabric;
+    }
+    if (!args.project) {
+      args.project = pulumi.getProject()+"-"+pulumi.getStack();
     }
     super(
       defangServiceProvider,
