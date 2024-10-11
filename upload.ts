@@ -24,7 +24,9 @@ const defaultDockerIgnore = `# Default .dockerignore file for Defang
 **/node_modules
 **/Thumbs.db
 # Ignore our own binary, but only in the root to avoid ignoring subfolders
-defang`;
+defang
+# Ignore our project-level state
+.defang`;
 
 const extractMessageRegex = /<Message>(.*?)<\/Message>/;
 
