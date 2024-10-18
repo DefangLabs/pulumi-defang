@@ -7,8 +7,8 @@
   },
   "dependencies": {
     "@balena/dockerignore": "^1.0.2",
-    "@grpc/grpc-js": "^1.8.17",
-    "google-protobuf": "^3.21.2",
+    "@grpc/grpc-js": "^1.12.2",
+    "google-protobuf": "^3.5.0",
     "node-fetch": "^3.3.1",
     "tar": "^6.1.15"
   },

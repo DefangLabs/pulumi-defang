@@ -11,6 +11,8 @@ const fromDir = new DefangService("test1", {
   healthcheck: {
     test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"],
     retries: 1,
+    timeout: 3,
+    interval: 5,
   },
   waitForSteadyState: true,
 });

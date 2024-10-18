@@ -11,11 +11,11 @@
         "typescript": "^5.1.3"
     },
     "dependencies": {
-        "@defang-io/pulumi-defang": "^0.16.1",
+        "@defang-io/pulumi-defang": "^0.17.2",
         "@pulumi/pulumi": "~3.117.0"
     },
     "scripts": {
         "test": "mocha --require ts-node/register *.test.ts",
-        "posttest": "pulumi login file://. && PULUMI_CONFIG_PASSPHRASE= pulumi up -s test --yes ; pulumi destroy -s test --yes"
+        "posttest": "pulumi login file://. && PULUMI_CONFIG_PASSPHRASE= pulumi up -s test --yes --refresh ; pulumi destroy -s test --yes"
     }
 }

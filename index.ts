@@ -7,6 +7,7 @@ import { dirname, join } from "path";
 import { promises as stream } from "stream";
 import assert = require("assert");
 
+import { newClient } from "./client";
 import * as fabric from "./protos/io/defang/v1/fabric_grpc_pb";
 import * as pb from "./protos/io/defang/v1/fabric_pb";
 import { createTarball, uploadTarball } from "./upload";
@@ -74,27 +75,11 @@ export function setAccessToken(token: string) {
   accessToken = token;
 }
 
-function hasPort(url: string): boolean {
-  return /:\d+$/.test(url);
-}
-
 // Connect to our gRPC server
 async function connect(
   fabricDns: string
 ): Promise<fabric.FabricControllerClient> {
-  const withoutTenant = fabricDns.replace(/^.*@/, "");
-  const client = new fabric.FabricControllerClient(
-    hasPort(withoutTenant) ? withoutTenant : `${withoutTenant}:443`,
-    grpc.credentials.combineChannelCredentials(
-      grpc.credentials.createSsl(),
-      grpc.credentials.createFromMetadataGenerator((_, callback) => {
-        const metadata = new grpc.Metadata();
-        // TODO: automatically generate a new token once it expires
-        metadata.set("authorization", "Bearer " + getAccessToken(fabricDns));
-        callback(null, metadata);
-      })
-    )
-  );
+  const client = newClient(fabricDns, getAccessToken(fabricDns));
   await new Promise<void>((resolve, reject) =>
     client.waitForReady(Date.now() + 5000, (err) =>
       err ? reject(err) : resolve()
@@ -301,7 +286,7 @@ async function upsert(
         if (secret.value === undefined) {
           return;
         }
-        const sv = new pb.SecretValue();
+        const sv = new pb.PutConfigRequest();
         sv.setProject(inputs.project);
         sv.setName(secret.source);
         sv.setValue(secret.value);
@@ -868,7 +853,7 @@ export class DefangService extends pulumi.dynamic.Resource {
       args.fabricDNS = defaultFabric;
     }
     if (!args.project) {
-      args.project = pulumi.getProject()+"-"+pulumi.getStack();
+      args.project = pulumi.getProject() + "-" + pulumi.getStack();
     }
     super(
       defangServiceProvider,

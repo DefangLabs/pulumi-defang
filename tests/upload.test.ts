@@ -5,7 +5,7 @@ import { dirname, resolve } from "path";
 import * as upload from "../upload";
 import * as tar from "tar";
 
-describe("createTarball", () => {
+describe("#createTarball", () => {
   const expected = [
     "./",
     "./Dockerfile.test",
