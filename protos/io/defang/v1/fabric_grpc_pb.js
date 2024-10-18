@@ -6,7 +6,6 @@
 var grpc = require('@grpc/grpc-js');
 var io_defang_v1_fabric_pb = require('../../../io/defang/v1/fabric_pb.js');
 var google_protobuf_empty_pb = require('google-protobuf/google/protobuf/empty_pb.js');
-var google_protobuf_struct_pb = require('google-protobuf/google/protobuf/struct_pb.js');
 var google_protobuf_timestamp_pb = require('google-protobuf/google/protobuf/timestamp_pb.js');
 
 function serialize_google_protobuf_Empty(arg) {
@@ -119,6 +118,28 @@ function deserialize_io_defang_v1_DeployResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.DeployResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_DestroyRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.DestroyRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.DestroyRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_DestroyRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.DestroyRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_DestroyResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.DestroyResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.DestroyResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_DestroyResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.DestroyResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_GenerateFilesRequest(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.GenerateFilesRequest)) {
     throw new Error('Expected argument of type io.defang.v1.GenerateFilesRequest');
@@ -227,17 +248,6 @@ function serialize_io_defang_v1_PutConfigRequest(arg) {
 
 function deserialize_io_defang_v1_PutConfigRequest(buffer_arg) {
   return io_defang_v1_fabric_pb.PutConfigRequest.deserializeBinary(new Uint8Array(buffer_arg));
-}
-
-function serialize_io_defang_v1_SecretValue(arg) {
-  if (!(arg instanceof io_defang_v1_fabric_pb.SecretValue)) {
-    throw new Error('Expected argument of type io.defang.v1.SecretValue');
-  }
-  return Buffer.from(arg.serializeBinary());
-}
-
-function deserialize_io_defang_v1_SecretValue(buffer_arg) {
-  return io_defang_v1_fabric_pb.SecretValue.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_Secrets(arg) {
@@ -405,6 +415,17 @@ function deserialize_io_defang_v1_UploadURLResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.UploadURLResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_VerifyDNSSetupRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.VerifyDNSSetupRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.VerifyDNSSetupRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_VerifyDNSSetupRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.VerifyDNSSetupRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_Version(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.Version)) {
     throw new Error('Expected argument of type io.defang.v1.Version');
@@ -529,6 +550,17 @@ revokeToken: {
     responseSerialize: serialize_io_defang_v1_DeleteResponse,
     responseDeserialize: deserialize_io_defang_v1_DeleteResponse,
   },
+  destroy: {
+    path: '/io.defang.v1.FabricController/Destroy',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.DestroyRequest,
+    responseType: io_defang_v1_fabric_pb.DestroyResponse,
+    requestSerialize: serialize_io_defang_v1_DestroyRequest,
+    requestDeserialize: deserialize_io_defang_v1_DestroyRequest,
+    responseSerialize: serialize_io_defang_v1_DestroyResponse,
+    responseDeserialize: deserialize_io_defang_v1_DestroyResponse,
+  },
   publish: {
     path: '/io.defang.v1.FabricController/Publish',
     requestStream: false,
@@ -636,10 +668,10 @@ putSecret: {
     path: '/io.defang.v1.FabricController/PutSecret',
     requestStream: false,
     responseStream: false,
-    requestType: io_defang_v1_fabric_pb.SecretValue,
+    requestType: io_defang_v1_fabric_pb.PutConfigRequest,
     responseType: google_protobuf_empty_pb.Empty,
-    requestSerialize: serialize_io_defang_v1_SecretValue,
-    requestDeserialize: deserialize_io_defang_v1_SecretValue,
+    requestSerialize: serialize_io_defang_v1_PutConfigRequest,
+    requestDeserialize: deserialize_io_defang_v1_PutConfigRequest,
     responseSerialize: serialize_google_protobuf_Empty,
     responseDeserialize: deserialize_google_protobuf_Empty,
   },
@@ -772,6 +804,29 @@ putSecret: {
     responseType: google_protobuf_empty_pb.Empty,
     requestSerialize: serialize_io_defang_v1_TrackRequest,
     requestDeserialize: deserialize_io_defang_v1_TrackRequest,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  // Endpoint for GDPR compliance
+deleteMe: {
+    path: '/io.defang.v1.FabricController/DeleteMe',
+    requestStream: false,
+    responseStream: false,
+    requestType: google_protobuf_empty_pb.Empty,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_google_protobuf_Empty,
+    requestDeserialize: deserialize_google_protobuf_Empty,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  verifyDNSSetup: {
+    path: '/io.defang.v1.FabricController/VerifyDNSSetup',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.VerifyDNSSetupRequest,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_io_defang_v1_VerifyDNSSetupRequest,
+    requestDeserialize: deserialize_io_defang_v1_VerifyDNSSetupRequest,
     responseSerialize: serialize_google_protobuf_Empty,
     responseDeserialize: deserialize_google_protobuf_Empty,
   },

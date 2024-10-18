@@ -3,8 +3,73 @@
 
 import * as jspb from "google-protobuf";
 import * as google_protobuf_empty_pb from "google-protobuf/google/protobuf/empty_pb";
-import * as google_protobuf_struct_pb from "google-protobuf/google/protobuf/struct_pb";
 import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb";
+
+export class VerifyDNSSetupRequest extends jspb.Message {
+  getDomain(): string;
+  setDomain(value: string): void;
+
+  clearTargetsList(): void;
+  getTargetsList(): Array<string>;
+  setTargetsList(value: Array<string>): void;
+  addTargets(value: string, index?: number): string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): VerifyDNSSetupRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: VerifyDNSSetupRequest): VerifyDNSSetupRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: VerifyDNSSetupRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): VerifyDNSSetupRequest;
+  static deserializeBinaryFromReader(message: VerifyDNSSetupRequest, reader: jspb.BinaryReader): VerifyDNSSetupRequest;
+}
+
+export namespace VerifyDNSSetupRequest {
+  export type AsObject = {
+    domain: string,
+    targetsList: Array<string>,
+  }
+}
+
+export class DestroyRequest extends jspb.Message {
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): DestroyRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: DestroyRequest): DestroyRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: DestroyRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): DestroyRequest;
+  static deserializeBinaryFromReader(message: DestroyRequest, reader: jspb.BinaryReader): DestroyRequest;
+}
+
+export namespace DestroyRequest {
+  export type AsObject = {
+    project: string,
+  }
+}
+
+export class DestroyResponse extends jspb.Message {
+  getEtag(): string;
+  setEtag(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): DestroyResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: DestroyResponse): DestroyResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: DestroyResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): DestroyResponse;
+  static deserializeBinaryFromReader(message: DestroyResponse, reader: jspb.BinaryReader): DestroyResponse;
+}
+
+export namespace DestroyResponse {
+  export type AsObject = {
+    etag: string,
+  }
+}
 
 export class DebugRequest extends jspb.Message {
   clearFilesList(): void;
@@ -183,10 +248,10 @@ export class DeployRequest extends jspb.Message {
   getMode(): DeploymentModeMap[keyof DeploymentModeMap];
   setMode(value: DeploymentModeMap[keyof DeploymentModeMap]): void;
 
-  hasCompose(): boolean;
-  clearCompose(): void;
-  getCompose(): google_protobuf_struct_pb.Struct | undefined;
-  setCompose(value?: google_protobuf_struct_pb.Struct): void;
+  getCompose(): Uint8Array | string;
+  getCompose_asU8(): Uint8Array;
+  getCompose_asB64(): string;
+  setCompose(value: Uint8Array | string): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): DeployRequest.AsObject;
@@ -203,7 +268,7 @@ export namespace DeployRequest {
     servicesList: Array<Service.AsObject>,
     project: string,
     mode: DeploymentModeMap[keyof DeploymentModeMap],
-    compose?: google_protobuf_struct_pb.Struct.AsObject,
+    compose: Uint8Array | string,
   }
 }
 
@@ -585,8 +650,8 @@ export class Config extends jspb.Message {
   getProject(): string;
   setProject(value: string): void;
 
-  getIsSensitive(): boolean;
-  setIsSensitive(value: boolean): void;
+  getType(): ConfigTypeMap[keyof ConfigTypeMap];
+  setType(value: ConfigTypeMap[keyof ConfigTypeMap]): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): Config.AsObject;
@@ -603,7 +668,7 @@ export namespace Config {
     name: string,
     value: string,
     project: string,
-    isSensitive: boolean,
+    type: ConfigTypeMap[keyof ConfigTypeMap],
   }
 }
 
@@ -628,6 +693,38 @@ export namespace ConfigKey {
   export type AsObject = {
     name: string,
     project: string,
+  }
+}
+
+export class PutConfigRequest extends jspb.Message {
+  getName(): string;
+  setName(value: string): void;
+
+  getValue(): string;
+  setValue(value: string): void;
+
+  getProject(): string;
+  setProject(value: string): void;
+
+  getType(): ConfigTypeMap[keyof ConfigTypeMap];
+  setType(value: ConfigTypeMap[keyof ConfigTypeMap]): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): PutConfigRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: PutConfigRequest): PutConfigRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: PutConfigRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): PutConfigRequest;
+  static deserializeBinaryFromReader(message: PutConfigRequest, reader: jspb.BinaryReader): PutConfigRequest;
+}
+
+export namespace PutConfigRequest {
+  export type AsObject = {
+    name: string,
+    value: string,
+    project: string,
+    type: ConfigTypeMap[keyof ConfigTypeMap],
   }
 }
 
@@ -694,38 +791,6 @@ export class DeleteConfigsRequest extends jspb.Message {
 export namespace DeleteConfigsRequest {
   export type AsObject = {
     configsList: Array<ConfigKey.AsObject>,
-  }
-}
-
-export class PutConfigRequest extends jspb.Message {
-  getName(): string;
-  setName(value: string): void;
-
-  getValue(): string;
-  setValue(value: string): void;
-
-  getProject(): string;
-  setProject(value: string): void;
-
-  getIsSensitive(): boolean;
-  setIsSensitive(value: boolean): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): PutConfigRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: PutConfigRequest): PutConfigRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: PutConfigRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): PutConfigRequest;
-  static deserializeBinaryFromReader(message: PutConfigRequest, reader: jspb.BinaryReader): PutConfigRequest;
-}
-
-export namespace PutConfigRequest {
-  export type AsObject = {
-    name: string,
-    value: string,
-    project: string,
-    isSensitive: boolean,
   }
 }
 
@@ -934,6 +999,9 @@ export class LogEntry extends jspb.Message {
   getHost(): string;
   setHost(value: string): void;
 
+  getJob(): string;
+  setJob(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): LogEntry.AsObject;
   static toObject(includeInstance: boolean, msg: LogEntry): LogEntry.AsObject;
@@ -952,6 +1020,7 @@ export namespace LogEntry {
     service: string,
     etag: string,
     host: string,
+    job: string,
   }
 }
 
@@ -1027,10 +1096,13 @@ export class ProjectUpdate extends jspb.Message {
   getProject(): string;
   setProject(value: string): void;
 
-  hasCompose(): boolean;
-  clearCompose(): void;
-  getCompose(): google_protobuf_struct_pb.Struct | undefined;
-  setCompose(value?: google_protobuf_struct_pb.Struct): void;
+  getCompose(): Uint8Array | string;
+  getCompose_asU8(): Uint8Array;
+  getCompose_asB64(): string;
+  setCompose(value: Uint8Array | string): void;
+
+  getCdVersion(): string;
+  setCdVersion(value: string): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ProjectUpdate.AsObject;
@@ -1047,7 +1119,8 @@ export namespace ProjectUpdate {
     servicesList: Array<ServiceInfo.AsObject>,
     albArn: string,
     project: string,
-    compose?: google_protobuf_struct_pb.Struct.AsObject,
+    compose: Uint8Array | string,
+    cdVersion: string,
   }
 }
 
@@ -1463,6 +1536,62 @@ export namespace Postgres {
   }
 }
 
+export class DeployEvent extends jspb.Message {
+  getMode(): DeploymentModeMap[keyof DeploymentModeMap];
+  setMode(value: DeploymentModeMap[keyof DeploymentModeMap]): void;
+
+  getType(): string;
+  setType(value: string): void;
+
+  getSource(): string;
+  setSource(value: string): void;
+
+  getId(): string;
+  setId(value: string): void;
+
+  getDatacontenttype(): string;
+  setDatacontenttype(value: string): void;
+
+  getDataschema(): string;
+  setDataschema(value: string): void;
+
+  getSubject(): string;
+  setSubject(value: string): void;
+
+  hasTime(): boolean;
+  clearTime(): void;
+  getTime(): google_protobuf_timestamp_pb.Timestamp | undefined;
+  setTime(value?: google_protobuf_timestamp_pb.Timestamp): void;
+
+  getData(): Uint8Array | string;
+  getData_asU8(): Uint8Array;
+  getData_asB64(): string;
+  setData(value: Uint8Array | string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): DeployEvent.AsObject;
+  static toObject(includeInstance: boolean, msg: DeployEvent): DeployEvent.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: DeployEvent, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): DeployEvent;
+  static deserializeBinaryFromReader(message: DeployEvent, reader: jspb.BinaryReader): DeployEvent;
+}
+
+export namespace DeployEvent {
+  export type AsObject = {
+    mode: DeploymentModeMap[keyof DeploymentModeMap],
+    type: string,
+    source: string,
+    id: string,
+    datacontenttype: string,
+    dataschema: string,
+    subject: string,
+    time?: google_protobuf_timestamp_pb.Timestamp.AsObject,
+    data: Uint8Array | string,
+  }
+}
+
 export class Event extends jspb.Message {
   getSpecversion(): string;
   setSpecversion(value: string): void;
@@ -1700,6 +1829,13 @@ export interface ServiceStateMap {
 }
 
 export const ServiceState: ServiceStateMap;
+
+export interface ConfigTypeMap {
+  CONFIGTYPE_UNSPECIFIED: 0;
+  CONFIGTYPE_SENSITIVE: 1;
+}
+
+export const ConfigType: ConfigTypeMap;
 
 export interface PlatformMap {
   LINUX_AMD64: 0;
