@@ -302,7 +302,7 @@ async function upsert(
       client.update(service, (err, res) => (err ? reject(err) : resolve(res!)))
     );
     if (inputs.waitForSteadyState) {
-      await waitForSteadyState(
+      await retryWaitForSteadyState(
         client,
         serviceInfo.getEtag(),
         serviceInfo.getService()!.getName()
@@ -355,6 +355,35 @@ function waitForSteadyState(
       }
     });
   });
+}
+
+type GrpcError = Error & { code: grpc.status; details: string; metadata: any };
+
+async function retryWaitForSteadyState(
+  client: fabric.FabricControllerClient,
+  etag: string,
+  service: string
+) {
+  while (true) {
+    try {
+      return await waitForSteadyState(client, etag, service);
+    } catch (err) {
+      switch ((err as GrpcError).code) {
+        case grpc.status.INTERNAL:
+          // {"code":13,"details":"Received RST_STREAM with code 2 (Internal server error)","metadata":{}}
+          if (debug) pulumi.log.info(`Retry after INTERNAL error: ${err}`);
+          break;
+        case grpc.status.UNAVAILABLE:
+          // {"code":14,"details":"unavailable","metadata":{"server":["awselb/2.0"],"date":["Fri, 18 Oct 2024 03:25:32 GMT"],"content-type":["application/grpc"],"content-length":["0"],"grpc-previous-rpc-attempts":["4"]}}
+          if (debug) pulumi.log.info(`Retry after UNAVAILABLE error: ${err}`);
+          break;
+        default:
+          throw err;
+      }
+      // Wait for 1s before retrying; this matches the behavior of the Defang CLI
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }
 
 function convertProtocol(protocol?: Protocol) {
