@@ -14,6 +14,9 @@ const fromDir = new DefangService("test1", {
     timeout: 3,
     interval: 5,
   },
+  // networks: {
+  //   "public": {},
+  // },
   waitForSteadyState: true,
 });
 

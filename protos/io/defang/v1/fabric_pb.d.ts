@@ -5,6 +5,70 @@ import * as jspb from "google-protobuf";
 import * as google_protobuf_empty_pb from "google-protobuf/google/protobuf/empty_pb";
 import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb";
 
+export class GetSelectedProviderRequest extends jspb.Message {
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetSelectedProviderRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetSelectedProviderRequest): GetSelectedProviderRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetSelectedProviderRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetSelectedProviderRequest;
+  static deserializeBinaryFromReader(message: GetSelectedProviderRequest, reader: jspb.BinaryReader): GetSelectedProviderRequest;
+}
+
+export namespace GetSelectedProviderRequest {
+  export type AsObject = {
+    project: string,
+  }
+}
+
+export class GetSelectedProviderResponse extends jspb.Message {
+  getProvider(): ProviderMap[keyof ProviderMap];
+  setProvider(value: ProviderMap[keyof ProviderMap]): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetSelectedProviderResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetSelectedProviderResponse): GetSelectedProviderResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetSelectedProviderResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetSelectedProviderResponse;
+  static deserializeBinaryFromReader(message: GetSelectedProviderResponse, reader: jspb.BinaryReader): GetSelectedProviderResponse;
+}
+
+export namespace GetSelectedProviderResponse {
+  export type AsObject = {
+    provider: ProviderMap[keyof ProviderMap],
+  }
+}
+
+export class SetSelectedProviderRequest extends jspb.Message {
+  getProject(): string;
+  setProject(value: string): void;
+
+  getProvider(): ProviderMap[keyof ProviderMap];
+  setProvider(value: ProviderMap[keyof ProviderMap]): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): SetSelectedProviderRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: SetSelectedProviderRequest): SetSelectedProviderRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: SetSelectedProviderRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): SetSelectedProviderRequest;
+  static deserializeBinaryFromReader(message: SetSelectedProviderRequest, reader: jspb.BinaryReader): SetSelectedProviderRequest;
+}
+
+export namespace SetSelectedProviderRequest {
+  export type AsObject = {
+    project: string,
+    provider: ProviderMap[keyof ProviderMap],
+  }
+}
+
 export class VerifyDNSSetupRequest extends jspb.Message {
   getDomain(): string;
   setDomain(value: string): void;
@@ -253,6 +317,12 @@ export class DeployRequest extends jspb.Message {
   getCompose_asB64(): string;
   setCompose(value: Uint8Array | string): void;
 
+  getDelegateDomain(): string;
+  setDelegateDomain(value: string): void;
+
+  getDelegationSetId(): string;
+  setDelegationSetId(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): DeployRequest.AsObject;
   static toObject(includeInstance: boolean, msg: DeployRequest): DeployRequest.AsObject;
@@ -269,6 +339,8 @@ export namespace DeployRequest {
     project: string,
     mode: DeploymentModeMap[keyof DeploymentModeMap],
     compose: Uint8Array | string,
+    delegateDomain: string,
+    delegationSetId: string,
   }
 }
 
@@ -307,6 +379,9 @@ export class DeleteRequest extends jspb.Message {
   getProject(): string;
   setProject(value: string): void;
 
+  getDelegateDomain(): string;
+  setDelegateDomain(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): DeleteRequest.AsObject;
   static toObject(includeInstance: boolean, msg: DeleteRequest): DeleteRequest.AsObject;
@@ -321,6 +396,7 @@ export namespace DeleteRequest {
   export type AsObject = {
     namesList: Array<string>,
     project: string,
+    delegateDomain: string,
   }
 }
 
@@ -462,6 +538,9 @@ export class UploadURLRequest extends jspb.Message {
   getDigest(): string;
   setDigest(value: string): void;
 
+  getProject(): string;
+  setProject(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): UploadURLRequest.AsObject;
   static toObject(includeInstance: boolean, msg: UploadURLRequest): UploadURLRequest.AsObject;
@@ -475,6 +554,7 @@ export class UploadURLRequest extends jspb.Message {
 export namespace UploadURLRequest {
   export type AsObject = {
     digest: string,
+    project: string,
   }
 }
 
@@ -857,6 +937,9 @@ export class TokenRequest extends jspb.Message {
   getAnonId(): string;
   setAnonId(value: string): void;
 
+  getRefreshToken(): string;
+  setRefreshToken(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): TokenRequest.AsObject;
   static toObject(includeInstance: boolean, msg: TokenRequest): TokenRequest.AsObject;
@@ -875,12 +958,16 @@ export namespace TokenRequest {
     assertion: string,
     expiresIn: number,
     anonId: string,
+    refreshToken: string,
   }
 }
 
 export class TokenResponse extends jspb.Message {
   getAccessToken(): string;
   setAccessToken(value: string): void;
+
+  getRefreshToken(): string;
+  setRefreshToken(value: string): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): TokenResponse.AsObject;
@@ -895,6 +982,7 @@ export class TokenResponse extends jspb.Message {
 export namespace TokenResponse {
   export type AsObject = {
     accessToken: string,
+    refreshToken: string,
   }
 }
 
@@ -960,6 +1048,15 @@ export class TailRequest extends jspb.Message {
   getEtag(): string;
   setEtag(value: string): void;
 
+  getProject(): string;
+  setProject(value: string): void;
+
+  getLogType(): number;
+  setLogType(value: number): void;
+
+  getPattern(): string;
+  setPattern(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): TailRequest.AsObject;
   static toObject(includeInstance: boolean, msg: TailRequest): TailRequest.AsObject;
@@ -975,6 +1072,9 @@ export namespace TailRequest {
     servicesList: Array<string>,
     since?: google_protobuf_timestamp_pb.Timestamp.AsObject,
     etag: string,
+    project: string,
+    logType: number,
+    pattern: string,
   }
 }
 
@@ -999,9 +1099,6 @@ export class LogEntry extends jspb.Message {
   getHost(): string;
   setHost(value: string): void;
 
-  getJob(): string;
-  setJob(value: string): void;
-
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): LogEntry.AsObject;
   static toObject(includeInstance: boolean, msg: LogEntry): LogEntry.AsObject;
@@ -1020,7 +1117,6 @@ export namespace LogEntry {
     service: string,
     etag: string,
     host: string,
-    job: string,
   }
 }
 
@@ -1124,23 +1220,27 @@ export namespace ProjectUpdate {
   }
 }
 
-export class ServiceID extends jspb.Message {
+export class GetRequest extends jspb.Message {
   getName(): string;
   setName(value: string): void;
 
+  getProject(): string;
+  setProject(value: string): void;
+
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): ServiceID.AsObject;
-  static toObject(includeInstance: boolean, msg: ServiceID): ServiceID.AsObject;
+  toObject(includeInstance?: boolean): GetRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRequest): GetRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: ServiceID, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): ServiceID;
-  static deserializeBinaryFromReader(message: ServiceID, reader: jspb.BinaryReader): ServiceID;
+  static serializeBinaryToWriter(message: GetRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRequest;
+  static deserializeBinaryFromReader(message: GetRequest, reader: jspb.BinaryReader): GetRequest;
 }
 
-export namespace ServiceID {
+export namespace GetRequest {
   export type AsObject = {
     name: string,
+    project: string,
   }
 }
 
@@ -1431,15 +1531,15 @@ export class Service extends jspb.Message {
   getNetworks(): NetworkMap[keyof NetworkMap];
   setNetworks(value: NetworkMap[keyof NetworkMap]): void;
 
+  clearAliasesList(): void;
+  getAliasesList(): Array<string>;
+  setAliasesList(value: Array<string>): void;
+  addAliases(value: string, index?: number): string;
+
   hasRedis(): boolean;
   clearRedis(): void;
   getRedis(): Redis | undefined;
   setRedis(value?: Redis): void;
-
-  hasPostgres(): boolean;
-  clearPostgres(): void;
-  getPostgres(): Postgres | undefined;
-  setPostgres(value?: Postgres): void;
 
   getProject(): string;
   setProject(value: string): void;
@@ -1472,8 +1572,8 @@ export namespace Service {
     dnsRole: string,
     staticFiles?: StaticFiles.AsObject,
     networks: NetworkMap[keyof NetworkMap],
+    aliasesList: Array<string>,
     redis?: Redis.AsObject,
-    postgres?: Postgres.AsObject,
     project: string,
   }
 }
@@ -1516,22 +1616,6 @@ export class Redis extends jspb.Message {
 }
 
 export namespace Redis {
-  export type AsObject = {
-  }
-}
-
-export class Postgres extends jspb.Message {
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): Postgres.AsObject;
-  static toObject(includeInstance: boolean, msg: Postgres): Postgres.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: Postgres, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): Postgres;
-  static deserializeBinaryFromReader(message: Postgres, reader: jspb.BinaryReader): Postgres;
-}
-
-export namespace Postgres {
   export type AsObject = {
   }
 }
@@ -1679,6 +1763,9 @@ export class SubscribeRequest extends jspb.Message {
   getEtag(): string;
   setEtag(value: string): void;
 
+  getProject(): string;
+  setProject(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): SubscribeRequest.AsObject;
   static toObject(includeInstance: boolean, msg: SubscribeRequest): SubscribeRequest.AsObject;
@@ -1693,6 +1780,7 @@ export namespace SubscribeRequest {
   export type AsObject = {
     servicesList: Array<string>,
     etag: string,
+    project: string,
   }
 }
 
@@ -1727,6 +1815,26 @@ export namespace SubscribeResponse {
     name: string,
     status: string,
     state: ServiceStateMap[keyof ServiceStateMap],
+  }
+}
+
+export class GetServicesRequest extends jspb.Message {
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetServicesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetServicesRequest): GetServicesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetServicesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetServicesRequest;
+  static deserializeBinaryFromReader(message: GetServicesRequest, reader: jspb.BinaryReader): GetServicesRequest;
+}
+
+export namespace GetServicesRequest {
+  export type AsObject = {
+    project: string,
   }
 }
 
@@ -1785,6 +1893,9 @@ export class WhoAmIResponse extends jspb.Message {
   getUserId(): string;
   setUserId(value: string): void;
 
+  getTier(): SubscriptionTierMap[keyof SubscriptionTierMap];
+  setTier(value: SubscriptionTierMap[keyof SubscriptionTierMap]): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): WhoAmIResponse.AsObject;
   static toObject(includeInstance: boolean, msg: WhoAmIResponse): WhoAmIResponse.AsObject;
@@ -1801,8 +1912,19 @@ export namespace WhoAmIResponse {
     account: string,
     region: string,
     userId: string,
+    tier: SubscriptionTierMap[keyof SubscriptionTierMap],
   }
 }
+
+export interface ProviderMap {
+  PROVIDER_UNSPECIFIED: 0;
+  DEFANG: 1;
+  AWS: 2;
+  DIGITALOCEAN: 3;
+  GCP: 4;
+}
+
+export const Provider: ProviderMap;
 
 export interface DeploymentModeMap {
   UNSPECIFIED_MODE: 0;
@@ -1870,4 +1992,14 @@ export interface NetworkMap {
 }
 
 export const Network: NetworkMap;
+
+export interface SubscriptionTierMap {
+  SUBSCRIPTION_TIER_UNSPECIFIED: 0;
+  PERSONAL: 1;
+  BASIC: 2;
+  PRO: 3;
+  TEAM: 4;
+}
+
+export const SubscriptionTier: SubscriptionTierMap;
 
