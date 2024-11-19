@@ -132,13 +132,13 @@ function convertServiceInputs(inputs: DefangServiceInputs): pb.Service {
     resources.setReservations(reservations);
     deploy.setResources(resources);
   }
-  switch (inputs.networks?.[0]) {
-    case "public":
-      service.setNetworks(pb.Network.PUBLIC);
-      break;
-    case "private":
-      service.setNetworks(pb.Network.PRIVATE);
-      break;
+  const publicNetwork = inputs.networks?.public;
+  const privateNetwork = inputs.networks?.private;
+  if (publicNetwork !== undefined) {
+    service.setNetworks(pb.Network.PUBLIC);
+    service.setAliasesList(publicNetwork?.aliases ?? []);
+  } else if (privateNetwork !== undefined) {
+    service.setNetworks(pb.Network.PRIVATE);
   }
   service.setDeploy(deploy);
   service.setPlatform(
@@ -430,7 +430,7 @@ interface DefangServiceInputs {
   image?: string;
   init?: boolean;
   name: string;
-  networks?: [Network];
+  networks?: Record<NetworkName, Network>;
   platform?: Platform;
   ports?: Port[];
   project: string;
@@ -570,6 +570,12 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
           });
         }
       }
+    }
+    if (Object.keys(news.networks || {}).length > 1) {
+      failures.push({
+        property: "networks",
+        reason: "only one network can be specified",
+      });
     }
     for (const secret of news.secrets || []) {
       // TODO: validate source name
@@ -711,7 +717,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     id: string,
     olds?: DefangServiceOutputs
   ): Promise<pulumi.dynamic.ReadResult<DefangServiceOutputs>> {
-    const serviceId = new pb.ServiceID();
+    const serviceId = new pb.GetRequest();
     // serviceId.setProject(project);
     serviceId.setName(id);
     assert(olds?.fabricDNS, "fabricDNS is required");
@@ -745,7 +751,8 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
 export type Platform = "linux/arm64" | "linux/amd64" | "linux";
 export type Protocol = "tcp" | "udp" | "http" | "http2" | "grpc";
 export type DeviceCapability = "gpu";
-export type Network = "private" | "public";
+export type NetworkName = "private" | "public";
+export type Network = { aliases?: string[] } | null; // TODO: pulumi.Input<string>[]
 
 export interface Port {
   target: number;
@@ -813,7 +820,7 @@ export interface DefangServiceArgs {
   /** the platform to deploy to; defaults to "linux/amd64" */
   platform?: pulumi.Input<Platform>;
   /** which network the service is in, ie. whether the service requires a public IP or not; defaults to "private" (was: internal=true) */
-  networks?: [Network];
+  networks?: Record<NetworkName, Network>;
   /** the optional deployment configuration */
   deploy?: pulumi.Input<Deploy>;
   /** the ports to expose */

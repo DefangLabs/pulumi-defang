@@ -195,6 +195,61 @@ function deserialize_io_defang_v1_GetConfigsResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.GetConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_GetRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.GetRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_GetSelectedProviderRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetSelectedProviderRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.GetSelectedProviderRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetSelectedProviderRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetSelectedProviderRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_GetSelectedProviderResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetSelectedProviderResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.GetSelectedProviderResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetSelectedProviderResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetSelectedProviderResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_GetServicesRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetServicesRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.GetServicesRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetServicesRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetServicesRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_GetServicesResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetServicesResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.GetServicesResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetServicesResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetServicesResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_ListConfigsRequest(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.ListConfigsRequest)) {
     throw new Error('Expected argument of type io.defang.v1.ListConfigsRequest');
@@ -215,17 +270,6 @@ function serialize_io_defang_v1_ListConfigsResponse(arg) {
 
 function deserialize_io_defang_v1_ListConfigsResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.ListConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
-}
-
-function serialize_io_defang_v1_ListServicesResponse(arg) {
-  if (!(arg instanceof io_defang_v1_fabric_pb.ListServicesResponse)) {
-    throw new Error('Expected argument of type io.defang.v1.ListServicesResponse');
-  }
-  return Buffer.from(arg.serializeBinary());
-}
-
-function deserialize_io_defang_v1_ListServicesResponse(buffer_arg) {
-  return io_defang_v1_fabric_pb.ListServicesResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_PublishRequest(arg) {
@@ -272,17 +316,6 @@ function deserialize_io_defang_v1_Service(buffer_arg) {
   return io_defang_v1_fabric_pb.Service.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
-function serialize_io_defang_v1_ServiceID(arg) {
-  if (!(arg instanceof io_defang_v1_fabric_pb.ServiceID)) {
-    throw new Error('Expected argument of type io.defang.v1.ServiceID');
-  }
-  return Buffer.from(arg.serializeBinary());
-}
-
-function deserialize_io_defang_v1_ServiceID(buffer_arg) {
-  return io_defang_v1_fabric_pb.ServiceID.deserializeBinary(new Uint8Array(buffer_arg));
-}
-
 function serialize_io_defang_v1_ServiceInfo(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.ServiceInfo)) {
     throw new Error('Expected argument of type io.defang.v1.ServiceInfo');
@@ -292,6 +325,17 @@ function serialize_io_defang_v1_ServiceInfo(arg) {
 
 function deserialize_io_defang_v1_ServiceInfo(buffer_arg) {
   return io_defang_v1_fabric_pb.ServiceInfo.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_SetSelectedProviderRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.SetSelectedProviderRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.SetSelectedProviderRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_SetSelectedProviderRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.SetSelectedProviderRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_StartGenerateResponse(arg) {
@@ -532,10 +576,10 @@ revokeToken: {
     path: '/io.defang.v1.FabricController/Get',
     requestStream: false,
     responseStream: false,
-    requestType: io_defang_v1_fabric_pb.ServiceID,
+    requestType: io_defang_v1_fabric_pb.GetRequest,
     responseType: io_defang_v1_fabric_pb.ServiceInfo,
-    requestSerialize: serialize_io_defang_v1_ServiceID,
-    requestDeserialize: deserialize_io_defang_v1_ServiceID,
+    requestSerialize: serialize_io_defang_v1_GetRequest,
+    requestDeserialize: deserialize_io_defang_v1_GetRequest,
     responseSerialize: serialize_io_defang_v1_ServiceInfo,
     responseDeserialize: deserialize_io_defang_v1_ServiceInfo,
   },
@@ -588,12 +632,12 @@ getServices: {
     path: '/io.defang.v1.FabricController/GetServices',
     requestStream: false,
     responseStream: false,
-    requestType: google_protobuf_empty_pb.Empty,
-    responseType: io_defang_v1_fabric_pb.ListServicesResponse,
-    requestSerialize: serialize_google_protobuf_Empty,
-    requestDeserialize: deserialize_google_protobuf_Empty,
-    responseSerialize: serialize_io_defang_v1_ListServicesResponse,
-    responseDeserialize: deserialize_io_defang_v1_ListServicesResponse,
+    requestType: io_defang_v1_fabric_pb.GetServicesRequest,
+    responseType: io_defang_v1_fabric_pb.GetServicesResponse,
+    requestSerialize: serialize_io_defang_v1_GetServicesRequest,
+    requestDeserialize: deserialize_io_defang_v1_GetServicesRequest,
+    responseSerialize: serialize_io_defang_v1_GetServicesResponse,
+    responseDeserialize: deserialize_io_defang_v1_GetServicesResponse,
   },
   generateFiles: {
     path: '/io.defang.v1.FabricController/GenerateFiles',
@@ -690,10 +734,10 @@ putSecret: {
     path: '/io.defang.v1.FabricController/ListSecrets',
     requestStream: false,
     responseStream: false,
-    requestType: google_protobuf_empty_pb.Empty,
+    requestType: io_defang_v1_fabric_pb.ListConfigsRequest,
     responseType: io_defang_v1_fabric_pb.Secrets,
-    requestSerialize: serialize_google_protobuf_Empty,
-    requestDeserialize: deserialize_google_protobuf_Empty,
+    requestSerialize: serialize_io_defang_v1_ListConfigsRequest,
+    requestDeserialize: deserialize_io_defang_v1_ListConfigsRequest,
     responseSerialize: serialize_io_defang_v1_Secrets,
     responseDeserialize: deserialize_io_defang_v1_Secrets,
   },
@@ -827,6 +871,28 @@ deleteMe: {
     responseType: google_protobuf_empty_pb.Empty,
     requestSerialize: serialize_io_defang_v1_VerifyDNSSetupRequest,
     requestDeserialize: deserialize_io_defang_v1_VerifyDNSSetupRequest,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  getSelectedProvider: {
+    path: '/io.defang.v1.FabricController/GetSelectedProvider',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.GetSelectedProviderRequest,
+    responseType: io_defang_v1_fabric_pb.GetSelectedProviderResponse,
+    requestSerialize: serialize_io_defang_v1_GetSelectedProviderRequest,
+    requestDeserialize: deserialize_io_defang_v1_GetSelectedProviderRequest,
+    responseSerialize: serialize_io_defang_v1_GetSelectedProviderResponse,
+    responseDeserialize: deserialize_io_defang_v1_GetSelectedProviderResponse,
+  },
+  setSelectedProvider: {
+    path: '/io.defang.v1.FabricController/SetSelectedProvider',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.SetSelectedProviderRequest,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_io_defang_v1_SetSelectedProviderRequest,
+    requestDeserialize: deserialize_io_defang_v1_SetSelectedProviderRequest,
     responseSerialize: serialize_google_protobuf_Empty,
     responseDeserialize: deserialize_google_protobuf_Empty,
   },
