@@ -239,6 +239,17 @@ function deserialize_io_defang_v1_GetServicesRequest(buffer_arg) {
   return io_defang_v1_fabric_pb.GetServicesRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_GetServicesResponse(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetServicesResponse)) {
+    throw new Error('Expected argument of type io.defang.v1.GetServicesResponse');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetServicesResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetServicesResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_ListConfigsRequest(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.ListConfigsRequest)) {
     throw new Error('Expected argument of type io.defang.v1.ListConfigsRequest');
@@ -259,17 +270,6 @@ function serialize_io_defang_v1_ListConfigsResponse(arg) {
 
 function deserialize_io_defang_v1_ListConfigsResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.ListConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
-}
-
-function serialize_io_defang_v1_ListServicesResponse(arg) {
-  if (!(arg instanceof io_defang_v1_fabric_pb.ListServicesResponse)) {
-    throw new Error('Expected argument of type io.defang.v1.ListServicesResponse');
-  }
-  return Buffer.from(arg.serializeBinary());
-}
-
-function deserialize_io_defang_v1_ListServicesResponse(buffer_arg) {
-  return io_defang_v1_fabric_pb.ListServicesResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_PublishRequest(arg) {
@@ -633,11 +633,11 @@ getServices: {
     requestStream: false,
     responseStream: false,
     requestType: io_defang_v1_fabric_pb.GetServicesRequest,
-    responseType: io_defang_v1_fabric_pb.ListServicesResponse,
+    responseType: io_defang_v1_fabric_pb.GetServicesResponse,
     requestSerialize: serialize_io_defang_v1_GetServicesRequest,
     requestDeserialize: deserialize_io_defang_v1_GetServicesRequest,
-    responseSerialize: serialize_io_defang_v1_ListServicesResponse,
-    responseDeserialize: deserialize_io_defang_v1_ListServicesResponse,
+    responseSerialize: serialize_io_defang_v1_GetServicesResponse,
+    responseDeserialize: deserialize_io_defang_v1_GetServicesResponse,
   },
   generateFiles: {
     path: '/io.defang.v1.FabricController/GenerateFiles',

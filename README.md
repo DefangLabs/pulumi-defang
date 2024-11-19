@@ -22,6 +22,11 @@ const service = new DefangService("defang-demo", {
     context: ".",
     dockerfile: "Dockerfile.dev",
   },
+  networks: {
+    public: {
+      //aliases: ["demo.example.com"],
+    },
+  },
   ports: [{ target: 80, protocol: "http", mode: "ingress" }],
   // fabricDNS: "…",                        // override the Defang Fabric Controller endpoint
   // platform: "…",                         // "linux/arm64" | "linux/amd64" | "linux" (default)

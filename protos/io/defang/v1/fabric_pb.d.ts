@@ -1154,7 +1154,7 @@ export namespace TailResponse {
   }
 }
 
-export class ListServicesResponse extends jspb.Message {
+export class GetServicesResponse extends jspb.Message {
   clearServicesList(): void;
   getServicesList(): Array<ServiceInfo>;
   setServicesList(value: Array<ServiceInfo>): void;
@@ -1163,20 +1163,26 @@ export class ListServicesResponse extends jspb.Message {
   getProject(): string;
   setProject(value: string): void;
 
+  hasExpiresAt(): boolean;
+  clearExpiresAt(): void;
+  getExpiresAt(): google_protobuf_timestamp_pb.Timestamp | undefined;
+  setExpiresAt(value?: google_protobuf_timestamp_pb.Timestamp): void;
+
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): ListServicesResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: ListServicesResponse): ListServicesResponse.AsObject;
+  toObject(includeInstance?: boolean): GetServicesResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetServicesResponse): GetServicesResponse.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: ListServicesResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): ListServicesResponse;
-  static deserializeBinaryFromReader(message: ListServicesResponse, reader: jspb.BinaryReader): ListServicesResponse;
+  static serializeBinaryToWriter(message: GetServicesResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetServicesResponse;
+  static deserializeBinaryFromReader(message: GetServicesResponse, reader: jspb.BinaryReader): GetServicesResponse;
 }
 
-export namespace ListServicesResponse {
+export namespace GetServicesResponse {
   export type AsObject = {
     servicesList: Array<ServiceInfo.AsObject>,
     project: string,
+    expiresAt?: google_protobuf_timestamp_pb.Timestamp.AsObject,
   }
 }
 

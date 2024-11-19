@@ -20,7 +20,7 @@ interface IFabricControllerService extends grpc.ServiceDefinition<grpc.UntypedSe
   destroy: grpc.MethodDefinition<io_defang_v1_fabric_pb.DestroyRequest, io_defang_v1_fabric_pb.DestroyResponse>;
   publish: grpc.MethodDefinition<io_defang_v1_fabric_pb.PublishRequest, google_protobuf_empty_pb.Empty>;
   subscribe: grpc.MethodDefinition<io_defang_v1_fabric_pb.SubscribeRequest, io_defang_v1_fabric_pb.SubscribeResponse>;
-  getServices: grpc.MethodDefinition<io_defang_v1_fabric_pb.GetServicesRequest, io_defang_v1_fabric_pb.ListServicesResponse>;
+  getServices: grpc.MethodDefinition<io_defang_v1_fabric_pb.GetServicesRequest, io_defang_v1_fabric_pb.GetServicesResponse>;
   generateFiles: grpc.MethodDefinition<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
   startGenerate: grpc.MethodDefinition<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.StartGenerateResponse>;
   generateStatus: grpc.MethodDefinition<io_defang_v1_fabric_pb.GenerateStatusRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
@@ -61,7 +61,7 @@ export interface IFabricControllerServer extends grpc.UntypedServiceImplementati
   destroy: grpc.handleUnaryCall<io_defang_v1_fabric_pb.DestroyRequest, io_defang_v1_fabric_pb.DestroyResponse>;
   publish: grpc.handleUnaryCall<io_defang_v1_fabric_pb.PublishRequest, google_protobuf_empty_pb.Empty>;
   subscribe: grpc.handleServerStreamingCall<io_defang_v1_fabric_pb.SubscribeRequest, io_defang_v1_fabric_pb.SubscribeResponse>;
-  getServices: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GetServicesRequest, io_defang_v1_fabric_pb.ListServicesResponse>;
+  getServices: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GetServicesRequest, io_defang_v1_fabric_pb.GetServicesResponse>;
   generateFiles: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
   startGenerate: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GenerateFilesRequest, io_defang_v1_fabric_pb.StartGenerateResponse>;
   generateStatus: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GenerateStatusRequest, io_defang_v1_fabric_pb.GenerateFilesResponse>;
@@ -123,9 +123,9 @@ export class FabricControllerClient extends grpc.Client {
   publish(argument: io_defang_v1_fabric_pb.PublishRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
   subscribe(argument: io_defang_v1_fabric_pb.SubscribeRequest, metadataOrOptions?: grpc.Metadata | grpc.CallOptions | null): grpc.ClientReadableStream<io_defang_v1_fabric_pb.SubscribeResponse>;
   subscribe(argument: io_defang_v1_fabric_pb.SubscribeRequest, metadata?: grpc.Metadata | null, options?: grpc.CallOptions | null): grpc.ClientReadableStream<io_defang_v1_fabric_pb.SubscribeResponse>;
-  getServices(argument: io_defang_v1_fabric_pb.GetServicesRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListServicesResponse>): grpc.ClientUnaryCall;
-  getServices(argument: io_defang_v1_fabric_pb.GetServicesRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListServicesResponse>): grpc.ClientUnaryCall;
-  getServices(argument: io_defang_v1_fabric_pb.GetServicesRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListServicesResponse>): grpc.ClientUnaryCall;
+  getServices(argument: io_defang_v1_fabric_pb.GetServicesRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GetServicesResponse>): grpc.ClientUnaryCall;
+  getServices(argument: io_defang_v1_fabric_pb.GetServicesRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GetServicesResponse>): grpc.ClientUnaryCall;
+  getServices(argument: io_defang_v1_fabric_pb.GetServicesRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GetServicesResponse>): grpc.ClientUnaryCall;
   generateFiles(argument: io_defang_v1_fabric_pb.GenerateFilesRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GenerateFilesResponse>): grpc.ClientUnaryCall;
   generateFiles(argument: io_defang_v1_fabric_pb.GenerateFilesRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GenerateFilesResponse>): grpc.ClientUnaryCall;
   generateFiles(argument: io_defang_v1_fabric_pb.GenerateFilesRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.GenerateFilesResponse>): grpc.ClientUnaryCall;
