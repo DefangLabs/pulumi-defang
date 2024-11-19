@@ -1,6 +1,6 @@
 {
   "name": "@defang-io/pulumi-defang",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "author": "Defang Software Labs Inc.",
   "bugs": {
     "url": "https://github.com/DefangLabs/pulumi-defang/issues"
