@@ -820,7 +820,7 @@ export interface DefangServiceArgs {
   /** the platform to deploy to; defaults to "linux/amd64" */
   platform?: pulumi.Input<Platform>;
   /** which network the service is in, ie. whether the service requires a public IP or not; defaults to "private" (was: internal=true) */
-  networks?: Record<NetworkName, Network>;
+  networks?: { [key in NetworkName]?: Network };
   /** the optional deployment configuration */
   deploy?: pulumi.Input<Deploy>;
   /** the ports to expose */
