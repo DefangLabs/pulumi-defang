@@ -717,7 +717,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     id: string,
     olds?: DefangServiceOutputs
   ): Promise<pulumi.dynamic.ReadResult<DefangServiceOutputs>> {
-    const serviceId = new pb.GetRequest();
+    const serviceId = new pb.ServiceID();
     // serviceId.setProject(project);
     serviceId.setName(id);
     assert(olds?.fabricDNS, "fabricDNS is required");
