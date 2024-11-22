@@ -139,6 +139,7 @@ function convertServiceInputs(inputs: DefangServiceInputs): pb.Service {
     service.setAliasesList(publicNetwork?.aliases ?? []);
   } else if (privateNetwork !== undefined) {
     service.setNetworks(pb.Network.PRIVATE);
+    service.setAliasesList(privateNetwork?.aliases ?? []);
   }
   service.setDeploy(deploy);
   service.setPlatform(
