@@ -399,7 +399,13 @@ enum Platform {
   LINUX_ANY = 2;
 }
 
-message GetRequest { // was GetRequest
+message GetRequest { // was ServiceID
+  string name = 1;
+  string project = 2;
+}
+
+message ServiceID {
+  option deprecated = true; // still used by the old pulumi-defang provider
   string name = 1;
   string project = 2;
 }
