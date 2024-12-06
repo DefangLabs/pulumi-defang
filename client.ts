@@ -1,6 +1,6 @@
 import * as grpc from "@grpc/grpc-js";
-import * as fabric from "./protos/io/defang/v1/fabric_grpc_pb";
 import { Status } from "@grpc/grpc-js/build/src/constants";
+import * as fabric from "./protos/io/defang/v1/fabric_grpc_pb";
 
 function hasPort(url: string): boolean {
   return /:\d+$/.test(url);

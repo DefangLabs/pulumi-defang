@@ -300,6 +300,54 @@ export namespace TrackRequest {
   }
 }
 
+export class CanIUseRequest extends jspb.Message {
+  getProject(): string;
+  setProject(value: string): void;
+
+  getProvider(): ProviderMap[keyof ProviderMap];
+  setProvider(value: ProviderMap[keyof ProviderMap]): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): CanIUseRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: CanIUseRequest): CanIUseRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: CanIUseRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): CanIUseRequest;
+  static deserializeBinaryFromReader(message: CanIUseRequest, reader: jspb.BinaryReader): CanIUseRequest;
+}
+
+export namespace CanIUseRequest {
+  export type AsObject = {
+    project: string,
+    provider: ProviderMap[keyof ProviderMap],
+  }
+}
+
+export class CanIUseResponse extends jspb.Message {
+  getCdImage(): string;
+  setCdImage(value: string): void;
+
+  getGpu(): boolean;
+  setGpu(value: boolean): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): CanIUseResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: CanIUseResponse): CanIUseResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: CanIUseResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): CanIUseResponse;
+  static deserializeBinaryFromReader(message: CanIUseResponse, reader: jspb.BinaryReader): CanIUseResponse;
+}
+
+export namespace CanIUseResponse {
+  export type AsObject = {
+    cdImage: string,
+    gpu: boolean,
+  }
+}
+
 export class DeployRequest extends jspb.Message {
   clearServicesList(): void;
   getServicesList(): Array<Service>;
@@ -636,6 +684,9 @@ export class ServiceInfo extends jspb.Message {
   getDomainname(): string;
   setDomainname(value: string): void;
 
+  getLbDnsName(): string;
+  setLbDnsName(value: string): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ServiceInfo.AsObject;
   static toObject(includeInstance: boolean, msg: ServiceInfo): ServiceInfo.AsObject;
@@ -663,6 +714,7 @@ export namespace ServiceInfo {
     useAcmeCert: boolean,
     state: ServiceStateMap[keyof ServiceStateMap],
     domainname: string,
+    lbDnsName: string,
   }
 }
 
@@ -913,6 +965,112 @@ export class ListConfigsResponse extends jspb.Message {
 export namespace ListConfigsResponse {
   export type AsObject = {
     configsList: Array<ConfigKey.AsObject>,
+  }
+}
+
+export class Deployment extends jspb.Message {
+  getId(): string;
+  setId(value: string): void;
+
+  getProject(): string;
+  setProject(value: string): void;
+
+  getProvider(): string;
+  setProvider(value: string): void;
+
+  getProviderAccountId(): string;
+  setProviderAccountId(value: string): void;
+
+  hasTimestamp(): boolean;
+  clearTimestamp(): void;
+  getTimestamp(): google_protobuf_timestamp_pb.Timestamp | undefined;
+  setTimestamp(value?: google_protobuf_timestamp_pb.Timestamp): void;
+
+  getAction(): DeploymentActionMap[keyof DeploymentActionMap];
+  setAction(value: DeploymentActionMap[keyof DeploymentActionMap]): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): Deployment.AsObject;
+  static toObject(includeInstance: boolean, msg: Deployment): Deployment.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: Deployment, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): Deployment;
+  static deserializeBinaryFromReader(message: Deployment, reader: jspb.BinaryReader): Deployment;
+}
+
+export namespace Deployment {
+  export type AsObject = {
+    id: string,
+    project: string,
+    provider: string,
+    providerAccountId: string,
+    timestamp?: google_protobuf_timestamp_pb.Timestamp.AsObject,
+    action: DeploymentActionMap[keyof DeploymentActionMap],
+  }
+}
+
+export class PutDeploymentRequest extends jspb.Message {
+  hasDeployment(): boolean;
+  clearDeployment(): void;
+  getDeployment(): Deployment | undefined;
+  setDeployment(value?: Deployment): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): PutDeploymentRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: PutDeploymentRequest): PutDeploymentRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: PutDeploymentRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): PutDeploymentRequest;
+  static deserializeBinaryFromReader(message: PutDeploymentRequest, reader: jspb.BinaryReader): PutDeploymentRequest;
+}
+
+export namespace PutDeploymentRequest {
+  export type AsObject = {
+    deployment?: Deployment.AsObject,
+  }
+}
+
+export class ListDeploymentsRequest extends jspb.Message {
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ListDeploymentsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: ListDeploymentsRequest): ListDeploymentsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ListDeploymentsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ListDeploymentsRequest;
+  static deserializeBinaryFromReader(message: ListDeploymentsRequest, reader: jspb.BinaryReader): ListDeploymentsRequest;
+}
+
+export namespace ListDeploymentsRequest {
+  export type AsObject = {
+    project: string,
+  }
+}
+
+export class ListDeploymentsResponse extends jspb.Message {
+  clearDeploymentsList(): void;
+  getDeploymentsList(): Array<Deployment>;
+  setDeploymentsList(value: Array<Deployment>): void;
+  addDeployments(value?: Deployment, index?: number): Deployment;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ListDeploymentsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: ListDeploymentsResponse): ListDeploymentsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ListDeploymentsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ListDeploymentsResponse;
+  static deserializeBinaryFromReader(message: ListDeploymentsResponse, reader: jspb.BinaryReader): ListDeploymentsResponse;
+}
+
+export namespace ListDeploymentsResponse {
+  export type AsObject = {
+    deploymentsList: Array<Deployment.AsObject>,
   }
 }
 
@@ -1978,6 +2136,7 @@ export interface ServiceStateMap {
   DEPLOYMENT_COMPLETED: 9;
   DEPLOYMENT_FAILED: 10;
   BUILD_FAILED: 11;
+  DEPLOYMENT_SCALED_IN: 12;
 }
 
 export const ServiceState: ServiceStateMap;
@@ -1988,6 +2147,14 @@ export interface ConfigTypeMap {
 }
 
 export const ConfigType: ConfigTypeMap;
+
+export interface DeploymentActionMap {
+  DEPLOYMENT_ACTION_UNSPECIFIED: 0;
+  DEPLOYMENT_ACTION_UP: 1;
+  DEPLOYMENT_ACTION_DOWN: 2;
+}
+
+export const DeploymentAction: DeploymentActionMap;
 
 export interface PlatformMap {
   LINUX_AMD64: 0;
@@ -2025,8 +2192,8 @@ export const Network: NetworkMap;
 
 export interface SubscriptionTierMap {
   SUBSCRIPTION_TIER_UNSPECIFIED: 0;
-  PERSONAL: 1;
-  BASIC: 2;
+  HOBBY: 1;
+  PERSONAL: 2;
   PRO: 3;
   TEAM: 4;
 }

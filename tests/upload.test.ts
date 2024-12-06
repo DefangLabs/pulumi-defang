@@ -2,8 +2,8 @@ import { assert } from "chai";
 import { rm, rmdir } from "fs/promises";
 import "mocha";
 import { dirname, resolve } from "path";
-import * as upload from "../upload";
 import * as tar from "tar";
+import * as upload from "../upload";
 
 describe("#createTarball", () => {
   const expected = [

@@ -16,6 +16,22 @@ function deserialize_google_protobuf_Empty(buffer_arg) {
   return google_protobuf_empty_pb.Empty.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_CanIUseRequest(arg) {
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_CanIUseRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.CanIUseRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_CanIUseResponse(arg) {
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_CanIUseResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.CanIUseResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_DebugRequest(arg) {
   return Buffer.from(arg.serializeBinary());
 }
@@ -200,6 +216,22 @@ function deserialize_io_defang_v1_ListConfigsResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.ListConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_ListDeploymentsRequest(arg) {
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_ListDeploymentsRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.ListDeploymentsRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_ListDeploymentsResponse(arg) {
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_ListDeploymentsResponse(buffer_arg) {
+  return io_defang_v1_fabric_pb.ListDeploymentsResponse.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_PublishRequest(arg) {
   return Buffer.from(arg.serializeBinary());
 }
@@ -214,6 +246,14 @@ function serialize_io_defang_v1_PutConfigRequest(arg) {
 
 function deserialize_io_defang_v1_PutConfigRequest(buffer_arg) {
   return io_defang_v1_fabric_pb.PutConfigRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
+function serialize_io_defang_v1_PutDeploymentRequest(arg) {
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_PutDeploymentRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.PutDeploymentRequest.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_Secrets(arg) {
@@ -653,6 +693,28 @@ putSecret: {
     responseSerialize: serialize_io_defang_v1_ListConfigsResponse,
     responseDeserialize: deserialize_io_defang_v1_ListConfigsResponse,
   },
+  putDeployment: {
+    path: '/io.defang.v1.FabricController/PutDeployment',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.PutDeploymentRequest,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_io_defang_v1_PutDeploymentRequest,
+    requestDeserialize: deserialize_io_defang_v1_PutDeploymentRequest,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  listDeployments: {
+    path: '/io.defang.v1.FabricController/ListDeployments',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.ListDeploymentsRequest,
+    responseType: io_defang_v1_fabric_pb.ListDeploymentsResponse,
+    requestSerialize: serialize_io_defang_v1_ListDeploymentsRequest,
+    requestDeserialize: deserialize_io_defang_v1_ListDeploymentsRequest,
+    responseSerialize: serialize_io_defang_v1_ListDeploymentsResponse,
+    responseDeserialize: deserialize_io_defang_v1_ListDeploymentsResponse,
+  },
   createUploadURL: {
     path: '/io.defang.v1.FabricController/CreateUploadURL',
     requestStream: false,
@@ -763,6 +825,17 @@ deleteMe: {
     requestDeserialize: deserialize_io_defang_v1_SetSelectedProviderRequest,
     responseSerialize: serialize_google_protobuf_Empty,
     responseDeserialize: deserialize_google_protobuf_Empty,
+  },
+  canIUse: {
+    path: '/io.defang.v1.FabricController/CanIUse',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.CanIUseRequest,
+    responseType: io_defang_v1_fabric_pb.CanIUseResponse,
+    requestSerialize: serialize_io_defang_v1_CanIUseRequest,
+    requestDeserialize: deserialize_io_defang_v1_CanIUseRequest,
+    responseSerialize: serialize_io_defang_v1_CanIUseResponse,
+    responseDeserialize: deserialize_io_defang_v1_CanIUseResponse,
   },
 };
 
