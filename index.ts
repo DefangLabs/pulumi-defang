@@ -690,12 +690,12 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
       replaces: forceUpdate
         ? [] // prevent calling delete
         : [
-            ...optionals(oldOutputs.service.name !== newInputs.name, "name"),
-            ...optionals(
-              oldOutputs.fabricDNS !== newInputs.fabricDNS,
-              "fabricDNS"
-            ),
-          ],
+          ...optionals(oldOutputs.service.name !== newInputs.name, "name"),
+          ...optionals(
+            oldOutputs.fabricDNS !== newInputs.fabricDNS,
+            "fabricDNS"
+          ),
+        ],
       // deleteBeforeReplace: false,
       // stables: [],
     };
@@ -718,15 +718,15 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     id: string,
     olds?: DefangServiceOutputs
   ): Promise<pulumi.dynamic.ReadResult<DefangServiceOutputs>> {
-    const serviceId = new pb.ServiceID();
+    const req = new pb.GetRequest();
     // serviceId.setProject(project);
-    serviceId.setName(id);
+    req.setName(id);
     assert(olds?.fabricDNS, "fabricDNS is required");
     const client = await connect(olds.fabricDNS);
     try {
       const result = await new Promise<pb.ServiceInfo | undefined>(
         (resolve, reject) =>
-          client.get(serviceId, (err, res) =>
+          client.get(req, (err, res) =>
             err && err.code !== grpc.status.NOT_FOUND //&& !forceUpdate
               ? reject(err)
               : resolve(res)
@@ -734,9 +734,9 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
       );
       return result
         ? {
-            id,
-            props: toOutputs(olds.fabricDNS, result),
-          }
+          id,
+          props: toOutputs(olds.fabricDNS, result),
+        }
         : {};
     } catch (err) {
       if ((err as grpc.ServiceError).code === grpc.status.UNAUTHENTICATED) {
