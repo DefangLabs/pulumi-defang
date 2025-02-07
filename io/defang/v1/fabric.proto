@@ -405,7 +405,7 @@ message GetRequest { // was ServiceID
 }
 
 message ServiceID {
-  option deprecated = true; // still used by the old pulumi-defang provider
+  option deprecated = true; // still used by pulumi-defang providers stored in state files
   string name = 1;
   string project = 2;
 }
