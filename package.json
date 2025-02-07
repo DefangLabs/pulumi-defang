@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "@balena/dockerignore": "^1.0.2",
-    "@grpc/grpc-js": "^1.12.2",
+    "@grpc/grpc-js": "^1.12.6",
     "google-protobuf": "^3.5.0",
     "node-fetch": "^3.3.1",
     "tar": "^6.1.15"
@@ -20,7 +20,7 @@
     "@types/google-protobuf": "^3.15.6",
     "@types/node": "^16",
     "@types/tar": "^6.1.5",
-    "grpc-tools": "^1.12.4",
+    "grpc-tools": "^1.13.0",
     "ts-protoc-gen": "^0.15.0",
     "typescript": "~5.1.6"
   },
@@ -39,7 +39,7 @@
   "scripts": {
     "build": "tsc && cp -r protos lib/",
     "prebuild": "npm run build-grpc",
-    "build-grpc": "mkdir -p protos && grpc_tools_node_protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out=service=grpc-node,mode=grpc-js:./protos --js_out=import_style=commonjs,binary:./protos --grpc_out=grpc_js:./protos io/defang/v1/*.proto",
+    "build-grpc": "mkdir -p protos && grpc_tools_node_protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out=service=grpc-node,mode=grpc-js:./protos --js_out=import_style=commonjs,binary:./protos --grpc_out=grpc_js,omit_serialize_instanceof:./protos io/defang/v1/*.proto",
     "prepublish": "npm run build",
     "preversion": "git pull && npm run build",
     "postversion": "git push --follow-tags",

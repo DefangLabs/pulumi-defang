@@ -9,7 +9,7 @@ const fromDir = new DefangService("test1", {
     },
   },
   healthcheck: {
-    test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"],
+    test: ["CMD", "true"],
     retries: 1,
     timeout: 3,
     interval: 5,
