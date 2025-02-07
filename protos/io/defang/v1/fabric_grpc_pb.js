@@ -195,6 +195,17 @@ function deserialize_io_defang_v1_GetConfigsResponse(buffer_arg) {
   return io_defang_v1_fabric_pb.GetConfigsResponse.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_GetRequest(arg) {
+  if (!(arg instanceof io_defang_v1_fabric_pb.GetRequest)) {
+    throw new Error('Expected argument of type io.defang.v1.GetRequest');
+  }
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_GetRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.GetRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_GetSelectedProviderRequest(arg) {
   if (!(arg instanceof io_defang_v1_fabric_pb.GetSelectedProviderRequest)) {
     throw new Error('Expected argument of type io.defang.v1.GetSelectedProviderRequest');
@@ -303,17 +314,6 @@ function serialize_io_defang_v1_Service(arg) {
 
 function deserialize_io_defang_v1_Service(buffer_arg) {
   return io_defang_v1_fabric_pb.Service.deserializeBinary(new Uint8Array(buffer_arg));
-}
-
-function serialize_io_defang_v1_ServiceID(arg) {
-  if (!(arg instanceof io_defang_v1_fabric_pb.ServiceID)) {
-    throw new Error('Expected argument of type io.defang.v1.ServiceID');
-  }
-  return Buffer.from(arg.serializeBinary());
-}
-
-function deserialize_io_defang_v1_ServiceID(buffer_arg) {
-  return io_defang_v1_fabric_pb.ServiceID.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
 function serialize_io_defang_v1_ServiceInfo(arg) {
@@ -576,10 +576,10 @@ revokeToken: {
     path: '/io.defang.v1.FabricController/Get',
     requestStream: false,
     responseStream: false,
-    requestType: io_defang_v1_fabric_pb.ServiceID,
+    requestType: io_defang_v1_fabric_pb.GetRequest,
     responseType: io_defang_v1_fabric_pb.ServiceInfo,
-    requestSerialize: serialize_io_defang_v1_ServiceID,
-    requestDeserialize: deserialize_io_defang_v1_ServiceID,
+    requestSerialize: serialize_io_defang_v1_GetRequest,
+    requestDeserialize: deserialize_io_defang_v1_GetRequest,
     responseSerialize: serialize_io_defang_v1_ServiceInfo,
     responseDeserialize: deserialize_io_defang_v1_ServiceInfo,
   },

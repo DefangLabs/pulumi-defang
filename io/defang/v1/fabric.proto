@@ -24,7 +24,7 @@ service FabricController {
     option deprecated = true;
   }; // used by pulumi-defang provider; should use Deploy
   rpc Deploy(DeployRequest) returns (DeployResponse);
-  rpc Get(ServiceID) returns (ServiceInfo) {
+  rpc Get(GetRequest) returns (ServiceInfo) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }; // should be GetService
   rpc Delete(DeleteRequest) returns (DeleteResponse) {
