@@ -11,7 +11,7 @@
         "typescript": "^5.1.3"
     },
     "dependencies": {
-        "@defang-io/pulumi-defang": "^0.17.2",
+        "@defang-io/pulumi-defang": "0.19.2",
         "@pulumi/pulumi": "~3.117.0"
     },
     "scripts": {
