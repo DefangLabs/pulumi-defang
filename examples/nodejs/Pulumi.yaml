@@ -1,0 +1,6 @@
+name: provider-defang
+runtime: nodejs
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin

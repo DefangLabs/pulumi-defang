@@ -1,0 +1,6 @@
+name: provider-defang
+runtime: go
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin

@@ -1,0 +1,11 @@
+{
+	"name": "provider-defang",
+	"devDependencies": {
+		"@types/node": "^14"
+	},
+	"dependencies": {
+		"typescript": "^4.0.0",
+		"@pulumi/pulumi": "^3.0.0",
+		"@pulumi/defang": "0.19.5-alpha.1739572993+71997dd0.dirty"
+	}
+}

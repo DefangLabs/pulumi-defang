@@ -1,0 +1,6 @@
+name: provider-defang
+runtime: python
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin
