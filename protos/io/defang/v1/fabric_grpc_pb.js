@@ -280,6 +280,14 @@ function deserialize_io_defang_v1_ServiceInfo(buffer_arg) {
   return io_defang_v1_fabric_pb.ServiceInfo.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
+function serialize_io_defang_v1_SetOptionsRequest(arg) {
+  return Buffer.from(arg.serializeBinary());
+}
+
+function deserialize_io_defang_v1_SetOptionsRequest(buffer_arg) {
+  return io_defang_v1_fabric_pb.SetOptionsRequest.deserializeBinary(new Uint8Array(buffer_arg));
+}
+
 function serialize_io_defang_v1_SetSelectedProviderRequest(arg) {
   return Buffer.from(arg.serializeBinary());
 }
@@ -758,6 +766,17 @@ putSecret: {
     requestDeserialize: deserialize_google_protobuf_Empty,
     responseSerialize: serialize_io_defang_v1_DelegateSubdomainZoneResponse,
     responseDeserialize: deserialize_io_defang_v1_DelegateSubdomainZoneResponse,
+  },
+  setOptions: {
+    path: '/io.defang.v1.FabricController/SetOptions',
+    requestStream: false,
+    responseStream: false,
+    requestType: io_defang_v1_fabric_pb.SetOptionsRequest,
+    responseType: google_protobuf_empty_pb.Empty,
+    requestSerialize: serialize_io_defang_v1_SetOptionsRequest,
+    requestDeserialize: deserialize_io_defang_v1_SetOptionsRequest,
+    responseSerialize: serialize_google_protobuf_Empty,
+    responseDeserialize: deserialize_google_protobuf_Empty,
   },
   whoAmI: {
     path: '/io.defang.v1.FabricController/WhoAmI',

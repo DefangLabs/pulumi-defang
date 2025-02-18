@@ -155,6 +155,14 @@ export class DebugRequest extends jspb.Message {
   setServicesList(value: Array<string>): void;
   addServices(value: string, index?: number): string;
 
+  getTrainingOptOut(): boolean;
+  setTrainingOptOut(value: boolean): void;
+
+  hasSince(): boolean;
+  clearSince(): void;
+  getSince(): google_protobuf_timestamp_pb.Timestamp | undefined;
+  setSince(value?: google_protobuf_timestamp_pb.Timestamp): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): DebugRequest.AsObject;
   static toObject(includeInstance: boolean, msg: DebugRequest): DebugRequest.AsObject;
@@ -172,6 +180,8 @@ export namespace DebugRequest {
     project: string,
     logs: string,
     servicesList: Array<string>,
+    trainingOptOut: boolean,
+    since?: google_protobuf_timestamp_pb.Timestamp.AsObject,
   }
 }
 
@@ -478,6 +488,9 @@ export class GenerateFilesRequest extends jspb.Message {
   getAgreeTos(): boolean;
   setAgreeTos(value: boolean): void;
 
+  getTrainingOptOut(): boolean;
+  setTrainingOptOut(value: boolean): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GenerateFilesRequest.AsObject;
   static toObject(includeInstance: boolean, msg: GenerateFilesRequest): GenerateFilesRequest.AsObject;
@@ -493,6 +506,7 @@ export namespace GenerateFilesRequest {
     prompt: string,
     language: string,
     agreeTos: boolean,
+    trainingOptOut: boolean,
   }
 }
 
@@ -1408,30 +1422,6 @@ export namespace GetRequest {
   }
 }
 
-export class ServiceID extends jspb.Message {
-  getName(): string;
-  setName(value: string): void;
-
-  getProject(): string;
-  setProject(value: string): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): ServiceID.AsObject;
-  static toObject(includeInstance: boolean, msg: ServiceID): ServiceID.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: ServiceID, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): ServiceID;
-  static deserializeBinaryFromReader(message: ServiceID, reader: jspb.BinaryReader): ServiceID;
-}
-
-export namespace ServiceID {
-  export type AsObject = {
-    name: string,
-    project: string,
-  }
-}
-
 export class Device extends jspb.Message {
   clearCapabilitiesList(): void;
   getCapabilitiesList(): Array<string>;
@@ -2068,6 +2058,26 @@ export namespace DelegateSubdomainZoneResponse {
   }
 }
 
+export class SetOptionsRequest extends jspb.Message {
+  getTrainingOptOut(): boolean;
+  setTrainingOptOut(value: boolean): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): SetOptionsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: SetOptionsRequest): SetOptionsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: SetOptionsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): SetOptionsRequest;
+  static deserializeBinaryFromReader(message: SetOptionsRequest, reader: jspb.BinaryReader): SetOptionsRequest;
+}
+
+export namespace SetOptionsRequest {
+  export type AsObject = {
+    trainingOptOut: boolean,
+  }
+}
+
 export class WhoAmIResponse extends jspb.Message {
   getTenant(): string;
   setTenant(value: string): void;
@@ -2083,6 +2093,9 @@ export class WhoAmIResponse extends jspb.Message {
 
   getTier(): SubscriptionTierMap[keyof SubscriptionTierMap];
   setTier(value: SubscriptionTierMap[keyof SubscriptionTierMap]): void;
+
+  getTrainingOptOut(): boolean;
+  setTrainingOptOut(value: boolean): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): WhoAmIResponse.AsObject;
@@ -2101,6 +2114,7 @@ export namespace WhoAmIResponse {
     region: string,
     userId: string,
     tier: SubscriptionTierMap[keyof SubscriptionTierMap],
+    trainingOptOut: boolean,
   }
 }
 
