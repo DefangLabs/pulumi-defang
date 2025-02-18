@@ -718,15 +718,15 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     id: string,
     olds?: DefangServiceOutputs
   ): Promise<pulumi.dynamic.ReadResult<DefangServiceOutputs>> {
-    const serviceId = new pb.GetRequest();
-    // serviceId.setProject(project);
-    serviceId.setName(id);
+    const req = new pb.GetRequest();
+    // req.setProject(project);
+    req.setName(id);
     assert(olds?.fabricDNS, "fabricDNS is required");
     const client = await connect(olds.fabricDNS);
     try {
       const result = await new Promise<pb.ServiceInfo | undefined>(
         (resolve, reject) =>
-          client.get(serviceId, (err, res) =>
+          client.get(req, (err, res) =>
             err && err.code !== grpc.status.NOT_FOUND //&& !forceUpdate
               ? reject(err)
               : resolve(res)

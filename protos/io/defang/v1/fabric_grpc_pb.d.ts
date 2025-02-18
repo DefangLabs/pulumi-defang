@@ -34,16 +34,20 @@ interface IFabricControllerService extends grpc.ServiceDefinition<grpc.UntypedSe
   putConfig: grpc.MethodDefinition<io_defang_v1_fabric_pb.PutConfigRequest, google_protobuf_empty_pb.Empty>;
   deleteConfigs: grpc.MethodDefinition<io_defang_v1_fabric_pb.DeleteConfigsRequest, google_protobuf_empty_pb.Empty>;
   listConfigs: grpc.MethodDefinition<io_defang_v1_fabric_pb.ListConfigsRequest, io_defang_v1_fabric_pb.ListConfigsResponse>;
+  putDeployment: grpc.MethodDefinition<io_defang_v1_fabric_pb.PutDeploymentRequest, google_protobuf_empty_pb.Empty>;
+  listDeployments: grpc.MethodDefinition<io_defang_v1_fabric_pb.ListDeploymentsRequest, io_defang_v1_fabric_pb.ListDeploymentsResponse>;
   createUploadURL: grpc.MethodDefinition<io_defang_v1_fabric_pb.UploadURLRequest, io_defang_v1_fabric_pb.UploadURLResponse>;
   delegateSubdomainZone: grpc.MethodDefinition<io_defang_v1_fabric_pb.DelegateSubdomainZoneRequest, io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>;
   deleteSubdomainZone: grpc.MethodDefinition<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   getDelegateSubdomainZone: grpc.MethodDefinition<google_protobuf_empty_pb.Empty, io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>;
+  setOptions: grpc.MethodDefinition<io_defang_v1_fabric_pb.SetOptionsRequest, google_protobuf_empty_pb.Empty>;
   whoAmI: grpc.MethodDefinition<google_protobuf_empty_pb.Empty, io_defang_v1_fabric_pb.WhoAmIResponse>;
   track: grpc.MethodDefinition<io_defang_v1_fabric_pb.TrackRequest, google_protobuf_empty_pb.Empty>;
   deleteMe: grpc.MethodDefinition<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   verifyDNSSetup: grpc.MethodDefinition<io_defang_v1_fabric_pb.VerifyDNSSetupRequest, google_protobuf_empty_pb.Empty>;
   getSelectedProvider: grpc.MethodDefinition<io_defang_v1_fabric_pb.GetSelectedProviderRequest, io_defang_v1_fabric_pb.GetSelectedProviderResponse>;
   setSelectedProvider: grpc.MethodDefinition<io_defang_v1_fabric_pb.SetSelectedProviderRequest, google_protobuf_empty_pb.Empty>;
+  canIUse: grpc.MethodDefinition<io_defang_v1_fabric_pb.CanIUseRequest, io_defang_v1_fabric_pb.CanIUseResponse>;
 }
 
 export const FabricControllerService: IFabricControllerService;
@@ -75,16 +79,20 @@ export interface IFabricControllerServer extends grpc.UntypedServiceImplementati
   putConfig: grpc.handleUnaryCall<io_defang_v1_fabric_pb.PutConfigRequest, google_protobuf_empty_pb.Empty>;
   deleteConfigs: grpc.handleUnaryCall<io_defang_v1_fabric_pb.DeleteConfigsRequest, google_protobuf_empty_pb.Empty>;
   listConfigs: grpc.handleUnaryCall<io_defang_v1_fabric_pb.ListConfigsRequest, io_defang_v1_fabric_pb.ListConfigsResponse>;
+  putDeployment: grpc.handleUnaryCall<io_defang_v1_fabric_pb.PutDeploymentRequest, google_protobuf_empty_pb.Empty>;
+  listDeployments: grpc.handleUnaryCall<io_defang_v1_fabric_pb.ListDeploymentsRequest, io_defang_v1_fabric_pb.ListDeploymentsResponse>;
   createUploadURL: grpc.handleUnaryCall<io_defang_v1_fabric_pb.UploadURLRequest, io_defang_v1_fabric_pb.UploadURLResponse>;
   delegateSubdomainZone: grpc.handleUnaryCall<io_defang_v1_fabric_pb.DelegateSubdomainZoneRequest, io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>;
   deleteSubdomainZone: grpc.handleUnaryCall<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   getDelegateSubdomainZone: grpc.handleUnaryCall<google_protobuf_empty_pb.Empty, io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>;
+  setOptions: grpc.handleUnaryCall<io_defang_v1_fabric_pb.SetOptionsRequest, google_protobuf_empty_pb.Empty>;
   whoAmI: grpc.handleUnaryCall<google_protobuf_empty_pb.Empty, io_defang_v1_fabric_pb.WhoAmIResponse>;
   track: grpc.handleUnaryCall<io_defang_v1_fabric_pb.TrackRequest, google_protobuf_empty_pb.Empty>;
   deleteMe: grpc.handleUnaryCall<google_protobuf_empty_pb.Empty, google_protobuf_empty_pb.Empty>;
   verifyDNSSetup: grpc.handleUnaryCall<io_defang_v1_fabric_pb.VerifyDNSSetupRequest, google_protobuf_empty_pb.Empty>;
   getSelectedProvider: grpc.handleUnaryCall<io_defang_v1_fabric_pb.GetSelectedProviderRequest, io_defang_v1_fabric_pb.GetSelectedProviderResponse>;
   setSelectedProvider: grpc.handleUnaryCall<io_defang_v1_fabric_pb.SetSelectedProviderRequest, google_protobuf_empty_pb.Empty>;
+  canIUse: grpc.handleUnaryCall<io_defang_v1_fabric_pb.CanIUseRequest, io_defang_v1_fabric_pb.CanIUseResponse>;
 }
 
 export class FabricControllerClient extends grpc.Client {
@@ -165,6 +173,12 @@ export class FabricControllerClient extends grpc.Client {
   listConfigs(argument: io_defang_v1_fabric_pb.ListConfigsRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListConfigsResponse>): grpc.ClientUnaryCall;
   listConfigs(argument: io_defang_v1_fabric_pb.ListConfigsRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListConfigsResponse>): grpc.ClientUnaryCall;
   listConfigs(argument: io_defang_v1_fabric_pb.ListConfigsRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListConfigsResponse>): grpc.ClientUnaryCall;
+  putDeployment(argument: io_defang_v1_fabric_pb.PutDeploymentRequest, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
+  putDeployment(argument: io_defang_v1_fabric_pb.PutDeploymentRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
+  putDeployment(argument: io_defang_v1_fabric_pb.PutDeploymentRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
+  listDeployments(argument: io_defang_v1_fabric_pb.ListDeploymentsRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListDeploymentsResponse>): grpc.ClientUnaryCall;
+  listDeployments(argument: io_defang_v1_fabric_pb.ListDeploymentsRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListDeploymentsResponse>): grpc.ClientUnaryCall;
+  listDeployments(argument: io_defang_v1_fabric_pb.ListDeploymentsRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.ListDeploymentsResponse>): grpc.ClientUnaryCall;
   createUploadURL(argument: io_defang_v1_fabric_pb.UploadURLRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.UploadURLResponse>): grpc.ClientUnaryCall;
   createUploadURL(argument: io_defang_v1_fabric_pb.UploadURLRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.UploadURLResponse>): grpc.ClientUnaryCall;
   createUploadURL(argument: io_defang_v1_fabric_pb.UploadURLRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.UploadURLResponse>): grpc.ClientUnaryCall;
@@ -177,6 +191,9 @@ export class FabricControllerClient extends grpc.Client {
   getDelegateSubdomainZone(argument: google_protobuf_empty_pb.Empty, callback: grpc.requestCallback<io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>): grpc.ClientUnaryCall;
   getDelegateSubdomainZone(argument: google_protobuf_empty_pb.Empty, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>): grpc.ClientUnaryCall;
   getDelegateSubdomainZone(argument: google_protobuf_empty_pb.Empty, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.DelegateSubdomainZoneResponse>): grpc.ClientUnaryCall;
+  setOptions(argument: io_defang_v1_fabric_pb.SetOptionsRequest, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
+  setOptions(argument: io_defang_v1_fabric_pb.SetOptionsRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
+  setOptions(argument: io_defang_v1_fabric_pb.SetOptionsRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
   whoAmI(argument: google_protobuf_empty_pb.Empty, callback: grpc.requestCallback<io_defang_v1_fabric_pb.WhoAmIResponse>): grpc.ClientUnaryCall;
   whoAmI(argument: google_protobuf_empty_pb.Empty, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.WhoAmIResponse>): grpc.ClientUnaryCall;
   whoAmI(argument: google_protobuf_empty_pb.Empty, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.WhoAmIResponse>): grpc.ClientUnaryCall;
@@ -195,4 +212,7 @@ export class FabricControllerClient extends grpc.Client {
   setSelectedProvider(argument: io_defang_v1_fabric_pb.SetSelectedProviderRequest, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
   setSelectedProvider(argument: io_defang_v1_fabric_pb.SetSelectedProviderRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
   setSelectedProvider(argument: io_defang_v1_fabric_pb.SetSelectedProviderRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<google_protobuf_empty_pb.Empty>): grpc.ClientUnaryCall;
+  canIUse(argument: io_defang_v1_fabric_pb.CanIUseRequest, callback: grpc.requestCallback<io_defang_v1_fabric_pb.CanIUseResponse>): grpc.ClientUnaryCall;
+  canIUse(argument: io_defang_v1_fabric_pb.CanIUseRequest, metadataOrOptions: grpc.Metadata | grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.CanIUseResponse>): grpc.ClientUnaryCall;
+  canIUse(argument: io_defang_v1_fabric_pb.CanIUseRequest, metadata: grpc.Metadata | null, options: grpc.CallOptions | null, callback: grpc.requestCallback<io_defang_v1_fabric_pb.CanIUseResponse>): grpc.ClientUnaryCall;
 }
