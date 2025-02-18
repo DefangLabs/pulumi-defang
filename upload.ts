@@ -6,25 +6,33 @@ import { promises as stream } from "stream";
 import * as tar from "tar";
 
 const SOURCE_DATE_EPOCH = process.env["SOURCE_DATE_EPOCH"] ?? "315532800"; // defaults to 1980-01-01, same as nix-shell
+
+// The default .dockerignore for projects that don't have one. Keep in sync with pkg/cli/context.go in CLI repo.
 const defaultDockerIgnore = `# Default .dockerignore file for Defang
-**/.DS_Store
+**/__pycache__
 **/.direnv
+**/.DS_Store
 **/.envrc
 **/.git
 **/.github
 **/.idea
 **/.next
 **/.vscode
-**/__pycache__
+**/compose.*.yaml
+**/compose.*.yml
 **/compose.yaml
 **/compose.yml
-**/defang.exe
+**/docker-compose.*.yaml
+**/docker-compose.*.yml
 **/docker-compose.yaml
 **/docker-compose.yml
 **/node_modules
 **/Thumbs.db
+Dockerfile
+*.Dockerfile
 # Ignore our own binary, but only in the root to avoid ignoring subfolders
 defang
+defang.exe
 # Ignore our project-level state
 .defang`;
 
