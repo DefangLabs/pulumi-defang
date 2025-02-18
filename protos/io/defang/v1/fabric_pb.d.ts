@@ -1398,6 +1398,30 @@ export namespace ProjectUpdate {
   }
 }
 
+export class ServiceID extends jspb.Message {
+  getName(): string;
+  setName(value: string): void;
+
+  getProject(): string;
+  setProject(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ServiceID.AsObject;
+  static toObject(includeInstance: boolean, msg: ServiceID): ServiceID.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ServiceID, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ServiceID;
+  static deserializeBinaryFromReader(message: ServiceID, reader: jspb.BinaryReader): ServiceID;
+}
+
+export namespace ServiceID {
+  export type AsObject = {
+    name: string,
+    project: string,
+  }
+}
+
 export class GetRequest extends jspb.Message {
   getName(): string;
   setName(value: string): void;
