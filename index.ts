@@ -484,14 +484,20 @@ function isOptionalIntGt0(x?: number): boolean {
   return x === undefined || (Number.isSafeInteger(x) && x > 0);
 }
 
+// Unknown values are encoded as a distinguished string value and passed to the Dynamic Providers `check` method.
+type UnknownValue = "04da6b54-80e4-46f7-96ec-b56ff0331ba9";
+const UNKNOWN: UnknownValue = pulumi.runtime.unknownValue;
+type UnknownInputs<T> = T | Record<keyof T, UnknownValue>;
+
 const defangServiceProvider: pulumi.dynamic.ResourceProvider<
   DefangServiceInputs,
   DefangServiceOutputs
 > = {
   async check(
     olds: DefangServiceInputs,
-    news: DefangServiceInputs
+    inputs: DefangServiceInputs
   ): Promise<pulumi.dynamic.CheckResult<DefangServiceInputs>> {
+    const news = inputs as UnknownInputs<DefangServiceInputs>;
     const failures: pulumi.dynamic.CheckFailure[] = [];
 
     if (!news.fabricDNS) {
@@ -501,7 +507,7 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
     if (!news.name) {
       failures.push({ property: "name", reason: "name is required" });
     }
-    if (news.deploy) {
+    if (news.deploy && news.deploy !== UNKNOWN) {
       if (!isValidUint(news.deploy.replicas ?? 0)) {
         failures.push({
           property: "deploy",
@@ -521,54 +527,59 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
         });
       }
     }
-    if (!news.deploy?.resources?.reservations?.memory) {
+    if (
+      news.deploy !== UNKNOWN &&
+      !news.deploy?.resources?.reservations?.memory
+    ) {
       pulumi.log.warn(
         "missing memory reservation; specify deploy.resources.reservations.memory to avoid out-of-memory errors"
       );
     }
-    for (const port of news.ports || []) {
-      // port.protocol = port.protocol || "tcp"; TODO: should we set defaults here?
-      if (
-        port.target < 1 ||
-        port.target > 32767 ||
-        !Number.isInteger(port.target)
-      ) {
-        failures.push({
-          property: "ports",
-          reason: "target port must be an integer between 1 and 32767",
-        });
-      }
-      if (port.mode === "ingress") {
-        if (["udp", "tcp"].includes(port.protocol!)) {
+    if (news.ports !== UNKNOWN) {
+      for (const port of news.ports ?? []) {
+        // port.protocol = port.protocol || "tcp"; TODO: should we set defaults here?
+        if (
+          port.target < 1 ||
+          port.target > 32767 ||
+          !Number.isInteger(port.target)
+        ) {
           failures.push({
             property: "ports",
-            reason: "ingress is not support by protocol " + port.protocol,
+            reason: "target port must be an integer between 1 and 32767",
           });
         }
-        if (!news.healthcheck?.test) {
-          pulumi.log.warn(
-            "ingress port without healthcheck defaults to GET / HTTP/1.1"
-          );
+        if (port.mode === "ingress") {
+          if (["udp", "tcp"].includes(port.protocol!)) {
+            failures.push({
+              property: "ports",
+              reason: "ingress is not support by protocol " + port.protocol,
+            });
+          }
+          if (!news.healthcheck?.test) {
+            pulumi.log.warn(
+              "ingress port without healthcheck defaults to GET / HTTP/1.1"
+            );
+          }
         }
-      }
-      if (news.healthcheck) {
-        if (!isOptionalIntGt0(news.healthcheck.interval)) {
-          failures.push({
-            property: "healthcheck.interval",
-            reason: "interval must be an integer > 0",
-          });
-        }
-        if (!isOptionalIntGt0(news.healthcheck.timeout)) {
-          failures.push({
-            property: "healthcheck.timeout",
-            reason: "timeout must be an integer > 0",
-          });
-        }
-        if (!isOptionalIntGt0(news.healthcheck.retries)) {
-          failures.push({
-            property: "healthcheck.retries",
-            reason: "retries must be an integer > 0",
-          });
+        if (news.healthcheck) {
+          if (!isOptionalIntGt0(news.healthcheck.interval)) {
+            failures.push({
+              property: "healthcheck.interval",
+              reason: "interval must be an integer > 0",
+            });
+          }
+          if (!isOptionalIntGt0(news.healthcheck.timeout)) {
+            failures.push({
+              property: "healthcheck.timeout",
+              reason: "timeout must be an integer > 0",
+            });
+          }
+          if (!isOptionalIntGt0(news.healthcheck.retries)) {
+            failures.push({
+              property: "healthcheck.retries",
+              reason: "retries must be an integer > 0",
+            });
+          }
         }
       }
     }
@@ -578,13 +589,15 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
         reason: "only one network can be specified",
       });
     }
-    for (const secret of news.secrets || []) {
-      // TODO: validate source name
-      if (!secret.source) {
-        failures.push({
-          property: "secrets",
-          reason: "secret source is required",
-        });
+    if (news.secrets !== UNKNOWN) {
+      for (const secret of news.secrets || []) {
+        // TODO: validate source name
+        if (!secret.source) {
+          failures.push({
+            property: "secrets",
+            reason: "secret source is required",
+          });
+        }
       }
     }
     if (news.build) {
@@ -594,34 +607,36 @@ const defangServiceProvider: pulumi.dynamic.ResourceProvider<
           reason: "cannot specify both build and image",
         });
       }
-      if (!news.build.context) {
-        failures.push({
-          property: "build.context",
-          reason: "build context is required",
-        });
-      }
-      if (news.build.dockerfile === "") {
-        failures.push({
-          property: "build.dockerfile",
-          reason: "dockerfile cannot be empty string",
-        });
-      }
-      if (!isOptionalFloatGt0(news.build.shmSize)) {
-        failures.push({
-          property: "build.shmSize",
-          reason: "shmSize must be an integer > 0",
-        });
-      }
-      if (news.build.target === "") {
-        failures.push({
-          property: "build.target",
-          reason: "target cannot be empty string",
-        });
+      if (news.build !== UNKNOWN) {
+        if (!news.build.context) {
+          failures.push({
+            property: "build.context",
+            reason: "build context is required",
+          });
+        }
+        if (news.build.dockerfile === "") {
+          failures.push({
+            property: "build.dockerfile",
+            reason: "dockerfile cannot be empty string",
+          });
+        }
+        if (!isOptionalFloatGt0(news.build.shmSize)) {
+          failures.push({
+            property: "build.shmSize",
+            reason: "shmSize must be an integer > 0",
+          });
+        }
+        if (news.build.target === "") {
+          failures.push({
+            property: "build.target",
+            reason: "target cannot be empty string",
+          });
+        }
       }
     } else if (!news.image) {
       failures.push({ property: "image", reason: "image is required" });
     }
-    return { inputs: news, failures };
+    return { inputs, failures };
   },
   async create(
     inputs: DefangServiceInputs
