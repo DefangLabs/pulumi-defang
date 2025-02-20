@@ -16,4 +16,4 @@ resources:
 
 outputs:
   output:
-    # value: ${myRandomResource.result}
+    value: ${myProject.result}
