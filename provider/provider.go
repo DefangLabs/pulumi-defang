@@ -29,13 +29,9 @@ func Provider() p.Provider {
 	// We tell the provider what resources it needs to support.
 	// In this case, a single resource and component
 	return infer.Provider(infer.Options{
-		Resources: []infer.InferredResource{
-			infer.Resource[Random, RandomArgs, RandomState](),
-		},
-		Components: []infer.InferredComponent{
-			infer.Component[*RandomComponent, RandomComponentArgs, *RandomComponentState](),
-		},
-		Config: infer.Config[Config](),
+		Resources:  []infer.InferredResource{},
+		Components: []infer.InferredComponent{},
+		Config:     infer.Config[Config](),
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider": "index",
 		},

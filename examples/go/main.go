@@ -7,21 +7,17 @@ import (
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		myRandomResource, err := defang.NewRandom(ctx, "myRandomResource", &defang.RandomArgs{
-			Length: pulumi.Int(24),
+		_, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
+			ProviderID: pulumi.String("aws"),
+			Name:       pulumi.String("my-project"),
+			ConfigPaths: pulumi.StringArray{
+				pulumi.String("../../compose.yaml.example"),
+			},
 		})
 		if err != nil {
 			return err
 		}
-		_, err = defang.NewRandomComponent(ctx, "myRandomComponent", &defang.RandomComponentArgs{
-			Length: pulumi.Int(24),
-		})
-		if err != nil {
-			return err
-		}
-		ctx.Export("output", pulumi.StringMap{
-			"value": myRandomResource.Result,
-		})
+		ctx.Export("output", nil)
 		return nil
 	})
 }

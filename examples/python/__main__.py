@@ -1,8 +1,8 @@
 import pulumi
 import pulumi_defang as defang
 
-my_random_resource = defang.Random("myRandomResource", length=24)
-my_random_component = defang.RandomComponent("myRandomComponent", length=24)
-pulumi.export("output", {
-    "value": my_random_resource.result,
-})
+my_project = defang.Project("myProject",
+    provider_id="aws",
+    name="my-project",
+    config_paths=["../../compose.yaml.example"])
+pulumi.export("output", None)

@@ -6,15 +6,14 @@ plugins:
       path: ../../bin
 
 resources:
-  myRandomResource:
-    type: defang:Random
+  myProject:
+    type: defang:Project
     properties:
-      length: 24
-  myRandomComponent:
-    type: defang:RandomComponent
-    properties:
-      length: 24
+      providerID: aws
+      name: my-project
+      configPaths:
+        - ../../compose.yaml.example
 
 outputs:
   output:
-    value: ${myRandomResource.result}
+    # value: ${myRandomResource.result}

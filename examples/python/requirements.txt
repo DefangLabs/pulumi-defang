@@ -1,2 +1,2 @@
-pulumi-defang==0.19.5-alpha.1739572993+71997dd0.dirty
+pulumi-defang==0.19.5-alpha.1740080560+e5048e46
 pulumi>=3.0.0,<4.0.0
