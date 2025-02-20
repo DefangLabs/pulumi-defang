@@ -20,6 +20,8 @@ TESTPARALLELISM := 4
 OS    := $(shell uname)
 SHELL := /bin/bash
 
+EXAMPLE_STACK_NAME := example
+
 prepare::
 	@if test -z "${NAME}"; then echo "NAME not set"; exit 1; fi
 	@if test -z "${REPOSITORY}"; then echo "REPOSITORY not set"; exit 1; fi
@@ -114,17 +116,16 @@ endef
 up::
 	$(call pulumi_login) \
 	cd ${EXAMPLES_DIR} && \
-	pulumi stack init dev && \
-	pulumi stack select dev && \
-	pulumi config set name dev && \
+	(pulumi stack select ${EXAMPLE_STACK_NAME} || pulumi stack init ${EXAMPLE_STACK_NAME}) && \
+	pulumi config set name ${EXAMPLE_STACK_NAME} && \
 	pulumi up -y
 
 down::
 	$(call pulumi_login) \
 	cd ${EXAMPLES_DIR} && \
-	pulumi stack select dev && \
+	pulumi stack select ${EXAMPLE_STACK_NAME} && \
 	pulumi destroy -y && \
-	pulumi stack rm dev -y
+	pulumi stack rm ${EXAMPLE_STACK_NAME} -y
 
 .PHONY: build
 # build: provider dotnet_sdk go_sdk nodejs_sdk python_sdk
