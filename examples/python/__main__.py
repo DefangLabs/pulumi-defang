@@ -5,4 +5,6 @@ my_project = defang.Project("myProject",
     provider_id="aws",
     name="my-project",
     config_paths=["../../compose.yaml.example"])
-pulumi.export("output", None)
+pulumi.export("output", {
+    "value": my_project.result,
+})

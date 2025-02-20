@@ -7,7 +7,7 @@ import (
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		_, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
+		myProject, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
 			ProviderID: pulumi.String("aws"),
 			Name:       pulumi.String("my-project"),
 			ConfigPaths: pulumi.StringArray{
@@ -17,7 +17,9 @@ func main() {
 		if err != nil {
 			return err
 		}
-		ctx.Export("output", nil)
+		ctx.Export("output", pulumi.StringMap{
+			"value": myProject.Result,
+		})
 		return nil
 	})
 }
