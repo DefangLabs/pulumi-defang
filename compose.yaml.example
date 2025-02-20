@@ -1,0 +1,14 @@
+services:
+  app:
+    restart: unless-stopped
+    image: redis:latest
+    ports:
+      - mode: host
+        target: 6379
+        published: 6379
+    deploy:
+      resources:
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
