@@ -70,13 +70,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, err
 	}
 
-	client := cli.NewGrpcClient(ctx, cli.DefangFabric)
-	provider, err := cli.NewProvider(ctx, input.ProviderID, client)
-	if err != nil {
-		return name, state, err
-	}
-
-	resp, err := client.CanIUse(ctx, &defangv1.CanIUseRequest{
+	resp, err := fabricClient.CanIUse(ctx, &defangv1.CanIUseRequest{
 		Project:  input.Name,
 		Provider: input.ProviderID.EnumValue(),
 	})
@@ -87,18 +81,18 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 
 	// Allow local override of the CD image
 	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.CdImage)
-	provider.SetCDImage(cdImage)
+	providerClient.SetCDImage(cdImage)
 
 	upload := compose.UploadModeDigest
 	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
-	deploy, _, err := cli.ComposeUp(ctx, project, client, provider, upload, mode.Value())
+	deploy, _, err := cli.ComposeUp(ctx, project, fabricClient, providerClient, upload, mode.Value())
 	if err != nil {
 		return name, state, err
 	}
 
 	state.Etag = types.ETag(deploy.GetEtag())
 
-	err = cli.TailUp(ctx, provider, project, deploy, cli.TailOptions{
+	err = cli.TailUp(ctx, providerClient, project, deploy, cli.TailOptions{
 		Verbose: true,
 	})
 

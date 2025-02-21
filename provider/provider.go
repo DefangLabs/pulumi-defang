@@ -15,6 +15,10 @@
 package provider
 
 import (
+	"context"
+
+	"github.com/DefangLabs/defang/src/pkg/cli"
+	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
@@ -25,7 +29,16 @@ var Version string
 
 const Name string = "defang"
 
-func Provider() p.Provider {
+var Fabric string = cli.DefangFabric
+var fabricClient client.FabricClient
+var providerClient client.Provider
+
+func Provider(ctx context.Context, fabric client.FabricClient, provider client.Provider) p.Provider {
+	// FIXME: I'm not sure how to set a new attribute on the p.Provider, so I'm writing to a global for now
+	fabricClient = fabric
+	providerClient = provider
+	cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
+
 	// We tell the provider what resources it needs to support.
 	// In this case, a single resource and component
 	return infer.Provider(infer.Options{
