@@ -15,6 +15,7 @@
 package tests
 
 import (
+	"context"
 	"testing"
 
 	"github.com/blang/semver"
@@ -28,22 +29,26 @@ import (
 	defang "github.com/DefangLabs/pulumi-defang/provider"
 )
 
-func TestRandomCreate(t *testing.T) {
-	prov := provider()
+func TestProjectCreate(t *testing.T) {
+	server := makeTestServer()
 
-	response, err := prov.Create(p.CreateRequest{
-		Urn: urn("Random"),
+	response, err := server.Create(p.CreateRequest{
+		Urn: urn("Project"),
 		Properties: resource.PropertyMap{
-			"length": resource.NewNumberProperty(12),
+			"name":       resource.NewStringProperty("my-project"),
+			"providerID": resource.NewStringProperty("test-provider"),
+			"configPaths": resource.NewArrayProperty([]resource.PropertyValue{
+				resource.NewStringProperty("../compose.yaml.example"),
+			}),
 		},
 		Preview: false,
 	})
 
 	require.NoError(t, err)
 
-	result := response.Properties["result"].StringValue()
-
-	assert.Len(t, result, 12)
+	assert.Equal(t, response.Properties["name"].StringValue(), "my-project")
+	assert.Equal(t, response.Properties["etag"].StringValue(), "abc123")
+	assert.Equal(t, response.Properties["providerID"].StringValue(), "test-provider")
 }
 
 // urn is a helper function to build an urn for running integration tests.
@@ -53,6 +58,10 @@ func urn(typ string) resource.URN {
 }
 
 // Create a test server.
-func provider() integration.Server {
-	return integration.NewServer(defang.Name, semver.MustParse("1.0.0"), defang.Provider())
+func makeTestServer() integration.Server {
+	ctx := context.TODO()
+	mockClient := FabricClientMock{}
+	mockCloudProvider := CloudProviderMock{}
+
+	return integration.NewServer(defang.Name, semver.MustParse("1.0.0"), defang.Provider(ctx, mockClient, mockCloudProvider))
 }
