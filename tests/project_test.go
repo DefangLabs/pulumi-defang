@@ -1,20 +1,23 @@
-package provider
+package tests
 
 import (
 	"testing"
 
-	"github.com/blang/semver"
 	integration "github.com/pulumi/pulumi-go-provider/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestProject(t *testing.T) {
-	server := integration.NewServer("defang", semver.Version{Minor: 1}, Provider())
+	server := makeTestServer()
 	integration.LifeCycleTest{
 		Resource: "defang:index:Project",
 		Create: integration.Operation{
-			Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{}),
+			Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{
+				"name":        "my-project",
+				"providerID":  "test-provider",
+				"configPaths": []string{"../compose.yaml.example"},
+			}),
 			Hook: func(_inputs, output resource.PropertyMap) {
 				t.Logf("Outputs: %v", output)
 				result := output["result"].StringValue()

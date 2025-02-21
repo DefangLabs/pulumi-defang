@@ -146,7 +146,9 @@ install: install_nodejs_sdk
 
 GO_TEST	 := go test -v -count=1 -cover -timeout 2h -parallel ${TESTPARALLELISM}
 
-test_all: test_provider
+test: test_provider
+
+test_all: test
 	cd tests/sdk/nodejs && $(GO_TEST) ./...
 	cd tests/sdk/python && $(GO_TEST) ./...
 	cd tests/sdk/go && $(GO_TEST) ./...
