@@ -20,16 +20,17 @@ func TestProject(t *testing.T) {
 			}),
 			Hook: func(_inputs, output resource.PropertyMap) {
 				t.Logf("Outputs: %v", output)
-				result := output["result"].StringValue()
-				assert.Len(t, result, 24)
+				assert.Equal(t, output["name"].StringValue(), "my-project")
+				assert.Equal(t, output["etag"].StringValue(), "abc123")
+				assert.Equal(t, output["providerID"].StringValue(), "test-provider")
 			},
 		},
 		Updates: []integration.Operation{
 			{
 				Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{}),
 				Hook: func(_inputs, output resource.PropertyMap) {
-					result := output["result"].StringValue()
-					assert.Len(t, result, 10)
+					t.Logf("Outputs: %v", output)
+					assert.Equal(t, output["etag"].StringValue(), "abc123")
 				},
 			},
 		},

@@ -2,56 +2,70 @@ package tests
 
 import (
 	"context"
-	"errors"
 
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/cli/client/byoc/aws"
 	"github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
-	"github.com/bufbuild/connect-go"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type MockSubscribeServerStream struct {
-	Resps []*defangv1.SubscribeResponse
-	Error error
+	err      error
+	msg      *defangv1.SubscribeResponse
+	received bool
 }
 
-func (*MockSubscribeServerStream) Close() error {
+func (s *MockSubscribeServerStream) Close() error {
 	return nil
 }
 
-func (m *MockSubscribeServerStream) Receive() bool {
-	return false
+func (s *MockSubscribeServerStream) Err() error {
+	return s.err
 }
 
-func (m *MockSubscribeServerStream) Msg() *defangv1.SubscribeResponse {
-	return nil
+func (s *MockSubscribeServerStream) Msg() *defangv1.SubscribeResponse {
+	return s.msg
 }
 
-func (m *MockSubscribeServerStream) Err() error {
-	return connect.NewError(connect.CodeCanceled, errors.New("cancel connect error")) // cancel the connection after 5 retries to avoid infinite loop
+func (s *MockSubscribeServerStream) Receive() bool {
+	s.received = true
+	return s.received
 }
 
 type MockFollowServerStream struct {
-	Resps []*defangv1.TailResponse
-	Error error
+	err      error
+	msg      *defangv1.TailResponse
+	received bool
+	read     bool
+	closed   bool
 }
 
-func (*MockFollowServerStream) Close() error {
+func (s *MockFollowServerStream) Close() error {
+	s.closed = true
 	return nil
 }
 
-func (m *MockFollowServerStream) Receive() bool {
-	return false
+func (s *MockFollowServerStream) Err() error {
+	return s.err
 }
 
-func (m *MockFollowServerStream) Msg() *defangv1.TailResponse {
-	return nil
+func (s *MockFollowServerStream) Msg() *defangv1.TailResponse {
+	if s.read {
+		return nil
+	}
+	s.read = true
+
+	return s.msg
 }
 
-func (m *MockFollowServerStream) Err() error {
-	return connect.NewError(connect.CodeCanceled, errors.New("cancel connect error")) // cancel the connection after 5 retries to avoid infinite loop
+func (s *MockFollowServerStream) Receive() bool {
+	if s.closed {
+		return false
+	}
+
+	s.received = true
+	return s.received
 }
 
 type CloudProviderMock struct{}
@@ -99,19 +113,17 @@ func (c CloudProviderMock) Destroy(context.Context, *defangv1.DestroyRequest) (t
 }
 
 func (c CloudProviderMock) Follow(context.Context, *defangv1.TailRequest) (client.ServerStream[defangv1.TailResponse], error) {
-	resps := []*defangv1.TailResponse{
-		{
-			Service: "service1",
-			Etag:    "abc123",
-			Entries: []*defangv1.LogEntry{
-				{
-					Timestamp: timestamppb.Now(),
-					Message:   "info message",
-				},
+	msg := defangv1.TailResponse{
+		Service: "service1",
+		Etag:    "abc123",
+		Entries: []*defangv1.LogEntry{
+			{
+				Timestamp: timestamppb.Now(),
+				Message:   "info message",
 			},
 		},
 	}
-	stream := &MockFollowServerStream{Resps: resps}
+	stream := &MockFollowServerStream{msg: &msg}
 	return stream, nil
 }
 
@@ -153,13 +165,11 @@ func (c CloudProviderMock) SetCDImage(string) {
 }
 
 func (c CloudProviderMock) Subscribe(context.Context, *defangv1.SubscribeRequest) (client.ServerStream[defangv1.SubscribeResponse], error) {
-	resps := []*defangv1.SubscribeResponse{
-		{
-			Name:  "service1",
-			State: defangv1.ServiceState_DEPLOYMENT_COMPLETED,
-		},
+	msg := defangv1.SubscribeResponse{
+		Name:  "app",
+		State: defangv1.ServiceState_DEPLOYMENT_COMPLETED,
 	}
-	stream := &MockSubscribeServerStream{Resps: resps}
+	stream := &MockSubscribeServerStream{msg: &msg}
 	return stream, nil
 }
 
