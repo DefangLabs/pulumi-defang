@@ -42,5 +42,4 @@ func Provider() p.Provider {
 
 // Define some provider-level configuration.
 type Config struct {
-	Scream *bool `pulumi:"itsasecret,optional"`
 }
