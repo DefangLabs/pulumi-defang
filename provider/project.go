@@ -93,12 +93,9 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	state.Etag = types.ETag(deploy.GetEtag())
 
 	err = cli.TailUp(ctx, providerClient, project, deploy, cli.TailOptions{
-		Verbose: true,
+		Verbose:     true,
+		WaitTimeout: 60 * 60,
 	})
 
-	if err != nil {
-		return name, state, err
-	}
-
-	return name, state, nil
+	return name, state, err
 }
