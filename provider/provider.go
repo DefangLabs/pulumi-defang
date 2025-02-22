@@ -29,15 +29,20 @@ var Version string
 
 const Name string = "defang"
 
-var Fabric string = cli.DefangFabric
-var fabricClient client.FabricClient
-var providerClient client.Provider
+var (
+	Fabric         string = cli.DefangFabric
+	fabricClient   client.FabricClient
+	providerClient client.Provider
+)
 
 func Provider(ctx context.Context, fabric client.FabricClient, provider client.Provider) p.Provider {
 	// FIXME: I'm not sure how to set a new attribute on the p.Provider, so I'm writing to a global for now
 	fabricClient = fabric
 	providerClient = provider
-	cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
+	// err := cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	// We tell the provider what resources it needs to support.
 	// In this case, a single resource and component
@@ -54,5 +59,4 @@ func Provider(ctx context.Context, fabric client.FabricClient, provider client.P
 }
 
 // Define some provider-level configuration.
-type Config struct {
-}
+type Config struct{}
