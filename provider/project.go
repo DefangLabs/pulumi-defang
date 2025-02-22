@@ -16,6 +16,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/DefangLabs/defang/src/cmd/cli/command"
 	"github.com/DefangLabs/defang/src/pkg"
@@ -25,6 +26,8 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 )
+
+const defaultWaitTimeout = 60 * 60
 
 // Each resource has a controlling struct.
 // Resource behavior is determined by implementing methods on the controlling struct.
@@ -53,8 +56,8 @@ type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
 	// Here we define a required output called result.
-	Result string `pulumi:"result"`
-	Etag   string `pulumi:"etag"`
+	Result string     `pulumi:"result"`
+	Etag   types.ETag `pulumi:"etag"`
 }
 
 // All resources must implement Create at a minimum.
@@ -67,35 +70,34 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	loader := compose.NewLoader(compose.WithProjectName(input.Name), compose.WithPath(input.ConfigPaths...))
 	project, err := loader.LoadProject(ctx)
 	if err != nil {
-		return name, state, err
+		return name, state, fmt.Errorf("LoadProject: %w", err)
 	}
 
 	resp, err := fabricClient.CanIUse(ctx, &defangv1.CanIUseRequest{
 		Project:  input.Name,
 		Provider: input.ProviderID.EnumValue(),
 	})
-
 	if err != nil {
-		return name, state, err
+		return name, state, fmt.Errorf("CanIUse: %w", err)
 	}
 
 	// Allow local override of the CD image
-	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.CdImage)
+	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
 	providerClient.SetCDImage(cdImage)
 
 	upload := compose.UploadModeDigest
 	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
 	deploy, _, err := cli.ComposeUp(ctx, project, fabricClient, providerClient, upload, mode.Value())
 	if err != nil {
-		return name, state, err
+		return name, state, fmt.Errorf("ComposeUp: %w", err)
 	}
 
-	state.Etag = types.ETag(deploy.GetEtag())
+	state.Etag = deploy.GetEtag()
 
 	err = cli.TailUp(ctx, providerClient, project, deploy, cli.TailOptions{
 		Verbose:     true,
-		WaitTimeout: 60 * 60,
+		WaitTimeout: defaultWaitTimeout,
 	})
 
-	return name, state, err
+	return name, state, fmt.Errorf("TailUp: %w", err)
 }
