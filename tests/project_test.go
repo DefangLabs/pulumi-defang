@@ -19,7 +19,6 @@ func TestProject(t *testing.T) {
 				"configPaths": []string{"../compose.yaml.example"},
 			}),
 			Hook: func(_inputs, output resource.PropertyMap) {
-				t.Logf("Outputs: %v", output)
 				assert.Equal(t, output["name"].StringValue(), "my-project")
 				assert.Equal(t, output["etag"].StringValue(), "abc123")
 				assert.Equal(t, output["providerID"].StringValue(), "test-provider")
@@ -27,9 +26,12 @@ func TestProject(t *testing.T) {
 		},
 		Updates: []integration.Operation{
 			{
-				Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{}),
+				Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{
+					"name":        "my-project",
+					"providerID":  "test-provider",
+					"configPaths": []string{"../compose.yaml.example"},
+				}),
 				Hook: func(_inputs, output resource.PropertyMap) {
-					t.Logf("Outputs: %v", output)
 					assert.Equal(t, output["etag"].StringValue(), "abc123")
 				},
 			},
