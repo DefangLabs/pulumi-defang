@@ -16,6 +16,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/DefangLabs/defang/src/pkg/cli"
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
@@ -39,10 +40,10 @@ func Provider(ctx context.Context, fabric client.FabricClient, provider client.P
 	// FIXME: I'm not sure how to set a new attribute on the p.Provider, so I'm writing to a global for now
 	fabricClient = fabric
 	providerClient = provider
-	// err := cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
-	// if err != nil {
-	// 	panic(err)
-	// }
+
+	if err := Authenticate(ctx); err != nil {
+		panic(fmt.Errorf("failed to authenticate: %w", err))
+	}
 
 	// We tell the provider what resources it needs to support.
 	// In this case, a single resource and component
@@ -60,3 +61,12 @@ func Provider(ctx context.Context, fabric client.FabricClient, provider client.P
 
 // Define some provider-level configuration.
 type Config struct{}
+
+func Authenticate(ctx context.Context) error {
+	token := cli.GetExistingToken(Fabric)
+	if token != "" {
+		return nil
+	}
+
+	return cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
+}
