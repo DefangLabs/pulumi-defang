@@ -16,6 +16,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/defang/src/cmd/cli/command"
@@ -99,5 +100,9 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		WaitTimeout: defaultWaitTimeout,
 	})
 
-	return name, state, fmt.Errorf("TailUp: %w", err)
+	if err != nil && !errors.Is(err, cli.ErrDeploymentCompleted) {
+		return name, state, fmt.Errorf("Tail: %w", err)
+	}
+
+	return name, state, nil
 }
