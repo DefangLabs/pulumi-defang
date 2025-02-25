@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/DefangLabs/defang/src/cmd/cli/command"
 	"github.com/DefangLabs/defang/src/pkg"
@@ -57,8 +58,10 @@ type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
 	// Here we define a required output called result.
-	Result string     `pulumi:"result"`
-	Etag   types.ETag `pulumi:"etag"`
+	Result   string                  `pulumi:"result"`
+	Etag     types.ETag              `pulumi:"etag"`
+	AlbArn   string                  `pulumi:"albArn"`
+	Services []*defangv1.ServiceInfo `pulumi:"services"`
 }
 
 // All resources must implement Create at a minimum.
@@ -103,6 +106,33 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	if err != nil && !errors.Is(err, cli.ErrDeploymentCompleted) {
 		return name, state, fmt.Errorf("Tail: %w", err)
 	}
+
+	getProjectUpdateMaxRetries := 10
+	var projectUpdate *defangv1.ProjectUpdate
+	for i := 0; i < getProjectUpdateMaxRetries; i++ {
+		projectUpdate, err := providerClient.GetProjectUpdate(ctx, input.Name)
+		if err != nil {
+			return name, state, fmt.Errorf("GetProjectUpdate: %w", err)
+		}
+		allMatch := true
+		for si := range projectUpdate.GetServices() {
+			if si.GetEtag() != state.Etag {
+				allMatch = false
+			}
+		}
+		if allMatch {
+			break
+		}
+
+		pkg.SleepWithContext(ctx, 1*time.Second)
+	}
+
+	if projectUpdate == nil {
+		return name, state, errors.New("GetProjectUpdate: no project update found")
+	}
+
+	state.AlbArn = projectUpdate.GetAlbArn()
+	state.Services = projectUpdate.GetServices()
 
 	return name, state, nil
 }
