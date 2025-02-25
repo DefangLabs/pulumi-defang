@@ -1,0 +1,20 @@
+name: provider-defang
+runtime: yaml
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin
+
+resources:
+  myRandomResource:
+    type: defang:Random
+    properties:
+      length: 24
+  myRandomComponent:
+    type: defang:RandomComponent
+    properties:
+      length: 24
+
+outputs:
+  output:
+    value: ${myRandomResource.result}

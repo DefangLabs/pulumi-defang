@@ -1,0 +1,6 @@
+.direnv
+.envrc
+.pulumi-state
+bin
+sdk
+schema-defang.json
