@@ -1,3 +1,0 @@
-name: defangtest
-runtime: nodejs
-description: Test for the Defang Pulumi provider
