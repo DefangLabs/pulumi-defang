@@ -72,7 +72,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	loader := compose.NewLoader(compose.WithProjectName(input.Name), compose.WithPath(input.ConfigPaths...))
 	project, err := loader.LoadProject(ctx)
 	if err != nil {
-		return name, state, fmt.Errorf("LoadProject: %w", err)
+		return name, state, fmt.Errorf("failed to load project: %w", err)
 	}
 
 	resp, err := fabricClient.CanIUse(ctx, &defangv1.CanIUseRequest{
@@ -80,7 +80,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		Provider: input.ProviderID.EnumValue(),
 	})
 	if err != nil {
-		return name, state, fmt.Errorf("CanIUse: %w", err)
+		return name, state, fmt.Errorf("failed to get CanIUse: %w", err)
 	}
 
 	// Allow local override of the CD image
@@ -92,7 +92,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	deployTime := time.Now()
 	deploy, _, err := cli.ComposeUp(ctx, project, fabricClient, providerClient, upload, mode.Value())
 	if err != nil {
-		return name, state, fmt.Errorf("ComposeUp: %w", err)
+		return name, state, fmt.Errorf("failed to deploy: %w", err)
 	}
 
 	state.Etag = deploy.GetEtag()
@@ -107,7 +107,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	for i := 0; i < getProjectUpdateMaxRetries; i++ {
 		projectUpdate, err := providerClient.GetProjectUpdate(ctx, input.Name)
 		if err != nil {
-			return name, state, fmt.Errorf("GetProjectUpdate: %w", err)
+			return name, state, fmt.Errorf("failed to get project outputs: %w", err)
 		}
 		allMatch := true
 		for _, si := range projectUpdate.GetServices() {
@@ -123,7 +123,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	}
 
 	if projectUpdate == nil {
-		return name, state, errors.New("GetProjectUpdate: no project update found")
+		return name, state, errors.New("no project update found")
 	}
 
 	state.AlbArn = projectUpdate.GetAlbArn()
