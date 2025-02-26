@@ -87,7 +87,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
 	providerClient.SetCDImage(cdImage)
 
-	deploy, err := deployProject(ctx, cdImage, project)
+	deploy, err := deployProject(ctx, fabricClient, providerClient, project)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to deploy project: %w", err)
 	}
@@ -110,16 +110,16 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	return name, state, nil
 }
 
-func deployProject(ctx context.Context, cdImage string, project *compose.Project) (*defangv1.DeployResponse, error) {
+func deployProject(ctx context.Context, fabric client.FabricClient, provider client.Provider, project *compose.Project) (*defangv1.DeployResponse, error) {
 	upload := compose.UploadModeDigest
 	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
 	deployTime := time.Now()
-	deploy, _, err := cli.ComposeUp(ctx, project, fabricClient, providerClient, upload, mode.Value())
+	deploy, _, err := cli.ComposeUp(ctx, project, fabric, provider, upload, mode.Value())
 	if err != nil {
 		return nil, fmt.Errorf("failed to deploy: %w", err)
 	}
 
-	err = cli.WaitAndTail(ctx, project, fabricClient, providerClient, deploy, 60*time.Minute, deployTime, true)
+	err = cli.WaitAndTail(ctx, project, fabric, provider, deploy, 60*time.Minute, deployTime, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to tail: %w", err)
 	}
