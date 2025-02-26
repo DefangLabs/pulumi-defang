@@ -62,6 +62,8 @@ type ProjectState struct {
 	Services []*defangv1.ServiceInfo `pulumi:"services"`
 }
 
+var errNoProjectUpdate = errors.New("no project update found")
+
 // All resources must implement Create at a minimum.
 func (Project) Create(ctx context.Context, name string, input ProjectArgs, preview bool) (string, ProjectState, error) {
 	state := ProjectState{ProjectArgs: input}
@@ -123,7 +125,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	}
 
 	if projectUpdate == nil {
-		return name, state, errors.New("no project update found")
+		return name, state, errNoProjectUpdate
 	}
 
 	state.AlbArn = projectUpdate.GetAlbArn()
