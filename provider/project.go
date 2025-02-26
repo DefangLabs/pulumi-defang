@@ -29,8 +29,6 @@ import (
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 )
 
-const defaultWaitTimeout = 60 * 60
-
 // Each resource has a controlling struct.
 // Resource behavior is determined by implementing methods on the controlling struct.
 // The `Create` method is mandatory, but other methods are optional.
@@ -91,6 +89,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 
 	upload := compose.UploadModeDigest
 	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
+	deployTime := time.Now()
 	deploy, _, err := cli.ComposeUp(ctx, project, fabricClient, providerClient, upload, mode.Value())
 	if err != nil {
 		return name, state, fmt.Errorf("ComposeUp: %w", err)
@@ -98,13 +97,9 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 
 	state.Etag = deploy.GetEtag()
 
-	err = cli.TailUp(ctx, providerClient, project, deploy, cli.TailOptions{
-		Verbose:     true,
-		WaitTimeout: defaultWaitTimeout,
-	})
-
-	if err != nil && !errors.Is(err, cli.ErrDeploymentCompleted) {
-		return name, state, fmt.Errorf("Tail: %w", err)
+	err = cli.WaitAndTail(ctx, project, fabricClient, providerClient, deploy, 60*time.Minute, deployTime, true)
+	if err != nil {
+		return name, state, fmt.Errorf("failed to tail: %w", err)
 	}
 
 	getProjectUpdateMaxRetries := 10
@@ -115,7 +110,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 			return name, state, fmt.Errorf("GetProjectUpdate: %w", err)
 		}
 		allMatch := true
-		for si := range projectUpdate.GetServices() {
+		for _, si := range projectUpdate.GetServices() {
 			if si.GetEtag() != state.Etag {
 				allMatch = false
 			}

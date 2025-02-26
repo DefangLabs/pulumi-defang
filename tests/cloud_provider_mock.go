@@ -131,6 +131,20 @@ func (c CloudProviderMock) Follow(context.Context, *defangv1.TailRequest) (clien
 	return stream, nil
 }
 
+func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.ProjectUpdate, error) {
+	return &defangv1.ProjectUpdate{
+		AlbArn: "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/app/my-load-balancer/50dc6c495c0c9188",
+		Services: []*defangv1.ServiceInfo{
+			{
+				Service: &defangv1.Service{
+					Name: "service1",
+				},
+				Etag: "abc123",
+			},
+		},
+	}, nil
+}
+
 func (c CloudProviderMock) GetService(context.Context, *defangv1.GetRequest) (*defangv1.ServiceInfo, error) {
 	return nil, nil
 }

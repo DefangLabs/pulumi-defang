@@ -3,7 +3,7 @@ module github.com/DefangLabs/pulumi-defang
 go 1.22.12
 
 require (
-	github.com/DefangLabs/defang/src v0.0.0-20250221180150-9874ecf302b6
+	github.com/DefangLabs/defang/src v0.0.0-20250226233239-e0f4f715d6f8
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/pulumi/pulumi-go-provider v0.24.1
 	github.com/pulumi/pulumi-random/sdk/v4 v4.17.0
