@@ -55,8 +55,6 @@ type ProjectArgs struct {
 type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
-	// Here we define a required output called result.
-	Result   string                  `pulumi:"result"`
 	Etag     types.ETag              `pulumi:"etag"`
 	AlbArn   string                  `pulumi:"albArn"`
 	Services []*defangv1.ServiceInfo `pulumi:"services"`

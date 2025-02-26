@@ -16,4 +16,5 @@ resources:
 
 outputs:
   output:
-    value: ${myProject.result}
+    albArn: ${myProject.albArn}
+    etag: ${myProject.etag}
