@@ -104,24 +104,9 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to tail: %w", err)
 	}
 
-	getProjectUpdateMaxRetries := 10
-	var projectUpdate *defangv1.ProjectUpdate
-	for i := 0; i < getProjectUpdateMaxRetries; i++ {
-		projectUpdate, err := providerClient.GetProjectUpdate(ctx, input.Name)
-		if err != nil {
-			return name, state, fmt.Errorf("failed to get project outputs: %w", err)
-		}
-		allMatch := true
-		for _, si := range projectUpdate.GetServices() {
-			if si.GetEtag() != state.Etag {
-				allMatch = false
-			}
-		}
-		if allMatch {
-			break
-		}
-
-		pkg.SleepWithContext(ctx, 1*time.Second)
+	projectUpdate, err := getProjectOutputs(ctx, providerClient, input.Name, state.Etag)
+	if err != nil {
+		return name, state, fmt.Errorf("failed to get project outputs: %w", err)
 	}
 
 	if projectUpdate == nil {
@@ -132,4 +117,36 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	state.Services = projectUpdate.GetServices()
 
 	return name, state, nil
+}
+
+func getProjectOutputs(
+	ctx context.Context,
+	providerClient client.Provider,
+	name string,
+	etag string,
+) (*defangv1.ProjectUpdate, error) {
+	getProjectUpdateMaxRetries := 10
+	var projectUpdate *defangv1.ProjectUpdate
+	var err error
+	for range getProjectUpdateMaxRetries {
+		projectUpdate, err = providerClient.GetProjectUpdate(ctx, name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get project update: %w", err)
+		}
+		allMatch := true
+		for _, si := range projectUpdate.GetServices() {
+			if si.GetEtag() != etag {
+				allMatch = false
+			}
+		}
+		if allMatch {
+			break
+		}
+
+		err = pkg.SleepWithContext(ctx, 1*time.Second)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sleep: %w", err)
+		}
+	}
+	return projectUpdate, nil
 }
