@@ -68,5 +68,10 @@ func Authenticate(ctx context.Context) error {
 		return nil
 	}
 
-	return cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
+	err := cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	return nil
 }
