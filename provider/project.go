@@ -75,17 +75,10 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to load project: %w", err)
 	}
 
-	resp, err := fabricClient.CanIUse(ctx, &defangv1.CanIUseRequest{
-		Project:  input.Name,
-		Provider: input.ProviderID.EnumValue(),
-	})
+	err = configureProviderCdImage(ctx, &providerClient, input.Name, input.ProviderID)
 	if err != nil {
-		return name, state, fmt.Errorf("failed to get CanIUse: %w", err)
+		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
 	}
-
-	// Allow local override of the CD image
-	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
-	providerClient.SetCDImage(cdImage)
 
 	deploy, err := deployProject(ctx, fabricClient, providerClient, project)
 	if err != nil {
@@ -108,6 +101,21 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	state.Services = projectUpdate.GetServices()
 
 	return name, state, nil
+}
+
+func configureProviderCdImage(ctx context.Context, provider *client.Provider, projectName string, providerID client.ProviderID) error {
+	resp, err := fabricClient.CanIUse(ctx, &defangv1.CanIUseRequest{
+		Project:  projectName,
+		Provider: providerID.EnumValue(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get CanIUse: %w", err)
+	}
+
+	// Allow local override of the CD image
+	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
+	providerClient.SetCDImage(cdImage)
+
 }
 
 func deployProject(ctx context.Context, fabric client.FabricClient, provider client.Provider, project *compose.Project) (*defangv1.DeployResponse, error) {
