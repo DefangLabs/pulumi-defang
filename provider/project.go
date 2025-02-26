@@ -83,7 +83,10 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to get CanIUse: %w", err)
 	}
 
+	// Allow local override of the CD image
 	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
+	providerClient.SetCDImage(cdImage)
+
 	deploy, err := deployProject(ctx, cdImage, project)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to deploy project: %w", err)
@@ -108,9 +111,6 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 }
 
 func deployProject(ctx context.Context, cdImage string, project *compose.Project) (*defangv1.DeployResponse, error) {
-	// Allow local override of the CD image
-	providerClient.SetCDImage(cdImage)
-
 	upload := compose.UploadModeDigest
 	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
 	deployTime := time.Now()
