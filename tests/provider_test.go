@@ -15,18 +15,13 @@
 package tests
 
 import (
-	"context"
 	"testing"
 
-	"github.com/blang/semver"
 	p "github.com/pulumi/pulumi-go-provider"
-	"github.com/pulumi/pulumi-go-provider/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	defang "github.com/DefangLabs/pulumi-defang/provider"
 )
 
 func TestProjectCreate(t *testing.T) {
@@ -55,13 +50,4 @@ func TestProjectCreate(t *testing.T) {
 func urn(typ string) resource.URN {
 	return resource.NewURN("stack", "proj", "",
 		tokens.Type("test:index:"+typ), "name")
-}
-
-// Create a test server.
-func makeTestServer() integration.Server {
-	ctx := context.TODO()
-	mockClient := FabricClientMock{}
-	mockCloudProvider := CloudProviderMock{}
-
-	return integration.NewServer(defang.Name, semver.MustParse("1.0.0"), defang.Provider(ctx, mockClient, mockCloudProvider))
 }

@@ -15,25 +15,12 @@
 package main
 
 import (
-	"context"
-
 	p "github.com/pulumi/pulumi-go-provider"
 
-	"github.com/DefangLabs/defang/src/pkg/cli"
-	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	defang "github.com/DefangLabs/pulumi-defang/provider"
 )
 
 // Serve the provider against Pulumi's Provider protocol.
 func main() {
-	ctx := context.Background()
-	fabric := cli.NewGrpcClient(ctx, defang.Fabric)
-	// FIXME: "aws" is a place-holder value.
-	// we won't know which cloud provider id to use yet.
-	providerID := client.ProviderID("aws")
-	cloudProvider, err := cli.NewProvider(ctx, providerID, fabric)
-	if err != nil {
-		panic(err)
-	}
-	_ = p.RunProvider(defang.Name, defang.Version, defang.Provider(ctx, fabric, cloudProvider))
+	_ = p.RunProvider(defang.Name, defang.Version, defang.Provider())
 }

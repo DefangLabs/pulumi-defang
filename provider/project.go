@@ -75,19 +75,28 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to load project: %w", err)
 	}
 
-	err = configureProviderCdImage(ctx, &providerClient, input.Name, input.ProviderID)
+	driver, err := NewDriver(ctx, input.ProviderID)
+	if err != nil {
+		return name, state, fmt.Errorf("failed to create driver: %w", err)
+	}
+
+	if err := Authenticate(ctx, driver.GetFabricClient()); err != nil {
+		panic(fmt.Errorf("failed to authenticate: %w", err))
+	}
+
+	err = configureProviderCdImage(ctx, driver, input.Name, input.ProviderID)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
 	}
 
-	deploy, err := deployProject(ctx, fabricClient, providerClient, project)
+	deploy, err := deployProject(ctx, driver.GetFabricClient(), driver.GetProvider(), project)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to deploy project: %w", err)
 	}
 
 	etag := deploy.GetEtag()
 
-	projectUpdate, err := getProjectOutputs(ctx, providerClient, project.Name, etag)
+	projectUpdate, err := getProjectOutputs(ctx, driver.GetProvider(), project.Name, etag)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to get project outputs: %w", err)
 	}
@@ -103,8 +112,13 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	return name, state, nil
 }
 
-func configureProviderCdImage(ctx context.Context, provider *client.Provider, projectName string, providerID client.ProviderID) error {
-	resp, err := fabricClient.CanIUse(ctx, &defangv1.CanIUseRequest{
+func configureProviderCdImage(
+	ctx context.Context,
+	driver IDriver,
+	projectName string,
+	providerID client.ProviderID,
+) error {
+	resp, err := driver.GetFabricClient().CanIUse(ctx, &defangv1.CanIUseRequest{
 		Project:  projectName,
 		Provider: providerID.EnumValue(),
 	})
@@ -114,11 +128,17 @@ func configureProviderCdImage(ctx context.Context, provider *client.Provider, pr
 
 	// Allow local override of the CD image
 	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
-	providerClient.SetCDImage(cdImage)
+	driver.GetProvider().SetCDImage(cdImage)
 
+	return nil
 }
 
-func deployProject(ctx context.Context, fabric client.FabricClient, provider client.Provider, project *compose.Project) (*defangv1.DeployResponse, error) {
+func deployProject(
+	ctx context.Context,
+	fabric client.FabricClient,
+	provider client.Provider,
+	project *compose.Project,
+) (*defangv1.DeployResponse, error) {
 	upload := compose.UploadModeDigest
 	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
 	deployTime := time.Now()
@@ -165,4 +185,18 @@ func getProjectOutputs(
 		}
 	}
 	return projectUpdate, nil
+}
+
+func Authenticate(ctx context.Context, fabric client.FabricClient) error {
+	token := cli.GetExistingToken(cli.DefangFabric)
+	if token != "" {
+		return nil
+	}
+
+	err := cli.NonInteractiveLogin(ctx, fabric, cli.DefangFabric)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	return nil
 }

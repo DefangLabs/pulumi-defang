@@ -15,11 +15,6 @@
 package provider
 
 import (
-	"context"
-	"fmt"
-
-	"github.com/DefangLabs/defang/src/pkg/cli"
-	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
@@ -30,21 +25,7 @@ var Version string
 
 const Name string = "defang"
 
-var (
-	Fabric         string = cli.DefangFabric
-	fabricClient   client.FabricClient
-	providerClient client.Provider
-)
-
-func Provider(ctx context.Context, fabric client.FabricClient, provider client.Provider) p.Provider {
-	// FIXME: I'm not sure how to set a new attribute on the p.Provider, so I'm writing to a global for now
-	fabricClient = fabric
-	providerClient = provider
-
-	if err := Authenticate(ctx); err != nil {
-		panic(fmt.Errorf("failed to authenticate: %w", err))
-	}
-
+func Provider() p.Provider {
 	// We tell the provider what resources it needs to support.
 	// In this case, a single resource and component
 	return infer.Provider(infer.Options{
@@ -61,17 +42,3 @@ func Provider(ctx context.Context, fabric client.FabricClient, provider client.P
 
 // Define some provider-level configuration.
 type Config struct{}
-
-func Authenticate(ctx context.Context) error {
-	token := cli.GetExistingToken(Fabric)
-	if token != "" {
-		return nil
-	}
-
-	err := cli.NonInteractiveLogin(ctx, fabricClient, Fabric)
-	if err != nil {
-		return fmt.Errorf("failed to authenticate: %w", err)
-	}
-
-	return nil
-}
