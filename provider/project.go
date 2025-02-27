@@ -62,6 +62,8 @@ type ProjectState struct {
 
 var errNoProjectUpdate = errors.New("no project update found")
 
+const defaultWaitTimeout = 60 * time.Minute
+
 // All resources must implement Create at a minimum.
 func (Project) Create(ctx context.Context, name string, input ProjectArgs, preview bool) (string, ProjectState, error) {
 	state := ProjectState{ProjectArgs: input}
@@ -147,7 +149,7 @@ func deployProject(
 		return nil, fmt.Errorf("failed to deploy: %w", err)
 	}
 
-	err = cli.WaitAndTail(ctx, project, fabric, provider, deploy, 60*time.Minute, deployTime, true)
+	err = cli.WaitAndTail(ctx, project, fabric, provider, deploy, defaultWaitTimeout, deployTime, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to tail: %w", err)
 	}
