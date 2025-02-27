@@ -1,14 +1,9 @@
 services:
-  app:
-    restart: unless-stopped
-    image: redis:latest
+  web:
+    image: nginx:alpine
     ports:
-      - mode: host
-        target: 6379
-        published: 6379
-    deploy:
-      resources:
-        reservations:
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      - "8080:80"
+    volumes:
+      - type: tmpfs
+        target: /usr/share/nginx/html
+    command: ["sh", "-c", "echo 'Hello, world' > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"]
