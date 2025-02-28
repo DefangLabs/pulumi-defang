@@ -60,7 +60,7 @@ provider_debug:
 
 .PHONY: test_provider
 test_provider:
-	cd tests && go test -short -v -count=1 -cover -timeout 2h -parallel ${TESTPARALLELISM} ./...
+	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
 
 # dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet)
 # dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
@@ -149,7 +149,7 @@ only_build: build
 .PHONY: lint
 lint:
 	for DIR in "provider" "tests" ; do \
-		pushd $$DIR && golangci-lint run --fix --timeout 10m && popd ; \
+		pushd $$DIR && golangci-lint run --fix --timeout 5m && popd ; \
 	done
 
 .PHONY: install
@@ -158,7 +158,7 @@ lint:
 install: install_nodejs_sdk
 	cp $(WORKING_DIR)/bin/${PROVIDER} ${GOPATH}/bin
 
-GO_TEST	 := go test -v -count=1 -cover -timeout 2h -parallel ${TESTPARALLELISM}
+GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test
 test: test_provider
