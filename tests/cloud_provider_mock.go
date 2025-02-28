@@ -86,16 +86,22 @@ func (c CloudProviderMock) BootstrapList(context.Context) ([]string, error) {
 	return nil, nil
 }
 
-func (c CloudProviderMock) CreateUploadURL(context.Context, *defangv1.UploadURLRequest) (*defangv1.UploadURLResponse, error) {
-	return nil, nil
+func (c CloudProviderMock) CreateUploadURL(
+	context.Context,
+	*defangv1.UploadURLRequest,
+) (*defangv1.UploadURLResponse, error) {
+	return &defangv1.UploadURLResponse{}, nil
 }
 
-func (c CloudProviderMock) PrepareDomainDelegation(context.Context, client.PrepareDomainDelegationRequest) (*client.PrepareDomainDelegationResponse, error) {
-	return nil, nil
+func (c CloudProviderMock) PrepareDomainDelegation(
+	context.Context,
+	client.PrepareDomainDelegationRequest,
+) (*client.PrepareDomainDelegationResponse, error) {
+	return &client.PrepareDomainDelegationResponse{}, nil
 }
 
 func (c CloudProviderMock) Delete(context.Context, *defangv1.DeleteRequest) (*defangv1.DeleteResponse, error) {
-	return nil, nil
+	return &defangv1.DeleteResponse{}, nil
 }
 
 func (c CloudProviderMock) DeleteConfig(context.Context, *defangv1.Secrets) error {
@@ -116,7 +122,10 @@ func (c CloudProviderMock) Destroy(context.Context, *defangv1.DestroyRequest) (t
 	return types.ETag("abc123"), nil
 }
 
-func (c CloudProviderMock) Follow(context.Context, *defangv1.TailRequest) (client.ServerStream[defangv1.TailResponse], error) {
+func (c CloudProviderMock) Follow(
+	context.Context,
+	*defangv1.TailRequest,
+) (client.ServerStream[defangv1.TailResponse], error) {
 	msg := defangv1.TailResponse{
 		Service: "service1",
 		Etag:    "abc123",
@@ -146,11 +155,14 @@ func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.
 }
 
 func (c CloudProviderMock) GetService(context.Context, *defangv1.GetRequest) (*defangv1.ServiceInfo, error) {
-	return nil, nil
+	return &defangv1.ServiceInfo{}, nil
 }
 
-func (c CloudProviderMock) GetServices(context.Context, *defangv1.GetServicesRequest) (*defangv1.GetServicesResponse, error) {
-	return nil, nil
+func (c CloudProviderMock) GetServices(
+	context.Context,
+	*defangv1.GetServicesRequest,
+) (*defangv1.GetServicesResponse, error) {
+	return &defangv1.GetServicesResponse{}, nil
 }
 
 func (c CloudProviderMock) ListConfig(context.Context, *defangv1.ListConfigsRequest) (*defangv1.Secrets, error) {
@@ -164,7 +176,7 @@ func (c CloudProviderMock) Query(context.Context, *defangv1.DebugRequest) error 
 }
 
 func (c CloudProviderMock) Preview(context.Context, *defangv1.DeployRequest) (*defangv1.DeployResponse, error) {
-	return nil, nil
+	return &defangv1.DeployResponse{}, nil
 }
 
 func (c CloudProviderMock) PutConfig(context.Context, *defangv1.PutConfigRequest) error {
@@ -182,7 +194,10 @@ func (c CloudProviderMock) ServiceDNS(string) string {
 func (c CloudProviderMock) SetCDImage(string) {
 }
 
-func (c CloudProviderMock) Subscribe(context.Context, *defangv1.SubscribeRequest) (client.ServerStream[defangv1.SubscribeResponse], error) {
+func (c CloudProviderMock) Subscribe(
+	context.Context,
+	*defangv1.SubscribeRequest,
+) (client.ServerStream[defangv1.SubscribeResponse], error) {
 	msg := defangv1.SubscribeResponse{
 		Name:  "app",
 		State: defangv1.ServiceState_DEPLOYMENT_COMPLETED,

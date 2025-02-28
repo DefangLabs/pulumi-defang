@@ -11,45 +11,54 @@ import (
 
 type FabricClientMock struct{}
 
-func (m FabricClientMock) AgreeToS(ctx context.Context) error {
+func (m FabricClientMock) AgreeToS(context.Context) error {
 	return nil
 }
 
-func (m FabricClientMock) CanIUse(ctx context.Context, req *defangv1.CanIUseRequest) (*defangv1.CanIUseResponse, error) {
+func (m FabricClientMock) CanIUse(context.Context, *defangv1.CanIUseRequest) (*defangv1.CanIUseResponse, error) {
 	return &defangv1.CanIUseResponse{
 		CdImage: "test-cd-image",
 	}, nil
 }
 
-func (m FabricClientMock) CheckLoginAndToS(ctx context.Context) error {
+func (m FabricClientMock) CheckLoginAndToS(context.Context) error {
 	return nil
 }
 
-func (m FabricClientMock) Debug(ctx context.Context, req *defangv1.DebugRequest) (*defangv1.DebugResponse, error) {
+func (m FabricClientMock) Debug(context.Context, *defangv1.DebugRequest) (*defangv1.DebugResponse, error) {
 	return &defangv1.DebugResponse{}, nil
 }
 
-func (m FabricClientMock) DelegateSubdomainZone(ctx context.Context, req *defangv1.DelegateSubdomainZoneRequest) (*defangv1.DelegateSubdomainZoneResponse, error) {
+func (m FabricClientMock) DelegateSubdomainZone(
+	context.Context,
+	*defangv1.DelegateSubdomainZoneRequest,
+) (*defangv1.DelegateSubdomainZoneResponse, error) {
 	return &defangv1.DelegateSubdomainZoneResponse{
 		Zone: "test-zone",
 	}, nil
 }
 
-func (m FabricClientMock) DeleteSubdomainZone(ctx context.Context) error {
+func (m FabricClientMock) DeleteSubdomainZone(context.Context) error {
 	return nil
 }
 
-func (m FabricClientMock) GenerateFiles(ctx context.Context, req *defangv1.GenerateFilesRequest) (*defangv1.GenerateFilesResponse, error) {
+func (m FabricClientMock) GenerateFiles(
+	context.Context,
+	*defangv1.GenerateFilesRequest,
+) (*defangv1.GenerateFilesResponse, error) {
 	return &defangv1.GenerateFilesResponse{}, nil
 }
 
-func (m FabricClientMock) GetDelegateSubdomainZone(ctx context.Context) (*defangv1.DelegateSubdomainZoneResponse, error) {
+func (m FabricClientMock) GetDelegateSubdomainZone(context.Context) (*defangv1.DelegateSubdomainZoneResponse, error) {
 	return &defangv1.DelegateSubdomainZoneResponse{
 		Zone: "test-zone",
 	}, nil
 }
 
-func (m FabricClientMock) GetSelectedProvider(ctx context.Context, req *defangv1.GetSelectedProviderRequest) (*defangv1.GetSelectedProviderResponse, error) {
+func (m FabricClientMock) GetSelectedProvider(
+	context.Context,
+	*defangv1.GetSelectedProviderRequest,
+) (*defangv1.GetSelectedProviderResponse, error) {
 	return &defangv1.GetSelectedProviderResponse{}, nil
 }
 
@@ -61,42 +70,45 @@ func (m FabricClientMock) GetController() defangv1connect.FabricControllerClient
 	return nil
 }
 
-func (m FabricClientMock) GetVersions(ctx context.Context) (*defangv1.Version, error) {
+func (m FabricClientMock) GetVersions(context.Context) (*defangv1.Version, error) {
 	return &defangv1.Version{}, nil
 }
 
-func (m FabricClientMock) Publish(ctx context.Context, req *defangv1.PublishRequest) error {
+func (m FabricClientMock) Publish(context.Context, *defangv1.PublishRequest) error {
 	return nil
 }
 
-func (m FabricClientMock) PutDeployment(ctx context.Context, req *defangv1.PutDeploymentRequest) error {
+func (m FabricClientMock) PutDeployment(context.Context, *defangv1.PutDeploymentRequest) error {
 	return nil
 }
 
-func (m FabricClientMock) ListDeployments(ctx context.Context, req *defangv1.ListDeploymentsRequest) (*defangv1.ListDeploymentsResponse, error) {
+func (m FabricClientMock) ListDeployments(
+	context.Context,
+	*defangv1.ListDeploymentsRequest,
+) (*defangv1.ListDeploymentsResponse, error) {
 	return &defangv1.ListDeploymentsResponse{}, nil
 }
 
-func (m FabricClientMock) RevokeToken(ctx context.Context) error {
+func (m FabricClientMock) RevokeToken(context.Context) error {
 	return nil
 }
 
-func (m FabricClientMock) SetSelectedProvider(ctx context.Context, req *defangv1.SetSelectedProviderRequest) error {
+func (m FabricClientMock) SetSelectedProvider(context.Context, *defangv1.SetSelectedProviderRequest) error {
 	return nil
 }
 
-func (m FabricClientMock) Token(ctx context.Context, req *defangv1.TokenRequest) (*defangv1.TokenResponse, error) {
+func (m FabricClientMock) Token(context.Context, *defangv1.TokenRequest) (*defangv1.TokenResponse, error) {
 	return &defangv1.TokenResponse{}, nil
 }
 
-func (m FabricClientMock) Track(event string, properties ...client.Property) error {
+func (m FabricClientMock) Track(string, ...client.Property) error {
 	return nil
 }
 
-func (m FabricClientMock) VerifyDNSSetup(ctx context.Context, req *defangv1.VerifyDNSSetupRequest) error {
+func (m FabricClientMock) VerifyDNSSetup(context.Context, *defangv1.VerifyDNSSetupRequest) error {
 	return nil
 }
 
-func (m FabricClientMock) WhoAmI(ctx context.Context) (*defangv1.WhoAmIResponse, error) {
+func (m FabricClientMock) WhoAmI(context.Context) (*defangv1.WhoAmIResponse, error) {
 	return &defangv1.WhoAmIResponse{}, nil
 }

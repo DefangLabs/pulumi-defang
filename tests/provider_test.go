@@ -41,9 +41,9 @@ func TestProjectCreate(t *testing.T) {
 
 	require.NoError(t, err)
 
-	assert.Equal(t, response.Properties["name"].StringValue(), "my-project")
-	assert.Equal(t, response.Properties["etag"].StringValue(), "abc123")
-	assert.Equal(t, response.Properties["providerID"].StringValue(), "test-provider")
+	assert.Equal(t, "my-project", response.Properties["name"].StringValue())
+	assert.Equal(t, "abc123", response.Properties["etag"].StringValue())
+	assert.Equal(t, "test-provider", response.Properties["providerID"].StringValue())
 }
 
 // urn is a helper function to build an urn for running integration tests.

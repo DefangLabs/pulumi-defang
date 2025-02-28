@@ -127,3 +127,9 @@ linters-settings:
         severity: error
         arguments:
           - allowRegex: "^_.*"
+  staticcheck:
+    # https://staticcheck.io/docs/checks
+    # https://staticcheck.io/docs/checks#SA1019
+    checks:
+      - "all"
+      - "-SA1019"

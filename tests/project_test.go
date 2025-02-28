@@ -19,9 +19,9 @@ func TestProject(t *testing.T) {
 				"configPaths": []string{"../compose.yaml.example"},
 			}),
 			Hook: func(_inputs, output resource.PropertyMap) {
-				assert.Equal(t, output["name"].StringValue(), "my-project")
-				assert.Equal(t, output["etag"].StringValue(), "abc123")
-				assert.Equal(t, output["providerID"].StringValue(), "test-provider")
+				assert.Equal(t, "my-project", output["name"].StringValue())
+				assert.Equal(t, "abc123", output["etag"].StringValue())
+				assert.Equal(t, "test-provider", output["providerID"].StringValue())
 			},
 		},
 		Updates: []integration.Operation{
@@ -32,7 +32,7 @@ func TestProject(t *testing.T) {
 					"configPaths": []string{"../compose.yaml.example"},
 				}),
 				Hook: func(_inputs, output resource.PropertyMap) {
-					assert.Equal(t, output["etag"].StringValue(), "abc123")
+					assert.Equal(t, "abc123", output["etag"].StringValue())
 				},
 			},
 		},
