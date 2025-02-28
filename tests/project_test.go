@@ -9,6 +9,7 @@ import (
 )
 
 func TestProject(t *testing.T) {
+	t.Setenv("DEFANG_ACCESS_TOKEN", "test-defang-access-token")
 	server := makeTestServer()
 	integration.LifeCycleTest{
 		Resource: "defang:index:Project",

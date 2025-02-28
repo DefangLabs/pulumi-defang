@@ -25,6 +25,7 @@ import (
 )
 
 func TestProjectCreate(t *testing.T) {
+	t.Setenv("DEFANG_ACCESS_TOKEN", "test-defang-access-token")
 	server := makeTestServer()
 
 	response, err := server.Create(p.CreateRequest{
