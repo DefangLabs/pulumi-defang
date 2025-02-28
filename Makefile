@@ -137,7 +137,10 @@ down::
 
 .PHONY: build
 # build: provider dotnet_sdk go_sdk nodejs_sdk python_sdk
-build: provider go_sdk nodejs_sdk python_sdk
+build: provider sdks
+
+.PHONY: sdks
+sdks: go_sdk nodejs_sdk python_sdk
 
 .PHONY: only_build
 # Required for the codegen action that runs in pulumi/pulumi
