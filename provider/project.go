@@ -47,7 +47,6 @@ type ProjectArgs struct {
 	// The pulumi tag doesn't need to match the field name, but it's generally a
 	// good idea.
 	ProviderID  client.ProviderID `pulumi:"providerID"`
-	Name        string            `pulumi:"name"`
 	ConfigPaths []string          `pulumi:"configPaths"`
 }
 
@@ -69,7 +68,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, nil
 	}
 
-	loader := compose.NewLoader(compose.WithProjectName(input.Name), compose.WithPath(input.ConfigPaths...))
+	loader := compose.NewLoader(compose.WithProjectName(name), compose.WithPath(input.ConfigPaths...))
 	project, err := loader.LoadProject(ctx)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to load project: %w", err)
@@ -85,7 +84,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to authenticate: %w", err)
 	}
 
-	err = configureProviderCdImage(ctx, driver, input.Name, input.ProviderID)
+	err = configureProviderCdImage(ctx, driver, name, input.ProviderID)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
 	}

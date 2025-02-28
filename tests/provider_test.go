@@ -31,7 +31,6 @@ func TestProjectCreate(t *testing.T) {
 	response, err := server.Create(p.CreateRequest{
 		Urn: urn("Project"),
 		Properties: resource.PropertyMap{
-			"name":       resource.NewStringProperty("my-project"),
 			"providerID": resource.NewStringProperty("test-provider"),
 			"configPaths": resource.NewArrayProperty([]resource.PropertyValue{
 				resource.NewStringProperty("../compose.yaml.example"),
@@ -42,7 +41,6 @@ func TestProjectCreate(t *testing.T) {
 
 	require.NoError(t, err)
 
-	assert.Equal(t, "my-project", response.Properties["name"].StringValue())
 	assert.Equal(t, "abc123", response.Properties["etag"].StringValue())
 	assert.Equal(t, "test-provider", response.Properties["providerID"].StringValue())
 }

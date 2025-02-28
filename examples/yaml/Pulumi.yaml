@@ -10,7 +10,6 @@ resources:
     type: defang:Project
     properties:
       providerID: aws
-      name: my-project
       configPaths:
         - ../../compose.yaml.example
 

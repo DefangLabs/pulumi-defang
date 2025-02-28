@@ -15,12 +15,10 @@ func TestProject(t *testing.T) {
 		Resource: "defang:index:Project",
 		Create: integration.Operation{
 			Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{
-				"name":        "my-project",
 				"providerID":  "test-provider",
 				"configPaths": []string{"../compose.yaml.example"},
 			}),
 			Hook: func(_inputs, output resource.PropertyMap) {
-				assert.Equal(t, "my-project", output["name"].StringValue())
 				assert.Equal(t, "abc123", output["etag"].StringValue())
 				assert.Equal(t, "test-provider", output["providerID"].StringValue())
 			},
@@ -28,7 +26,6 @@ func TestProject(t *testing.T) {
 		Updates: []integration.Operation{
 			{
 				Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{
-					"name":        "my-project",
 					"providerID":  "test-provider",
 					"configPaths": []string{"../compose.yaml.example"},
 				}),
