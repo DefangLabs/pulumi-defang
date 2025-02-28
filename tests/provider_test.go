@@ -43,6 +43,8 @@ func TestProjectCreate(t *testing.T) {
 
 	assert.Equal(t, "abc123", response.Properties["etag"].StringValue())
 	assert.Equal(t, "test-provider", response.Properties["providerID"].StringValue())
+	albArn := "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/app/my-load-balancer/50dc6c495c0c9188"
+	assert.Equal(t, albArn, response.Properties["albArn"].StringValue())
 }
 
 // urn is a helper function to build an urn for running integration tests.
