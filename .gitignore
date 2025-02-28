@@ -4,3 +4,4 @@
 bin
 sdk
 schema-defang.json
+examples/*/Pulumi.example.yaml
