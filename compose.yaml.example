@@ -3,7 +3,4 @@ services:
     image: nginx:alpine
     ports:
       - "8080:80"
-    volumes:
-      - type: tmpfs
-        target: /usr/share/nginx/html
     command: ["sh", "-c", "echo 'Hello, world' > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"]
