@@ -18,7 +18,8 @@ func main() {
 			return err
 		}
 		ctx.Export("output", pulumi.StringMap{
-			"value": myProject.Result,
+			"albArn": myProject.AlbArn,
+			"etag":   myProject.Etag,
 		})
 		return nil
 	})

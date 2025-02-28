@@ -6,5 +6,6 @@ my_project = defang.Project("myProject",
     name="my-project",
     config_paths=["../../compose.yaml.example"])
 pulumi.export("output", {
-    "value": my_project.result,
+    "albArn": my_project.alb_arn,
+    "etag": my_project.etag,
 })

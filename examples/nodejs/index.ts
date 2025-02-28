@@ -7,5 +7,6 @@ const myProject = new defang.Project("myProject", {
     configPaths: ["../../compose.yaml.example"],
 });
 export const output = {
-    value: myProject.result,
+    albArn: myProject.albArn,
+    etag: myProject.etag,
 };
