@@ -106,9 +106,6 @@ gen_examples: gen_go_example \
 		gen_python_example \
 		# gen_dotnet_example
 
-.PHONY: gen_go_example
-.PHONY: gen_nodejs_example
-.PHONY: gen_python_example
 gen_%_example:
 	rm -rf ${WORKING_DIR}/examples/$*
 	pulumi convert \
