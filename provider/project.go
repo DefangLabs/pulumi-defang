@@ -80,8 +80,9 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to create driver: %w", err)
 	}
 
-	if err := Authenticate(ctx, driver.GetFabricClient()); err != nil {
-		panic(fmt.Errorf("failed to authenticate: %w", err))
+	err = Authenticate(ctx, driver)
+	if err != nil {
+		return name, state, fmt.Errorf("failed to authenticate: %w", err)
 	}
 
 	err = configureProviderCdImage(ctx, driver, input.Name, input.ProviderID)
@@ -187,13 +188,13 @@ func getProjectOutputs(
 	return projectUpdate, nil
 }
 
-func Authenticate(ctx context.Context, fabric client.FabricClient) error {
-	token := cli.GetExistingToken(cli.DefangFabric)
-	if token != "" {
+func Authenticate(ctx context.Context, driver IDriver) error {
+	_, err := cli.Whoami(ctx, driver.GetFabricClient(), driver.GetProvider())
+	if err == nil {
 		return nil
 	}
 
-	err := cli.NonInteractiveLogin(ctx, fabric, cli.DefangFabric)
+	err = cli.NonInteractiveLogin(ctx, driver.GetFabricClient(), cli.DefangFabric)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate: %w", err)
 	}
