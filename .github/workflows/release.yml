@@ -49,6 +49,7 @@ jobs:
       uses: jaxxstorm/action-install-gh-release@v1.14.0
       with:
         repo: pulumi/pulumictl
+    - run: make gen_sdks
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v6
       with:

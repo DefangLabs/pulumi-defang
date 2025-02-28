@@ -100,13 +100,13 @@ python_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
 		rm ./bin/setup.py.bak && \
 		cd ./bin && python3 setup.py build sdist
 
-.PHONY: gen_examples
-gen_examples: gen_go_example \
-		gen_nodejs_example \
-		gen_python_example \
-		# gen_dotnet_example
+.PHONY: examples
+examples: go_example \
+		nodejs_example \
+		python_example \
+		# dotnet_example
 
-gen_%_example:
+%_example:
 	rm -rf ${WORKING_DIR}/examples/$*
 	pulumi convert \
 		--cwd ${WORKING_DIR}/examples/yaml \
