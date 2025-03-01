@@ -24,6 +24,11 @@ jobs:
       run: git fetch --prune --unshallow --tags
     - run: make provider
     - run: make test
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: v1.64
+        args: --timeout=5m --config=.golangci.yaml provider
     
     strategy:
       fail-fast: true

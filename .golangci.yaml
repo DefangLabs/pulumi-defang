@@ -98,10 +98,6 @@ linters:
     - wrapcheck
     - zerologlint
 
-exclude-dirs:
-  - ./examples
-  - ./sdk
-
 linters-settings:
   revive:
     # Maximum number of open files at the same time.

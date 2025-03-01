@@ -148,9 +148,7 @@ only_build: build
 
 .PHONY: lint
 lint:
-	for DIR in "provider" "tests" ; do \
-		pushd $$DIR && golangci-lint run --fix --timeout 5m && popd ; \
-	done
+	golangci-lint run --fix --timeout 5m ./provider ./tests
 
 .PHONY: install
 # install: install_nodejs_sdk install_dotnet_sdk
