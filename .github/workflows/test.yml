@@ -29,6 +29,10 @@ jobs:
       with:
         version: v1.64
         args: --timeout=5m --config=.golangci.yaml provider
+    - name: Ensure examples are up to date
+      run: |
+        make examples
+        git diff -q ./examples
     
     strategy:
       fail-fast: true
