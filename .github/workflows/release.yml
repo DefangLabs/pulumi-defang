@@ -3,7 +3,7 @@ on:
   push:
     tags:
       - v*.*.*
-      - '!v*.*.*-**'
+      # - '!v*.*.*-**'
 env:
   PROVIDER: "defang"
   # THIS GITHUB_TOKEN IS A REQUIREMENT TO BE ABLE TO WRITE TO GH RELEASES
