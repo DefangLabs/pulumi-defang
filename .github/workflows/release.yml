@@ -4,6 +4,10 @@ on:
     tags:
       - v*.*.*
       # - '!v*.*.*-**'
+permissions:
+  contents: write  # This allows writing releases
+  packages: write  # Optional, if you're also publishing packages
+
 env:
   PROVIDER: "defang"
   # THIS GITHUB_TOKEN IS A REQUIREMENT TO BE ABLE TO WRITE TO GH RELEASES
@@ -51,7 +55,7 @@ jobs:
       with:
         distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
         args: -p 3 release
-        version: latest
+        version: v2
     strategy:
       fail-fast: true
       matrix:
