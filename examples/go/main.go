@@ -9,7 +9,6 @@ func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		myProject, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
 			ProviderID: pulumi.String("aws"),
-			Name:       pulumi.String("my-project"),
 			ConfigPaths: pulumi.StringArray{
 				pulumi.String("../../compose.yaml.example"),
 			},

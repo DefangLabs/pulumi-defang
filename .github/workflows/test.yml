@@ -29,9 +29,10 @@ jobs:
       with:
         version: v1.64
         args: --timeout=5m --config=.golangci.yaml provider
-    - name: Ensure examples are up to date
+    - name: Ensure schema and examples are up to date
       run: |
         make examples
+        git diff -q schema-defang.json
         git diff -q ./examples
     
     strategy:

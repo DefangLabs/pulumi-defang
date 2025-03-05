@@ -3,7 +3,6 @@ import * as defang from "@pulumi/defang";
 
 const myProject = new defang.Project("myProject", {
     providerID: "aws",
-    name: "my-project",
     configPaths: ["../../compose.yaml.example"],
 });
 export const output = {
