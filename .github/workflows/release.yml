@@ -50,7 +50,7 @@ jobs:
       uses: goreleaser/goreleaser-action@v6
       with:
         distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
-        args: -p 3 release --rm-dist
+        args: -p 3 release
         version: latest
     strategy:
       fail-fast: true
