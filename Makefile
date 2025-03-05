@@ -67,13 +67,13 @@ provider_debug:
 test_provider:
 	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
 
-# dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet)
-# dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
-# 	rm -rf sdk/dotnet
-# 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
-# 	cd ${PACKDIR}/dotnet/&& \
-# 		echo "${DOTNET_VERSION}" >version.txt && \
-# 		dotnet build /p:Version=${DOTNET_VERSION}
+dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet)
+dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
+	rm -rf sdk/dotnet
+	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
+	cd ${PACKDIR}/dotnet/&& \
+		echo "${DOTNET_VERSION}" >version.txt && \
+		dotnet build /p:Version=${DOTNET_VERSION}
 
 .PHONY: go_sdk
 go_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
@@ -110,7 +110,7 @@ python_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
 examples: go_example \
 		nodejs_example \
 		python_example \
-		# dotnet_example
+		dotnet_example
 	# clean up package name in nodejs example
 	sed -i -e 's|@pulumi/defang|@defang-io/pulumi-defang|' examples/nodejs/package.json examples/nodejs/index.ts
 
@@ -147,11 +147,10 @@ down::
 	pulumi stack rm ${EXAMPLE_STACK_NAME} -y
 
 .PHONY: build
-# build: provider dotnet_sdk go_sdk nodejs_sdk python_sdk
 build: provider schema sdks
 
 .PHONY: sdks
-sdks: go_sdk nodejs_sdk python_sdk
+sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
 
 .PHONY: only_build
 # Required for the codegen action that runs in pulumi/pulumi
@@ -162,9 +161,7 @@ lint:
 	golangci-lint run --fix --timeout 5m ./provider ./tests
 
 .PHONY: install
-# install: install_nodejs_sdk install_dotnet_sdk
-# 	cp $(WORKING_DIR)/bin/${PROVIDER} ${GOPATH}/bin
-install: install_nodejs_sdk
+install: install_nodejs_sdk install_dotnet_sdk
 	cp $(WORKING_DIR)/bin/${PROVIDER} ${GOPATH}/bin
 
 GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
@@ -179,10 +176,10 @@ test_all: test
 	cd tests/sdk/go && $(GO_TEST) ./...
 	# cd tests/sdk/dotnet && $(GO_TEST) ./...
 
-# install_dotnet_sdk:
-# 	rm -rf $(WORKING_DIR)/nuget/$(NUGET_PKG_NAME).*.nupkg
-# 	mkdir -p $(WORKING_DIR)/nuget
-# 	find . -name '*.nupkg' -print -exec cp -p {} ${WORKING_DIR}/nuget \;
+install_dotnet_sdk:
+	rm -rf $(WORKING_DIR)/nuget/$(NUGET_PKG_NAME).*.nupkg
+	mkdir -p $(WORKING_DIR)/nuget
+	find . -name '*.nupkg' -print -exec cp -p {} ${WORKING_DIR}/nuget \;
 
 .PHONY: install_python_sdk
 install_python_sdk:

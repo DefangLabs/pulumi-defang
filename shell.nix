@@ -13,6 +13,7 @@ pkgs.mkShell {
     pkgs.python3
     pkgs.golangci-lint
     pkgs.python312Packages.setuptools
+    pkgs.dotnet-sdk
     pkgs.vim
     pkgs.yarn
   ];
