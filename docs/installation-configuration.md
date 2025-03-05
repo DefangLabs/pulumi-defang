@@ -17,7 +17,7 @@ The Defang Pulumi provider, is available in most pulumi languages.
 
 ## Authentication
 
-Sign up for [Defang](https://defang.io) with your Github account. When run in a Github Actions workflow, the Defang Pulumi provider will automatically use environment varialbes Github providew to authenticate your Github user with Defang. Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
+Sign up for [Defang](https://defang.io) with your Github account. When run in a Github Actions workflow, the Defang Pulumi provider will automatically use environment varialbes Github providew to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
 
 You will also need to authenticate with your cloud platform.
 * For AWS, there are many ways to authenticate
