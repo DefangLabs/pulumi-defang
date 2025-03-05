@@ -1,0 +1,6 @@
+name: provider-defang
+runtime: dotnet
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin

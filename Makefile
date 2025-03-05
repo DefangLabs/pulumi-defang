@@ -193,3 +193,18 @@ install_go_sdk:
 install_nodejs_sdk:
 	-yarn unlink --cwd $(WORKING_DIR)/sdk/nodejs/bin
 	yarn link --cwd $(WORKING_DIR)/sdk/nodejs/bin
+
+.PHONY: install-git-hooks
+install-git-hooks:
+	printf "#!/bin/sh\nmake pre-commit" > .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	printf "#!/bin/sh\nmake pre-push" > .git/hooks/pre-push
+	chmod +x .git/hooks/pre-push
+
+.PHONY: pre-commit
+pre-commit: provider test lint examples docs
+	git add examples
+
+.PHONY: pre-push
+pre-push:
+	#target intentionally blank

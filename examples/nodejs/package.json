@@ -6,6 +6,6 @@
 	"dependencies": {
 		"typescript": "^4.0.0",
 		"@pulumi/pulumi": "^3.0.0",
-		"@defang-io/pulumi-defang": "1.1.0-alpha.1741213667+1e7983da"
+		"@defang-io/pulumi-defang": "1.1.0-alpha.1741215074+0029a569"
 	}
 }
