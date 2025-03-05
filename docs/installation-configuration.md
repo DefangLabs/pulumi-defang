@@ -5,7 +5,7 @@ layout: package
 ---
 ## Installation
 
-The Pulumi provider for [Defang] (https://defang.io) - a radically simpler way to develop, deploy, and debug cloud applications. The easiest way to deploy your Docker Compose project to the cloud with Pulumi.
+The Pulumi provider for [Defang] (https://defang.io) - the easiest way to deploy your Docker Compose project to the cloud with Pulumi.
 
 The Defang Pulumi provider, is available in most pulumi languages. 
 
