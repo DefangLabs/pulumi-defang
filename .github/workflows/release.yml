@@ -2,8 +2,8 @@ name: release
 on:
   push:
     tags:
-      - v*.*.*
-      # - '!v*.*.*-**'
+      - '*.*.*'
+      # - '!*.*.*-**'
 permissions:
   contents: write  # This allows writing releases
   packages: write  # Optional, if you're also publishing packages
