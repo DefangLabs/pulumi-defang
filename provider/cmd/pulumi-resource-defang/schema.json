@@ -1,0 +1,66 @@
+{
+  "name": "defang",
+  "version": "1.0.0-alpha.3+7d50e924.dirty",
+  "meta": {
+    "moduleFormat": "(.*)"
+  },
+  "config": {},
+  "types": {
+    "defang:v1:ServiceInfo": {
+      "type": "object"
+    }
+  },
+  "provider": {
+    "type": "object"
+  },
+  "resources": {
+    "defang:index:Project": {
+      "properties": {
+        "albArn": {
+          "type": "string"
+        },
+        "configPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "etag": {
+          "type": "string"
+        },
+        "providerID": {
+          "type": "string"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang:v1:ServiceInfo"
+          }
+        }
+      },
+      "type": "object",
+      "required": [
+        "albArn",
+        "configPaths",
+        "etag",
+        "providerID",
+        "services"
+      ],
+      "inputProperties": {
+        "configPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providerID": {
+          "type": "string"
+        }
+      },
+      "requiredInputs": [
+        "configPaths",
+        "providerID"
+      ]
+    }
+  }
+}

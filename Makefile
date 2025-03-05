@@ -49,10 +49,13 @@ ensure:
 	cd sdk && go mod tidy
 	cd tests && go mod tidy
 
-.PHONY: provider
 provider: $(WORKING_DIR)/bin/$(PROVIDER)
 $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go")
 	go build -o $(WORKING_DIR)/bin/${PROVIDER} -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER)
+
+schema: ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
+${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: provider
+	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
 .PHONY: provider_debug
 provider_debug:
@@ -141,7 +144,7 @@ down::
 
 .PHONY: build
 # build: provider dotnet_sdk go_sdk nodejs_sdk python_sdk
-build: provider sdks
+build: provider schema sdks
 
 .PHONY: sdks
 sdks: go_sdk nodejs_sdk python_sdk
