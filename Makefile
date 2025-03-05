@@ -3,7 +3,7 @@ PROJECT_NAME := Pulumi defang Resource Provider
 PACK             := defang
 PACKDIR          := sdk
 PROJECT          := github.com/DefangLabs/pulumi-defang
-NODE_MODULE_NAME := @DefangLabs/defang
+NODE_MODULE_NAME := @defang-io/pulumi-defang
 NUGET_PKG_NAME   := DefangLabs.defang
 
 PROVIDER        := pulumi-resource-${PACK}
@@ -81,11 +81,12 @@ nodejs_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
 	rm -rf sdk/nodejs
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language nodejs
 	cd ${PACKDIR}/nodejs/ && \
+		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
+		sed -i.bak 's|@pulumi/defang|${NODE_MODULE_NAME}|g' package.json && \
 		yarn install && \
 		yarn run tsc && \
 		cp ../../README.md ../../LICENSE package.json yarn.lock bin/ && \
-		sed -i.bak 's/$${VERSION}/$(VERSION)/g' bin/package.json && \
-		rm ./bin/package.json.bak
+		rm ./package.json.bak
 
 .PHONY: python_sdk
 python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python)
