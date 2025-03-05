@@ -1,11 +1,16 @@
+version: 2
+
 archives:
   - id: archive
     name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+
 before:
   hooks:
     - make go_sdk
+
 builds:
-  - binary: pulumi-resource-defang
+  - id: pulumi-resource-defang
+    binary: pulumi-resource-defang
     dir: provider
     env:
       - CGO_ENABLED=0
@@ -17,13 +22,14 @@ builds:
       - windows
       - linux
     ldflags:
-      # The line below MUST align with the module in current go.mod
-      - -X github.com/DefangLabs/pulumi-defang/provider/Version={{.Tag }}
+      - -X github.com/DefangLabs/pulumi-defang/provider/Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang/
+
 changelog:
-  skip: true
+  disable: true
+
 release:
-  disable: false
   prerelease: auto
+
 snapshot:
-  name_template: '{{ .Tag }}-SNAPSHOT'
+  version_template: '{{ .Tag }}-SNAPSHOT'
