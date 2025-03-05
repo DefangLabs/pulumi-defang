@@ -3,7 +3,7 @@ archives:
     name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
 before:
   hooks:
-    - make gen
+    - make go_sdk
 builds:
   - binary: pulumi-resource-defang
     dir: provider

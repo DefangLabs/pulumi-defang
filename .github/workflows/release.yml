@@ -46,16 +46,12 @@ jobs:
       uses: jaxxstorm/action-install-gh-release@v1.14.0
       with:
         repo: pulumi/pulumictl
-    - run: make go_sdk
-    - run: |
-        echo 'builds: []' > sdk/go/.goreleaser.yaml
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v6
       with:
         distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
-        args: -p 3 release
-        # version: latest
-        workdir: sdk/go
+        args: -p 3 release --rm-dist
+        version: latest
     strategy:
       fail-fast: true
       matrix:
