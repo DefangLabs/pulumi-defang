@@ -1,9 +1,6 @@
 name: test
 on:
   push:
-    tags:
-      - v*.*.*
-      - '!v*.*.*-**'
     branches:
       - "**"
 jobs:
@@ -31,8 +28,8 @@ jobs:
         args: --timeout=5m --config=.golangci.yaml provider
     - name: Ensure schema and examples are up to date
       run: |
-        make examples
-        git diff -q schema-defang.json
+        make schema examples
+        git diff -q provider/cmd/pulumi-resource-defang/schema-defang.json
         git diff -q ./examples
     
     strategy:

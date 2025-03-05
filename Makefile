@@ -54,8 +54,10 @@ $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go")
 	go build -o $(WORKING_DIR)/bin/${PROVIDER} -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER)
 
 schema: ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
-${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: provider
+${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: metadata.json provider
 	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
+	jq -s '.[0] * .[1]' ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json metadata.json > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json.tmp
+	mv ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json.tmp ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
 .PHONY: provider_debug
 provider_debug:
