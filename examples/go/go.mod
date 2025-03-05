@@ -4,5 +4,5 @@ go 1.20
 
 require (
 	github.com/pulumi/pulumi/sdk/v3 v3.30.0
-	example.com/pulumi-defang/sdk v1.1.0-alpha.1741138078+d0029c80.dirty
+	example.com/pulumi-defang/sdk v1.0.0-alpha+f8e6a2ee.dirty
 )

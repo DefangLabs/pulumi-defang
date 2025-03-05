@@ -1,5 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
-import * as defang from "@pulumi/defang";
+import * as defang from "@defang-io/pulumi-defang";
 
 const myProject = new defang.Project("myProject", {
     providerID: "aws",

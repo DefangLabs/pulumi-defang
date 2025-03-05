@@ -9,7 +9,7 @@ The Pulumi provider for [Defang] (https://defang.io) - a radically simpler way t
 
 The Defang Pulumi provider, is available in most pulumi languages. 
 
-* JavaScript/TypeScript: [`@pulumi/defang`](https://www.npmjs.com/package/@pulumi/defang)
+* JavaScript/TypeScript: [`@defang-io/pulumi-defang`](https://www.npmjs.com/package/@defang-io/pulumi-defang)
 * Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
 * Go: [`github.com/DefangLabs/pulumi-defang/sdk/v1/go/defang`](https://github.com/DefangLabs/pulumi-defang)
 * Java: Coming soon

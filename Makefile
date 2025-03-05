@@ -106,6 +106,9 @@ examples: go_example \
 		nodejs_example \
 		python_example \
 		# dotnet_example
+	# clean up package name in nodejs example
+	sed -i -e 's|@pulumi/defang|@defang-io/pulumi-defang|' examples/nodejs/package.json examples/nodejs/index.ts
+
 
 %_example:
 	rm -rf ${WORKING_DIR}/examples/$*
