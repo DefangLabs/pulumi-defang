@@ -17,9 +17,22 @@ The Defang Pulumi provider, is available in most pulumi languages.
 
 ## Authentication
 
-Sign up for [Defang](https://defang.io) with your Github account. When run in a Github Actions workflow, the Defang Pulumi provider will automatically use environment varialbes Github providew to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
+### Authenticating with Defang
 
-You will also need to authenticate with your cloud platform.
+Sign up for [Defang](https://defang.io) with your Github account.
+
+#### Authenticating in Github Actions workflows
+
+When run in a Github Actions workflow, the Defang Pulumi provider will automatically use environment varialbes Github providew to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
+
+#### Authenticating with `defang token`
+
+You can run `defang token --expires 30d` out of band with a reasonable duration and you can store the result in `DEFANG_ACCESS_TOKEN`.
+
+### Authenticating with your cloud provider
+
+You will also need to authenticate with your cloud provider.
+
 * For AWS, there are many ways to authenticate
     - Use the [`aws-actions/configure-aws-credentials`](https://github.com/aws-actions/configure-aws-credentials) Github Action
     - Use AWS Access Keys by setting the `AWS_ACCESS_KEY_ID`, and `AWS_ACCESS_KEY_SECRET` env vars.
