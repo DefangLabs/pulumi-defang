@@ -1,51 +1,31 @@
 # Defang Pulumi Provider
 
-Pulumi provider for Defang - a radically simpler way to develop, deploy, and debug cloud applications. 
+![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/DefangLabs/pulumi-defang?label=Version)
 
-### Build & test the Defang provider
+The Pulumi provider for [Defang - a radically simpler way to develop, deploy, and debug cloud applications](https://defang.io). The easiest way to deploy your Docker Compose project to the cloud with Pulumi.
 
-1. Run `make build install` to build and install the provider.
-1. Run `make gen_examples` to generate the example programs in `examples/` off of the source `examples/yaml` example program.
-1. Run `make up` to run the example program in `examples/yaml`.
-1. Run `make down` to tear down the example program.
+## Installation
 
-#### Build the provider and install the plugin
+The Defang provider is available as a package in most Pulumi languages:
 
-   ```bash
-   $ make build install
-   ```
-   
-This will:
+* JavaScript/TypeScript: [`@defang/pulumi`](https://www.npmjs.com/package/@defang/pulumi)
+* Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
+* Go: [`github.com/checkly/pulumi-defang/sdk/v1/go/defang`](https://github.com/DefangLabs/pulumi-defang)
 
-1. Create the SDK codegen binary and place it in a `./bin` folder (gitignored)
-1. Create the provider binary and place it in the `./bin` folder (gitignored)
-1. Generate the dotnet, Go, Node, and Python SDKs and place them in the `./sdk` folder
-1. Install the provider on your machine.
 
-#### A brief repository overview
+## Authentication
 
-1. A `provider/` folder containing the building and implementation logic
-    1. `cmd/pulumi-resource-defang/main.go` - holds the provider's implementation.
-1. `sdk` - holds the generated code libraries.
-1. `examples` a folder of Pulumi programs to try locally and/or use in CI.
+The Checkly provider must be Authenticated with Defang and with your cloud provider.
+Sign up for [Defang](https://www.defang.io) and follow our [integration guide](https://docs.defang.io/docs/tutorials/pulumi-provider-integration/) to get set up.
 
-#### Additional Details
+## Example usage
 
-This repository depends on the pulumi-go-provider library. For more details on building providers, please check
-the [Pulumi Go Provider docs](https://github.com/pulumi/pulumi-go-provider).
+You can find working JavaScript and TypeScript code samples in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory.
 
-### Build Examples
+## Reference
 
-Create an example program using the resources defined in your provider, and place it in the `examples/` folder.
+For detailed reference documentation, please visit [the Pulumi registry](https://www.pulumi.com/registry/packages/defang/api-docs/).
 
-You can now repeat the steps for [build, install, and test](#test-against-the-example).
+## Development
 
-## Configuring CI and releases
-
-1. Follow the instructions laid out in the [deployment templates](./deployment-templates/README-DEPLOYMENT.md).
-
-## References
-
-Other resources/examples for implementing providers:
-* [Pulumi Command provider](https://github.com/pulumi/pulumi-command/blob/master/provider/pkg/provider/provider.go)
-* [Pulumi Go Provider repository](https://github.com/pulumi/pulumi-go-provider)
+See the [Contributing](CONTRIBUTING.md) doc.
