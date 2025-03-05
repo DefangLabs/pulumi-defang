@@ -47,6 +47,8 @@ jobs:
       with:
         repo: pulumi/pulumictl
     - run: make go_sdk
+    - run: |
+        echo 'builds: []' > sdk/go/.goreleaser.yaml
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v6
       with:
