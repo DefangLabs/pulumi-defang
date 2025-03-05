@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net6.0</TargetFramework>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Pulumi" Version="3.*" />
+		<PackageReference Include="Pulumi.Defang" Version="1.1.0-alpha.1741218795+e938c6f4" />
+	</ItemGroup>
+
+</Project>

@@ -29,19 +29,19 @@ jobs:
     - name: Ensure docs are up-to-date
       run: |
         make docs
-        git diff -q ./docs
+        git diff --quiet -- ./docs
     - name: Ensure examples are up-to-date
       run: |
         make examples
-        git diff -q ./examples
+        git diff --quiet -- ./examples
     - name: Ensure schema is up-to-date
       run: |
         make schema
-        git diff -q provider/cmd/pulumi-resource-defang/schema-defang.json
+        git diff --quiet -- provider/cmd/pulumi-resource-defang/schema-defang.json
     - name: Ensure sdks are up-to-date
       run: |
         make sdks
-        git diff -q ./sdks
+        git diff --quiet -- ./sdks
     
     strategy:
       fail-fast: true
