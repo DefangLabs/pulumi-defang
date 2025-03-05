@@ -5,8 +5,9 @@ on:
       - '*.*.*'
       # - '!*.*.*-**'
 permissions:
-  contents: write  # This allows writing releases
-  packages: write  # Optional, if you're also publishing packages
+  contents: write # Allows writing releases
+  packages: write # Allows publishing packages
+  id-token: write # Required for requesting the JWT before publishing to Pypi and NPM
 
 env:
   PROVIDER: "defang"
