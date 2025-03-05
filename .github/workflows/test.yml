@@ -26,11 +26,22 @@ jobs:
       with:
         version: v1.64
         args: --timeout=5m --config=.golangci.yaml provider
-    - name: Ensure schema and examples are up to date
+    - name: Ensure docs are up-to-date
       run: |
-        make schema examples
-        git diff -q provider/cmd/pulumi-resource-defang/schema-defang.json
+        make docs
+        git diff -q ./docs
+    - name: Ensure examples are up-to-date
+      run: |
+        make examples
         git diff -q ./examples
+    - name: Ensure schema is up-to-date
+      run: |
+        schema
+        git diff -q provider/cmd/pulumi-resource-defang/schema-defang.json
+    - name: Ensure sdks are up-to-date
+      run: |
+        make sdks
+        git diff -q ./sdks
     
     strategy:
       fail-fast: true
