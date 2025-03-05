@@ -46,8 +46,8 @@ type ProjectArgs struct {
 	// Fields projected into Pulumi must be public and hava a `pulumi:"..."` tag.
 	// The pulumi tag doesn't need to match the field name, but it's generally a
 	// good idea.
-	ProviderID  client.ProviderID `pulumi:"providerID"`
-	ConfigPaths []string          `pulumi:"configPaths"`
+	CloudProviderID client.ProviderID `pulumi:"providerID"`
+	ConfigPaths     []string          `pulumi:"configPaths"`
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
@@ -74,7 +74,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to load project: %w", err)
 	}
 
-	driver, err := NewDriver(ctx, input.ProviderID)
+	driver, err := NewDriver(ctx, input.CloudProviderID)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to create driver: %w", err)
 	}
@@ -84,7 +84,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to authenticate: %w", err)
 	}
 
-	err = configureProviderCdImage(ctx, driver, name, input.ProviderID)
+	err = configureProviderCdImage(ctx, driver, name, input.CloudProviderID)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
 	}
