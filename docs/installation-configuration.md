@@ -44,7 +44,7 @@ You will also need to authenticate with your cloud provider.
 
 ## Example usage
 
-{{< chooser language "typescript,python,go,yaml" >}}
+{{< chooser language "typescript,python,go,csharp,yaml" >}}
 {{% choosable language typescript %}}
 ```yaml
 # Pulumi.yaml provider configuration file
@@ -84,6 +84,20 @@ config:
         configPaths:
             - ./compose.yaml
 
+```
+
+{{% /choosable %}}
+
+{{% choosable language csharp %}}
+```yaml
+# Pulumi.yaml provider configuration file
+name: configuration-example
+runtime: csharp
+config:
+    defang:Project:
+        providerID: aws
+        configPaths:
+            - ./compose.yaml
 ```
 
 {{% /choosable %}}
