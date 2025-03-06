@@ -46,44 +46,65 @@ You will also need to authenticate with your cloud provider.
 
 {{< chooser language "typescript,python,go,yaml" >}}
 {{% choosable language typescript %}}
-```yaml
-# Pulumi.yaml provider configuration file
-name: configuration-example
-runtime: nodejs
-config:
-    defang:Project:
-        providerID: aws
-        configPaths:
-            - ./compose.yaml
+```typescript
+import * as pulumi from "@pulumi/pulumi";
+import * as defang from "@defang-io/pulumi-defang";
+
+const myProject = new defang.Project("myProject", {
+    providerID: "aws",
+    configPaths: ["compose.yaml"],
+});
+export const output = {
+    albArn: myProject.albArn,
+    etag: myProject.etag,
+};
 ```
 
 {{% /choosable %}}
 
 {{% choosable language python %}}
-```yaml
-# Pulumi.yaml provider configuration file
-name: configuration-example
-runtime: python
-config:
-    defang:Project:
-        providerID: aws
-        configPaths:
-            - ./compose.yaml
+```python
+import pulumi
+import pulumi_defang as defang
+
+my_project = defang.Project("myProject",
+    provider_id="aws",
+    config_paths=["compose.yaml"])
+pulumi.export("output", {
+    "albArn": my_project.alb_arn,
+    "etag": my_project.etag,
+})
 ```
 
 {{% /choosable %}}
 
 {{% choosable language go %}}
-```yaml
-# Pulumi.yaml provider configuration file
-name: configuration-example
-runtime: go
-config:
-    defang:Project:
-        providerID: aws
-        configPaths:
-            - ./compose.yaml
+```go
+package main
 
+import (
+	"example.com/pulumi-defang/sdk/go/defang"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+func main() {
+	pulumi.Run(func(ctx *pulumi.Context) error {
+		myProject, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
+			ProviderID: pulumi.String("aws"),
+			ConfigPaths: pulumi.StringArray{
+				pulumi.String("compose.yaml"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		ctx.Export("output", pulumi.StringMap{
+			"albArn": myProject.AlbArn,
+			"etag":   myProject.Etag,
+		})
+		return nil
+	})
+}
 ```
 
 {{% /choosable %}}
