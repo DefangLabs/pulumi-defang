@@ -111,13 +111,22 @@ examples: go_example \
 		nodejs_example \
 		python_example \
 		dotnet_example
-	# clean up package name in nodejs example
+
+go_example: clean_go_example
+clean_go_example: build_go_example
+	# intentionally blank
+nodejs_example: clean_nodejs_example
+clean_nodejs_example: build_nodejs_example
 	sed -i -e 's|@pulumi/defang|@defang-io/pulumi-defang|' examples/nodejs/package.json examples/nodejs/index.ts
+python_example: clean_python_example
+clean_python_example: build_python_example
+	# intentionally blank
+dotnet_example: clean_dotnet_example
+clean_dotnet_example: build_dotnet_example
+	# intentionally blank
 
-docs: README.md
-	cp README.md docs/_index.md
-
-%_example:
+.PHONY: build_go_example build_nodejs_example build_python_example build_dotnet_example
+build_%_example:
 	rm -rf ${WORKING_DIR}/examples/$*
 	pulumi convert \
 		--cwd ${WORKING_DIR}/examples/yaml \
@@ -126,6 +135,10 @@ docs: README.md
 		--non-interactive \
 		--language $* \
 		--out ${WORKING_DIR}/examples/$*
+
+.PHONY: docs
+docs: README.md
+	cp README.md docs/_index.md
 
 define pulumi_login
     export PULUMI_CONFIG_PASSPHRASE=asdfqwerty1234; \
