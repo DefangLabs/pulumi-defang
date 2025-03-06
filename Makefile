@@ -110,7 +110,7 @@ python_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
 examples: go_example \
 		nodejs_example \
 		python_example \
-		# dotnet_example
+		dotnet_example
 	# clean up package name in nodejs example
 	sed -i -e 's|@pulumi/defang|@defang-io/pulumi-defang|' examples/nodejs/package.json examples/nodejs/index.ts
 
@@ -150,8 +150,7 @@ down::
 build: provider schema sdks
 
 .PHONY: sdks
-# sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
-sdks: go_sdk nodejs_sdk python_sdk
+sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
 
 .PHONY: only_build
 # Required for the codegen action that runs in pulumi/pulumi
@@ -162,8 +161,7 @@ lint:
 	golangci-lint run --fix --timeout 5m ./provider ./tests
 
 .PHONY: install
-# install: install_nodejs_sdk install_dotnet_sdk
-install: install_nodejs_sdk
+install: install_nodejs_sdk install_dotnet_sdk
 	cp $(WORKING_DIR)/bin/${PROVIDER} ${GOPATH}/bin
 
 GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}

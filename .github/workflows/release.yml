@@ -24,7 +24,7 @@ env:
   # NPM REGISTRY THEN ENSURE THE NPM_REGISTRY_URL IS CHANGED
   # NUGET_PUBLISH_KEY: ${{ YOUR NUGET PUBLISH KEY HERE }}
   NUGET_FEED_URL: https://api.nuget.org/v3/index.json
-  PUBLISH_NUGET: false
+  PUBLISH_NUGET: true
   # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE AN PYPI_API_TOKEN
   # SECRET IS SET AND PUBLISH_PYPI: TRUE. IF YOU WANT TO PUBLISH TO AN ALTERNATIVE
   # PYPI REGISTRY THEN ENSURE THE PYPI_REPOSITORY_URL IS SET. IF YOU ARE USING AN API_TOKEN THEN
@@ -87,10 +87,10 @@ jobs:
         with:
           node-version: ${{matrix.nodeversion}}
           registry-url: ${{env.NPM_REGISTRY_URL}}
-      # - name: Setup DotNet
-      #   uses: actions/setup-dotnet@v1
-      #   with:
-      #     dotnet-version: ${{matrix.dotnetversion}}
+      - name: Setup DotNet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{matrix.dotnetversion}}
       - name: Setup Python
         uses: actions/setup-python@v1
         with:
@@ -126,22 +126,22 @@ jobs:
           access: "public"
           token: ${{ env.NPM_TOKEN }}
           package: ${{github.workspace}}/sdk/nodejs/bin/package.json
-      # - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
-      #   name: publish nuget package
-      #   run: |
-      #     dotnet nuget push ${{github.workspace}}/sdk/dotnet/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
-      #     echo "done publishing packages"
+      - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
+        name: publish nuget package
+        run: |
+          dotnet nuget push ${{github.workspace}}/sdk/dotnet/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
+          echo "done publishing packages"
     strategy:
       fail-fast: true
       matrix:
-        # dotnetversion:
-        #   - 3.1.301
+        dotnetversion:
+          - 6.0.x
         goversion:
           - 1.22.x
         language:
           - nodejs
           - python
-          # - dotnet
+          - dotnet
           - go
         nodeversion:
           - 22.x
