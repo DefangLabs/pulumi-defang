@@ -15,6 +15,11 @@ The Defang Pulumi provider, is available in most pulumi languages.
 * Java: Coming soon
 * Dotnet: Coming soon
 
+### Installing the pulumi plugin directly
+```
+pulumi plugin install resource defang --server github://api.github.com/DefangLabs
+```
+
 ## Authentication
 
 ### Authenticating with Defang
