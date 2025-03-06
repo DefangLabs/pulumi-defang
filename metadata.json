@@ -5,5 +5,13 @@
     "homepage": "https://github.com/DefangLabs/pulumi-defang",
     "license": "Apache-2.0",
     "repository": "https://github.com/DefangLabs/pulumi-defang",
-    "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/v1/docs/logo.png"
+    "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/v1/docs/logo.png",
+    "language": {
+        "csharp": {
+            "rootNamespace": "Defang"
+        },
+        "nodejs": {
+            "packageName": "@defang-io/pulumi-defang"
+        }
+    }
 }

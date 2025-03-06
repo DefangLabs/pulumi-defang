@@ -68,7 +68,7 @@ test_provider:
 	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
 
 dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet)
-dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
+dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
 	rm -rf sdk/dotnet
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
 	cd ${PACKDIR}/dotnet/&& \
@@ -76,13 +76,13 @@ dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
 		dotnet build /p:Version=${DOTNET_VERSION}
 
 .PHONY: go_sdk
-go_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
+go_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
 	rm -rf sdk/go
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language go
 
 .PHONY: nodejs_sdk
 nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript)
-nodejs_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
+nodejs_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
 	rm -rf sdk/nodejs
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language nodejs
 	cd ${PACKDIR}/nodejs/ && \
@@ -95,7 +95,7 @@ nodejs_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
 
 .PHONY: python_sdk
 python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python)
-python_sdk: $(WORKING_DIR)/bin/$(PROVIDER)
+python_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
 	rm -rf sdk/python
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language python
 	cp README.md ${PACKDIR}/python/
