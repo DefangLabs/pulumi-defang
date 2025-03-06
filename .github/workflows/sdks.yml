@@ -78,9 +78,6 @@ jobs:
     - name: Build SDK
       run: make ${{ matrix.language }}_sdk
 
-    - name: Build Example
-      run: make ${{ matrix.language }}_example
-
     - name: Check worktree clean
       run: |
         git update-index -q --refresh
@@ -90,3 +87,6 @@ jobs:
             git diff
             exit 1
         fi
+
+    - name: Build Example
+      run: make ${{ matrix.language }}_example
