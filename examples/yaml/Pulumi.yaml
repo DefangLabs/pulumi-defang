@@ -1,0 +1,19 @@
+name: provider-defang
+runtime: yaml
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin
+
+resources:
+  myProject:
+    type: defang:Project
+    properties:
+      providerID: aws
+      configPaths:
+        - ../../compose.yaml.example
+
+outputs:
+  output:
+    albArn: ${myProject.albArn}
+    etag: ${myProject.etag}

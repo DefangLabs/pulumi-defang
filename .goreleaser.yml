@@ -1,0 +1,35 @@
+version: 2
+
+archives:
+  - id: archive
+    name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+
+before:
+  hooks:
+    - make go_sdk
+
+builds:
+  - id: pulumi-resource-defang
+    binary: pulumi-resource-defang
+    dir: provider
+    env:
+      - CGO_ENABLED=0
+    goarch:
+      - amd64
+      - arm64
+    goos:
+      - darwin
+      - windows
+      - linux
+    ldflags:
+      - -X github.com/DefangLabs/pulumi-defang/provider/Version={{.Tag}}
+    main: ./cmd/pulumi-resource-defang/
+
+changelog:
+  disable: true
+
+release:
+  prerelease: auto
+
+snapshot:
+  version_template: '{{ .Tag }}-SNAPSHOT'

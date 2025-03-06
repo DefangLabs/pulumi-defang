@@ -1,0 +1,92 @@
+on:
+  pull_request:
+    paths-ignore:
+      - docs
+      - .devcontainer
+      - examples
+
+jobs:
+  build_sdks:
+    name: Build SDKs
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dotnetversion:
+          - 6.0.x
+        goversion:
+          - 1.21.x
+        nodeversion:
+          - 18.x
+        pythonversion:
+          - "3.9"
+        # javaversion:
+        # - "11"
+        language:
+        - nodejs
+        - python
+        - dotnet
+        - go
+        # - java
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v2
+    - name: Unshallow clone for tags
+      run: git fetch --prune --unshallow --tags
+
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{matrix.goversion}}
+
+    - name: Install pulumictl
+      uses: jaxxstorm/action-install-gh-release@v1.12.0
+      with:
+        repo: pulumi/pulumictl
+
+    - name: Install pulumi
+      uses: pulumi/actions@v5
+
+    - if: ${{ matrix.language == 'nodejs'}}
+      name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{matrix.nodeversion}}
+        registry-url: https://registry.npmjs.org
+
+    - if: ${{ matrix.language == 'dotnet'}}
+      name: Setup DotNet
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{matrix.dotnetversion}}
+
+    - if: ${{ matrix.language == 'python'}}
+      name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{matrix.pythonversion}}
+
+    - if: ${{ matrix.language == 'java'}}
+      name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        cache: gradle
+        distribution: temurin
+        java-version: ${{matrix.javaversion}}
+
+    - name: Build SDK
+      run: make ${{ matrix.language }}_sdk
+
+    - name: Check worktree clean
+      run: |
+        git update-index -q --refresh
+        if ! git diff-files --quiet; then
+            >&2 echo "error: working tree is not clean, aborting!"
+            git status
+            git diff
+            exit 1
+        fi
+
+    - name: Build Example
+      run: make ${{ matrix.language }}_example

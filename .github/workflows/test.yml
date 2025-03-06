@@ -1,0 +1,30 @@
+name: test
+on:
+  push:
+    branches:
+      - "**"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.22.x
+    - name: Install pulumictl
+      uses: jaxxstorm/action-install-gh-release@v1.14.0
+      with:
+        repo: pulumi/pulumictl
+    - name: Checkout Repo
+      uses: actions/checkout@v2
+    - name: Unshallow clone for tags
+      run: git fetch --prune --unshallow --tags
+    - run: make provider
+    - run: make test
+    - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: v1.64
+        args: --timeout=5m --config=.golangci.yaml provider
+    

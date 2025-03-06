@@ -1,0 +1,73 @@
+{
+  "name": "defang",
+  "version": "1.1.0-alpha.1741213150+f6cde2e0",
+  "meta": {
+    "moduleFormat": "(.*)"
+  },
+  "config": {},
+  "types": {
+    "defang:v1:ServiceInfo": {
+      "type": "object"
+    }
+  },
+  "provider": {
+    "type": "object"
+  },
+  "resources": {
+    "defang:index:Project": {
+      "properties": {
+        "albArn": {
+          "type": "string"
+        },
+        "configPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "etag": {
+          "type": "string"
+        },
+        "providerID": {
+          "type": "string"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang:v1:ServiceInfo"
+          }
+        }
+      },
+      "type": "object",
+      "required": [
+        "albArn",
+        "configPaths",
+        "etag",
+        "providerID",
+        "services"
+      ],
+      "inputProperties": {
+        "configPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providerID": {
+          "type": "string"
+        }
+      },
+      "requiredInputs": [
+        "configPaths",
+        "providerID"
+      ]
+    }
+  },
+  "description": "The easiest way to deploy your Docker Compose project to the cloud with Pulumi.",
+  "keywords": "category/cloud categoryinfrastructure kind/native defang, docker, docker compose, cloud, aws, azure, gcp, digital ocean",
+  "publisher": "Defang",
+  "homepage": "https://github.com/DefangLabs/pulumi-defang",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/DefangLabs/pulumi-defang",
+  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/v1/docs/logo.png"
+}
