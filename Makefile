@@ -82,6 +82,8 @@ nodejs_sdk: provider
 	cd ${PACKDIR}/nodejs/ && \
 		yarn install && \
 		yarn run tsc && \
+		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
+		rm ./package.json.bak && \
 		cp ../../README.md ../../LICENSE package.json yarn.lock bin/
 
 .PHONY: python_sdk
@@ -93,6 +95,8 @@ python_sdk: provider
 	cd ${PACKDIR}/python/ && \
 		python3 setup.py clean --all 2>/dev/null && \
 		rm -rf ./bin/ ../python.bin/ && cp -R . ../python.bin && mv ../python.bin ./bin && \
+		sed -i.bak -e 's/^VERSION = .*/VERSION = "$(PYPI_VERSION)"/g' -e 's/^PLUGIN_VERSION = .*/PLUGIN_VERSION = "$(VERSION)"/g' ./bin/setup.py && \
+		rm ./bin/setup.py.bak && \
 		cd ./bin && python3 setup.py build sdist
 
 .PHONY: examples
