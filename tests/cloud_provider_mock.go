@@ -209,3 +209,25 @@ func (c CloudProviderMock) Subscribe(
 func (c CloudProviderMock) TearDown(context.Context) error {
 	return nil
 }
+
+func (c CloudProviderMock) QueryForDebug(context.Context, *defangv1.DebugRequest) error {
+	return nil
+}
+
+func (c CloudProviderMock) QueryLogs(
+	context.Context,
+	*defangv1.TailRequest,
+) (client.ServerStream[defangv1.TailResponse], error) {
+	msg := defangv1.TailResponse{
+		Service: "service1",
+		Etag:    "abc123",
+		Entries: []*defangv1.LogEntry{
+			{
+				Timestamp: timestamppb.Now(),
+				Message:   "info message",
+			},
+		},
+	}
+	stream := &MockFollowServerStream{msg: &msg}
+	return stream, nil
+}
