@@ -1,7 +1,7 @@
 package main
 
 import (
-	"example.com/pulumi-defang/sdk/go/defang"
+	"github.com/DefangLabs/pulumi-defang/sdk/go/defang"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

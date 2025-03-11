@@ -53,12 +53,6 @@ provider: $(WORKING_DIR)/bin/$(PROVIDER)
 $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go")
 	go build -o $(WORKING_DIR)/bin/${PROVIDER} -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER)
 
-schema: ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
-${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: metadata.json provider
-	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
-	jq -s '.[0] * .[1]' ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json metadata.json > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json.tmp
-	mv ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json.tmp ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
-
 .PHONY: provider_debug
 provider_debug:
 	(cd provider && go build -o $(WORKING_DIR)/bin/${PROVIDER} -gcflags="all=-N -l" -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER))
@@ -68,7 +62,7 @@ test_provider:
 	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
 
 dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet)
-dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
+dotnet_sdk: provider
 	rm -rf sdk/dotnet
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
 	cd ${PACKDIR}/dotnet/&& \
@@ -76,34 +70,29 @@ dotnet_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
 		dotnet build /p:Version=${DOTNET_VERSION}
 
 .PHONY: go_sdk
-go_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
+go_sdk: provider
 	rm -rf sdk/go
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language go
 
 .PHONY: nodejs_sdk
 nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript)
-nodejs_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
+nodejs_sdk: provider
 	rm -rf sdk/nodejs
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language nodejs
 	cd ${PACKDIR}/nodejs/ && \
-		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
-		sed -i.bak 's|@pulumi/defang|${NODE_MODULE_NAME}|g' package.json && \
 		yarn install && \
 		yarn run tsc && \
-		cp ../../README.md ../../LICENSE package.json yarn.lock bin/ && \
-		rm ./package.json.bak
+		cp ../../README.md ../../LICENSE package.json yarn.lock bin/
 
 .PHONY: python_sdk
 python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python)
-python_sdk: $(WORKING_DIR)/bin/$(PROVIDER) schema
+python_sdk: provider
 	rm -rf sdk/python
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language python
 	cp README.md ${PACKDIR}/python/
 	cd ${PACKDIR}/python/ && \
 		python3 setup.py clean --all 2>/dev/null && \
 		rm -rf ./bin/ ../python.bin/ && cp -R . ../python.bin && mv ../python.bin ./bin && \
-		sed -i.bak -e 's/^VERSION = .*/VERSION = "$(PYPI_VERSION)"/g' -e 's/^PLUGIN_VERSION = .*/PLUGIN_VERSION = "$(VERSION)"/g' ./bin/setup.py && \
-		rm ./bin/setup.py.bak && \
 		cd ./bin && python3 setup.py build sdist
 
 .PHONY: examples
@@ -112,21 +101,7 @@ examples: go_example \
 		python_example \
 		dotnet_example
 
-go_example: clean_go_example
-clean_go_example: build_go_example
-	# intentionally blank
-nodejs_example: clean_nodejs_example
-clean_nodejs_example: build_nodejs_example
-	sed -i -e 's|@pulumi/defang|@defang-io/pulumi-defang|' examples/nodejs/package.json examples/nodejs/index.ts
-python_example: clean_python_example
-clean_python_example: build_python_example
-	# intentionally blank
-dotnet_example: clean_dotnet_example
-clean_dotnet_example: build_dotnet_example
-	# intentionally blank
-
-.PHONY: build_go_example build_nodejs_example build_python_example build_dotnet_example
-build_%_example:
+%_example:
 	rm -rf ${WORKING_DIR}/examples/$*
 	pulumi convert \
 		--cwd ${WORKING_DIR}/examples/yaml \

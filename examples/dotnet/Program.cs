@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Pulumi;
-using Defang = Pulumi.Defang;
+using Defang = DefangLabs.Defang;
 
 return await Deployment.RunAsync(() => 
 {
