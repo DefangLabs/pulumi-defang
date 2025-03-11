@@ -7,9 +7,10 @@ NODE_MODULE_NAME := @defang-io/pulumi-defang
 NUGET_PKG_NAME   := DefangLabs.defang
 
 PROVIDER        := pulumi-resource-${PACK}
-VERSION         ?= $(shell pulumictl get version)
+VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 PROVIDER_PATH   := provider
 VERSION_PATH    := ${PROVIDER_PATH}.Version
+IS_PRERELEASE   := $(shell git tag --list | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 
 GOPATH		:= $(shell go env GOPATH)
 
@@ -61,7 +62,7 @@ provider_debug:
 test_provider:
 	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
 
-dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet)
+dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 dotnet_sdk: provider
 	rm -rf sdk/dotnet
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
@@ -75,7 +76,7 @@ go_sdk: provider
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language go
 
 .PHONY: nodejs_sdk
-nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript)
+nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 nodejs_sdk: provider
 	rm -rf sdk/nodejs
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language nodejs
@@ -87,7 +88,7 @@ nodejs_sdk: provider
 		cp ../../README.md ../../LICENSE package.json yarn.lock bin/
 
 .PHONY: python_sdk
-python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python)
+python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 python_sdk: provider
 	rm -rf sdk/python
 	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language python
