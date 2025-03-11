@@ -1,2 +1,2 @@
-pulumi-defang==1.1.0-alpha.1741720149+aae6381f
+pulumi-defang==1.1.0-alpha.1741720555+c7a58fa6
 pulumi>=3.0.0,<4.0.0
