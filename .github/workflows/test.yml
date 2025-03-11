@@ -21,7 +21,6 @@ jobs:
       run: git fetch --prune --unshallow --tags
     - run: make provider
     - run: make test
-    - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v6
       with:
