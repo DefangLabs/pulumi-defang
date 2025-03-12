@@ -12,8 +12,8 @@ The Defang Pulumi Provider is available in most pulumi languages.
 * JavaScript/TypeScript: [`@defang-io/pulumi-defang`](https://www.npmjs.com/package/@defang-io/pulumi-defang)
 * Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
 * Go: [`github.com/DefangLabs/pulumi-defang/sdk/v1/go/defang`](https://github.com/DefangLabs/pulumi-defang)
+* .NET: [`DefangLabs.Defang`](https://www.nuget.org/packages/DefangLabs.Defang/)
 * Java: Coming soon
-* Dotnet: Coming soon
 
 ### Installing the Pulumi Plugin directly
 ```
@@ -49,7 +49,9 @@ You will also need to authenticate with your cloud provider.
 
 ## Example usage
 
-{{< chooser language "typescript,python,go,yaml" >}}
+You can find complete working TypeScript, Python, Go, .NET, and Yaml code samples in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory, and some example snippets below:
+
+{{< chooser language "typescript,python,go,dotnet,yaml" >}}
 {{% choosable language typescript %}}
 ```typescript
 import * as pulumi from "@pulumi/pulumi";
@@ -114,6 +116,38 @@ func main() {
 
 {{% /choosable %}}
 
+{{% choosable language dotnet %}}
+```dotnet
+using System.Collections.Generic;
+using System.Linq;
+using Pulumi;
+using Defang = DefangLabs.Defang;
+
+return await Deployment.RunAsync(() =>
+{
+    var myProject = new Defang.Project("myProject", new()
+    {
+        ProviderID = "aws",
+        ConfigPaths = new[]
+        {
+            "./compose.yaml",
+        },
+    });
+
+    return new Dictionary<string, object?>
+    {
+        ["output"] =
+        {
+            { "albArn", myProject.AlbArn },
+            { "etag", myProject.Etag },
+        },
+    };
+});
+
+```
+
+{{% /choosable %}}
+
 {{% choosable language yaml %}}
 ```yaml
 # Pulumi.yaml provider configuration file
@@ -135,3 +169,7 @@ Defang runs the Pulumi CLI in your cloud account. You can use [Pulumi Cloud](htt
 
 * `DEFANG_PULUMI_BACKEND=pulumi-cloud`
 * `PULUMI_ACCESS_TOKEN`
+
+## Reference
+
+For detailed reference documentation, please visit [the Pulumi registry](https://www.pulumi.com/registry/packages/defang/).
