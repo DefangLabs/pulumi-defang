@@ -48,7 +48,7 @@ func Provider() p.Provider {
 		Metadata: schema.Metadata{
 			Description: "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
 			Keywords: []string{
-				"category/cloud", "categoryinfrastructure", "kind/native", "defang", "docker",
+				"category/cloud", "category/infrastructure", "kind/native", "defang", "docker",
 				"docker compose", "cloud", "aws", "azure", "gcp", "digital ocean",
 			},
 			Homepage:          "https://github.com/DefangLabs/pulumi-defang",
