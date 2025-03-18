@@ -123,7 +123,8 @@ examples: go_example \
 
 .PHONY: docs
 docs: README.md
-	cp README.md docs/_index.md
+	cp docs/.front-matter.md docs/_index.md
+	cat README.md >> docs/_index.md
 
 define pulumi_login
     export PULUMI_CONFIG_PASSPHRASE=asdfqwerty1234; \
