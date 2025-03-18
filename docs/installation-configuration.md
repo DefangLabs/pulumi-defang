@@ -3,11 +3,13 @@ title: Defang Provider for Pulumi Installation & Configuration
 meta_desc: Provides an overview on how to configure the Pulumi Defang Provider.
 layout: package
 ---
+
+
 ## Installation
 
 The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.
 
-The Defang Pulumi Provider is available in most pulumi languages. 
+The Defang Pulumi Provider is available in most Pulumi languages.
 
 * JavaScript/TypeScript: [`@defang-io/pulumi-defang`](https://www.npmjs.com/package/@defang-io/pulumi-defang)
 * Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
@@ -16,7 +18,8 @@ The Defang Pulumi Provider is available in most pulumi languages.
 * Java: Coming soon
 
 ### Installing the Pulumi Plugin directly
-```
+
+```sh
 pulumi plugin install resource defang --server github://api.github.com/DefangLabs
 ```
 
@@ -24,11 +27,11 @@ pulumi plugin install resource defang --server github://api.github.com/DefangLab
 
 ### Authenticating with Defang
 
-Sign up for [Defang](https://defang.io) with your Github account.
+Sign up for [Defang](https://defang.io) with your GitHub account.
 
-#### Authenticating in Github Actions workflows
+#### Authenticating in GitHub Actions workflows
 
-When run in a Github Actions workflow, the Defang Pulumi Provider will automatically use environment varialbes Github providew to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
+When run in a GitHub Actions workflow, the Defang Pulumi Provider will automatically use environment variables GitHub provides to authenticate your GitHub user with Defang if you give your workflow the necessary permissions.
 
 #### Authenticating with `defang token`
 
@@ -39,20 +42,20 @@ You can run `defang token --expires 30d` out of band with a reasonable duration 
 You will also need to authenticate with your cloud provider.
 
 * For AWS, there are many ways to authenticate
-    - Use the [`aws-actions/configure-aws-credentials`](https://github.com/aws-actions/configure-aws-credentials) Github Action
-    - Use AWS Access Keys by setting the `AWS_ACCESS_KEY_ID`, and `AWS_ACCESS_KEY_SECRET` env vars.
+  - Use the [`aws-actions/configure-aws-credentials`](https://github.com/aws-actions/configure-aws-credentials) GitHub Action
+  - Use AWS Access Keys by setting the `AWS_ACCESS_KEY_ID`, and `AWS_ACCESS_KEY_SECRET` env vars.
 * For Digital Ocean, you will need to set the following env vars:
-    - `DIGITALOCEAN_TOKEN`
-    - `SPACES_ACCESS_KEY_ID`
-    - `SPACES_SECRET_ACCESS_KEY`
-* For Google Cloud, you may wish to use the [`google-github-actions/auth`](https://github.com/google-github-actions/auth) Github Action
+  - `DIGITALOCEAN_TOKEN`
+  - `SPACES_ACCESS_KEY_ID`
+  - `SPACES_SECRET_ACCESS_KEY`
+* For Google Cloud, you may wish to use the [`google-github-actions/auth`](https://github.com/google-github-actions/auth) GitHub Action
 
 ## Example usage
 
 You can find complete working TypeScript, Python, Go, .NET, and Yaml code samples in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory, and some example snippets below:
 
-{{< chooser language "typescript,python,go,dotnet,yaml" >}}
-{{% choosable language typescript %}}
+### TypeScript
+
 ```typescript
 import * as pulumi from "@pulumi/pulumi";
 import * as defang from "@defang-io/pulumi-defang";
@@ -67,9 +70,8 @@ export const output = {
 };
 ```
 
-{{% /choosable %}}
+### Python
 
-{{% choosable language python %}}
 ```python
 import pulumi
 import pulumi_defang as defang
@@ -83,9 +85,8 @@ pulumi.export("output", {
 })
 ```
 
-{{% /choosable %}}
+### Go
 
-{{% choosable language go %}}
 ```go
 package main
 
@@ -114,10 +115,9 @@ func main() {
 }
 ```
 
-{{% /choosable %}}
+### .NET
 
-{{% choosable language dotnet %}}
-```dotnet
+```csharp
 using System.Collections.Generic;
 using System.Linq;
 using Pulumi;
@@ -143,12 +143,10 @@ return await Deployment.RunAsync(() =>
         },
     };
 });
-
 ```
 
-{{% /choosable %}}
+### YAML
 
-{{% choosable language yaml %}}
 ```yaml
 # Pulumi.yaml provider configuration file
 name: configuration-example
@@ -160,9 +158,6 @@ config:
             - ./compose.yaml
 ```
 
-{{% /choosable %}}
-{{< /chooser >}}
-
 ## Using Pulumi Cloud
 
 Defang runs the Pulumi CLI in your cloud account. You can use [Pulumi Cloud](https://www.pulumi.com/product/pulumi-cloud/) to manage the Pulumi resources which Defang creates by setting the following environment variables:
@@ -173,3 +168,4 @@ Defang runs the Pulumi CLI in your cloud account. You can use [Pulumi Cloud](htt
 ## Reference
 
 For detailed reference documentation, please visit [the Pulumi registry](https://www.pulumi.com/registry/packages/defang/).
+
