@@ -31,7 +31,7 @@ Sign up for [Defang](https://defang.io) with your GitHub account.
 
 #### Authenticating in GitHub Actions workflows
 
-When run in a GitHub Actions workflow, the Defang Pulumi Provider will automatically use environment variables GitHub provides to authenticate your GitHub user with Defang if you give your workflow the necessary permissions.
+When run in a GitHub Actions workflow, the Defang Pulumi Provider will automatically use environment variables GitHub provides to authenticate your GitHub user with Defang if you give your workflow the [necessary permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang uses the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
 
 #### Authenticating with `defang token`
 
