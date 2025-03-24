@@ -122,7 +122,7 @@ config:
 
 ## Installation and Configuration
 
-See our [Installation and Configuration](https://github.com/DefangLabs/pulumi-defang/blob/main/docs/installation-configuration.md) docs
+See our [Installation and Configuration](https://pulumi.com/registry/packages/defang/installation-configuration/) docs
 
 ## Development
 
