@@ -131,4 +131,4 @@ See our [Installation and Configuration](https://github.com/DefangLabs/pulumi-de
 
 ## Development
 
-See the [Contributing](CONTRIBUTING.md) doc.
+See the [Contributing](https://github.com/DefangLabs/pulumi-defang/blob/main/CONTRIBUTING.md) doc.
