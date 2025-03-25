@@ -88,8 +88,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
 github.com/BurntSushi/toml v1.2.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
-github.com/DefangLabs/defang/src v0.0.0-20250311052902-1d12330e66fe h1:4V9IBDzQPETMxh7E/2Pt7+4pQS62IMT1SXGCjS3ZM34=
-github.com/DefangLabs/defang/src v0.0.0-20250311052902-1d12330e66fe/go.mod h1:KPuA2k/zWEwuCUsD+hCnz1N3z2XXfy9L/1McQ1+msZI=
+github.com/DefangLabs/defang/src v0.0.0-20250325191118-81f3ccd7b4e5 h1:7ciyT/M090IQGRp2k4D9Z7z0QY3l2cizw5wha+VH308=
+github.com/DefangLabs/defang/src v0.0.0-20250325191118-81f3ccd7b4e5/go.mod h1:KPuA2k/zWEwuCUsD+hCnz1N3z2XXfy9L/1McQ1+msZI=
 github.com/DefangLabs/secret-detector v0.0.0-20250108223530-c2b44d4c1f8f h1:RTbUqLhPxejgK92ifVdMTIW9H23QLlscy8QXPDTfaL4=
 github.com/DefangLabs/secret-detector v0.0.0-20250108223530-c2b44d4c1f8f/go.mod h1:2UjtD/G/Sy2FxoHpxKnzHTXMpRURecwYal8HgbxcvkY=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.24.1 h1:pB2F2JKCj1Znmp2rwxxt1J0Fg0wezTMgWYk5Mpbi1kg=
@@ -409,8 +409,6 @@ github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSo
 github.com/hinshun/vt10x v0.0.0-20220119200601-820417d04eec/go.mod h1:Q48J4R4DvxnHolD5P8pOtXigYlRuPLGl6moFx3ulM68=
 github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02 h1:AgcIVYPa6XJnU3phs104wLj8l5GEththEw6+F79YsIY=
 github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02/go.mod h1:Q48J4R4DvxnHolD5P8pOtXigYlRuPLGl6moFx3ulM68=
-github.com/iancoleman/strcase v0.3.0 h1:nTXanmYxhfFAMjZL34Ov6gkzEsSJZ5DbhxWjvSASxEI=
-github.com/iancoleman/strcase v0.3.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

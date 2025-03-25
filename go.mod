@@ -3,7 +3,7 @@ module github.com/DefangLabs/pulumi-defang
 go 1.22.12
 
 require (
-	github.com/DefangLabs/defang/src v0.0.0-20250311052902-1d12330e66fe
+	github.com/DefangLabs/defang/src v0.0.0-20250325191118-81f3ccd7b4e5
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/pulumi/pulumi-go-provider v0.24.1
 	github.com/pulumi/pulumi/pkg/v3 v3.154.0
@@ -114,7 +114,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/hcl/v2 v2.22.0 // indirect
-	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
