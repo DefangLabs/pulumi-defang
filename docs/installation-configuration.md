@@ -7,7 +7,7 @@ layout: package
 
 The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.
 
-The Defang Pulumi Provider is available in most pulumi languages. 
+The Defang Pulumi Provider is available in most pulumi languages.
 
 * JavaScript/TypeScript: [`@defang-io/pulumi-defang`](https://www.npmjs.com/package/@defang-io/pulumi-defang)
 * Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
@@ -28,7 +28,7 @@ Sign up for [Defang](https://defang.io) with your Github account.
 
 #### Authenticating in Github Actions workflows
 
-When run in a Github Actions workflow, the Defang Pulumi Provider will automatically use environment varialbes Github providew to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
+When run in a Github Actions workflow, the Defang Pulumi Provider will automatically use environment variables Github provides to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` environment variables.
 
 #### Authenticating with `defang token`
 
