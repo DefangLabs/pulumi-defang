@@ -10,7 +10,7 @@ PROVIDER        := pulumi-resource-${PACK}
 VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 PROVIDER_PATH   := provider
 VERSION_PATH    := ${PROVIDER_PATH}.Version
-IS_PRERELEASE   := $(shell git tag --list | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
+IS_PRERELEASE   := $(shell git tag --sort=creatordate | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 
 GOPATH		:= $(shell go env GOPATH)
 
