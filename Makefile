@@ -61,7 +61,7 @@ provider_debug:
 ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: provider
 	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
-schema: ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
+schema: provider ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
 .PHONY: test_provider
 test_provider:
