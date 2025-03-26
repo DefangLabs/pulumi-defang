@@ -67,6 +67,10 @@ schema: provider ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 test_provider:
 	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
 
+.PHONY: version
+version:
+	@echo $(VERSION)
+
 dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 dotnet_sdk: provider
 	rm -rf sdk/dotnet
