@@ -4,7 +4,7 @@
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
-    "categoryinfrastructure",
+    "category/infrastructure",
     "kind/native",
     "defang",
     "docker",
