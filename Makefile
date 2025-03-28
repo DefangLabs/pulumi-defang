@@ -58,10 +58,9 @@ $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go")
 provider_debug:
 	(cd provider && go build -o $(WORKING_DIR)/bin/${PROVIDER} -gcflags="all=-N -l" -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER))
 
-${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: provider
+.PHONY: schema
+schema: provider
 	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
-
-schema: provider ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
 .PHONY: test_provider
 test_provider:
