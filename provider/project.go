@@ -28,6 +28,7 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	composeTypes "github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
 // Each resource has a controlling struct.
@@ -50,6 +51,13 @@ type ProjectArgs struct {
 	CloudProviderID client.ProviderID     `pulumi:"providerID"`
 	ConfigPaths     []string              `pulumi:"configPaths"`
 	ComposeData     *composeTypes.Project `pulumi:"composeData"`
+}
+
+func (pa *ProjectArgs) Annotate(a infer.Annotator) {
+	// Annotate the fields of the struct.
+	a.Describe(&pa.CloudProviderID, "The provider ID to use.")
+	a.Describe(&pa.ConfigPaths, "The paths to the config files.")
+	a.Describe(&pa.ComposeData, "The compose file data to use.")
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
