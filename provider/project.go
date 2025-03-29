@@ -27,6 +27,7 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/cli/compose"
 	"github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	composeTypes "github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
 // Each resource has a controlling struct.
@@ -46,8 +47,9 @@ type ProjectArgs struct {
 	// Fields projected into Pulumi must be public and hava a `pulumi:"..."` tag.
 	// The pulumi tag doesn't need to match the field name, but it's generally a
 	// good idea.
-	CloudProviderID client.ProviderID `pulumi:"providerID"`
-	ConfigPaths     []string          `pulumi:"configPaths"`
+	CloudProviderID client.ProviderID     `pulumi:"providerID"`
+	ConfigPaths     []string              `pulumi:"configPaths"`
+	ComposeData     *composeTypes.Project `pulumi:"composeData"`
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
