@@ -10,7 +10,7 @@ PROVIDER        := pulumi-resource-${PACK}
 VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 PROVIDER_PATH   := provider
 VERSION_PATH    := ${PROVIDER_PATH}.Version
-IS_PRERELEASE   := $(shell git tag --list | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
+IS_PRERELEASE   := $(shell git tag --sort=creatordate | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 
 GOPATH		:= $(shell go env GOPATH)
 
@@ -58,14 +58,17 @@ $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go")
 provider_debug:
 	(cd provider && go build -o $(WORKING_DIR)/bin/${PROVIDER} -gcflags="all=-N -l" -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER))
 
-${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json: provider
+.PHONY: schema
+schema: provider
 	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
-
-schema: ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
 .PHONY: test_provider
 test_provider:
 	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
+
+.PHONY: version
+version:
+	@echo $(VERSION)
 
 dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 dotnet_sdk: provider
