@@ -25,8 +25,11 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/cli"
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/cli/compose"
-	"github.com/DefangLabs/defang/src/pkg/types"
+	defangTypes "github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider/types"
+	"github.com/compose-spec/compose-go/v2/loader"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 )
 
 // Each resource has a controlling struct.
@@ -47,14 +50,15 @@ type ProjectArgs struct {
 	// The pulumi tag doesn't need to match the field name, but it's generally a
 	// good idea.
 	CloudProviderID client.ProviderID `pulumi:"providerID"`
-	ConfigPaths     []string          `pulumi:"configPaths"`
+	ConfigPaths     []string          `pulumi:"configPaths,optional"`
+	Config          *types.Project    `pulumi:"config,optional"`
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
 type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
-	Etag     types.ETag              `pulumi:"etag"`
+	Etag     defangTypes.ETag        `pulumi:"etag"`
 	AlbArn   string                  `pulumi:"albArn"`
 	Services []*defangv1.ServiceInfo `pulumi:"services"`
 }
@@ -68,8 +72,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, nil
 	}
 
-	loader := compose.NewLoader(compose.WithProjectName(name), compose.WithPath(input.ConfigPaths...))
-	project, err := loader.LoadProject(ctx)
+	project, err := loadProject(ctx, name, input)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to load project: %w", err)
 	}
@@ -110,6 +113,48 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	state.Services = projectUpdate.GetServices()
 
 	return name, state, nil
+}
+
+func loadProject(ctx context.Context, name string, input ProjectArgs) (*compose.Project, error) {
+	if input.Config == nil {
+		l := compose.NewLoader(compose.WithProjectName(name), compose.WithPath(input.ConfigPaths...))
+		project, err := l.LoadProject(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load project from paths %q: %w", input.ConfigPaths, err)
+		}
+
+		return project, nil
+	}
+
+	if input.Config.Name == "" {
+		input.Config.Name = name
+	}
+
+	// HACK: we need to convert types.Project into compose.Project. the easiest way
+	// to do that AFAICT is to marshal the types.Project to YAML and then parse it
+	// back into a compose.Project. this is ineffecient, but it works for now.
+	// We should avoid marshalling to YAML only to parse it again. instead try to
+	// cast types.Project to map[string]interface{} and then pass it to
+	// LoadWithContext as ConfigFile.Config.
+	content, err := input.Config.MarshalYAML()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal project: %w", err)
+	}
+
+	configDetails := composeTypes.ConfigDetails{
+		ConfigFiles: []composeTypes.ConfigFile{
+			{
+				Content: content,
+			},
+		},
+	}
+
+	project, err := loader.LoadWithContext(ctx, configDetails)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load project data: %w", err)
+	}
+
+	return project, nil
 }
 
 func configureProviderCdImage(

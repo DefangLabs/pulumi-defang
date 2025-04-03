@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.1.0-alpha.1743031341",
+  "version": "1.1.0-alpha.1743723413+b2aaccfb",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -37,6 +37,9 @@
   },
   "config": {},
   "types": {
+    "defang:types:Project": {
+      "type": "object"
+    },
     "defang:v1:ServiceInfo": {
       "type": "object"
     }
@@ -49,6 +52,9 @@
       "properties": {
         "albArn": {
           "type": "string"
+        },
+        "config": {
+          "$ref": "#/types/defang:types:Project"
         },
         "configPaths": {
           "type": "array",
@@ -72,12 +78,14 @@
       "type": "object",
       "required": [
         "albArn",
-        "configPaths",
         "etag",
         "providerID",
         "services"
       ],
       "inputProperties": {
+        "config": {
+          "$ref": "#/types/defang:types:Project"
+        },
         "configPaths": {
           "type": "array",
           "items": {
@@ -89,7 +97,6 @@
         }
       },
       "requiredInputs": [
-        "configPaths",
         "providerID"
       ]
     }
