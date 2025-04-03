@@ -21,7 +21,7 @@ import (
 	"strconv"
 )
 
-type NanoCPUs float32
+type NanoCPUs float64
 
 func (n *NanoCPUs) DecodeMapstructure(a any) error {
 	switch v := a.(type) {
@@ -43,6 +43,6 @@ func (n *NanoCPUs) DecodeMapstructure(a any) error {
 	return nil
 }
 
-func (n *NanoCPUs) Value() float32 {
-	return float32(*n)
+func (n *NanoCPUs) Value() float64 {
+	return float64(*n)
 }

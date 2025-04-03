@@ -40,12 +40,12 @@ type ServiceConfig struct {
 	CgroupParent string         `yaml:"cgroup_parent,omitempty" json:"cgroup_parent,omitempty"`
 	Cgroup       string         `yaml:"cgroup,omitempty" json:"cgroup,omitempty"`
 	CPUCount     int64          `yaml:"cpu_count,omitempty" json:"cpu_count,omitempty"`
-	CPUPercent   float32        `yaml:"cpu_percent,omitempty" json:"cpu_percent,omitempty"`
+	CPUPercent   float64        `yaml:"cpu_percent,omitempty" json:"cpu_percent,omitempty"`
 	CPUPeriod    int64          `yaml:"cpu_period,omitempty" json:"cpu_period,omitempty"`
 	CPUQuota     int64          `yaml:"cpu_quota,omitempty" json:"cpu_quota,omitempty"`
 	CPURTPeriod  int64          `yaml:"cpu_rt_period,omitempty" json:"cpu_rt_period,omitempty"`
 	CPURTRuntime int64          `yaml:"cpu_rt_runtime,omitempty" json:"cpu_rt_runtime,omitempty"`
-	CPUS         float32        `yaml:"cpus,omitempty" json:"cpus,omitempty"`
+	CPUS         float64        `yaml:"cpus,omitempty" json:"cpus,omitempty"`
 	CPUSet       string         `yaml:"cpuset,omitempty" json:"cpuset,omitempty"`
 	CPUShares    int64          `yaml:"cpu_shares,omitempty" json:"cpu_shares,omitempty"`
 
@@ -297,7 +297,7 @@ type BuildConfig struct {
 
 // BlkioConfig define blkio config
 type BlkioConfig struct {
-	Weight          uint16           `yaml:"weight,omitempty" json:"weight,omitempty"`
+	Weight          int32            `yaml:"weight,omitempty" json:"weight,omitempty"`
 	WeightDevice    []WeightDevice   `yaml:"weight_device,omitempty" json:"weight_device,omitempty"`
 	DeviceReadBps   []ThrottleDevice `yaml:"device_read_bps,omitempty" json:"device_read_bps,omitempty"`
 	DeviceReadIOps  []ThrottleDevice `yaml:"device_read_iops,omitempty" json:"device_read_iops,omitempty"`
@@ -318,7 +318,7 @@ type DeviceMapping struct {
 // WeightDevice is a structure that holds device:weight pair
 type WeightDevice struct {
 	Path   string
-	Weight uint16
+	Weight int32
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }
@@ -355,16 +355,16 @@ type DeployConfig struct {
 	Placement      Placement      `yaml:"placement,omitempty" json:"placement,omitempty"`
 	EndpointMode   string         `yaml:"endpoint_mode,omitempty" json:"endpoint_mode,omitempty"`
 
-	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
+	Extensions Extensions `yaml:"extensions,inline,omitempty" json:"-"`
 }
 
 // UpdateConfig the service update configuration
 type UpdateConfig struct {
-	Parallelism     *uint64  `yaml:"parallelism,omitempty" json:"parallelism,omitempty"`
+	Parallelism     *int64   `yaml:"parallelism,omitempty" json:"parallelism,omitempty"`
 	Delay           Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
 	FailureAction   string   `yaml:"failure_action,omitempty" json:"failure_action,omitempty"`
 	Monitor         Duration `yaml:"monitor,omitempty" json:"monitor,omitempty"`
-	MaxFailureRatio float32  `yaml:"max_failure_ratio,omitempty" json:"max_failure_ratio,omitempty"`
+	MaxFailureRatio float64  `yaml:"max_failure_ratio,omitempty" json:"max_failure_ratio,omitempty"`
 	Order           string   `yaml:"order,omitempty" json:"order,omitempty"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
@@ -413,7 +413,7 @@ type DiscreteGenericResource struct {
 type RestartPolicy struct {
 	Condition   string    `yaml:"condition,omitempty" json:"condition,omitempty"`
 	Delay       *Duration `yaml:"delay,omitempty" json:"delay,omitempty"`
-	MaxAttempts *uint64   `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
+	MaxAttempts *int64    `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
 	Window      *Duration `yaml:"window,omitempty" json:"window,omitempty"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
@@ -423,7 +423,7 @@ type RestartPolicy struct {
 type Placement struct {
 	Constraints []string               `yaml:"constraints,omitempty" json:"constraints,omitempty"`
 	Preferences []PlacementPreferences `yaml:"preferences,omitempty" json:"preferences,omitempty"`
-	MaxReplicas uint64                 `yaml:"max_replicas_per_node,omitempty" json:"max_replicas_per_node,omitempty"`
+	MaxReplicas int64                  `yaml:"max_replicas_per_node,omitempty" json:"max_replicas_per_node,omitempty"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }
@@ -453,7 +453,7 @@ type ServicePortConfig struct {
 	Name        string `yaml:"name,omitempty" json:"name,omitempty"`
 	Mode        string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	HostIP      string `yaml:"host_ip,omitempty" json:"host_ip,omitempty"`
-	Target      uint32 `yaml:"target,omitempty" json:"target,omitempty"`
+	Target      int32  `yaml:"target,omitempty" json:"target,omitempty"`
 	Published   string `yaml:"published,omitempty" json:"published,omitempty"`
 	Protocol    string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
 	AppProtocol string `yaml:"app_protocol,omitempty" json:"app_protocol,omitempty"`
@@ -492,7 +492,7 @@ func convertPortToPortConfig(port nat.Port, portBindings map[nat.Port][]nat.Port
 		portConfigs = append(portConfigs, ServicePortConfig{
 			HostIP:    binding.HostIP,
 			Protocol:  strings.ToLower(port.Proto()),
-			Target:    uint32(port.Int()),
+			Target:    int32(port.Int()),
 			Published: binding.HostPort,
 			Mode:      "ingress",
 		})
@@ -597,18 +597,18 @@ type ServiceVolumeVolume struct {
 type ServiceVolumeTmpfs struct {
 	Size UnitBytes `yaml:"size,omitempty" json:"size,omitempty"`
 
-	Mode uint32 `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Mode int32 `yaml:"mode,omitempty" json:"mode,omitempty"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }
 
 // FileReferenceConfig for a reference to a swarm file object
 type FileReferenceConfig struct {
-	Source string  `yaml:"source,omitempty" json:"source,omitempty"`
-	Target string  `yaml:"target,omitempty" json:"target,omitempty"`
-	UID    string  `yaml:"uid,omitempty" json:"uid,omitempty"`
-	GID    string  `yaml:"gid,omitempty" json:"gid,omitempty"`
-	Mode   *uint32 `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+	UID    string `yaml:"uid,omitempty" json:"uid,omitempty"`
+	GID    string `yaml:"gid,omitempty" json:"gid,omitempty"`
+	Mode   *int32 `yaml:"mode,omitempty" json:"mode,omitempty"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }

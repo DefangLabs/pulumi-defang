@@ -1289,7 +1289,7 @@ func deriveDeepCopy_16(dst, src *HealthCheckConfig) {
 	if src.Retries == nil {
 		dst.Retries = nil
 	} else {
-		dst.Retries = new(uint64)
+		dst.Retries = new(int64)
 		*dst.Retries = *src.Retries
 	}
 	if src.StartPeriod == nil {
@@ -1567,7 +1567,7 @@ func deriveDeepCopy_31(dst, src *ServiceConfigObjConfig) {
 	if src.Mode == nil {
 		dst.Mode = nil
 	} else {
-		dst.Mode = new(uint32)
+		dst.Mode = new(int32)
 		*dst.Mode = *src.Mode
 	}
 	if src.Extensions != nil {
@@ -1596,7 +1596,7 @@ func deriveDeepCopy_33(dst, src *UpdateConfig) {
 	if src.Parallelism == nil {
 		dst.Parallelism = nil
 	} else {
-		dst.Parallelism = new(uint64)
+		dst.Parallelism = new(int64)
 		*dst.Parallelism = *src.Parallelism
 	}
 	dst.Delay = src.Delay
@@ -1646,7 +1646,7 @@ func deriveDeepCopy_35(dst, src *RestartPolicy) {
 	if src.MaxAttempts == nil {
 		dst.MaxAttempts = nil
 	} else {
-		dst.MaxAttempts = new(uint64)
+		dst.MaxAttempts = new(int64)
 		*dst.MaxAttempts = *src.MaxAttempts
 	}
 	if src.Window == nil {
@@ -1853,7 +1853,7 @@ func deriveDeepCopy_41(dst, src *ServiceSecretConfig) {
 	if src.Mode == nil {
 		dst.Mode = nil
 	} else {
-		dst.Mode = new(uint32)
+		dst.Mode = new(int32)
 		*dst.Mode = *src.Mode
 	}
 	if src.Extensions != nil {
