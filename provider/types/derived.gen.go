@@ -194,19 +194,21 @@ func deriveDeepCopyService(dst, src *ServiceConfig) {
 		dst.Command = nil
 	} else {
 		if dst.Command != nil {
-			if len(src.Command) > len(dst.Command) {
-				if cap(dst.Command) >= len(src.Command) {
-					dst.Command = (dst.Command)[:len(src.Command)]
+			if src.Command != nil && dst.Command != nil && len(*src.Command) > len(*dst.Command) {
+				if cap(*dst.Command) >= len(*src.Command) {
+					*dst.Command = (*dst.Command)[:len(*src.Command)]
 				} else {
-					dst.Command = make([]string, len(src.Command))
+					command := make(ShellCommand, len(*src.Command))
+					dst.Command = &command
 				}
-			} else if len(src.Command) < len(dst.Command) {
-				dst.Command = (dst.Command)[:len(src.Command)]
+			} else if len(*src.Command) < len(*dst.Command) {
+				*dst.Command = (*dst.Command)[:len(*src.Command)]
 			}
 		} else {
-			dst.Command = make([]string, len(src.Command))
+			command := make(ShellCommand, len(*src.Command))
+			dst.Command = &command
 		}
-		copy(dst.Command, src.Command)
+		copy(*dst.Command, *src.Command)
 	}
 	if src.Configs == nil {
 		dst.Configs = nil
@@ -341,19 +343,23 @@ func deriveDeepCopyService(dst, src *ServiceConfig) {
 		dst.Entrypoint = nil
 	} else {
 		if dst.Entrypoint != nil {
-			if len(src.Entrypoint) > len(dst.Entrypoint) {
-				if cap(dst.Entrypoint) >= len(src.Entrypoint) {
-					dst.Entrypoint = (dst.Entrypoint)[:len(src.Entrypoint)]
+			if len(*src.Entrypoint) > len(*dst.Entrypoint) {
+				if cap(*dst.Entrypoint) >= len(*src.Entrypoint) {
+					tempEntrypoint := (*dst.Entrypoint)[:len(*src.Entrypoint)]
+					dst.Entrypoint = &tempEntrypoint
 				} else {
-					dst.Entrypoint = make([]string, len(src.Entrypoint))
+					entrypoint := make(ShellCommand, len(*src.Entrypoint))
+					dst.Entrypoint = &entrypoint
 				}
-			} else if len(src.Entrypoint) < len(dst.Entrypoint) {
-				dst.Entrypoint = (dst.Entrypoint)[:len(src.Entrypoint)]
+			} else if len(*src.Entrypoint) < len(*dst.Entrypoint) {
+				tempEntrypoint := (*dst.Entrypoint)[:len(*src.Entrypoint)]
+				dst.Entrypoint = &tempEntrypoint
 			}
 		} else {
-			dst.Entrypoint = make([]string, len(src.Entrypoint))
+			entrypoint := make(ShellCommand, len(*src.Entrypoint))
+			dst.Entrypoint = &entrypoint
 		}
-		copy(dst.Entrypoint, src.Entrypoint)
+		copy(*dst.Entrypoint, *src.Entrypoint)
 	}
 	if src.Environment != nil {
 		dst.Environment = make(map[string]*string, len(src.Environment))

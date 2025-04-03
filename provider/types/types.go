@@ -53,7 +53,7 @@ type ServiceConfig struct {
 	// If set, overrides COMMAND from the image.
 	//
 	// Set to `[]` or an empty string to clear the command from the image.
-	Command ShellCommand `yaml:"command,omitempty" json:"command"` // NOTE: we can NOT omitempty for JSON! see ShellCommand type for details.
+	Command *ShellCommand `yaml:"command,omitempty" json:"command,omitempty"` // NOTE: we can NOT omitempty for JSON! see ShellCommand type for details.
 
 	Configs           []ServiceConfigObjConfig `yaml:"configs,omitempty" json:"configs,omitempty"`
 	ContainerName     string                   `yaml:"container_name,omitempty" json:"container_name,omitempty"`
@@ -72,7 +72,7 @@ type ServiceConfig struct {
 	// If set, overrides ENTRYPOINT from the image.
 	//
 	// Set to `[]` or an empty string to clear the entrypoint from the image.
-	Entrypoint ShellCommand `yaml:"entrypoint,omitempty" json:"entrypoint"` // NOTE: we can NOT omitempty for JSON! see ShellCommand type for details.
+	Entrypoint *ShellCommand `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"` // NOTE: we can NOT omitempty for JSON! see ShellCommand type for details.
 
 	Environment     MappingWithEquals                `yaml:"environment,omitempty" json:"environment,omitempty"`
 	EnvFiles        []EnvFile                        `yaml:"env_file,omitempty" json:"env_file,omitempty"`
