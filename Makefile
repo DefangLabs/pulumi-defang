@@ -149,7 +149,7 @@ down::
 	pulumi stack rm ${EXAMPLE_STACK_NAME} -y
 
 .PHONY: build
-build: provider schema sdks
+build: provider schema sdks examples
 
 .PHONY: sdks
 sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
