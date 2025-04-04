@@ -81,14 +81,14 @@ func ToConfigFiles(path []string) (f []ConfigFile) {
 // Config is a full compose file configuration and model
 type Config struct {
 	Filename   string          `yaml:"-" json:"-"`
-	Name       string          `yaml:"name,omitempty" json:"name,omitempty"`
-	Services   Services        `yaml:"services" json:"services"`
-	Networks   Networks        `yaml:"networks,omitempty" json:"networks,omitempty"`
-	Volumes    Volumes         `yaml:"volumes,omitempty" json:"volumes,omitempty"`
-	Secrets    Secrets         `yaml:"secrets,omitempty" json:"secrets,omitempty"`
-	Configs    Configs         `yaml:"configs,omitempty" json:"configs,omitempty"`
+	Name       string          `yaml:"name,omitempty" json:"name,omitempty" pulumi:"name,omitempty"`
+	Services   Services        `yaml:"services" json:"services" pulumi:"services"`
+	Networks   Networks        `yaml:"networks,omitempty" json:"networks,omitempty" pulumi:"networks,omitempty"`
+	Volumes    Volumes         `yaml:"volumes,omitempty" json:"volumes,omitempty" pulumi:"volumes,omitempty"`
+	Secrets    Secrets         `yaml:"secrets,omitempty" json:"secrets,omitempty" pulumi:"secrets,omitempty"`
+	Configs    Configs         `yaml:"configs,omitempty" json:"configs,omitempty" pulumi:"configs,omitempty"`
 	Extensions Extensions      `yaml:",inline" json:"-"`
-	Include    []IncludeConfig `yaml:"include,omitempty" json:"include,omitempty"`
+	Include    []IncludeConfig `yaml:"include,omitempty" json:"include,omitempty" pulumi:"include,omitempty"`
 }
 
 // Volumes is a map of VolumeConfig

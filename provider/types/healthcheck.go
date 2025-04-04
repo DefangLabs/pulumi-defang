@@ -22,13 +22,13 @@ import (
 
 // HealthCheckConfig the healthcheck configuration for a service
 type HealthCheckConfig struct {
-	Test          HealthCheckTest `yaml:"test,omitempty" json:"test,omitempty"`
-	Timeout       *Duration       `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Interval      *Duration       `yaml:"interval,omitempty" json:"interval,omitempty"`
-	Retries       *int64          `yaml:"retries,omitempty" json:"retries,omitempty"`
-	StartPeriod   *Duration       `yaml:"start_period,omitempty" json:"start_period,omitempty"`
-	StartInterval *Duration       `yaml:"start_interval,omitempty" json:"start_interval,omitempty"`
-	Disable       bool            `yaml:"disable,omitempty" json:"disable,omitempty"`
+	Test          HealthCheckTest `yaml:"test,omitempty" json:"test,omitempty" pulumi:"test,omitempty"`
+	Timeout       *Duration       `yaml:"timeout,omitempty" json:"timeout,omitempty" pulumi:"timeout,omitempty"`
+	Interval      *Duration       `yaml:"interval,omitempty" json:"interval,omitempty" pulumi:"interval,omitempty"`
+	Retries       *int64          `yaml:"retries,omitempty" json:"retries,omitempty" pulumi:"retries,omitempty"`
+	StartPeriod   *Duration       `yaml:"start_period,omitempty" json:"start_period,omitempty" pulumi:"start_period,omitempty"`
+	StartInterval *Duration       `yaml:"start_interval,omitempty" json:"start_interval,omitempty" pulumi:"start_interval,omitempty"`
+	Disable       bool            `yaml:"disable,omitempty" json:"disable,omitempty" pulumi:"disable,omitempty"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }

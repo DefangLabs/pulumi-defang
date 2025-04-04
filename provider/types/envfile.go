@@ -21,9 +21,9 @@ import (
 )
 
 type EnvFile struct {
-	Path     string `yaml:"path,omitempty" json:"path,omitempty"`
-	Required bool   `yaml:"required" json:"required"`
-	Format   string `yaml:"format,omitempty" json:"format,omitempty"`
+	Path     string `yaml:"path,omitempty" json:"path,omitempty" pulumi:"path,omitempty"`
+	Required bool   `yaml:"required" json:"required" pulumi:"required"`
+	Format   string `yaml:"format,omitempty" json:"format,omitempty" pulumi:"format,omitempty"`
 }
 
 // MarshalYAML makes EnvFile implement yaml.Marshaler
