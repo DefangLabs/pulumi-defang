@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.1.0-alpha.1743801939+4e160a02",
+  "version": "1.1.0-alpha.1743802438+c64069a0.dirty",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -37,6 +37,127 @@
   },
   "config": {},
   "types": {
+    "defang:index:ProjectConfig": {
+      "properties": {
+        "configs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang:types:ConfigObjConfig"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "networks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang:types:NetworkConfig"
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang:types:SecretConfig"
+          }
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang:types:ServiceConfig"
+          }
+        },
+        "volumes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang:types:VolumeConfig"
+          }
+        }
+      },
+      "type": "object",
+      "required": [
+        "configs",
+        "name",
+        "networks",
+        "secrets",
+        "services",
+        "volumes"
+      ]
+    },
+    "defang:index:ServiceInfo": {
+      "properties": {
+        "created_at": {
+          "$ref": "#/types/defang:timestamppb:Timestamp"
+        },
+        "domanname": {
+          "type": "string"
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "etag": {
+          "type": "string"
+        },
+        "lb_dns_name": {
+          "type": "string"
+        },
+        "lb_ips": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nat_ips": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "private_fqdn": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "public_fqdn": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updated_at": {
+          "$ref": "#/types/defang:timestamppb:Timestamp"
+        },
+        "use_acme_cert": {
+          "type": "boolean"
+        },
+        "zone_id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "created_at",
+        "domanname",
+        "endpoints",
+        "etag",
+        "lb_dns_name",
+        "lb_ips",
+        "nat_ips",
+        "private_fqdn",
+        "project",
+        "public_fqdn",
+        "status",
+        "updated_at",
+        "use_acme_cert",
+        "zone_id"
+      ]
+    },
+    "defang:timestamppb:Timestamp": {
+      "type": "object"
+    },
     "defang:types:BlkioConfig": {
       "properties": {
         "device_read_bps": {
@@ -643,52 +764,6 @@
       "type": "object",
       "required": [
         "spread"
-      ]
-    },
-    "defang:types:Project": {
-      "properties": {
-        "configs": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/types/defang:types:ConfigObjConfig"
-          }
-        },
-        "name": {
-          "type": "string"
-        },
-        "networks": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/types/defang:types:NetworkConfig"
-          }
-        },
-        "secrets": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/types/defang:types:SecretConfig"
-          }
-        },
-        "services": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/types/defang:types:ServiceConfig"
-          }
-        },
-        "volumes": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/types/defang:types:VolumeConfig"
-          }
-        }
-      },
-      "type": "object",
-      "required": [
-        "configs",
-        "name",
-        "networks",
-        "secrets",
-        "services",
-        "volumes"
       ]
     },
     "defang:types:Resource": {
@@ -1700,9 +1775,6 @@
     },
     "defang:types:WeightDevice": {
       "type": "object"
-    },
-    "defang:v1:ServiceInfo": {
-      "type": "object"
     }
   },
   "provider": {
@@ -1715,7 +1787,7 @@
           "type": "string"
         },
         "config": {
-          "$ref": "#/types/defang:types:Project"
+          "$ref": "#/types/defang:index:ProjectConfig"
         },
         "configPaths": {
           "type": "array",
@@ -1732,7 +1804,7 @@
         "services": {
           "type": "array",
           "items": {
-            "$ref": "#/types/defang:v1:ServiceInfo"
+            "$ref": "#/types/defang:index:ServiceInfo"
           }
         }
       },
@@ -1745,7 +1817,7 @@
       ],
       "inputProperties": {
         "config": {
-          "$ref": "#/types/defang:types:Project"
+          "$ref": "#/types/defang:index:ProjectConfig"
         },
         "configPaths": {
           "type": "array",

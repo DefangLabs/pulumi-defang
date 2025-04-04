@@ -30,6 +30,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/types"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Each resource has a controlling struct.
@@ -44,6 +45,10 @@ import (
 // - WireDependencies: Control how outputs and secrets flows through values.
 type Project struct{}
 
+type ProjectConfig struct {
+	types.Project
+}
+
 // Each resource has an input struct, defining what arguments it accepts.
 type ProjectArgs struct {
 	// Fields projected into Pulumi must be public and hava a `pulumi:"..."` tag.
@@ -51,16 +56,34 @@ type ProjectArgs struct {
 	// good idea.
 	CloudProviderID client.ProviderID `pulumi:"providerID"`
 	ConfigPaths     []string          `pulumi:"configPaths,optional"`
-	Config          *types.Project    `pulumi:"config,optional"`
+	Config          *ProjectConfig    `pulumi:"config,optional"`
+}
+
+type ServiceInfo struct {
+	defangv1.ServiceInfo
+	Endpoints   []string               `json:"endpoints,omitempty"     pulumi:"endpoints,omitempty"`
+	Project     string                 `json:"project,omitempty"       pulumi:"project,omitempty"`
+	Etag        string                 `json:"etag,omitempty"          pulumi:"etag,omitempty"`
+	Status      string                 `json:"status,omitempty"        pulumi:"status,omitempty"`
+	NatIps      []string               `json:"nat_ips,omitempty"       pulumi:"nat_ips,omitempty"`
+	LbIps       []string               `json:"lb_ips,omitempty"        pulumi:"lb_ips,omitempty"`
+	PrivateFqdn string                 `json:"private_fqdn,omitempty"  pulumi:"private_fqdn,omitempty"`
+	PublicFqdn  string                 `json:"public_fqdn,omitempty"   pulumi:"public_fqdn,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `json:"created_at,omitempty"    pulumi:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `json:"updated_at,omitempty"    pulumi:"updated_at,omitempty"`
+	ZoneId      string                 `json:"zone_id,omitempty"       pulumi:"zone_id,omitempty"` //nolint:stylecheck
+	UseAcmeCert bool                   `json:"use_acme_cert,omitempty" pulumi:"use_acme_cert,omitempty"`
+	Domainname  string                 `json:"domainname,omitempty"    pulumi:"domanname,omitempty"`
+	LbDnsName   string                 `json:"lb_dns_name,omitempty"   pulumi:"lb_dns_name,omitempty"` //nolint:stylecheck
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
 type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
-	Etag     defangTypes.ETag        `pulumi:"etag"`
-	AlbArn   string                  `pulumi:"albArn"`
-	Services []*defangv1.ServiceInfo `pulumi:"services"`
+	Etag     defangTypes.ETag `pulumi:"etag"`
+	AlbArn   string           `pulumi:"albArn"`
+	Services []*ServiceInfo   `pulumi:"services"`
 }
 
 var errNoProjectUpdate = errors.New("no project update found")
@@ -110,7 +133,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 
 	state.Etag = etag
 	state.AlbArn = projectUpdate.GetAlbArn()
-	state.Services = projectUpdate.GetServices()
+	state.Services = makeServices(projectUpdate)
 
 	return name, state, nil
 }
@@ -230,6 +253,29 @@ func getProjectOutputs(
 		}
 	}
 	return projectUpdate, nil
+}
+
+func makeServices(projectUpdate *defangv1.ProjectUpdate) []*ServiceInfo {
+	services := make([]*ServiceInfo, len(projectUpdate.GetServices()))
+	for i, serviceInfo := range projectUpdate.GetServices() {
+		services[i] = &ServiceInfo{
+			Endpoints:   serviceInfo.GetEndpoints(),
+			Project:     serviceInfo.GetProject(),
+			Etag:        serviceInfo.GetEtag(),
+			Status:      serviceInfo.GetStatus(),
+			NatIps:      serviceInfo.GetNatIps(),
+			LbIps:       serviceInfo.GetLbIps(),
+			PrivateFqdn: serviceInfo.GetPrivateFqdn(),
+			PublicFqdn:  serviceInfo.GetPublicFqdn(),
+			CreatedAt:   serviceInfo.GetCreatedAt(),
+			UpdatedAt:   serviceInfo.GetUpdatedAt(),
+			ZoneId:      serviceInfo.GetZoneId(),
+			UseAcmeCert: serviceInfo.GetUseAcmeCert(),
+			Domainname:  serviceInfo.GetDomainname(),
+			LbDnsName:   serviceInfo.GetLbDnsName(),
+		}
+	}
+	return services
 }
 
 func Authenticate(ctx context.Context, driver IDriver) error {
