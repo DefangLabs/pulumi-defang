@@ -64,7 +64,7 @@ schema: provider
 
 .PHONY: test_provider
 test_provider:
-	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
+	go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./tests/... ./provider/types/...
 
 .PHONY: version
 version:

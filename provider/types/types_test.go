@@ -153,23 +153,23 @@ func TestParsePortConfig(t *testing.T) {
 		},
 		{
 			value:         "9999999",
-			expectedError: "Invalid containerPort: 9999999",
+			expectedError: "invalid containerPort: 9999999",
 		},
 		{
 			value:         "80/xyz",
-			expectedError: "Invalid proto: xyz",
+			expectedError: "invalid proto: xyz",
 		},
 		{
 			value:         "tcp",
-			expectedError: "Invalid containerPort: tcp",
+			expectedError: "invalid containerPort: tcp",
 		},
 		{
 			value:         "udp",
-			expectedError: "Invalid containerPort: udp",
+			expectedError: "invalid containerPort: udp",
 		},
 		{
 			value:         "",
-			expectedError: "No port specified: <empty>",
+			expectedError: "no port specified: <empty>",
 		},
 		{
 			value: "1.1.1.1:80:80",
@@ -294,19 +294,19 @@ func TestMarshalServiceEntrypoint(t *testing.T) {
 			name:         "nil",
 			entrypoint:   nil,
 			expectedYAML: `{}`,
-			expectedJSON: `{"command":null,"entrypoint":null}`,
+			expectedJSON: `{"entrypoint":null}`,
 		},
 		{
 			name:         "empty",
 			entrypoint:   make([]string, 0),
 			expectedYAML: `entrypoint: []`,
-			expectedJSON: `{"command":null,"entrypoint":[]}`,
+			expectedJSON: `{"entrypoint":[]}`,
 		},
 		{
 			name:         "value",
 			entrypoint:   ShellCommand{"ls", "/"},
 			expectedYAML: "entrypoint:\n    - ls\n    - /",
-			expectedJSON: `{"command":null,"entrypoint":["ls","/"]}`,
+			expectedJSON: `{"entrypoint":["ls","/"]}`,
 		},
 	}
 
@@ -322,7 +322,7 @@ func TestMarshalServiceEntrypoint(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := ServiceConfig{Entrypoint: tc.entrypoint}
+			s := ServiceConfig{Entrypoint: &tc.entrypoint}
 			actualYAML, err := yaml.Marshal(s)
 			assert.NilError(t, err, "YAML marshal failed")
 			assertEqual(t, actualYAML, tc.expectedYAML)
