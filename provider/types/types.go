@@ -458,7 +458,7 @@ type ServicePortConfig struct {
 	Protocol    string `yaml:"protocol,omitempty" json:"protocol,omitempty" pulumi:"protocol,omitempty,optional"`
 	AppProtocol string `yaml:"app_protocol,omitempty" json:"app_protocol,omitempty" pulumi:"app_protocol,omitempty,optional"`
 
-	DefangListener string `yaml:"x-defang-listener,omitempty" json:"x-defang-listener,omitempty" pulumi:"'x-defang-listener',omitempty,optional"`
+	DefangListener string `yaml:"x-defang-listener,omitempty" json:"x-defang-listener,omitempty" pulumi:"xDefangListener,omitempty,optional"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }

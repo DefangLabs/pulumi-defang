@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.2.0-alpha.1744063779+dirty",
+  "version": "1.2.0-alpha.1744063859+dirty",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -1238,9 +1238,6 @@
     },
     "defang:types:ServicePortConfig": {
       "properties": {
-        "'x-defang-listener'": {
-          "type": "string"
-        },
         "app_protocol": {
           "type": "string"
         },
@@ -1261,6 +1258,9 @@
         },
         "target": {
           "type": "integer"
+        },
+        "xDefangListener": {
+          "type": "string"
         }
       },
       "type": "object"
