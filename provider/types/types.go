@@ -352,7 +352,7 @@ type DeployConfig struct {
 	RollbackConfig *UpdateConfig  `yaml:"rollback_config,omitempty" json:"rollback_config,omitempty" pulumi:"rollback_config,omitempty,optional"`
 	Resources      Resources      `yaml:"resources,omitempty" json:"resources,omitempty" pulumi:"resources,omitempty"`
 	RestartPolicy  *RestartPolicy `yaml:"restart_policy,omitempty" json:"restart_policy,omitempty" pulumi:"restart_policy,omitempty,optional"`
-	Placement      *Placement     `yaml:"placement,omitempty" json:"placement,omitempty" pulumi:"placement,omitempty, optional"`
+	Placement      *Placement     `yaml:"placement,omitempty" json:"placement,omitempty" pulumi:"placement,omitempty,optional"`
 	EndpointMode   string         `yaml:"endpoint_mode,omitempty" json:"endpoint_mode,omitempty" pulumi:"endpoint_mode,omitempty,optional"`
 
 	Extensions Extensions `yaml:"extensions,inline,omitempty" json:"-"`

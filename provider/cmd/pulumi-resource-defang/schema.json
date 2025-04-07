@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.2.0-alpha.1744063779+dirty",
+  "version": "1.2.0-alpha.1744068781+dirty",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -388,7 +388,6 @@
       },
       "type": "object",
       "required": [
-        "placement",
         "resources"
       ]
     },
