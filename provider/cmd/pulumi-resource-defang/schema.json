@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.1.0-alpha.1743802438+c64069a0.dirty",
+  "version": "1.1.0-beta.2+dirty",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -75,12 +75,7 @@
       },
       "type": "object",
       "required": [
-        "configs",
-        "name",
-        "networks",
-        "secrets",
-        "services",
-        "volumes"
+        "services"
       ]
     },
     "defang:index:ServiceInfo": {
@@ -194,15 +189,7 @@
           }
         }
       },
-      "type": "object",
-      "required": [
-        "device_read_bps",
-        "device_read_iops",
-        "device_write_bps",
-        "device_write_iops",
-        "weight",
-        "weight_device"
-      ]
+      "type": "object"
     },
     "defang:types:BuildConfig": {
       "properties": {
@@ -312,31 +299,7 @@
           }
         }
       },
-      "type": "object",
-      "required": [
-        "additional_contexts",
-        "args",
-        "cache_from",
-        "cache_to",
-        "context",
-        "dockerfile",
-        "dockerfile_inline",
-        "entitlements",
-        "extra_hosts",
-        "isolation",
-        "labels",
-        "network",
-        "no_cache",
-        "platforms",
-        "privileged",
-        "pull",
-        "secrets",
-        "shm_size",
-        "ssh",
-        "tags",
-        "target",
-        "ulimits"
-      ]
+      "type": "object"
     },
     "defang:types:ConfigObjConfig": {
       "properties": {
@@ -374,18 +337,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "content",
-        "driver",
-        "driver_opts",
-        "environment",
-        "external",
-        "file",
-        "labels",
-        "name",
-        "template_driver"
-      ]
+      "type": "object"
     },
     "defang:types:CredentialSpecConfig": {
       "properties": {
@@ -399,12 +351,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "config",
-        "file",
-        "registry"
-      ]
+      "type": "object"
     },
     "defang:types:DeployConfig": {
       "properties": {
@@ -441,15 +388,8 @@
       },
       "type": "object",
       "required": [
-        "endpoint_mode",
-        "labels",
-        "mode",
         "placement",
-        "replicas",
-        "resources",
-        "restart_policy",
-        "rollback_config",
-        "update_config"
+        "resources"
       ]
     },
     "defang:types:DevelopConfig": {
@@ -461,10 +401,7 @@
           }
         }
       },
-      "type": "object",
-      "required": [
-        "watch"
-      ]
+      "type": "object"
     },
     "defang:types:DeviceMapping": {
       "properties": {
@@ -478,12 +415,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "permissions",
-        "source",
-        "target"
-      ]
+      "type": "object"
     },
     "defang:types:DeviceRequest": {
       "properties": {
@@ -512,14 +444,7 @@
           }
         }
       },
-      "type": "object",
-      "required": [
-        "capabilities",
-        "count",
-        "device_ids",
-        "driver",
-        "options"
-      ]
+      "type": "object"
     },
     "defang:types:DiscreteGenericResource": {
       "properties": {
@@ -550,8 +475,6 @@
       },
       "type": "object",
       "required": [
-        "format",
-        "path",
         "required"
       ]
     },
@@ -564,11 +487,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "file",
-        "service"
-      ]
+      "type": "object"
     },
     "defang:types:GenericResource": {
       "properties": {
@@ -576,10 +495,7 @@
           "$ref": "#/types/defang:types:DiscreteGenericResource"
         }
       },
-      "type": "object",
-      "required": [
-        "discrete_resource_spec"
-      ]
+      "type": "object"
     },
     "defang:types:HealthCheckConfig": {
       "properties": {
@@ -608,16 +524,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "disable",
-        "interval",
-        "retries",
-        "start_interval",
-        "start_period",
-        "test",
-        "timeout"
-      ]
+      "type": "object"
     },
     "defang:types:IPAMConfig": {
       "properties": {
@@ -631,11 +538,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "config",
-        "driver"
-      ]
+      "type": "object"
     },
     "defang:types:IPAMPool": {
       "properties": {
@@ -655,13 +558,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "aux_addresses",
-        "gateway",
-        "ip_range",
-        "subnet"
-      ]
+      "type": "object"
     },
     "defang:types:LoggingConfig": {
       "properties": {
@@ -675,11 +572,7 @@
           }
         }
       },
-      "type": "object",
-      "required": [
-        "driver",
-        "options"
-      ]
+      "type": "object"
     },
     "defang:types:NetworkConfig": {
       "properties": {
@@ -719,15 +612,7 @@
       },
       "type": "object",
       "required": [
-        "attachable",
-        "driver",
-        "driver_opts",
-        "enable_ipv6",
-        "external",
-        "internal",
-        "ipam",
-        "labels",
-        "name"
+        "ipam"
       ]
     },
     "defang:types:Placement": {
@@ -748,12 +633,7 @@
           }
         }
       },
-      "type": "object",
-      "required": [
-        "constraints",
-        "max_replicas_per_node",
-        "preferences"
-      ]
+      "type": "object"
     },
     "defang:types:PlacementPreferences": {
       "properties": {
@@ -761,10 +641,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "spread"
-      ]
+      "type": "object"
     },
     "defang:types:Resource": {
       "properties": {
@@ -790,14 +667,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "cpus",
-        "devices",
-        "generic_resources",
-        "memory",
-        "pids"
-      ]
+      "type": "object"
     },
     "defang:types:Resources": {
       "properties": {
@@ -808,11 +678,7 @@
           "$ref": "#/types/defang:types:Resource"
         }
       },
-      "type": "object",
-      "required": [
-        "limits",
-        "reservations"
-      ]
+      "type": "object"
     },
     "defang:types:RestartPolicy": {
       "properties": {
@@ -829,13 +695,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "condition",
-        "delay",
-        "max_attempts",
-        "window"
-      ]
+      "type": "object"
     },
     "defang:types:SSHKey": {
       "properties": {
@@ -846,11 +706,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "id",
-        "path"
-      ]
+      "type": "object"
     },
     "defang:types:SecretConfig": {
       "properties": {
@@ -888,18 +744,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "content",
-        "driver",
-        "driver_opts",
-        "environment",
-        "external",
-        "file",
-        "labels",
-        "name",
-        "template_driver"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceConfig": {
       "properties": {
@@ -1288,101 +1133,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "annotations",
-        "attach",
-        "blkio_config",
-        "build",
-        "cap_add",
-        "cap_drop",
-        "cgroup",
-        "cgroup_parent",
-        "command",
-        "configs",
-        "container_name",
-        "cpu_count",
-        "cpu_percent",
-        "cpu_period",
-        "cpu_quota",
-        "cpu_rt_period",
-        "cpu_rt_runtime",
-        "cpu_shares",
-        "cpus",
-        "cpuset",
-        "credential_spec",
-        "depends_on",
-        "deploy",
-        "develop",
-        "device_cgroup_rules",
-        "devices",
-        "dns",
-        "dns_opt",
-        "dns_search",
-        "dockerfile",
-        "domainname",
-        "entrypoint",
-        "env_file",
-        "environment",
-        "expose",
-        "extends",
-        "external_links",
-        "extra_hosts",
-        "gpus",
-        "group_add",
-        "healthcheck",
-        "hostname",
-        "image",
-        "init",
-        "ipc",
-        "isolation",
-        "labels",
-        "links",
-        "log_driver",
-        "log_opt",
-        "logging",
-        "mac_address",
-        "mem_limit",
-        "mem_reservation",
-        "mem_swappiness",
-        "memswap_limit",
-        "net",
-        "network_mode",
-        "networks",
-        "oom_kill_disable",
-        "oom_score_adj",
-        "pid",
-        "pids_limit",
-        "platform",
-        "ports",
-        "post_start",
-        "pre_stop",
-        "privileged",
-        "profiles",
-        "pull_policy",
-        "read_only",
-        "restart",
-        "runtime",
-        "scale",
-        "secrets",
-        "security_opt",
-        "shm_size",
-        "stdin_open",
-        "stop_grace_period",
-        "stop_signal",
-        "storage_opt",
-        "sysctls",
-        "tmpfs",
-        "tty",
-        "ulimits",
-        "user",
-        "userns_mode",
-        "uts",
-        "volume_driver",
-        "volumes",
-        "volumes_from",
-        "working_dir"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceConfigObjConfig": {
       "properties": {
@@ -1402,14 +1153,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "gid",
-        "mode",
-        "source",
-        "target",
-        "uid"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceDependency": {
       "properties": {
@@ -1425,9 +1169,7 @@
       },
       "type": "object",
       "required": [
-        "condition",
-        "required",
-        "restart"
+        "required"
       ]
     },
     "defang:types:ServiceHook": {
@@ -1456,11 +1198,7 @@
       },
       "type": "object",
       "required": [
-        "command",
-        "environment",
-        "privileged",
-        "user",
-        "working_dir"
+        "command"
       ]
     },
     "defang:types:ServiceNetworkConfig": {
@@ -1496,16 +1234,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "aliases",
-        "driver_opts",
-        "ipv4_address",
-        "ipv6_address",
-        "link_local_ips",
-        "mac_address",
-        "priority"
-      ]
+      "type": "object"
     },
     "defang:types:ServicePortConfig": {
       "properties": {
@@ -1531,16 +1260,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "app_protocol",
-        "host_ip",
-        "mode",
-        "name",
-        "protocol",
-        "published",
-        "target"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceSecretConfig": {
       "properties": {
@@ -1560,14 +1280,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "gid",
-        "mode",
-        "source",
-        "target",
-        "uid"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceVolumeBind": {
       "properties": {
@@ -1584,13 +1297,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "create_host_path",
-        "propagation",
-        "recursive",
-        "selinux"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceVolumeConfig": {
       "properties": {
@@ -1619,17 +1326,7 @@
           "$ref": "#/types/defang:types:ServiceVolumeVolume"
         }
       },
-      "type": "object",
-      "required": [
-        "bind",
-        "consistency",
-        "read_only",
-        "source",
-        "target",
-        "tmpfs",
-        "type",
-        "volume"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceVolumeTmpfs": {
       "properties": {
@@ -1640,11 +1337,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "mode",
-        "size"
-      ]
+      "type": "object"
     },
     "defang:types:ServiceVolumeVolume": {
       "properties": {
@@ -1655,11 +1348,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "nocopy",
-        "subpath"
-      ]
+      "type": "object"
     },
     "defang:types:ThrottleDevice": {
       "type": "object"
@@ -1685,9 +1374,7 @@
       "type": "object",
       "required": [
         "action",
-        "ignore",
-        "path",
-        "target"
+        "path"
       ]
     },
     "defang:types:UlimitsConfig": {
@@ -1702,12 +1389,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "hard",
-        "single",
-        "soft"
-      ]
+      "type": "object"
     },
     "defang:types:UpdateConfig": {
       "properties": {
@@ -1730,15 +1412,7 @@
           "type": "integer"
         }
       },
-      "type": "object",
-      "required": [
-        "delay",
-        "failure_action",
-        "max_failure_ratio",
-        "monitor",
-        "order",
-        "parallelism"
-      ]
+      "type": "object"
     },
     "defang:types:VolumeConfig": {
       "properties": {
@@ -1764,14 +1438,7 @@
           "type": "string"
         }
       },
-      "type": "object",
-      "required": [
-        "driver",
-        "driver_opts",
-        "external",
-        "labels",
-        "name"
-      ]
+      "type": "object"
     },
     "defang:types:WeightDevice": {
       "type": "object"

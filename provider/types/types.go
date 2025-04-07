@@ -350,9 +350,9 @@ type DeployConfig struct {
 	Labels         Labels         `yaml:"labels,omitempty" json:"labels,omitempty" pulumi:"labels,omitempty,optional"`
 	UpdateConfig   *UpdateConfig  `yaml:"update_config,omitempty" json:"update_config,omitempty" pulumi:"update_config,omitempty,optional"`
 	RollbackConfig *UpdateConfig  `yaml:"rollback_config,omitempty" json:"rollback_config,omitempty" pulumi:"rollback_config,omitempty,optional"`
-	Resources      Resources      `yaml:"resources,omitempty" json:"resources,omitempty" pulumi:"resources,omitempty,optional"`
+	Resources      Resources      `yaml:"resources,omitempty" json:"resources,omitempty" pulumi:"resources,omitempty"`
 	RestartPolicy  *RestartPolicy `yaml:"restart_policy,omitempty" json:"restart_policy,omitempty" pulumi:"restart_policy,omitempty,optional"`
-	Placement      Placement      `yaml:"placement,omitempty" json:"placement,omitempty" pulumi:"placement,omitempty,optional"`
+	Placement      Placement      `yaml:"placement,omitempty" json:"placement,omitempty" pulumi:"placement,omitempty"`
 	EndpointMode   string         `yaml:"endpoint_mode,omitempty" json:"endpoint_mode,omitempty" pulumi:"endpoint_mode,omitempty,optional"`
 
 	Extensions Extensions `yaml:"extensions,inline,omitempty" json:"-"`
@@ -681,7 +681,7 @@ type NetworkConfig struct {
 	Name       string     `yaml:"name,omitempty" json:"name,omitempty" pulumi:"name,omitempty,optional"`
 	Driver     string     `yaml:"driver,omitempty" json:"driver,omitempty" pulumi:"driver,omitempty,optional"`
 	DriverOpts Options    `yaml:"driver_opts,omitempty" json:"driver_opts,omitempty" pulumi:"driver_opts,omitempty,optional"`
-	Ipam       IPAMConfig `yaml:"ipam,omitempty" json:"ipam,omitempty" pulumi:"ipam,omitempty,optional"`
+	Ipam       IPAMConfig `yaml:"ipam,omitempty" json:"ipam,omitempty" pulumi:"ipam,omitempty"`
 	External   External   `yaml:"external,omitempty" json:"external,omitempty" pulumi:"external,omitempty,optional"`
 	Internal   bool       `yaml:"internal,omitempty" json:"internal,omitempty" pulumi:"internal,omitempty,optional"`
 	Attachable bool       `yaml:"attachable,omitempty" json:"attachable,omitempty" pulumi:"attachable,omitempty,optional"`
