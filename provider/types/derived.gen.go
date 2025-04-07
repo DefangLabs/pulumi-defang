@@ -1184,8 +1184,8 @@ func deriveDeepCopy_11(dst, src *DeployConfig) {
 	}
 	func() {
 		field := new(Placement)
-		deriveDeepCopy_36(field, &src.Placement)
-		dst.Placement = *field
+		deriveDeepCopy_36(field, src.Placement)
+		dst.Placement = field
 	}()
 	dst.EndpointMode = src.EndpointMode
 	if src.Extensions != nil {
