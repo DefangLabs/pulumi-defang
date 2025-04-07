@@ -21,8 +21,8 @@ import (
 )
 
 type SSHKey struct {
-	ID   string `yaml:"id,omitempty" json:"id,omitempty" pulumi:"id,omitempty"`
-	Path string `path:"path,omitempty" json:"path,omitempty" pulumi:"path,omitempty"`
+	ID   string `yaml:"id,omitempty" json:"id,omitempty" pulumi:"id,omitempty,optional"`
+	Path string `path:"path,omitempty" json:"path,omitempty" pulumi:"path,omitempty,optional"`
 }
 
 // SSHConfig is a mapping type for SSH build config

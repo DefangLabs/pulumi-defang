@@ -39,13 +39,13 @@ import (
 // Since v2, Project are managed as immutable objects.
 // Each public functions which mutate Project state now return a copy of the original Project with the expected changes.
 type Project struct {
-	Name       string     `yaml:"name,omitempty" json:"name,omitempty" pulumi:"name,omitempty"`
+	Name       string     `yaml:"name,omitempty" json:"name,omitempty" pulumi:"name,omitempty,optional"`
 	WorkingDir string     `yaml:"-" json:"-"`
 	Services   Services   `yaml:"services" json:"services" pulumi:"services"`
-	Networks   Networks   `yaml:"networks,omitempty" json:"networks,omitempty" pulumi:"networks,omitempty"`
-	Volumes    Volumes    `yaml:"volumes,omitempty" json:"volumes,omitempty" pulumi:"volumes,omitempty"`
-	Secrets    Secrets    `yaml:"secrets,omitempty" json:"secrets,omitempty" pulumi:"secrets,omitempty"`
-	Configs    Configs    `yaml:"configs,omitempty" json:"configs,omitempty" pulumi:"configs,omitempty"`
+	Networks   Networks   `yaml:"networks,omitempty" json:"networks,omitempty" pulumi:"networks,omitempty,optional"`
+	Volumes    Volumes    `yaml:"volumes,omitempty" json:"volumes,omitempty" pulumi:"volumes,omitempty,optional"`
+	Secrets    Secrets    `yaml:"secrets,omitempty" json:"secrets,omitempty" pulumi:"secrets,omitempty,optional"`
+	Configs    Configs    `yaml:"configs,omitempty" json:"configs,omitempty" pulumi:"configs,omitempty,optional"`
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"` // https://github.com/golang/go/issues/6213
 
 	ComposeFiles []string `yaml:"-" json:"-"`

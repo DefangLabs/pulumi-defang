@@ -17,7 +17,7 @@
 package types
 
 type DevelopConfig struct {
-	Watch []Trigger `yaml:"watch,omitempty" json:"watch,omitempty" pulumi:"watch,omitempty"`
+	Watch []Trigger `yaml:"watch,omitempty" json:"watch,omitempty" pulumi:"watch,omitempty,optional"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 }
@@ -33,7 +33,7 @@ const (
 type Trigger struct {
 	Path       string      `yaml:"path" json:"path" pulumi:"path"`
 	Action     WatchAction `yaml:"action" json:"action" pulumi:"action"`
-	Target     string      `yaml:"target,omitempty" json:"target,omitempty" pulumi:"target,omitempty"`
-	Ignore     []string    `yaml:"ignore,omitempty" json:"ignore,omitempty" pulumi:"ignore,omitempty"`
+	Target     string      `yaml:"target,omitempty" json:"target,omitempty" pulumi:"target,omitempty,optional"`
+	Ignore     []string    `yaml:"ignore,omitempty" json:"ignore,omitempty" pulumi:"ignore,omitempty,optional"`
 	Extensions Extensions  `yaml:"#extensions,inline,omitempty" json:"-"`
 }

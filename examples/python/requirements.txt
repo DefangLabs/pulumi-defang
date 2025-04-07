@@ -1,2 +1,1 @@
-pulumi-defang==1.1.0-alpha.1743804333+d2cd332c.dirty
 pulumi>=3.0.0,<4.0.0

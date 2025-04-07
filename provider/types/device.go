@@ -23,11 +23,11 @@ import (
 )
 
 type DeviceRequest struct {
-	Capabilities []string    `yaml:"capabilities,omitempty" json:"capabilities,omitempty" pulumi:"capabilities,omitempty"`
-	Driver       string      `yaml:"driver,omitempty" json:"driver,omitempty" pulumi:"driver,omitempty"`
-	Count        DeviceCount `yaml:"count,omitempty" json:"count,omitempty" pulumi:"count,omitempty"`
-	IDs          []string    `yaml:"device_ids,omitempty" json:"device_ids,omitempty" pulumi:"device_ids,omitempty"`
-	Options      Mapping     `yaml:"options,omitempty" json:"options,omitempty" pulumi:"options,omitempty"`
+	Capabilities []string    `yaml:"capabilities,omitempty" json:"capabilities,omitempty" pulumi:"capabilities,omitempty,optional"`
+	Driver       string      `yaml:"driver,omitempty" json:"driver,omitempty" pulumi:"driver,omitempty,optional"`
+	Count        DeviceCount `yaml:"count,omitempty" json:"count,omitempty" pulumi:"count,omitempty,optional"`
+	IDs          []string    `yaml:"device_ids,omitempty" json:"device_ids,omitempty" pulumi:"device_ids,omitempty,optional"`
+	Options      Mapping     `yaml:"options,omitempty" json:"options,omitempty" pulumi:"options,omitempty,optional"`
 }
 
 type DeviceCount int64
