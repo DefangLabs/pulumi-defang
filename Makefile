@@ -109,7 +109,7 @@ python_sdk: provider
 		cd ./bin && python3 setup.py build sdist
 
 .PHONY: examples
-examples: go_example \
+examples: schema go_example \
 		nodejs_example \
 		python_example \
 		dotnet_example
