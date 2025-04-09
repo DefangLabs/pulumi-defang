@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.2.0-alpha.1744232090",
+  "version": "1.1.0-beta.6+dirty",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -35,7 +35,15 @@
       "pyproject": {}
     }
   },
-  "config": {},
+  "config": {
+    "variables": {
+      "deploymentMode": {
+        "type": "string",
+        "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
+        "default": "DEVELOPMENT"
+      }
+    }
+  },
   "types": {
     "defang:index:ProjectConfig": {
       "properties": {
@@ -1463,7 +1471,21 @@
     }
   },
   "provider": {
-    "type": "object"
+    "properties": {
+      "deploymentMode": {
+        "type": "string",
+        "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
+        "default": "DEVELOPMENT"
+      }
+    },
+    "type": "object",
+    "inputProperties": {
+      "deploymentMode": {
+        "type": "string",
+        "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
+        "default": "DEVELOPMENT"
+      }
+    }
   },
   "resources": {
     "defang:index:Project": {

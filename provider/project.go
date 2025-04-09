@@ -30,6 +30,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/types"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/pulumi/pulumi-go-provider/infer"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -209,9 +210,10 @@ func deployProject(
 	project *compose.Project,
 ) (*defangv1.DeployResponse, error) {
 	upload := compose.UploadModeDigest
-	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
+	config := infer.GetConfig[Config](ctx)
+	deploymentMode := defangv1.DeploymentMode_value[config.DeploymentMode]
 	deployTime := time.Now()
-	deploy, _, err := cli.ComposeUp(ctx, project, fabric, provider, upload, mode.Value())
+	deploy, _, err := cli.ComposeUp(ctx, project, fabric, provider, upload, command.Mode(deploymentMode).Value())
 	if err != nil {
 		return nil, fmt.Errorf("failed to deploy: %w", err)
 	}

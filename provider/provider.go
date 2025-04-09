@@ -15,6 +15,10 @@
 package provider
 
 import (
+	"fmt"
+	"strings"
+
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
@@ -72,4 +76,28 @@ func Provider() p.Provider {
 }
 
 // Define some provider-level configuration.
-type Config struct{}
+type Config struct {
+	DeploymentMode string `json:"deploymentMode" pulumi:"deploymentMode,omitempty,optional"`
+}
+
+func (c *Config) Annotate(a infer.Annotator) {
+	modes := deploymentModes()
+
+	a.Describe(&c.DeploymentMode, fmt.Sprintf("The deployment mode to use. Can be one of [%s].", strings.Join(modes, " ")))
+	a.SetDefault(&c.DeploymentMode, "DEVELOPMENT")
+}
+
+type DeploymentMode defangv1.DeploymentMode
+
+func deploymentModes() []string {
+	modes := make([]string, 0, len(defangv1.DeploymentMode_name))
+
+	// Iterate through the map
+	for _, name := range defangv1.DeploymentMode_name {
+		if name == "MODE_UNSPECIFIED" {
+			continue
+		}
+		modes = append(modes, name)
+	}
+	return modes
+}
