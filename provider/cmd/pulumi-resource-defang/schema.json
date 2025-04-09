@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.2.0-alpha.1744068813",
+  "version": "1.2.0-alpha.1744232090",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -122,6 +122,9 @@
         "status": {
           "type": "string"
         },
+        "task_role": {
+          "type": "string"
+        },
         "updated_at": {
           "$ref": "#/types/defang:timestamppb:Timestamp"
         },
@@ -145,6 +148,7 @@
         "project",
         "public_fqdn",
         "status",
+        "task_role",
         "updated_at",
         "use_acme_cert",
         "zone_id"

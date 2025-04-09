@@ -75,6 +75,7 @@ type ServiceInfo struct {
 	UseAcmeCert bool                   `json:"use_acme_cert,omitempty" pulumi:"use_acme_cert,omitempty"`
 	Domainname  string                 `json:"domainname,omitempty"    pulumi:"domanname,omitempty"`
 	LbDnsName   string                 `json:"lb_dns_name,omitempty"   pulumi:"lb_dns_name,omitempty"` //nolint:stylecheck
+	TaskRole    *string                `json:"task_role,omitempty"     pulumi:"task_role"`
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
