@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.2.0-alpha.1744068781+dirty",
+  "version": "1.2.0-alpha.1744068813",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -825,6 +825,18 @@
         "credential_spec": {
           "$ref": "#/types/defang:types:CredentialSpecConfig"
         },
+        "defang_llm": {
+          "type": "string"
+        },
+        "defang_postgres": {
+          "type": "string"
+        },
+        "defang_redis": {
+          "type": "string"
+        },
+        "defang_static_files": {
+          "type": "string"
+        },
         "depends_on": {
           "type": "object",
           "additionalProperties": {
@@ -1240,6 +1252,9 @@
         "app_protocol": {
           "type": "string"
         },
+        "defang_listener": {
+          "type": "string"
+        },
         "host_ip": {
           "type": "string"
         },
@@ -1257,9 +1272,6 @@
         },
         "target": {
           "type": "integer"
-        },
-        "xDefangListener": {
-          "type": "string"
         }
       },
       "type": "object"

@@ -136,6 +136,11 @@ type ServiceConfig struct {
 	PreStop         []ServiceHook                    `yaml:"pre_stop,omitempty" json:"pre_stop,omitempty" pulumi:"pre_stop,omitempty,optional"`
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
+
+	DefangLLM         string `yaml:"x-defang-llm,omitempty" json:"x-defang-llm,omitempty" pulumi:"defang_llm,omitempty,optional"`
+	DefangPostgres    string `yaml:"x-defang-postgres,omitempty" json:"x-defang-postgres,omitempty" pulumi:"defang_postgres,omitempty,optional"`
+	DefangRedis       string `yaml:"x-defang-redis,omitempty" json:"x-defang-redis,omitempty" pulumi:"defang_redis,omitempty,optional"`
+	DefangStaticFiles string `yaml:"x-defang-static-files,omitempty" json:"x-defang-static-files,omitempty" pulumi:"defang_static_files,omitempty,optional"`
 }
 
 // MarshalYAML makes ServiceConfig implement yaml.Marshaller
@@ -458,9 +463,9 @@ type ServicePortConfig struct {
 	Protocol    string `yaml:"protocol,omitempty" json:"protocol,omitempty" pulumi:"protocol,omitempty,optional"`
 	AppProtocol string `yaml:"app_protocol,omitempty" json:"app_protocol,omitempty" pulumi:"app_protocol,omitempty,optional"`
 
-	DefangListener string `yaml:"x-defang-listener,omitempty" json:"x-defang-listener,omitempty" pulumi:"xDefangListener,omitempty,optional"`
-
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
+
+	DefangListener string `yaml:"x-defang-listener,omitempty" json:"x-defang-listener,omitempty" pulumi:"defang_listener,omitempty,optional"`
 }
 
 // ParsePortConfig parse short syntax for service port configuration
