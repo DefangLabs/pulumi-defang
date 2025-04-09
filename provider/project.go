@@ -83,9 +83,9 @@ type ServiceInfo struct {
 type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
-	Etag     defangTypes.ETag `pulumi:"etag"`
-	AlbArn   string           `pulumi:"albArn"`
-	Services []*ServiceInfo   `pulumi:"services"`
+	Etag     defangTypes.ETag        `pulumi:"etag"`
+	AlbArn   string                  `pulumi:"albArn"`
+	Services map[string]*ServiceInfo `pulumi:"services"`
 }
 
 var errNoProjectUpdate = errors.New("no project update found")
@@ -264,10 +264,10 @@ func getProjectOutputs(
 	return projectUpdate, nil
 }
 
-func makeServices(projectUpdate *defangv1.ProjectUpdate) []*ServiceInfo {
-	services := make([]*ServiceInfo, len(projectUpdate.GetServices()))
-	for i, serviceInfo := range projectUpdate.GetServices() {
-		services[i] = &ServiceInfo{
+func makeServices(projectUpdate *defangv1.ProjectUpdate) map[string]*ServiceInfo {
+	services := make(map[string]*ServiceInfo, len(projectUpdate.GetServices()))
+	for _, serviceInfo := range projectUpdate.GetServices() {
+		services[serviceInfo.GetService().GetName()] = &ServiceInfo{
 			Endpoints:   serviceInfo.GetEndpoints(),
 			Project:     serviceInfo.GetProject(),
 			Etag:        serviceInfo.GetEtag(),
