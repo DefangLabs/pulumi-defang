@@ -117,7 +117,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
 	}
 
-	deploy, err := deployProject(ctx, driver.GetFabricClient(), driver.GetProvider(), project)
+	deploy, err := deployProject(ctx, driver.GetFabricClient(), driver.GetProvider(), project, preview)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to deploy project: %w", err)
 	}
@@ -208,8 +208,14 @@ func deployProject(
 	fabric client.FabricClient,
 	provider client.Provider,
 	project *compose.Project,
+	preview bool,
 ) (*defangv1.DeployResponse, error) {
-	upload := compose.UploadModeDigest
+	var upload compose.UploadMode
+	if preview {
+		upload = compose.UploadModeIgnore
+	} else {
+		upload = compose.UploadModeDigest
+	}
 	config := infer.GetConfig[Config](ctx)
 	deploymentMode := defangv1.DeploymentMode_value[config.DeploymentMode]
 	deployTime := time.Now()
