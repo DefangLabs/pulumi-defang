@@ -198,7 +198,9 @@ func configureProviderCdImage(
 
 	// Allow local override of the CD image
 	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
-	driver.GetProvider().SetCDImage(cdImage)
+	driver.GetProvider().SetCanIUseConfig(&defangv1.CanIUseResponse{
+		CdImage: cdImage,
+	})
 
 	return nil
 }

@@ -191,7 +191,8 @@ func (c CloudProviderMock) ServiceDNS(string) string {
 	return ""
 }
 
-func (c CloudProviderMock) SetCDImage(string) {
+func (c CloudProviderMock) SetCanIUseConfig(*defangv1.CanIUseResponse) {
+	// No-op
 }
 
 func (c CloudProviderMock) Subscribe(
