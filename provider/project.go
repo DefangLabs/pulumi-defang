@@ -124,9 +124,9 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 
 	etag := deploy.GetEtag()
 
-	projectUpdate, err := getProjectOutputs(ctx, driver.GetProvider(), project.Name, etag)
+	projectUpdate, err := getProjectUpdate(ctx, driver.GetProvider(), project.Name, etag)
 	if err != nil {
-		return name, state, fmt.Errorf("failed to get project outputs: %w", err)
+		return name, state, fmt.Errorf("failed to get projectUpdate: %w", err)
 	}
 
 	if projectUpdate == nil {
@@ -234,7 +234,7 @@ func deployProject(
 	return deploy, nil
 }
 
-func getProjectOutputs(
+func getProjectUpdate(
 	ctx context.Context,
 	providerClient client.Provider,
 	name string,
