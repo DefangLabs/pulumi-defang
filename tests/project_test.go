@@ -14,7 +14,6 @@ func TestProject(t *testing.T) {
 	server := makeTestServer()
 
 	inputs := resource.NewPropertyMapFromMap(map[string]interface{}{
-		"providerID": "test-provider",
 		"config": &types.Project{
 			Services: map[string]types.ServiceConfig{
 				"web": {
@@ -48,7 +47,6 @@ func TestProject(t *testing.T) {
 		Updates: []integration.Operation{
 			{
 				Inputs: resource.NewPropertyMapFromMap(map[string]interface{}{
-					"providerID":  "test-provider",
 					"configPaths": []string{"../compose.yaml.example"},
 				}),
 				Hook: func(_inputs, output resource.PropertyMap) {

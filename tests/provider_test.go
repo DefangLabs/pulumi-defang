@@ -31,7 +31,6 @@ func TestProjectCreate(t *testing.T) {
 	response, err := server.Create(p.CreateRequest{
 		Urn: urn("Project"),
 		Properties: resource.PropertyMap{
-			"providerID": resource.NewStringProperty("test-provider"),
 			"configPaths": resource.NewArrayProperty([]resource.PropertyValue{
 				resource.NewStringProperty("../compose.yaml.example"),
 			}),

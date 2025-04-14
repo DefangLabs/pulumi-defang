@@ -55,9 +55,8 @@ type ProjectArgs struct {
 	// Fields projected into Pulumi must be public and hava a `pulumi:"..."` tag.
 	// The pulumi tag doesn't need to match the field name, but it's generally a
 	// good idea.
-	CloudProviderID client.ProviderID `pulumi:"providerID"`
-	ConfigPaths     []string          `pulumi:"configPaths,optional"`
-	Config          *ProjectConfig    `pulumi:"config,optional"`
+	ConfigPaths []string       `pulumi:"configPaths,optional"`
+	Config      *ProjectConfig `pulumi:"config,optional"`
 }
 
 type ServiceState struct {
@@ -85,12 +84,19 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, nil
 	}
 
+	config := infer.GetConfig[Config](ctx)
+	var providerID client.ProviderID
+	err := providerID.Set(config.CloudProviderID)
+	if err != nil {
+		providerID = client.ProviderAuto
+	}
+
 	project, err := loadProject(ctx, name, input)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to load project: %w", err)
 	}
 
-	driver, err := NewDriver(ctx, input.CloudProviderID)
+	driver, err := NewDriver(ctx, providerID)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to create driver: %w", err)
 	}
@@ -100,7 +106,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to authenticate: %w", err)
 	}
 
-	err = configureProviderCdImage(ctx, driver, name, input.CloudProviderID)
+	err = configureProviderCdImage(ctx, driver, name, providerID)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
 	}
