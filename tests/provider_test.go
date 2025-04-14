@@ -42,9 +42,14 @@ func TestProjectCreate(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "abc123", response.Properties["etag"].StringValue())
-	assert.Equal(t, "test-provider", response.Properties["providerID"].StringValue())
 	albArn := "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/app/my-load-balancer/50dc6c495c0c9188"
 	assert.Equal(t, albArn, response.Properties["albArn"].StringValue())
+	services := response.Properties["services"].ObjectValue()
+	serviceValue := services["service1-id"]
+	assert.NotNil(t, serviceValue)
+	serviceConfig := serviceValue.ObjectValue()
+	assert.Equal(t, "service1-id", serviceConfig["resource_name"].StringValue())
+	assert.Equal(t, "service1-role", serviceConfig["task_role"].StringValue())
 }
 
 // urn is a helper function to build an urn for running integration tests.

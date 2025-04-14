@@ -9,7 +9,6 @@ resources:
   myProject:
     type: defang:Project
     properties:
-      providerID: aws
       configPaths:
         - ../../compose.yaml.example
 
@@ -17,3 +16,7 @@ outputs:
   output:
     albArn: ${myProject.albArn}
     etag: ${myProject.etag}
+    services:
+      service1:
+        resource_name: ${myProject.services.service1.resource_name}
+        task_role: ${myProject.services.service1.task_role}

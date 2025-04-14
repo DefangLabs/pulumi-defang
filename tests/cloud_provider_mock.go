@@ -2,11 +2,14 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/cli/client/byoc/aws"
 	"github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -141,6 +144,21 @@ func (c CloudProviderMock) Follow(
 }
 
 func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.ProjectUpdate, error) {
+	taskRole := "service1-role"
+	projectOutputs := provider.V1DefangProjectOutputs{
+		Services: map[string]provider.V1DefangServiceOutputs{
+			"service1": {
+				ID:       "service1-id",
+				TaskRole: &taskRole,
+			},
+		},
+	}
+
+	projectOutputsJSON, err := json.Marshal(projectOutputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal project outputs: %w", err)
+	}
+
 	return &defangv1.ProjectUpdate{
 		AlbArn: "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/app/my-load-balancer/50dc6c495c0c9188",
 		Services: []*defangv1.ServiceInfo{
@@ -151,6 +169,8 @@ func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.
 				Etag: "abc123",
 			},
 		},
+		ProjectOutputsVersion: 1,
+		ProjectOutputs:        projectOutputsJSON,
 	}, nil
 }
 

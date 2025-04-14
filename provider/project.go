@@ -16,6 +16,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/pulumi/pulumi-go-provider/infer"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Each resource has a controlling struct.
@@ -60,35 +60,23 @@ type ProjectArgs struct {
 	Config          *ProjectConfig    `pulumi:"config,optional"`
 }
 
-type ServiceInfo struct {
-	defangv1.ServiceInfo
-	Endpoints   []string               `json:"endpoints,omitempty"     pulumi:"endpoints,omitempty"`
-	Project     string                 `json:"project,omitempty"       pulumi:"project,omitempty"`
-	Etag        string                 `json:"etag,omitempty"          pulumi:"etag,omitempty"`
-	Status      string                 `json:"status,omitempty"        pulumi:"status,omitempty"`
-	NatIps      []string               `json:"nat_ips,omitempty"       pulumi:"nat_ips,omitempty"`
-	LbIps       []string               `json:"lb_ips,omitempty"        pulumi:"lb_ips,omitempty"`
-	PrivateFqdn string                 `json:"private_fqdn,omitempty"  pulumi:"private_fqdn,omitempty"`
-	PublicFqdn  string                 `json:"public_fqdn,omitempty"   pulumi:"public_fqdn,omitempty"`
-	CreatedAt   *timestamppb.Timestamp `json:"created_at,omitempty"    pulumi:"created_at,omitempty"`
-	UpdatedAt   *timestamppb.Timestamp `json:"updated_at,omitempty"    pulumi:"updated_at,omitempty"`
-	ZoneId      string                 `json:"zone_id,omitempty"       pulumi:"zone_id,omitempty"` //nolint:stylecheck
-	UseAcmeCert bool                   `json:"use_acme_cert,omitempty" pulumi:"use_acme_cert,omitempty"`
-	Domainname  string                 `json:"domainname,omitempty"    pulumi:"domanname,omitempty"`
-	LbDnsName   string                 `json:"lb_dns_name,omitempty"   pulumi:"lb_dns_name,omitempty"` //nolint:stylecheck
-	TaskRole    *string                `json:"task_role,omitempty"     pulumi:"task_role"`
+type ServiceState struct {
+	ResourceName string  `pulumi:"resource_name,omitempty"`
+	TaskRole     *string `pulumi:"task_role"`
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
 type ProjectState struct {
 	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
 	ProjectArgs
-	Etag     defangTypes.ETag        `pulumi:"etag"`
-	AlbArn   string                  `pulumi:"albArn"`
-	Services map[string]*ServiceInfo `pulumi:"services"`
+	Etag     defangTypes.ETag         `pulumi:"etag"`
+	AlbArn   string                   `pulumi:"albArn"`
+	Services map[string]*ServiceState `pulumi:"services"`
 }
 
 var errNoProjectUpdate = errors.New("no project update found")
+
+var errNilProjectOutputs = errors.New("project update outputs are nil")
 
 // All resources must implement Create at a minimum.
 func (Project) Create(ctx context.Context, name string, input ProjectArgs, preview bool) (string, ProjectState, error) {
@@ -123,19 +111,15 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	}
 
 	etag := deploy.GetEtag()
-
 	projectUpdate, err := getProjectUpdate(ctx, driver.GetProvider(), project.Name, etag)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to get projectUpdate: %w", err)
 	}
 
-	if projectUpdate == nil {
-		return name, state, errNoProjectUpdate
+	state, err = getProjectState(etag, projectUpdate)
+	if err != nil {
+		return name, state, fmt.Errorf("failed to get project state: %w", err)
 	}
-
-	state.Etag = etag
-	state.AlbArn = projectUpdate.GetAlbArn()
-	state.Services = makeServices(projectUpdate)
 
 	return name, state, nil
 }
@@ -266,27 +250,45 @@ func getProjectUpdate(
 	return projectUpdate, nil
 }
 
-func makeServices(projectUpdate *defangv1.ProjectUpdate) map[string]*ServiceInfo {
-	services := make(map[string]*ServiceInfo, len(projectUpdate.GetServices()))
-	for _, serviceInfo := range projectUpdate.GetServices() {
-		services[serviceInfo.GetService().GetName()] = &ServiceInfo{
-			Endpoints:   serviceInfo.GetEndpoints(),
-			Project:     serviceInfo.GetProject(),
-			Etag:        serviceInfo.GetEtag(),
-			Status:      serviceInfo.GetStatus(),
-			NatIps:      serviceInfo.GetNatIps(),
-			LbIps:       serviceInfo.GetLbIps(),
-			PrivateFqdn: serviceInfo.GetPrivateFqdn(),
-			PublicFqdn:  serviceInfo.GetPublicFqdn(),
-			CreatedAt:   serviceInfo.GetCreatedAt(),
-			UpdatedAt:   serviceInfo.GetUpdatedAt(),
-			ZoneId:      serviceInfo.GetZoneId(),
-			UseAcmeCert: serviceInfo.GetUseAcmeCert(),
-			Domainname:  serviceInfo.GetDomainname(),
-			LbDnsName:   serviceInfo.GetLbDnsName(),
+type V1DefangProjectOutputs struct {
+	Services map[string]V1DefangServiceOutputs `json:"services"`
+}
+
+type V1DefangServiceOutputs struct {
+	ID       string  `json:"id,omitempty"        pulumi:"id"`
+	TaskRole *string `json:"task_role,omitempty" pulumi:"task_role"`
+}
+
+func getProjectState(etag string, projectUpdate *defangv1.ProjectUpdate) (ProjectState, error) {
+	state := ProjectState{}
+	if projectUpdate == nil {
+		return state, errNoProjectUpdate
+	}
+
+	state.Etag = etag
+	state.AlbArn = projectUpdate.GetAlbArn()
+	projectOutputs := projectUpdate.GetProjectOutputs()
+
+	if projectOutputs == nil {
+		return state, errNilProjectOutputs
+	}
+
+	var v1DefangProjectOutputs V1DefangProjectOutputs
+	err := json.Unmarshal(projectOutputs, &v1DefangProjectOutputs)
+	if err != nil {
+		return state, fmt.Errorf("failed to unmarshal project update outputs: %w", err)
+	}
+
+	services := make(map[string]*ServiceState, len(projectUpdate.GetServices()))
+	for _, serviceState := range v1DefangProjectOutputs.Services {
+		services[serviceState.ID] = &ServiceState{
+			ResourceName: serviceState.ID,
+			TaskRole:     serviceState.TaskRole,
 		}
 	}
-	return services
+	state.Services = services
+
+	return state, nil
 }
 
 func Authenticate(ctx context.Context, driver IDriver) error {

@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.2.0-alpha.1744315442",
+  "version": "1.2.0-alpha.1744661263+dirty",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -39,7 +39,7 @@
     "variables": {
       "deploymentMode": {
         "type": "string",
-        "description": "The deployment mode to use. Can be one of [PRODUCTION DEVELOPMENT STAGING].",
+        "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
         "default": "DEVELOPMENT"
       }
     }
@@ -86,84 +86,20 @@
         "services"
       ]
     },
-    "defang:index:ServiceInfo": {
+    "defang:index:ServiceState": {
       "properties": {
-        "created_at": {
-          "$ref": "#/types/defang:timestamppb:Timestamp"
-        },
-        "domanname": {
-          "type": "string"
-        },
-        "endpoints": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "etag": {
-          "type": "string"
-        },
-        "lb_dns_name": {
-          "type": "string"
-        },
-        "lb_ips": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "nat_ips": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "private_fqdn": {
-          "type": "string"
-        },
-        "project": {
-          "type": "string"
-        },
-        "public_fqdn": {
-          "type": "string"
-        },
-        "status": {
+        "resource_name": {
           "type": "string"
         },
         "task_role": {
-          "type": "string"
-        },
-        "updated_at": {
-          "$ref": "#/types/defang:timestamppb:Timestamp"
-        },
-        "use_acme_cert": {
-          "type": "boolean"
-        },
-        "zone_id": {
           "type": "string"
         }
       },
       "type": "object",
       "required": [
-        "created_at",
-        "domanname",
-        "endpoints",
-        "etag",
-        "lb_dns_name",
-        "lb_ips",
-        "nat_ips",
-        "private_fqdn",
-        "project",
-        "public_fqdn",
-        "status",
-        "task_role",
-        "updated_at",
-        "use_acme_cert",
-        "zone_id"
+        "resource_name",
+        "task_role"
       ]
-    },
-    "defang:timestamppb:Timestamp": {
-      "type": "object"
     },
     "defang:types:BlkioConfig": {
       "properties": {
@@ -1482,7 +1418,7 @@
     "inputProperties": {
       "deploymentMode": {
         "type": "string",
-        "description": "The deployment mode to use. Can be one of [PRODUCTION DEVELOPMENT STAGING].",
+        "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
         "default": "DEVELOPMENT"
       }
     }
@@ -1511,7 +1447,7 @@
         "services": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/types/defang:index:ServiceInfo"
+            "$ref": "#/types/defang:index:ServiceState"
           }
         }
       },

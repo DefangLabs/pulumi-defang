@@ -8,7 +8,6 @@ import (
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		myProject, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
-			ProviderID: pulumi.String("aws"),
 			ConfigPaths: pulumi.StringArray{
 				pulumi.String("../../compose.yaml.example"),
 			},
@@ -16,9 +15,19 @@ func main() {
 		if err != nil {
 			return err
 		}
-		ctx.Export("output", pulumi.StringMap{
+		ctx.Export("output", pulumi.Map{
 			"albArn": myProject.AlbArn,
 			"etag":   myProject.Etag,
+			"services": pulumi.StringMapMap{
+				"service1": pulumi.StringMap{
+					"resource_name": myProject.Services.ApplyT(func(services map[string]defang.ServiceState) (*string, error) {
+						return &services.Service1.Resource_name, nil
+					}).(pulumi.StringPtrOutput),
+					"task_role": myProject.Services.ApplyT(func(services map[string]defang.ServiceState) (*string, error) {
+						return &services.Service1.Task_role, nil
+					}).(pulumi.StringPtrOutput),
+				},
+			},
 		})
 		return nil
 	})
