@@ -137,10 +137,10 @@ type ServiceConfig struct {
 
 	Extensions Extensions `yaml:"#extensions,inline,omitempty" json:"-"`
 
-	DefangLLM         string `yaml:"x-defang-llm,omitempty" json:"x-defang-llm,omitempty" pulumi:"defang_llm,omitempty,optional"`
-	DefangPostgres    string `yaml:"x-defang-postgres,omitempty" json:"x-defang-postgres,omitempty" pulumi:"defang_postgres,omitempty,optional"`
-	DefangRedis       string `yaml:"x-defang-redis,omitempty" json:"x-defang-redis,omitempty" pulumi:"defang_redis,omitempty,optional"`
-	DefangStaticFiles string `yaml:"x-defang-static-files,omitempty" json:"x-defang-static-files,omitempty" pulumi:"defang_static_files,omitempty,optional"`
+	DefangLLM         bool `yaml:"x-defang-llm,omitempty" json:"x-defang-llm,omitempty" pulumi:"defang_llm,omitempty,optional"`
+	DefangPostgres    bool `yaml:"x-defang-postgres,omitempty" json:"x-defang-postgres,omitempty" pulumi:"defang_postgres,omitempty,optional"`
+	DefangRedis       bool `yaml:"x-defang-redis,omitempty" json:"x-defang-redis,omitempty" pulumi:"defang_redis,omitempty,optional"`
+	DefangStaticFiles bool `yaml:"x-defang-static-files,omitempty" json:"x-defang-static-files,omitempty" pulumi:"defang_static_files,omitempty,optional"`
 }
 
 // MarshalYAML makes ServiceConfig implement yaml.Marshaller
