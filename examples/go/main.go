@@ -20,8 +20,8 @@ func main() {
 			"etag":   myProject.Etag,
 			"services": pulumi.StringMapMap{
 				"service1": pulumi.StringMap{
-					"resource_name": myProject.Services.ApplyT(func(services map[string]defang.ServiceState) (*string, error) {
-						return &services.Service1.Resource_name, nil
+					"id": myProject.Services.ApplyT(func(services map[string]defang.ServiceState) (*string, error) {
+						return &services.Service1.Id, nil
 					}).(pulumi.StringPtrOutput),
 					"task_role": myProject.Services.ApplyT(func(services map[string]defang.ServiceState) (*string, error) {
 						return &services.Service1.Task_role, nil

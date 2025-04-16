@@ -18,5 +18,5 @@ outputs:
     etag: ${myProject.etag}
     services:
       service1:
-        resource_name: ${myProject.services.service1.resource_name}
+        id: ${myProject.services.service1.id}
         task_role: ${myProject.services.service1.task_role}

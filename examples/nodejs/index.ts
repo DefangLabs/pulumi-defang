@@ -7,7 +7,7 @@ export const output = {
     etag: myProject.etag,
     services: {
         service1: {
-            resource_name: myProject.services.apply(services => services.service1.resource_name),
+            id: myProject.services.apply(services => services.service1.id),
             task_role: myProject.services.apply(services => services.service1.task_role),
         },
     },

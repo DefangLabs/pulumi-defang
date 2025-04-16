@@ -23,7 +23,7 @@ return await Deployment.RunAsync(() =>
             {
                 { "service1", 
                 {
-                    { "resource_name", myProject.Services.Apply(services => services.Service1.Resource_name) },
+                    { "id", myProject.Services.Apply(services => services.Service1.Id) },
                     { "task_role", myProject.Services.Apply(services => services.Service1.Task_role) },
                 } },
             } },

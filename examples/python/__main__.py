@@ -7,7 +7,7 @@ pulumi.export("output", {
     "etag": my_project.etag,
     "services": {
         "service1": {
-            "resource_name": my_project.services["service1"],
+            "id": my_project.services["service1"],
             "task_role": my_project.services["service1"],
         },
     },

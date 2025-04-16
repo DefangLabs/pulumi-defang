@@ -40,7 +40,7 @@ func TestProject(t *testing.T) {
 				services := output["services"].ObjectValue()
 				serviceValue := services["service1-id"]
 				serviceConfig := serviceValue.ObjectValue()
-				assert.Equal(t, "service1-id", serviceConfig["resource_name"].StringValue())
+				assert.Equal(t, "service1-id", serviceConfig["id"].StringValue())
 				assert.Equal(t, "service1-role", serviceConfig["task_role"].StringValue())
 			},
 		},
@@ -54,7 +54,7 @@ func TestProject(t *testing.T) {
 					services := output["services"].ObjectValue()
 					serviceValue := services["service1-id"]
 					serviceConfig := serviceValue.ObjectValue()
-					assert.Equal(t, "service1-id", serviceConfig["resource_name"].StringValue())
+					assert.Equal(t, "service1-id", serviceConfig["id"].StringValue())
 					assert.Equal(t, "service1-role", serviceConfig["task_role"].StringValue())
 				},
 			},

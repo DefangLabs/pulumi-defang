@@ -47,7 +47,7 @@ func TestProjectCreate(t *testing.T) {
 	serviceValue := services["service1-id"]
 	assert.NotNil(t, serviceValue)
 	serviceConfig := serviceValue.ObjectValue()
-	assert.Equal(t, "service1-id", serviceConfig["resource_name"].StringValue())
+	assert.Equal(t, "service1-id", serviceConfig["id"].StringValue())
 	assert.Equal(t, "service1-role", serviceConfig["task_role"].StringValue())
 }
 

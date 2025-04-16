@@ -61,8 +61,8 @@ type ProjectArgs struct {
 }
 
 type ServiceState struct {
-	ResourceName string  `pulumi:"resource_name,omitempty"`
-	TaskRole     *string `pulumi:"task_role"`
+	ID       string  `pulumi:"id,omitempty"`
+	TaskRole *string `pulumi:"task_role"`
 }
 
 // Each resource has a state, describing the fields that exist on the created resource.
@@ -292,10 +292,10 @@ func getProjectState(etag string, projectUpdate *defangv1.ProjectUpdate) (Projec
 	}
 
 	services := make(map[string]*ServiceState, len(projectUpdate.GetServices()))
-	for _, serviceState := range v1DefangProjectOutputs.Services {
-		services[serviceState.ID] = &ServiceState{
-			ResourceName: serviceState.ID,
-			TaskRole:     serviceState.TaskRole,
+	for _, serviceOutputs := range v1DefangProjectOutputs.Services {
+		services[serviceOutputs.ID] = &ServiceState{
+			ID:       serviceOutputs.ID,
+			TaskRole: serviceOutputs.TaskRole,
 		}
 	}
 	state.Services = services
