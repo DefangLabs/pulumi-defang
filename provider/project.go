@@ -16,6 +16,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -279,8 +280,13 @@ func getProjectState(etag string, projectUpdate *defangv1.ProjectUpdate) (Projec
 		return state, errNilProjectOutputs
 	}
 
+	decodedProjectOutputs, err := base64.StdEncoding.DecodeString(string(projectOutputs))
+	if err != nil {
+		return state, fmt.Errorf("failed to base64 decode project outputs: %w", err)
+	}
+
 	var v1DefangProjectOutputs V1DefangProjectOutputs
-	err := json.Unmarshal(projectOutputs, &v1DefangProjectOutputs)
+	err = json.Unmarshal(decodedProjectOutputs, &v1DefangProjectOutputs)
 	if err != nil {
 		return state, fmt.Errorf("failed to unmarshal project update outputs: %w", err)
 	}
