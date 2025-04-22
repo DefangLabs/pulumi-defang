@@ -1,6 +1,6 @@
 {
   "name": "defang",
-  "version": "1.1.0-beta.11",
+  "version": "1.2.0-alpha.1744837356",
   "description": "Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -1420,7 +1420,7 @@
       },
       "deploymentMode": {
         "type": "string",
-        "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
+        "description": "The deployment mode to use. Can be one of [STAGING PRODUCTION DEVELOPMENT].",
         "default": "DEVELOPMENT"
       }
     },

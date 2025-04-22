@@ -217,7 +217,11 @@ func deployProject(
 		return nil, fmt.Errorf("failed to deploy: %w", err)
 	}
 
-	err = cli.WaitAndTail(ctx, project, fabric, provider, deploy, -1, deployTime, true)
+	err = cli.TailAndMonitor(ctx, project, provider, -1, cli.TailOptions{
+		Deployment: deploy.GetEtag(),
+		Since:      deployTime,
+		Verbose:    true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to tail: %w", err)
 	}

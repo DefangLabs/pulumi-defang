@@ -144,6 +144,10 @@ func (c CloudProviderMock) Follow(
 	return stream, nil
 }
 
+func (c CloudProviderMock) GetDeploymentStatus(context.Context) error {
+	return nil
+}
+
 func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.ProjectUpdate, error) {
 	taskRole := "service1-role"
 	projectOutputs := provider.V1DefangProjectOutputs{

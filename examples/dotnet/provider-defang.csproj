@@ -7,7 +7,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Pulumi" Version="3.*" />
-		<PackageReference Include="DefangLabs.Defang" Version="1.2.0-alpha.1744837289" />
+		<PackageReference Include="DefangLabs.Defang" Version="1.2.0-alpha.1744837356" />
 	</ItemGroup>
 
 </Project>
