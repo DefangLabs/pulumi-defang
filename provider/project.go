@@ -27,6 +27,7 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/cli"
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/cli/compose"
+	"github.com/DefangLabs/defang/src/pkg/logs"
 	defangTypes "github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/types"
@@ -221,6 +222,7 @@ func deployProject(
 		Deployment: deploy.GetEtag(),
 		Since:      deployTime,
 		Verbose:    true,
+		LogType:    logs.LogTypeAll,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to tail: %w", err)
