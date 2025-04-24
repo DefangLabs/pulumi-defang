@@ -16,6 +16,7 @@ package provider
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
@@ -112,5 +113,11 @@ func deploymentModes() []string {
 		}
 		modes = append(modes, name)
 	}
+
+	// sort the modes by their value in the value map
+	sort.Slice(modes, func(i, j int) bool {
+		return defangv1.DeploymentMode_value[modes[i]] < defangv1.DeploymentMode_value[modes[j]]
+	})
+
 	return modes
 }
