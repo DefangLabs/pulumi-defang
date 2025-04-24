@@ -17,12 +17,10 @@ package main
 import (
 	p "github.com/pulumi/pulumi-go-provider"
 
-	"github.com/DefangLabs/defang/src/pkg/term"
 	defang "github.com/DefangLabs/pulumi-defang/provider"
 )
 
 // Serve the provider against Pulumi's Provider protocol.
 func main() {
-	term.SetDebug(true)
 	_ = p.RunProvider(defang.Name, defang.Version, defang.Provider())
 }

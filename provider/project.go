@@ -28,6 +28,7 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/cli/compose"
 	"github.com/DefangLabs/defang/src/pkg/logs"
+	"github.com/DefangLabs/defang/src/pkg/term"
 	defangTypes "github.com/DefangLabs/defang/src/pkg/types"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/types"
@@ -87,6 +88,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 	}
 
 	config := infer.GetConfig[Config](ctx)
+	term.SetDebug(config.Debug)
 	var providerID client.ProviderID
 	err := providerID.Set(config.CloudProviderID)
 	if err != nil {
