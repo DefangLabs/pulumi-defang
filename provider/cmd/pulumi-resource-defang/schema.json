@@ -42,6 +42,10 @@
         "description": "The cloud provider to use. Can be one of [auto aws gcp digitalocean].",
         "default": "auto"
       },
+      "debug": {
+        "type": "boolean",
+        "default": false
+      },
       "deploymentMode": {
         "type": "string",
         "description": "The deployment mode to use. Can be one of [DEVELOPMENT STAGING PRODUCTION].",
@@ -1430,6 +1434,10 @@
         "type": "string",
         "description": "The cloud provider to use. Can be one of [auto aws gcp digitalocean].",
         "default": "auto"
+      },
+      "debug": {
+        "type": "boolean",
+        "default": false
       },
       "deploymentMode": {
         "type": "string",

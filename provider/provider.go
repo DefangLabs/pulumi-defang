@@ -77,6 +77,7 @@ func Provider() p.Provider {
 
 // Define some provider-level configuration.
 type Config struct {
+	Debug           bool   `json:"debug"           pulumi:"debug,omitempty,optional"`
 	CloudProviderID string `json:"cloudProviderID" pulumi:"cloudProviderID,omitempty,optional"`
 	DeploymentMode  string `json:"deploymentMode"  pulumi:"deploymentMode,omitempty,optional"`
 }
@@ -94,6 +95,7 @@ func (c *Config) Annotate(ann infer.Annotator) {
 		&c.DeploymentMode,
 		fmt.Sprintf("The deployment mode to use. Can be one of [%s].", strings.Join(modes, " ")),
 	)
+	ann.SetDefault(&c.Debug, false)
 	ann.SetDefault(&c.CloudProviderID, "auto")
 	ann.SetDefault(&c.DeploymentMode, "DEVELOPMENT")
 }
