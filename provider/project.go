@@ -16,7 +16,6 @@ package provider
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +33,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/types"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	provider "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
@@ -83,7 +81,6 @@ var errNilProjectOutputs = errors.New("project update outputs are nil")
 
 // All resources must implement Create at a minimum.
 func (Project) Create(ctx context.Context, name string, input ProjectArgs, preview bool) (string, ProjectState, error) {
-	logger := provider.GetLogger(ctx)
 	state := ProjectState{ProjectArgs: input}
 	if preview {
 		return name, state, nil
@@ -128,7 +125,7 @@ func (Project) Create(ctx context.Context, name string, input ProjectArgs, previ
 		return name, state, fmt.Errorf("failed to get projectUpdate: %w", err)
 	}
 
-	state, err = getProjectState(logger, etag, projectUpdate)
+	state, err = getProjectState(etag, projectUpdate)
 	if err != nil {
 		return name, state, fmt.Errorf("failed to get project state: %w", err)
 	}
@@ -276,7 +273,7 @@ type V1DefangServiceOutputs struct {
 	TaskRole *string `json:"task_role,omitempty" pulumi:"task_role"`
 }
 
-func getProjectState(logger provider.Logger, etag string, projectUpdate *defangv1.ProjectUpdate) (ProjectState, error) {
+func getProjectState(etag string, projectUpdate *defangv1.ProjectUpdate) (ProjectState, error) {
 	state := ProjectState{}
 	if projectUpdate == nil {
 		return state, errNoProjectUpdate
@@ -290,14 +287,8 @@ func getProjectState(logger provider.Logger, etag string, projectUpdate *defangv
 		return state, errNilProjectOutputs
 	}
 
-	decodedProjectOutputs, err := base64.StdEncoding.DecodeString(string(projectOutputs))
-	if err != nil {
-		logger.Warningf("project outputs were not base64 encoded: %v", err)
-		decodedProjectOutputs = projectOutputs
-	}
-
 	var v1DefangProjectOutputs V1DefangProjectOutputs
-	err = json.Unmarshal(decodedProjectOutputs, &v1DefangProjectOutputs)
+	err := json.Unmarshal(projectOutputs, &v1DefangProjectOutputs)
 	if err != nil {
 		return state, fmt.Errorf("failed to unmarshal project update outputs: %w", err)
 	}

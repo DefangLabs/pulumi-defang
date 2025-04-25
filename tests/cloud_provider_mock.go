@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -164,8 +163,6 @@ func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.
 		return nil, fmt.Errorf("failed to marshal project outputs: %w", err)
 	}
 
-	encodedProjectOutputs := base64.StdEncoding.EncodeToString(projectOutputsJSON)
-
 	return &defangv1.ProjectUpdate{
 		AlbArn: "arn:aws:elasticloadbalancing:us-west-2:123456789012:loadbalancer/app/my-load-balancer/50dc6c495c0c9188",
 		Services: []*defangv1.ServiceInfo{
@@ -177,7 +174,7 @@ func (c CloudProviderMock) GetProjectUpdate(context.Context, string) (*defangv1.
 			},
 		},
 		ProjectOutputsVersion: 1,
-		ProjectOutputs:        []byte(encodedProjectOutputs),
+		ProjectOutputs:        projectOutputsJSON,
 	}, nil
 }
 
