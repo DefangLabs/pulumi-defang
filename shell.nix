@@ -4,7 +4,7 @@ pkgs.mkShell {
     pkgs.git
     pkgs.gnumake
     pkgs.gnused
-    pkgs.go_1_22
+    pkgs.go_1_23
     pkgs.less
     pkgs.nixfmt-classic
     pkgs.nodejs_22
