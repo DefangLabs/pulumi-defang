@@ -17,7 +17,7 @@ jobs:
         goversion:
           - 1.21.x
         nodeversion:
-          - 18.x
+          - 20.x
         pythonversion:
           - "3.9"
         # javaversion:
