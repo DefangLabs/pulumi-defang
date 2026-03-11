@@ -33,15 +33,13 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 // createCloudRunService creates a Cloud Run service.
 func createCloudRunService(
 	ctx *pulumi.Context,
-	projectName, serviceName string,
+	serviceName string,
 	svc common.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*cloudRunResult, error) {
-	resourcePrefix := projectName + "-" + serviceName
-
 	// Create service account
-	sa, err := serviceaccount.NewAccount(ctx, resourcePrefix+"-sa", &serviceaccount.AccountArgs{
-		DisplayName: pulumi.String(fmt.Sprintf("Service account for %s/%s", projectName, serviceName)),
+	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
+		DisplayName: pulumi.String(fmt.Sprintf("Service account for %s", serviceName)),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating service account: %w", err)
@@ -115,7 +113,7 @@ func createCloudRunService(
 	}
 
 	// Create Cloud Run service
-	crService, err := cloudrunv2.NewService(ctx, resourcePrefix+"-run", &cloudrunv2.ServiceArgs{
+	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
 		Ingress:            pulumi.String(ingress),
 		LaunchStage:        pulumi.String(launchStage),
 		InvokerIamDisabled: pulumi.Bool(true),
@@ -141,14 +139,6 @@ func createCloudRunService(
 			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 				MaxInstanceCount: pulumi.Int(maxInstances),
 			},
-			Labels: pulumi.StringMap{
-				"defang-project": pulumi.String(projectName),
-				"defang-service": pulumi.String(serviceName),
-			},
-		},
-		Labels: pulumi.StringMap{
-			"defang-project": pulumi.String(projectName),
-			"defang-service": pulumi.String(serviceName),
 		},
 	}, opts...)
 	if err != nil {

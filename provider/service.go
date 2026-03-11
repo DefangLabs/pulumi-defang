@@ -15,7 +15,7 @@ type Service struct{}
 // ServiceInputs defines the inputs for a standalone Service component.
 type ServiceInputs struct {
 	// Cloud provider: "aws" or "gcp"
-	Provider string `pulumi:"provider"`
+	Provider string `pulumi:"providerId"`
 
 	// Container image to deploy
 	Image *string `pulumi:"image,optional"`
@@ -76,7 +76,11 @@ func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceI
 		DomainName:  inputs.DomainName,
 		CloudRun:    toCloudRun(inputs.CloudRun),
 	}
-	args := common.ServiceBuildArgs{Service: svc}
+	args := common.ServiceBuildArgs{
+		Service:   svc,
+		AWSRecipe: common.LoadAWSRecipe(ctx),
+		GCPRecipe: common.LoadGCPRecipe(ctx),
+	}
 
 	var result *common.ServiceBuildResult
 	var err error

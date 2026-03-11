@@ -13,7 +13,7 @@ type networkingResult struct {
 }
 
 // resolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
-func resolveNetworking(ctx *pulumi.Context, projectName string, cfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*networkingResult, error) {
+func resolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*networkingResult, error) {
 	if cfg != nil && cfg.VpcID != "" {
 		// Use provided VPC and subnet IDs
 		subnetIDs := make(pulumi.StringArray, len(cfg.SubnetIDs))
@@ -34,15 +34,14 @@ func resolveNetworking(ctx *pulumi.Context, projectName string, cfg *common.AWSC
 		}, nil
 	}
 
-	// Create a new VPC with public and private subnets
-	vpc, err := ec2.NewVpc(ctx, projectName+"-vpc", &ec2.VpcArgs{
+	// Create a new VPC with public and private subnets.
+	// Use a descriptive logical name so awsx prefixes all children (subnets, etc.) with it.
+	vpcName := autonamePrefix(ctx, "shared-vpc")
+	vpc, err := ec2.NewVpc(ctx, vpcName, &ec2.VpcArgs{
 		EnableDnsHostnames: pulumi.Bool(true),
 		EnableDnsSupport:   pulumi.Bool(true),
 		NatGateways: &ec2.NatGatewayConfigurationArgs{
 			Strategy: ec2.NatGatewayStrategySingle,
-		},
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
 		},
 	}, opts...)
 	if err != nil {

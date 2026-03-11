@@ -22,7 +22,7 @@ type GCPConfigInput struct {
 // ProjectInputs defines the top-level inputs for the defang:index:Project component.
 type ProjectInputs struct {
 	// Cloud provider: "aws" or "gcp"
-	Provider string `pulumi:"provider" yaml:"provider"`
+	Provider string `pulumi:"providerId" yaml:"provider"`
 
 	// Services map: name -> service config
 	Services map[string]ServiceInput `pulumi:"services" yaml:"services"`

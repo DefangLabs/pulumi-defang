@@ -126,15 +126,15 @@ func portProtocol(p common.ServicePortConfig) string {
 // createECSService creates an ECS Fargate service for a container service.
 func createECSService(
 	ctx *pulumi.Context,
-	projectName, serviceName string,
+	serviceName string,
 	svc common.ServiceConfig,
 	args *ecsServiceArgs,
+	recipe common.AWSRecipe,
 	opts ...pulumi.ResourceOption,
 ) (*ecsServiceResult, error) {
-	resourcePrefix := projectName + "-" + serviceName
 
 	// Create task role
-	taskRole, err := createTaskRole(ctx, projectName, serviceName, opts...)
+	taskRole, err := createTaskRole(ctx, serviceName, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating task role: %w", err)
 	}
@@ -224,8 +224,8 @@ func createECSService(
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
 	// Create task definition
-	taskDef, err := ecs.NewTaskDefinition(ctx, resourcePrefix+"-task", &ecs.TaskDefinitionArgs{
-		Family:                  pulumi.String(resourcePrefix),
+	taskDef, err := ecs.NewTaskDefinition(ctx, serviceName, &ecs.TaskDefinitionArgs{
+		Family:                  pulumi.String(serviceName),
 		NetworkMode:             pulumi.String("awsvpc"),
 		RequiresCompatibilities: pulumi.StringArray{pulumi.String("FARGATE")},
 		Cpu:                     pulumi.String(fargateCPU),
@@ -238,7 +238,6 @@ func createECSService(
 			OperatingSystemFamily: pulumi.String("LINUX"),
 		},
 		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
 			"defang:service": pulumi.String(serviceName),
 		},
 	}, opts...)
@@ -266,12 +265,13 @@ func createECSService(
 				continue
 			}
 
-			tgName := fmt.Sprintf("%s-%s-%d", projectName, serviceName, port.Target)
+			tgName := targetGroupName(serviceName, port.Target, appProto)
 
 			// Target group health check (matches TS createTargetGroup in lb.ts)
-			interval := 30
+			defaultInterval := recipe.HealthCheckInterval
+			interval := defaultInterval
 			if svc.HealthCheck != nil {
-				interval = clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30)
+				interval = clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, defaultInterval)
 			}
 			maxTimeout := interval - 1
 			if maxTimeout > 120 {
@@ -299,29 +299,30 @@ func createECSService(
 				TargetType:                    pulumi.String("ip"),
 				VpcId:                         args.vpcID,
 				LoadBalancingAlgorithmType:     pulumi.String("least_outstanding_requests"),
+				DeregistrationDelay:            pulumi.Int(recipe.DeregistrationDelay),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{
 					Path:               pulumi.String("/"),
 					Port:               pulumi.String("traffic-port"),
-					HealthyThreshold:   pulumi.Int(3),
+					HealthyThreshold:   pulumi.Int(recipe.HealthCheckThreshold),
 					UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
 					Interval:           pulumi.Int(interval),
 					Timeout:            pulumi.Int(timeout),
 					Matcher:            pulumi.String(matcher),
 				},
 				Tags: pulumi.StringMap{
-					"defang:project": pulumi.String(projectName),
 					"defang:service": pulumi.String(serviceName),
 				},
 			}
 
 			// Set protocol version for http2/grpc (matches TS createTargetGroup)
-			if appProto == "http2" {
+			switch appProto {
+			case "http2":
 				tgArgs.ProtocolVersion = pulumi.String("HTTP2")
-			} else if appProto == "grpc" {
+			case "grpc":
 				tgArgs.ProtocolVersion = pulumi.String("GRPC")
 			}
 
-			tg, tgErr := lb.NewTargetGroup(ctx, tgName+"-tg", tgArgs, opts...)
+			tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opts...)
 			if tgErr != nil {
 				return nil, fmt.Errorf("creating target group: %w", tgErr)
 			}
@@ -387,11 +388,10 @@ func createECSService(
 	}
 
 	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)
-	ecsService, err := ecs.NewService(ctx, resourcePrefix+"-svc", &ecs.ServiceArgs{
+	ecsServiceArgs := &ecs.ServiceArgs{
 		Cluster:        args.cluster.Arn,
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
-		LaunchType:     pulumi.String("FARGATE"),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
 			Subnets:        args.subnetIDs,
 			SecurityGroups: pulumi.StringArray{args.sg.ID()},
@@ -402,13 +402,28 @@ func createECSService(
 			Enable:   pulumi.Bool(true),
 			Rollback: pulumi.Bool(true),
 		},
-		EnableEcsManagedTags: pulumi.Bool(true),
-		PropagateTags:        pulumi.String("SERVICE"),
+		DeploymentMinimumHealthyPercent: pulumi.Int(recipe.MinHealthyPercent),
+		EnableEcsManagedTags:            pulumi.Bool(true),
+		PropagateTags:                   pulumi.String("SERVICE"),
 		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
 			"defang:service": pulumi.String(serviceName),
 		},
-	}, append(opts, pulumi.DependsOn(lbDependsOn))...)
+	}
+
+	// Use capacity provider strategy if configured, otherwise default launch type
+	capacityProvider := recipe.FargateCapacityProvider
+	if capacityProvider != "" {
+		ecsServiceArgs.CapacityProviderStrategies = ecs.ServiceCapacityProviderStrategyArray{
+			&ecs.ServiceCapacityProviderStrategyArgs{
+				CapacityProvider: pulumi.String(capacityProvider),
+				Weight:           pulumi.Int(1),
+			},
+		}
+	} else {
+		ecsServiceArgs.LaunchType = pulumi.String("FARGATE")
+	}
+
+	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, append(opts, pulumi.DependsOn(lbDependsOn))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}

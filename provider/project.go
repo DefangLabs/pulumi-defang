@@ -32,9 +32,11 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 
 	childOpt := pulumi.Parent(comp)
 	args := common.BuildArgs{
-		Services: toServices(inputs.Services),
-		AWS:      toAWSConfig(inputs.AWS),
-		GCP:      toGCPConfig(inputs.GCP),
+		Services:  toServices(inputs.Services),
+		AWS:       toAWSConfig(inputs.AWS),
+		GCP:       toGCPConfig(inputs.GCP),
+		AWSRecipe: common.LoadAWSRecipe(ctx),
+		GCPRecipe: common.LoadGCPRecipe(ctx),
 	}
 
 	var result *common.BuildResult

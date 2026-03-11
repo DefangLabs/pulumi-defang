@@ -8,3 +8,10 @@ config:
   pulumi:autonaming:
     value:
       pattern: Defang-${project}-${stack}-${name}-${hex(7)}
+      providers:
+        aws:
+          resources:
+            aws:lb/loadBalancer:LoadBalancer:
+              pattern: ${name}-${hex(4)}
+            aws:lb/targetGroup:TargetGroup:
+              pattern: ${name}-${hex(4)}

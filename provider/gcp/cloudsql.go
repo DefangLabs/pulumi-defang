@@ -62,7 +62,7 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 // createCloudSQL creates a managed Cloud SQL Postgres instance.
 func createCloudSQL(
 	ctx *pulumi.Context,
-	projectName, serviceName string,
+	serviceName string,
 	svc common.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*cloudSQLResult, error) {
@@ -70,8 +70,6 @@ func createCloudSQL(
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}
-
-	resourcePrefix := projectName + "-" + serviceName
 
 	tier := cloudSQLTier(svc.GetCPUs(), svc.GetMemoryMiB())
 
@@ -94,7 +92,7 @@ func createCloudSQL(
 		}
 	}
 
-	instance, err := sql.NewDatabaseInstance(ctx, resourcePrefix+"-sql", &sql.DatabaseInstanceArgs{
+	instance, err := sql.NewDatabaseInstance(ctx, serviceName, &sql.DatabaseInstanceArgs{
 		DatabaseVersion: pulumi.String(gcpPostgresVersion(pg.Version)),
 		Settings: &sql.DatabaseInstanceSettingsArgs{
 			Tier:                pulumi.String(tier),
@@ -104,10 +102,6 @@ func createCloudSQL(
 			IpConfiguration: &sql.DatabaseInstanceSettingsIpConfigurationArgs{
 				Ipv4Enabled: pulumi.Bool(true),
 				SslMode:     pulumi.StringPtr(pg.SslMode),
-			},
-			UserLabels: pulumi.StringMap{
-				"defang-project": pulumi.String(projectName),
-				"defang-service": pulumi.String(serviceName),
 			},
 		},
 		DeletionProtection: pulumi.Bool(pg.DeletionProtection),
@@ -122,7 +116,7 @@ func createCloudSQL(
 		if username == "" {
 			username = "postgres"
 		}
-		_, err := sql.NewUser(ctx, resourcePrefix+"-sql-user", &sql.UserArgs{
+		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
 			Name:           pulumi.String(username),
 			Instance:       instance.Name,
 			Password:       pulumi.String(pg.Password),
@@ -136,7 +130,7 @@ func createCloudSQL(
 
 	// Create database if non-default
 	if pg.DBName != "" && pg.DBName != "postgres" {
-		_, err := sql.NewDatabase(ctx, resourcePrefix+"-sql-db", &sql.DatabaseArgs{
+		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
 			Name:           pulumi.String(pg.DBName),
 			Instance:       instance.Name,
 			DeletionPolicy: pulumi.String("ABANDON"),

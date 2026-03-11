@@ -3,6 +3,7 @@ package aws
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -16,16 +17,16 @@ type albResult struct {
 // createALB creates an Application Load Balancer with an HTTP listener.
 func createALB(
 	ctx *pulumi.Context,
-	projectName string,
 	vpcID pulumi.StringOutput,
 	subnetIDs pulumi.StringArrayOutput,
 	serviceSG *ec2.SecurityGroup,
+	recipe common.AWSRecipe,
 	opts ...pulumi.ResourceOption,
 ) (*albResult, error) {
 	// Create ALB security group allowing HTTP/HTTPS ingress
-	albSG, err := ec2.NewSecurityGroup(ctx, projectName+"-alb-sg", &ec2.SecurityGroupArgs{
+	albSG, err := ec2.NewSecurityGroup(ctx, "alb-sg", &ec2.SecurityGroupArgs{
 		VpcId:       vpcID,
-		Description: pulumi.String(fmt.Sprintf("ALB security group for %s", projectName)),
+		Description: pulumi.String("ALB security group"),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
 				Protocol:   pulumi.String("tcp"),
@@ -48,16 +49,13 @@ func createALB(
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-		},
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB security group: %w", err)
 	}
 
 	// Allow traffic from ALB to service security group
-	_, err = ec2.NewSecurityGroupRule(ctx, projectName+"-alb-to-svc", &ec2.SecurityGroupRuleArgs{
+	_, err = ec2.NewSecurityGroupRule(ctx, "alb-to-svc", &ec2.SecurityGroupRuleArgs{
 		Type:                  pulumi.String("ingress"),
 		FromPort:              pulumi.Int(0),
 		ToPort:                pulumi.Int(65535),
@@ -70,21 +68,19 @@ func createALB(
 	}
 
 	// Create ALB
-	alb, err := lb.NewLoadBalancer(ctx, projectName+"-alb", &lb.LoadBalancerArgs{
-		Internal:         pulumi.Bool(false),
-		LoadBalancerType: pulumi.String("application"),
-		SecurityGroups:   pulumi.StringArray{albSG.ID()},
-		Subnets:          subnetIDs,
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-		},
+	alb, err := lb.NewLoadBalancer(ctx, "alb", &lb.LoadBalancerArgs{
+		Internal:                 pulumi.Bool(false),
+		LoadBalancerType:         pulumi.String("application"),
+		SecurityGroups:           pulumi.StringArray{albSG.ID()},
+		Subnets:                  subnetIDs,
+		EnableDeletionProtection: pulumi.Bool(recipe.DeletionProtection),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB: %w", err)
 	}
 
 	// Create HTTP listener with default 404 response
-	httpListener, err := lb.NewListener(ctx, projectName+"-http-listener", &lb.ListenerArgs{
+	httpListener, err := lb.NewListener(ctx, "http-listener", &lb.ListenerArgs{
 		LoadBalancerArn: alb.Arn,
 		Port:            pulumi.Int(80),
 		Protocol:        pulumi.String("HTTP"),
@@ -97,9 +93,6 @@ func createALB(
 					StatusCode:  pulumi.String("404"),
 				},
 			},
-		},
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
 		},
 	}, opts...)
 	if err != nil {

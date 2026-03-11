@@ -50,11 +50,12 @@ func postgresEngineVersion(version int) string {
 // createRDS creates a managed RDS Postgres instance for a service.
 func createRDS(
 	ctx *pulumi.Context,
-	projectName, serviceName string,
+	serviceName string,
 	svc common.ServiceConfig,
 	vpcID pulumi.StringOutput,
 	privateSubnetIDs pulumi.StringArrayOutput,
 	serviceSG *ec2.SecurityGroup,
+	recipe common.AWSRecipe,
 	opts ...pulumi.ResourceOption,
 ) (*rdsResult, error) {
 	pg := svc.Postgres
@@ -62,23 +63,17 @@ func createRDS(
 		return nil, fmt.Errorf("postgres config is nil")
 	}
 
-	resourcePrefix := projectName + "-" + serviceName
-
 	// Create DB subnet group
-	subnetGroup, err := rds.NewSubnetGroup(ctx, resourcePrefix+"-db-subnet", &rds.SubnetGroupArgs{
+	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
 		Description: pulumi.String(fmt.Sprintf("Subnet group for %s postgres", serviceName)),
 		SubnetIds:   privateSubnetIDs,
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-			"defang:service": pulumi.String(serviceName),
-		},
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating DB subnet group: %w", err)
 	}
 
 	// Create security group for RDS
-	rdsSG, err := ec2.NewSecurityGroup(ctx, resourcePrefix+"-db-sg", &ec2.SecurityGroupArgs{
+	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID,
 		Description: pulumi.String(fmt.Sprintf("RDS security group for %s", serviceName)),
 		Ingress: ec2.SecurityGroupIngressArray{
@@ -97,10 +92,6 @@ func createRDS(
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-			"defang:service": pulumi.String(serviceName),
-		},
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS security group: %w", err)
@@ -108,7 +99,7 @@ func createRDS(
 
 	instanceClass := rdsInstanceClass(svc.GetCPUs(), svc.GetMemoryMiB())
 
-	instance, err := rds.NewInstance(ctx, resourcePrefix+"-db", &rds.InstanceArgs{
+	instance, err := rds.NewInstance(ctx, serviceName, &rds.InstanceArgs{
 		AllocatedStorage:        pulumi.Int(20),
 		MaxAllocatedStorage:     pulumi.Int(500),
 		Engine:                  pulumi.String("postgres"),
@@ -121,14 +112,10 @@ func createRDS(
 		VpcSecurityGroupIds:     pulumi.StringArray{rdsSG.ID()},
 		SkipFinalSnapshot:       pulumi.Bool(true),
 		PubliclyAccessible:      pulumi.Bool(false),
-		StorageEncrypted:        pulumi.Bool(true),
+		DeletionProtection:      pulumi.Bool(recipe.DeletionProtection),
+		StorageEncrypted:        pulumi.Bool(recipe.StorageEncrypted),
 		AutoMinorVersionUpgrade: pulumi.Bool(true),
-		BackupRetentionPeriod:   pulumi.Int(7),
-		BackupWindow:            pulumi.String("04:00-05:00"),
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-			"defang:service": pulumi.String(serviceName),
-		},
+		BackupRetentionPeriod:   pulumi.Int(recipe.BackupRetentionDays),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS instance: %w", err)

@@ -15,11 +15,18 @@ import (
 // Build creates all AWS resources for the project.
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
 	// Create explicit AWS provider to pin the version used by all child resources
-	awsProvArgs := &aws.ProviderArgs{}
+	awsProvArgs := &aws.ProviderArgs{
+		DefaultTags: &aws.ProviderDefaultTagsArgs{
+			Tags: pulumi.StringMap{
+				"defang:project": pulumi.String(projectName),
+				"defang:stack":   pulumi.String(ctx.Stack()),
+			},
+		},
+	}
 	if args.AWS != nil && args.AWS.Region != "" {
 		awsProvArgs.Region = pulumi.String(args.AWS.Region)
 	}
-	awsProv, err := aws.NewProvider(ctx, projectName+"-aws", awsProvArgs, parentOpt)
+	awsProv, err := aws.NewProvider(ctx, "aws", awsProvArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating AWS provider: %w", err)
 	}
@@ -32,34 +39,30 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	}
 
 	// Create ECS cluster
-	cluster, err := ecs.NewCluster(ctx, projectName+"-cluster", &ecs.ClusterArgs{
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-		},
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
 
+	recipe := args.AWSRecipe
+
 	// Create CloudWatch log group
-	logGroup, err := cloudwatch.NewLogGroup(ctx, projectName+"-logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(30),
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
-		},
+	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
+		RetentionInDays: pulumi.Int(recipe.LogRetentionDays),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
 	}
 
 	// Create execution role (shared by all task definitions)
-	execRole, err := createExecutionRole(ctx, projectName, opts...)
+	execRole, err := createExecutionRole(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
 
 	// Create or use existing VPC and subnets
-	net, err := resolveNetworking(ctx, projectName, args.AWS, opts...)
+	net, err := resolveNetworking(ctx, args.AWS, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -68,7 +71,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	privateSubnetIDs := net.privateSubnetIDs
 
 	// Create security group for services
-	sg, err := ec2.NewSecurityGroup(ctx, projectName+"-sg", &ec2.SecurityGroupArgs{
+	sg, err := ec2.NewSecurityGroup(ctx, "sg", &ec2.SecurityGroupArgs{
 		VpcId:       vpcID,
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
@@ -78,9 +81,6 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 				ToPort:     pulumi.Int(0),
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
-		},
-		Tags: pulumi.StringMap{
-			"defang:project": pulumi.String(projectName),
 		},
 	}, opts...)
 	if err != nil {
@@ -94,7 +94,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 	var alb *lb.LoadBalancer
 	if needsALB {
-		albResult, err := createALB(ctx, projectName, vpcID, subnetIDs, sg, opts...)
+		albResult, err := createALB(ctx, vpcID, subnetIDs, sg, recipe, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
@@ -111,14 +111,14 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	for svcName, svc := range args.Services {
 		if svc.Postgres != nil {
 			// Create managed Postgres (RDS)
-			rdsResult, err := createRDS(ctx, projectName, svcName, svc, vpcID, privateSubnetIDs, sg, opts...)
+			rdsResult, err := createRDS(ctx, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:%d", rdsResult.instance.Address, 5432)
 		} else {
 			// Create ECS service
-			ecsResult, err := createECSService(ctx, projectName, svcName, svc, &ecsServiceArgs{
+			ecsResult, err := createECSService(ctx, svcName, svc, &ecsServiceArgs{
 				cluster:   cluster,
 				execRole:  execRole,
 				logGroup:  logGroup,
@@ -128,7 +128,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 				listener:  httpListener,
 				alb:       alb,
 				region:    region.Name,
-			}, opts...)
+			}, recipe, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating ECS service %s: %w", svcName, err)
 			}
@@ -149,13 +149,21 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 // BuildService creates AWS resources for a single standalone service.
 func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBuildArgs, parentOpt pulumi.ResourceOption) (*common.ServiceBuildResult, error) {
 	svc := args.Service
+	recipe := args.AWSRecipe
 
 	// Create explicit AWS provider to pin the version used by all child resources
-	awsProvArgs := &aws.ProviderArgs{}
+	awsProvArgs := &aws.ProviderArgs{
+		DefaultTags: &aws.ProviderDefaultTagsArgs{
+			Tags: pulumi.StringMap{
+				"defang:project": pulumi.String(serviceName),
+				"defang:stack":   pulumi.String(ctx.Stack()),
+			},
+		},
+	}
 	if args.AWS != nil && args.AWS.Region != "" {
 		awsProvArgs.Region = pulumi.String(args.AWS.Region)
 	}
-	awsProv, err := aws.NewProvider(ctx, serviceName+"-aws", awsProvArgs, parentOpt)
+	awsProv, err := aws.NewProvider(ctx, "aws", awsProvArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating AWS provider: %w", err)
 	}
@@ -167,7 +175,7 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	}
 
 	// Create or use existing VPC and subnets
-	net, err := resolveNetworking(ctx, serviceName, args.AWS, opts...)
+	net, err := resolveNetworking(ctx, args.AWS, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -176,9 +184,9 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	privateSubnetIDs := net.privateSubnetIDs
 
 	// Create security group
-	sg, err := ec2.NewSecurityGroup(ctx, serviceName+"-sg", &ec2.SecurityGroupArgs{
+	sg, err := ec2.NewSecurityGroup(ctx, "sg", &ec2.SecurityGroupArgs{
 		VpcId:       vpcID,
-		Description: pulumi.String(fmt.Sprintf("Security group for %s", serviceName)),
+		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
 				Protocol:   pulumi.String("-1"),
@@ -187,16 +195,13 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-		Tags: pulumi.StringMap{
-			"defang:service": pulumi.String(serviceName),
-		},
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
 	if svc.Postgres != nil {
-		rdsResult, err := createRDS(ctx, serviceName, serviceName, svc, vpcID, privateSubnetIDs, sg, opts...)
+		rdsResult, err := createRDS(ctx, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating RDS: %w", err)
 		}
@@ -206,26 +211,19 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	}
 
 	// Create ECS cluster, log group, execution role for standalone service
-	cluster, err := ecs.NewCluster(ctx, serviceName+"-cluster", &ecs.ClusterArgs{
-		Tags: pulumi.StringMap{
-			"defang:service": pulumi.String(serviceName),
-		},
-	}, opts...)
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
 
-	logGroup, err := cloudwatch.NewLogGroup(ctx, serviceName+"-logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(30),
-		Tags: pulumi.StringMap{
-			"defang:service": pulumi.String(serviceName),
-		},
+	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
+		RetentionInDays: pulumi.Int(recipe.LogRetentionDays),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
 	}
 
-	execRole, err := createExecutionRole(ctx, serviceName, opts...)
+	execRole, err := createExecutionRole(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
@@ -234,7 +232,7 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	var httpListener *lb.Listener
 	var svcALB *lb.LoadBalancer
 	if svc.HasIngressPorts() {
-		albResult, err := createALB(ctx, serviceName, vpcID, subnetIDs, sg, opts...)
+		albResult, err := createALB(ctx, vpcID, subnetIDs, sg, recipe, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
@@ -242,7 +240,7 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 		svcALB = albResult.alb
 	}
 
-	ecsResult, err := createECSService(ctx, serviceName, serviceName, svc, &ecsServiceArgs{
+	ecsResult, err := createECSService(ctx, serviceName, svc, &ecsServiceArgs{
 		cluster:   cluster,
 		execRole:  execRole,
 		logGroup:  logGroup,
@@ -252,7 +250,7 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 		listener:  httpListener,
 		alb:       svcALB,
 		region:    region.Name,
-	}, opts...)
+	}, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}

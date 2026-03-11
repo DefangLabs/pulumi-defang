@@ -12,7 +12,12 @@ import (
 // Build creates all GCP resources for the project.
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
 	// Create explicit GCP provider to pin the version used by all child resources
-	gcpProvArgs := &gcp.ProviderArgs{}
+	gcpProvArgs := &gcp.ProviderArgs{
+		DefaultLabels: pulumi.StringMap{
+			"defang-project": pulumi.String(projectName),
+			"defang-stack":   pulumi.String(ctx.Stack()),
+		},
+	}
 	if args.GCP != nil {
 		if args.GCP.Project != "" {
 			gcpProvArgs.Project = pulumi.StringPtr(args.GCP.Project)
@@ -21,19 +26,16 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			gcpProvArgs.Region = pulumi.StringPtr(args.GCP.Region)
 		}
 	}
-	gcpProv, err := gcp.NewProvider(ctx, projectName+"-gcp", gcpProvArgs, parentOpt)
+	gcpProv, err := gcp.NewProvider(ctx, "gcp", gcpProvArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating GCP provider: %w", err)
 	}
 	opts := []pulumi.ResourceOption{parentOpt, pulumi.Provider(gcpProv)}
 
 	// Create Artifact Registry repository for container images
-	ar, err := artifactregistry.NewRepository(ctx, projectName+"-repo", &artifactregistry.RepositoryArgs{
+	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
 		Description: pulumi.String(fmt.Sprintf("Container images for %s", projectName)),
-		Format:       pulumi.String("DOCKER"),
-		Labels: pulumi.StringMap{
-			"defang-project": pulumi.String(projectName),
-		},
+		Format:      pulumi.String("DOCKER"),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating artifact registry: %w", err)
@@ -56,14 +58,14 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	for svcName, svc := range args.Services {
 		if svc.Postgres != nil {
 			// Create managed Cloud SQL Postgres
-			sqlResult, err := createCloudSQL(ctx, projectName, svcName, svc, opts...)
+			sqlResult, err := createCloudSQL(ctx, svcName, svc, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", sqlResult.instance.PublicIpAddress)
 		} else {
 			// Create Cloud Run service
-			crResult, err := createCloudRunService(ctx, projectName, svcName, svc, opts...)
+			crResult, err := createCloudRunService(ctx, svcName, svc, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 			}
@@ -82,7 +84,12 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	svc := args.Service
 
 	// Create explicit GCP provider to pin the version used by all child resources
-	gcpProvArgs := &gcp.ProviderArgs{}
+	gcpProvArgs := &gcp.ProviderArgs{
+		DefaultLabels: pulumi.StringMap{
+			"defang-project": pulumi.String(serviceName),
+			"defang-stack":   pulumi.String(ctx.Stack()),
+		},
+	}
 	if args.GCP != nil {
 		if args.GCP.Project != "" {
 			gcpProvArgs.Project = pulumi.StringPtr(args.GCP.Project)
@@ -91,14 +98,14 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 			gcpProvArgs.Region = pulumi.StringPtr(args.GCP.Region)
 		}
 	}
-	gcpProv, err := gcp.NewProvider(ctx, serviceName+"-gcp", gcpProvArgs, parentOpt)
+	gcpProv, err := gcp.NewProvider(ctx, "gcp", gcpProvArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating GCP provider: %w", err)
 	}
 	opts := []pulumi.ResourceOption{parentOpt, pulumi.Provider(gcpProv)}
 
 	if svc.Postgres != nil {
-		sqlResult, err := createCloudSQL(ctx, serviceName, serviceName, svc, opts...)
+		sqlResult, err := createCloudSQL(ctx, serviceName, svc, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL: %w", err)
 		}
@@ -107,7 +114,7 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 		}, nil
 	}
 
-	crResult, err := createCloudRunService(ctx, serviceName, serviceName, svc, opts...)
+	crResult, err := createCloudRunService(ctx, serviceName, svc, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
 	}
