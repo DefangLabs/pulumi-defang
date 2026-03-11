@@ -18,11 +18,9 @@ type GCPConfig struct {
 
 // BuildArgs are the inputs to a cloud provider's Build function.
 type BuildArgs struct {
-	Services  map[string]ServiceConfig
-	AWS       *AWSConfig
-	GCP       *GCPConfig
-	AWSRecipe AWSRecipe
-	GCPRecipe GCPRecipe
+	Services map[string]ServiceConfig
+	AWS      *AWSConfig
+	GCP      *GCPConfig
 }
 
 // BuildResult holds the outputs of a cloud build.
@@ -33,11 +31,9 @@ type BuildResult struct {
 
 // ServiceBuildArgs are the inputs for building a standalone service.
 type ServiceBuildArgs struct {
-	Service   ServiceConfig
-	AWS       *AWSConfig
-	GCP       *GCPConfig
-	AWSRecipe AWSRecipe
-	GCPRecipe GCPRecipe
+	Service ServiceConfig
+	AWS     *AWSConfig
+	GCP     *GCPConfig
 }
 
 // ServiceBuildResult holds the outputs of a standalone service build.

@@ -3,7 +3,6 @@ package aws
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -20,7 +19,7 @@ func createALB(
 	vpcID pulumi.StringOutput,
 	subnetIDs pulumi.StringArrayOutput,
 	serviceSG *ec2.SecurityGroup,
-	recipe common.AWSRecipe,
+	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*albResult, error) {
 	// Create ALB security group allowing HTTP/HTTPS ingress

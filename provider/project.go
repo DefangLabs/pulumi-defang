@@ -32,11 +32,9 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 
 	childOpt := pulumi.Parent(comp)
 	args := common.BuildArgs{
-		Services:  toServices(inputs.Services),
-		AWS:       toAWSConfig(inputs.AWS),
-		GCP:       toGCPConfig(inputs.GCP),
-		AWSRecipe: common.LoadAWSRecipe(ctx),
-		GCPRecipe: common.LoadGCPRecipe(ctx),
+		Services: toServices(inputs.Services),
+		AWS:      toAWSConfig(inputs.AWS),
+		GCP:      toGCPConfig(inputs.GCP),
 	}
 
 	var result *common.BuildResult
@@ -78,10 +76,9 @@ func toServices(services map[string]ServiceInput) map[string]common.ServiceConfi
 			Environment: svc.Environment,
 			Command:     svc.Command,
 			Entrypoint:  svc.Entrypoint,
-			Postgres:    toPostgres(svc.Postgres),
+			Postgres:    toPostgres(svc.Postgres, svc.Image, svc.Environment),
 			HealthCheck: toHealthCheck(svc.HealthCheck),
 			DomainName:  svc.DomainName,
-			CloudRun:    toCloudRun(svc.CloudRun),
 		}
 	}
 	return result
@@ -104,87 +101,64 @@ func toDeploy(d *DeployConfig) *common.DeployConfig {
 	if d == nil {
 		return nil
 	}
-	return &common.DeployConfig{
-		Replicas:  getReplicas(d),
-		CPUs:      getCPUs(d),
-		MemoryMiB: getMemoryMiB(d),
+	result := &common.DeployConfig{
+		Replicas: d.Replicas,
 	}
+	if d.Resources != nil && d.Resources.Reservations != nil {
+		r := d.Resources.Reservations
+		res := &common.ResourceConfig{
+			CPUs: r.CPUs,
+		}
+		if r.Memory != nil {
+			m := parseMemoryMiB(*r.Memory)
+			res.MemoryMiB = &m
+		}
+		result.Resources = &common.ResourcesConfig{
+			Reservations: res,
+		}
+	}
+	return result
 }
 
-func toPostgres(p *PostgresConfig) *common.PostgresConfig {
+// toPostgres derives PostgresConfig from the x-defang-postgres extension, image tag, and env vars.
+func toPostgres(p *PostgresInput, image *string, env map[string]string) *common.PostgresConfig {
 	if p == nil {
 		return nil
 	}
-	version := 17
-	if p.Version != nil {
-		version = *p.Version
+
+	// Derive version from image tag (e.g. "postgres:16" → 16)
+	version := 0
+	if image != nil {
+		version = getPostgresVersion(parseImageTag(*image))
 	}
+
+	// Derive credentials from env vars, matching defang-mvp behavior
 	dbName := "postgres"
-	if p.DBName != nil {
-		dbName = *p.DBName
+	if v, ok := env["POSTGRES_DB"]; ok && v != "" {
+		dbName = v
 	}
 	username := "postgres"
-	if p.Username != nil {
-		username = *p.Username
+	if v, ok := env["POSTGRES_USER"]; ok && v != "" {
+		username = v
 	}
-	availabilityType := "ZONAL"
-	if p.AvailabilityType != nil {
-		availabilityType = *p.AvailabilityType
-	}
-	backupEnabled := false
-	if p.BackupEnabled != nil {
-		backupEnabled = *p.BackupEnabled
-	}
-	pointInTimeRecovery := false
-	if p.PointInTimeRecovery != nil {
-		pointInTimeRecovery = *p.PointInTimeRecovery
-	}
-	sslMode := "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
-	if p.SslMode != nil {
-		sslMode = *p.SslMode
-	}
-	deletionProtection := false
-	if p.DeletionProtection != nil {
-		deletionProtection = *p.DeletionProtection
-	}
-	allowBurstable := true
-	if p.AllowBurstable != nil {
-		allowBurstable = *p.AllowBurstable
-	}
-	return &common.PostgresConfig{
-		Version:             version,
-		DBName:              dbName,
-		Username:            username,
-		Password:            p.Password,
-		AvailabilityType:    availabilityType,
-		BackupEnabled:       backupEnabled,
-		PointInTimeRecovery: pointInTimeRecovery,
-		SslMode:             sslMode,
-		DeletionProtection:  deletionProtection,
-		AllowBurstable:      allowBurstable,
-	}
-}
+	password := env["POSTGRES_PASSWORD"]
 
-func toCloudRun(c *CloudRunConfig) *common.CloudRunConfig {
-	if c == nil {
-		return nil
+	allowDowntime := false
+	if p.AllowDowntime != nil {
+		allowDowntime = *p.AllowDowntime
 	}
-	ingress := "INGRESS_TRAFFIC_ALL"
-	if c.Ingress != nil {
-		ingress = *c.Ingress
+	fromSnapshot := ""
+	if p.FromSnapshot != nil {
+		fromSnapshot = *p.FromSnapshot
 	}
-	launchStage := "BETA"
-	if c.LaunchStage != nil {
-		launchStage = *c.LaunchStage
-	}
-	var maxReplicas int
-	if c.MaxReplicas != nil {
-		maxReplicas = *c.MaxReplicas
-	}
-	return &common.CloudRunConfig{
-		Ingress:     ingress,
-		LaunchStage: launchStage,
-		MaxReplicas: maxReplicas,
+
+	return &common.PostgresConfig{
+		Version:       version,
+		DBName:        dbName,
+		Username:      username,
+		Password:      password,
+		AllowDowntime: allowDowntime,
+		FromSnapshot:  fromSnapshot,
 	}
 }
 

@@ -45,7 +45,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
 
-	recipe := args.AWSRecipe
+	recipe := LoadRecipe(ctx)
 
 	// Create CloudWatch log group
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
@@ -149,7 +149,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 // BuildService creates AWS resources for a single standalone service.
 func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBuildArgs, parentOpt pulumi.ResourceOption) (*common.ServiceBuildResult, error) {
 	svc := args.Service
-	recipe := args.AWSRecipe
+	recipe := LoadRecipe(ctx)
 
 	// Create explicit AWS provider to pin the version used by all child resources
 	awsProvArgs := &aws.ProviderArgs{

@@ -12,7 +12,6 @@ type ServiceConfig struct {
 	Postgres    *PostgresConfig
 	HealthCheck *HealthCheckConfig
 	DomainName  *string
-	CloudRun    *CloudRunConfig
 }
 
 // ServicePortConfig defines a port configuration.
@@ -24,34 +23,33 @@ type ServicePortConfig struct {
 	AppProtocol string // "http", "http2", "grpc"
 }
 
-// DeployConfig defines resolved deployment configuration.
-// Mirrors DeployConfig/Resources from compose.ts.
+// DeployConfig mirrors the Docker Compose deploy spec.
 type DeployConfig struct {
-	Replicas  int
-	CPUs      float64
-	MemoryMiB int
+	Replicas  *int
+	Resources *ResourcesConfig
+}
+
+// ResourcesConfig mirrors the Docker Compose deploy.resources spec.
+type ResourcesConfig struct {
+	Reservations *ResourceConfig
+	Limits       *ResourceConfig
+}
+
+// ResourceConfig defines CPU and memory for a resource bound.
+type ResourceConfig struct {
+	CPUs      *float64
+	MemoryMiB *int
 }
 
 // PostgresConfig defines resolved managed Postgres configuration.
-// Mirrors x-defang-postgres from compose.ts.
+// Only contains Compose-level fields; cloud-specific tuning lives in each provider's Recipe.
 type PostgresConfig struct {
-	Version             int
-	DBName              string
-	Username            string
-	Password            string
-	AvailabilityType    string
-	BackupEnabled       bool
-	PointInTimeRecovery bool
-	SslMode             string
-	DeletionProtection  bool
-	AllowBurstable      bool
-}
-
-// CloudRunConfig defines resolved Cloud Run configuration.
-type CloudRunConfig struct {
-	Ingress     string
-	LaunchStage string
-	MaxReplicas int // 0 means use deploy.replicas
+	Version       int    // Major version (derived from image tag, e.g. postgres:16 → 16)
+	DBName        string // From POSTGRES_DB env or default "postgres"
+	Username      string // From POSTGRES_USER env or default "postgres"
+	Password      string // From POSTGRES_PASSWORD env
+	AllowDowntime bool   // From x-defang-postgres "allow-downtime"
+	FromSnapshot  string // From x-defang-postgres "from-snapshot"
 }
 
 // HealthCheckConfig defines health check configuration.
@@ -74,24 +72,24 @@ func (s ServiceConfig) GetImage() string {
 
 // GetReplicas returns the replica count, defaulting to 1.
 func (s ServiceConfig) GetReplicas() int {
-	if s.Deploy != nil && s.Deploy.Replicas > 0 {
-		return s.Deploy.Replicas
+	if s.Deploy != nil && s.Deploy.Replicas != nil && *s.Deploy.Replicas > 0 {
+		return *s.Deploy.Replicas
 	}
 	return 1
 }
 
 // GetCPUs returns the CPU reservation, defaulting to 0.25.
 func (s ServiceConfig) GetCPUs() float64 {
-	if s.Deploy != nil && s.Deploy.CPUs > 0 {
-		return s.Deploy.CPUs
+	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.CPUs != nil {
+		return *s.Deploy.Resources.Reservations.CPUs
 	}
 	return 0.25
 }
 
 // GetMemoryMiB returns the memory reservation in MiB, defaulting to 512.
 func (s ServiceConfig) GetMemoryMiB() int {
-	if s.Deploy != nil && s.Deploy.MemoryMiB > 0 {
-		return s.Deploy.MemoryMiB
+	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.MemoryMiB != nil {
+		return *s.Deploy.Resources.Reservations.MemoryMiB
 	}
 	return 512
 }

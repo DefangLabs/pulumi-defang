@@ -55,17 +55,19 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	}
 	_ = hasPostgres
 
+	recipe := LoadRecipe(ctx)
+
 	for svcName, svc := range args.Services {
 		if svc.Postgres != nil {
 			// Create managed Cloud SQL Postgres
-			sqlResult, err := createCloudSQL(ctx, svcName, svc, opts...)
+			sqlResult, err := createCloudSQL(ctx, svcName, svc, recipe, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", sqlResult.instance.PublicIpAddress)
 		} else {
 			// Create Cloud Run service
-			crResult, err := createCloudRunService(ctx, svcName, svc, opts...)
+			crResult, err := createCloudRunService(ctx, svcName, svc, recipe, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 			}
@@ -104,8 +106,10 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	}
 	opts := []pulumi.ResourceOption{parentOpt, pulumi.Provider(gcpProv)}
 
+	recipe := LoadRecipe(ctx)
+
 	if svc.Postgres != nil {
-		sqlResult, err := createCloudSQL(ctx, serviceName, svc, opts...)
+		sqlResult, err := createCloudSQL(ctx, serviceName, svc, recipe, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL: %w", err)
 		}
@@ -114,7 +118,7 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 		}, nil
 	}
 
-	crResult, err := createCloudRunService(ctx, serviceName, svc, opts...)
+	crResult, err := createCloudRunService(ctx, serviceName, svc, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
 	}

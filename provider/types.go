@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -37,7 +38,7 @@ type ProjectInputs struct {
 // ServiceInput defines the configuration for a single service.
 // YAML tags are aligned with Docker Compose service spec where possible.
 type ServiceInput struct {
-	// Container image to deploy (required if no postgres config)
+	// Container image to deploy (required if no build config)
 	Image *string `pulumi:"image,optional" yaml:"image,omitempty"`
 
 	// Port configurations
@@ -55,17 +56,14 @@ type ServiceInput struct {
 	// Entrypoint override
 	Entrypoint []string `pulumi:"entrypoint,optional" yaml:"entrypoint,omitempty"`
 
-	// Managed Postgres configuration
-	Postgres *PostgresConfig `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
+	// Managed Postgres: presence enables managed postgres. Matches x-defang-postgres extension.
+	Postgres *PostgresInput `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
 
 	// Health check configuration
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional" yaml:"healthcheck,omitempty"`
 
 	// Custom domain name
 	DomainName *string `pulumi:"domainName,optional" yaml:"domainname,omitempty"`
-
-	// GCP Cloud Run-specific configuration
-	CloudRun *CloudRunConfig `pulumi:"cloudRun,optional" yaml:"x-defang-cloudrun,omitempty"`
 }
 
 // PortConfig defines a port mapping for a service.
@@ -114,49 +112,14 @@ type ResourceConfig struct {
 	Memory *string `pulumi:"memory,optional" yaml:"memory,omitempty"`
 }
 
-// PostgresConfig enables a managed Postgres instance for this service.
-type PostgresConfig struct {
-	// Postgres major version: 14, 15, 16, 17 (default: 17)
-	Version *int `pulumi:"version,optional" yaml:"version,omitempty"`
+// PostgresInput matches the x-defang-postgres Compose extension.
+// Version is derived from image tag; DBName/Username/Password from env vars.
+type PostgresInput struct {
+	// Allow applying changes that cause downtime (default: recipe-controlled)
+	AllowDowntime *bool `pulumi:"allowDowntime,optional" yaml:"allow-downtime,omitempty"`
 
-	// Database name (default: "postgres")
-	DBName *string `pulumi:"dbName,optional" yaml:"dbname,omitempty"`
-
-	// Database user (default: "postgres")
-	Username *string `pulumi:"username,optional" yaml:"username,omitempty"`
-
-	// Database password (required)
-	Password string `pulumi:"password" yaml:"password"`
-
-	// Availability type: "ZONAL" or "REGIONAL" (default: "ZONAL")
-	AvailabilityType *string `pulumi:"availabilityType,optional" yaml:"availability_type,omitempty"`
-
-	// Enable automated backups (default: false)
-	BackupEnabled *bool `pulumi:"backupEnabled,optional" yaml:"backup_enabled,omitempty"`
-
-	// Enable point-in-time recovery (default: false)
-	PointInTimeRecovery *bool `pulumi:"pointInTimeRecovery,optional" yaml:"point_in_time_recovery,omitempty"`
-
-	// SSL enforcement mode (default: "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
-	SslMode *string `pulumi:"sslMode,optional" yaml:"ssl_mode,omitempty"`
-
-	// Prevent accidental deletion (default: false)
-	DeletionProtection *bool `pulumi:"deletionProtection,optional" yaml:"deletion_protection,omitempty"`
-
-	// Allow burstable (micro/small) instance tiers (default: true)
-	AllowBurstable *bool `pulumi:"allowBurstable,optional" yaml:"allow_burstable,omitempty"`
-}
-
-// CloudRunConfig defines GCP Cloud Run-specific configuration overrides.
-type CloudRunConfig struct {
-	// Ingress traffic setting (default: "INGRESS_TRAFFIC_ALL")
-	Ingress *string `pulumi:"ingress,optional" yaml:"ingress,omitempty"`
-
-	// Launch stage: "BETA" or "GA" (default: "BETA")
-	LaunchStage *string `pulumi:"launchStage,optional" yaml:"launch_stage,omitempty"`
-
-	// Maximum number of instances for autoscaling (default: uses deploy.replicas)
-	MaxReplicas *int `pulumi:"maxReplicas,optional" yaml:"max_replicas,omitempty"`
+	// Restore from a snapshot identifier
+	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
 }
 
 // HealthCheckConfig defines health check parameters.
@@ -192,30 +155,6 @@ func getAppProtocol(p PortConfig) string {
 		return p.AppProtocol
 	}
 	return "http"
-}
-
-// getReplicas returns the number of replicas, defaulting to 1.
-func getReplicas(d *DeployConfig) int {
-	if d != nil && d.Replicas != nil {
-		return *d.Replicas
-	}
-	return 1
-}
-
-// getCPUs returns the CPU reservation, defaulting to 0.25.
-func getCPUs(d *DeployConfig) float64 {
-	if d != nil && d.Resources != nil && d.Resources.Reservations != nil && d.Resources.Reservations.CPUs != nil {
-		return *d.Resources.Reservations.CPUs
-	}
-	return 0.25
-}
-
-// getMemoryMiB returns the memory reservation in MiB, defaulting to 512.
-func getMemoryMiB(d *DeployConfig) int {
-	if d != nil && d.Resources != nil && d.Resources.Reservations != nil && d.Resources.Reservations.Memory != nil {
-		return parseMemoryMiB(*d.Resources.Reservations.Memory)
-	}
-	return 512
 }
 
 // parseMemoryMiB parses a memory string into MiB.
@@ -272,4 +211,42 @@ func parseMemoryMiB(s string) int {
 	default:
 		return 512
 	}
+}
+
+// postgresVersionRe extracts version from image tags like "16", "16.3-bookworm", "pg16", "0.8.0-pg17".
+var postgresVersionRe = regexp.MustCompile(`^(?:[\d.-]*pg)?([\d.]+)`)
+
+// getPostgresVersion extracts the postgres major version from an image tag.
+// Returns 0 if the tag can't be parsed (caller should default to latest).
+func getPostgresVersion(tag string) int {
+	m := postgresVersionRe.FindStringSubmatch(tag)
+	if m == nil {
+		return 0
+	}
+	// Take just the major version (first component before any dot)
+	ver := m[1]
+	if dot := strings.IndexByte(ver, '.'); dot >= 0 {
+		ver = ver[:dot]
+	}
+	n, err := strconv.Atoi(ver)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// parseImageTag splits "repo:tag" and returns the tag portion (empty string if no tag).
+func parseImageTag(image string) string {
+	// Handle digest references like "repo@sha256:..."
+	if at := strings.IndexByte(image, '@'); at >= 0 {
+		return ""
+	}
+	if colon := strings.LastIndexByte(image, ':'); colon >= 0 {
+		// Make sure we're not splitting on a port in the registry host
+		afterColon := image[colon+1:]
+		if !strings.Contains(afterColon, "/") {
+			return afterColon
+		}
+	}
+	return ""
 }

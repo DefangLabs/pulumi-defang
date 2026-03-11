@@ -36,16 +36,13 @@ type ServiceInputs struct {
 	Entrypoint []string `pulumi:"entrypoint,optional"`
 
 	// Managed Postgres configuration
-	Postgres *PostgresConfig `pulumi:"postgres,optional"`
+	Postgres *PostgresInput `pulumi:"postgres,optional"`
 
 	// Health check configuration
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional"`
 
 	// Custom domain name
 	DomainName *string `pulumi:"domainName,optional"`
-
-	// GCP Cloud Run-specific configuration
-	CloudRun *CloudRunConfig `pulumi:"cloudRun,optional"`
 }
 
 // ServiceOutputs holds the outputs of a Service component.
@@ -71,15 +68,12 @@ func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceI
 		Environment: inputs.Environment,
 		Command:     inputs.Command,
 		Entrypoint:  inputs.Entrypoint,
-		Postgres:    toPostgres(inputs.Postgres),
+		Postgres:    toPostgres(inputs.Postgres, inputs.Image, inputs.Environment),
 		HealthCheck: toHealthCheck(inputs.HealthCheck),
 		DomainName:  inputs.DomainName,
-		CloudRun:    toCloudRun(inputs.CloudRun),
 	}
 	args := common.ServiceBuildArgs{
-		Service:   svc,
-		AWSRecipe: common.LoadAWSRecipe(ctx),
-		GCPRecipe: common.LoadGCPRecipe(ctx),
+		Service: svc,
 	}
 
 	var result *common.ServiceBuildResult

@@ -35,6 +35,7 @@ func createCloudRunService(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc common.ServiceConfig,
+	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*cloudRunResult, error) {
 	// Create service account
@@ -78,16 +79,10 @@ func createCloudRunService(
 		cmdArgs = append(cmdArgs, pulumi.String(cmd))
 	}
 
-	// Resolve Cloud Run config with defaults
-	ingress := "INGRESS_TRAFFIC_ALL"
-	launchStage := "BETA"
+	// Cloud Run config from recipe
 	maxInstances := svc.GetReplicas()
-	if svc.CloudRun != nil {
-		ingress = svc.CloudRun.Ingress
-		launchStage = svc.CloudRun.LaunchStage
-		if svc.CloudRun.MaxReplicas > 0 {
-			maxInstances = svc.CloudRun.MaxReplicas
-		}
+	if recipe.MaxReplicas > 0 {
+		maxInstances = recipe.MaxReplicas
 	}
 
 	cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
@@ -114,10 +109,10 @@ func createCloudRunService(
 
 	// Create Cloud Run service
 	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
-		Ingress:            pulumi.String(ingress),
-		LaunchStage:        pulumi.String(launchStage),
+		Ingress:            pulumi.String(recipe.Ingress),
+		LaunchStage:        pulumi.String(recipe.LaunchStage),
 		InvokerIamDisabled: pulumi.Bool(true),
-		DeletionProtection: pulumi.Bool(false),
+		DeletionProtection: pulumi.Bool(recipe.DeletionProtection),
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{

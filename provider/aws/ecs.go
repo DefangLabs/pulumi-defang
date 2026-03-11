@@ -129,7 +129,7 @@ func createECSService(
 	serviceName string,
 	svc common.ServiceConfig,
 	args *ecsServiceArgs,
-	recipe common.AWSRecipe,
+	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*ecsServiceResult, error) {
 
