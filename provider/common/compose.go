@@ -3,7 +3,9 @@ package common
 // ServiceConfig defines the resolved configuration for a single service.
 // Mirrors the ServiceConfig type from compose.ts.
 type ServiceConfig struct {
+	Build       *BuildConfig
 	Image       *string
+	Platform    string // "linux/amd64" or "linux/arm64"
 	Ports       []ServicePortConfig
 	Deploy      *DeployConfig
 	Environment map[string]string
@@ -12,6 +14,16 @@ type ServiceConfig struct {
 	Postgres    *PostgresConfig
 	HealthCheck *HealthCheckConfig
 	DomainName  *string
+}
+
+// BuildConfig mirrors the Docker Compose build spec.
+// Matches compose.ts BuildConfig exactly.
+type BuildConfig struct {
+	Context    string            // required
+	Dockerfile string            // defaults to "Dockerfile"
+	Args       map[string]string // build arguments
+	ShmSize    int               // shared memory size in bytes (used for build task memory)
+	Target     string            // multi-stage build target
 }
 
 // ServicePortConfig defines a port configuration.
@@ -92,6 +104,19 @@ func (s ServiceConfig) GetMemoryMiB() int {
 		return *s.Deploy.Resources.Reservations.MemoryMiB
 	}
 	return 512
+}
+
+// NeedsBuild returns true if the service has a build config.
+func (s ServiceConfig) NeedsBuild() bool {
+	return s.Build != nil
+}
+
+// GetPlatform returns the platform, defaulting to "linux/amd64".
+func (s ServiceConfig) GetPlatform() string {
+	if s.Platform != "" {
+		return s.Platform
+	}
+	return "linux/amd64"
 }
 
 // HasIngressPorts returns true if any port has mode "ingress".

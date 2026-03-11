@@ -25,6 +25,7 @@ type ecsServiceArgs struct {
 	listener  *lb.Listener     // nil if no ALB
 	alb       *lb.LoadBalancer // nil if no ALB
 	region    string
+	imageURI  pulumi.StringOutput // container image URI (built or pre-built)
 }
 
 type ecsServiceResult struct {
@@ -142,7 +143,6 @@ func createECSService(
 	// Build container definition
 	cpus := svc.GetCPUs()
 	memMiB := svc.GetMemoryMiB()
-	image := svc.GetImage()
 
 	// Build environment variables (matches TS getContainerDefinition)
 	envVars := []map[string]interface{}{
@@ -187,25 +187,28 @@ func createECSService(
 		}
 	}
 
-	containerDef := map[string]interface{}{
-		"name":         serviceName,
-		"image":        image,
-		"essential":    true,
-		"portMappings": portMappings,
-		"environment":  envVars,
-	}
+	containerDefsJSON := pulumi.All(args.logGroup.Name, args.imageURI).ApplyT(func(vals []interface{}) (string, error) {
+		logGroupName := vals[0].(string)
+		imageURI := vals[1].(string)
 
-	if len(svc.Command) > 0 {
-		containerDef["command"] = svc.Command
-	}
-	if len(svc.Entrypoint) > 0 {
-		containerDef["entryPoint"] = svc.Entrypoint
-	}
-	if healthCheck != nil {
-		containerDef["healthCheck"] = healthCheck
-	}
+		containerDef := map[string]interface{}{
+			"name":         serviceName,
+			"image":        imageURI,
+			"essential":    true,
+			"portMappings": portMappings,
+			"environment":  envVars,
+		}
 
-	containerDefsJSON := args.logGroup.Name.ApplyT(func(logGroupName string) (string, error) {
+		if len(svc.Command) > 0 {
+			containerDef["command"] = svc.Command
+		}
+		if len(svc.Entrypoint) > 0 {
+			containerDef["entryPoint"] = svc.Entrypoint
+		}
+		if healthCheck != nil {
+			containerDef["healthCheck"] = healthCheck
+		}
+
 		containerDef["logConfiguration"] = map[string]interface{}{
 			"logDriver": "awslogs",
 			"options": map[string]interface{}{

@@ -12,6 +12,11 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// serviceComponent is a local component resource used to group per-service resources in the tree.
+type serviceComponent struct {
+	pulumi.ResourceState
+}
+
 // Build creates all AWS resources for the project.
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
 	// Create explicit AWS provider to pin the version used by all child resources
@@ -39,8 +44,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	}
 
 	// Create ECS cluster
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{
-	}, opts...)
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
@@ -105,38 +109,52 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 		albDNS = pulumi.StringPtr("").ToStringPtrOutput()
 	}
 
-	// Deploy each service
+	// Create shared image build infrastructure if any service needs a build
+	var imgInfra *imageInfra
+	for _, svc := range args.Services {
+		if svc.NeedsBuild() {
+			imgInfra, err = createImageInfra(ctx, logGroup, region.Name, opts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
+			}
+			break
+		}
+	}
+
+	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 
 	for svcName, svc := range args.Services {
-		if svc.Postgres != nil {
-			// Create managed Postgres (RDS)
-			rdsResult, err := createRDS(ctx, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
-			}
-			endpoints[svcName] = pulumi.Sprintf("%s:%d", rdsResult.instance.Address, 5432)
-		} else {
-			// Create ECS service
-			ecsResult, err := createECSService(ctx, svcName, svc, &ecsServiceArgs{
-				cluster:   cluster,
-				execRole:  execRole,
-				logGroup:  logGroup,
-				vpcID:     vpcID,
-				subnetIDs: subnetIDs,
-				sg:        sg,
-				listener:  httpListener,
-				alb:       alb,
-				region:    region.Name,
-			}, recipe, opts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating ECS service %s: %w", svcName, err)
-			}
-			if ecsResult.hasIngress {
-				endpoints[svcName] = ecsResult.endpoint
-			} else {
-				endpoints[svcName] = pulumi.Sprintf("%s (no ingress)", svcName)
-			}
+		comp := &serviceComponent{}
+		if err := ctx.RegisterComponentResource("defang:index:AwsService", svcName, comp, opts[0]); err != nil {
+			return nil, fmt.Errorf("registering service component %s: %w", svcName, err)
+		}
+		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp), pulumi.Provider(awsProv)}
+
+		result, err := CreateOneService(ctx, svcName, OneServiceArgs{
+			Svc:              svc,
+			Cluster:          cluster,
+			ExecRole:         execRole,
+			LogGroup:         logGroup,
+			VpcID:            vpcID,
+			SubnetIDs:        subnetIDs,
+			PrivateSubnetIDs: privateSubnetIDs,
+			SG:               sg,
+			Listener:         httpListener,
+			ALB:              alb,
+			Region:           region.Name,
+			ImgInfra:         imgInfra,
+		}, recipe, svcOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating service %s: %w", svcName, err)
+		}
+
+		endpoints[svcName] = result.Endpoint
+
+		if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+			"endpoint": result.Endpoint,
+		}); err != nil {
+			return nil, fmt.Errorf("registering outputs for %s: %w", svcName, err)
 		}
 	}
 
@@ -146,12 +164,12 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	}, nil
 }
 
-// BuildService creates AWS resources for a single standalone service.
-func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBuildArgs, parentOpt pulumi.ResourceOption) (*common.ServiceBuildResult, error) {
-	svc := args.Service
+// BuildStandalone creates all AWS resources for a single standalone service.
+// Creates its own shared infra (cluster, VPC, ALB, etc.) then calls CreateOneService.
+func BuildStandalone(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*OneServiceResult, error) {
 	recipe := LoadRecipe(ctx)
 
-	// Create explicit AWS provider to pin the version used by all child resources
+	// Create explicit AWS provider
 	awsProvArgs := &aws.ProviderArgs{
 		DefaultTags: &aws.ProviderDefaultTagsArgs{
 			Tags: pulumi.StringMap{
@@ -160,14 +178,14 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 			},
 		},
 	}
-	if args.AWS != nil && args.AWS.Region != "" {
-		awsProvArgs.Region = pulumi.String(args.AWS.Region)
+	if awsCfg != nil && awsCfg.Region != "" {
+		awsProvArgs.Region = pulumi.String(awsCfg.Region)
 	}
-	awsProv, err := aws.NewProvider(ctx, "aws", awsProvArgs, parentOpt)
+	awsProv, err := aws.NewProvider(ctx, "aws", awsProvArgs, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating AWS provider: %w", err)
 	}
-	opts := []pulumi.ResourceOption{parentOpt, pulumi.Provider(awsProv)}
+	provOpts := append(opts, pulumi.Provider(awsProv))
 
 	region, err := aws.GetRegion(ctx, nil, pulumi.Provider(awsProv))
 	if err != nil {
@@ -175,17 +193,14 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 	}
 
 	// Create or use existing VPC and subnets
-	net, err := resolveNetworking(ctx, args.AWS, opts...)
+	net, err := resolveNetworking(ctx, awsCfg, provOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
-	vpcID := net.vpcID
-	subnetIDs := net.publicSubnetIDs
-	privateSubnetIDs := net.privateSubnetIDs
 
 	// Create security group
 	sg, err := ec2.NewSecurityGroup(ctx, "sg", &ec2.SecurityGroupArgs{
-		VpcId:       vpcID,
+		VpcId:       net.vpcID,
 		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -195,44 +210,54 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-	}, opts...)
+	}, provOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
+	// For postgres, we don't need cluster/ALB
 	if svc.Postgres != nil {
-		rdsResult, err := createRDS(ctx, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
+		rdsResult, err := createRDS(ctx, serviceName, svc, net.vpcID, net.privateSubnetIDs, sg, recipe, provOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating RDS: %w", err)
 		}
-		return &common.ServiceBuildResult{
+		return &OneServiceResult{
 			Endpoint: pulumi.Sprintf("%s:%d", rdsResult.instance.Address, 5432),
 		}, nil
 	}
 
-	// Create ECS cluster, log group, execution role for standalone service
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
+	// Create ECS cluster, log group, execution role
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, provOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
 
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
 		RetentionInDays: pulumi.Int(recipe.LogRetentionDays),
-	}, opts...)
+	}, provOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
 	}
 
-	execRole, err := createExecutionRole(ctx, opts...)
+	execRole, err := createExecutionRole(ctx, provOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
+	}
+
+	// Create image build infra if needed
+	var imgInfra *imageInfra
+	if svc.NeedsBuild() {
+		imgInfra, err = createImageInfra(ctx, logGroup, region.Name, provOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
+		}
 	}
 
 	// Create ALB if service has ingress ports
 	var httpListener *lb.Listener
 	var svcALB *lb.LoadBalancer
 	if svc.HasIngressPorts() {
-		albResult, err := createALB(ctx, vpcID, subnetIDs, sg, recipe, opts...)
+		albResult, err := createALB(ctx, net.vpcID, net.publicSubnetIDs, sg, recipe, provOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
@@ -240,29 +265,18 @@ func BuildService(ctx *pulumi.Context, serviceName string, args common.ServiceBu
 		svcALB = albResult.alb
 	}
 
-	ecsResult, err := createECSService(ctx, serviceName, svc, &ecsServiceArgs{
-		cluster:   cluster,
-		execRole:  execRole,
-		logGroup:  logGroup,
-		vpcID:     vpcID,
-		subnetIDs: subnetIDs,
-		sg:        sg,
-		listener:  httpListener,
-		alb:       svcALB,
-		region:    region.Name,
-	}, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ECS service: %w", err)
-	}
-
-	var endpoint pulumi.StringOutput
-	if ecsResult.hasIngress {
-		endpoint = ecsResult.endpoint
-	} else {
-		endpoint = pulumi.Sprintf("%s (no ingress)", serviceName)
-	}
-
-	return &common.ServiceBuildResult{
-		Endpoint: endpoint,
-	}, nil
+	return CreateOneService(ctx, serviceName, OneServiceArgs{
+		Svc:              svc,
+		Cluster:          cluster,
+		ExecRole:         execRole,
+		LogGroup:         logGroup,
+		VpcID:            net.vpcID,
+		SubnetIDs:        net.publicSubnetIDs,
+		PrivateSubnetIDs: net.privateSubnetIDs,
+		SG:               sg,
+		Listener:         httpListener,
+		ALB:              svcALB,
+		Region:           region.Name,
+		ImgInfra:         imgInfra,
+	}, recipe, provOpts...)
 }

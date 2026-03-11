@@ -69,7 +69,8 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 func toServices(services map[string]ServiceInput) map[string]common.ServiceConfig {
 	result := make(map[string]common.ServiceConfig, len(services))
 	for name, svc := range services {
-		result[name] = common.ServiceConfig{
+		cfg := common.ServiceConfig{
+			Build:       toBuild(svc.Build),
 			Image:       svc.Image,
 			Ports:       toPorts(svc.Ports),
 			Deploy:      toDeploy(svc.Deploy),
@@ -80,6 +81,10 @@ func toServices(services map[string]ServiceInput) map[string]common.ServiceConfi
 			HealthCheck: toHealthCheck(svc.HealthCheck),
 			DomainName:  svc.DomainName,
 		}
+		if svc.Platform != nil {
+			cfg.Platform = *svc.Platform
+		}
+		result[name] = cfg
 	}
 	return result
 }
@@ -95,6 +100,26 @@ func toPorts(ports []PortConfig) []common.ServicePortConfig {
 		}
 	}
 	return result
+}
+
+func toBuild(b *BuildInput) *common.BuildConfig {
+	if b == nil {
+		return nil
+	}
+	cfg := &common.BuildConfig{
+		Context: b.Context,
+		Args:    b.Args,
+	}
+	if b.Dockerfile != nil {
+		cfg.Dockerfile = *b.Dockerfile
+	}
+	if b.ShmSize != nil {
+		cfg.ShmSize = parseMemoryMiB(*b.ShmSize) * 1024 * 1024 // store as bytes
+	}
+	if b.Target != nil {
+		cfg.Target = *b.Target
+	}
+	return cfg
 }
 
 func toDeploy(d *DeployConfig) *common.DeployConfig {

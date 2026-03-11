@@ -20,10 +20,13 @@ const Name string = "defang"
 
 func Provider() p.Provider {
 	return infer.Provider(infer.Options{
-		Resources:  []infer.InferredResource{},
+		Resources: []infer.InferredResource{
+			infer.Resource[*CodeBuildImageBuild, CodeBuildImageBuildInputs, CodeBuildImageBuildState](&CodeBuildImageBuild{}),
+		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
-			infer.Component[*Service, ServiceInputs, *ServiceOutputs](&Service{}),
+			infer.Component[*AwsService, AwsServiceInputs, *AwsServiceOutputs](&AwsService{}),
+			infer.Component[*GcpService, GcpServiceInputs, *GcpServiceOutputs](&GcpService{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider": "index",

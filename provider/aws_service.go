@@ -3,22 +3,24 @@ package provider
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/aws"
-	providergcp "github.com/DefangLabs/pulumi-defang/provider/gcp"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// Service is the controller struct for the defang:index:Service component.
-type Service struct{}
+// AwsService is the controller struct for the defang:index:AwsService component.
+type AwsService struct{}
 
-// ServiceInputs defines the inputs for a standalone Service component.
-type ServiceInputs struct {
-	// Cloud provider: "aws" or "gcp"
-	Provider string `pulumi:"providerId"`
+// AwsServiceInputs defines the inputs for a standalone AWS service component.
+type AwsServiceInputs struct {
+	// Build configuration
+	Build *BuildInput `pulumi:"build,optional"`
 
 	// Container image to deploy
 	Image *string `pulumi:"image,optional"`
+
+	// Target platform
+	Platform *string `pulumi:"platform,optional"`
 
 	// Port configurations
 	Ports []PortConfig `pulumi:"ports,optional"`
@@ -43,25 +45,30 @@ type ServiceInputs struct {
 
 	// Custom domain name
 	DomainName *string `pulumi:"domainName,optional"`
+
+	// AWS-specific configuration
+	AWS *AWSConfigInput `pulumi:"aws,optional"`
 }
 
-// ServiceOutputs holds the outputs of a Service component.
-type ServiceOutputs struct {
+// AwsServiceOutputs holds the outputs of an AwsService component.
+type AwsServiceOutputs struct {
 	pulumi.ResourceState
 
 	// The service endpoint URL
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
 }
 
-// Construct implements the ComponentResource interface for Service.
-func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption) (*ServiceOutputs, error) {
-	comp := &ServiceOutputs{}
+// Construct implements the ComponentResource interface for AwsService.
+// Creates all AWS resources for a standalone service (its own cluster, VPC, ALB, etc.).
+func (*AwsService) Construct(ctx *pulumi.Context, name, typ string, inputs AwsServiceInputs, opts pulumi.ResourceOption) (*AwsServiceOutputs, error) {
+	comp := &AwsServiceOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
 
 	childOpt := pulumi.Parent(comp)
 	svc := common.ServiceConfig{
+		Build:       toBuild(inputs.Build),
 		Image:       inputs.Image,
 		Ports:       toPorts(inputs.Ports),
 		Deploy:      toDeploy(inputs.Deploy),
@@ -72,23 +79,13 @@ func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceI
 		HealthCheck: toHealthCheck(inputs.HealthCheck),
 		DomainName:  inputs.DomainName,
 	}
-	args := common.ServiceBuildArgs{
-		Service: svc,
+	if inputs.Platform != nil {
+		svc.Platform = *inputs.Platform
 	}
 
-	var result *common.ServiceBuildResult
-	var err error
-
-	switch inputs.Provider {
-	case "aws":
-		result, err = provideraws.BuildService(ctx, name, args, childOpt)
-	case "gcp":
-		result, err = providergcp.BuildService(ctx, name, args, childOpt)
-	default:
-		return nil, fmt.Errorf("unsupported provider %q: must be \"aws\" or \"gcp\"", inputs.Provider)
-	}
+	result, err := provideraws.BuildStandalone(ctx, name, svc, toAWSConfig(inputs.AWS), childOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build %s service: %w", inputs.Provider, err)
+		return nil, fmt.Errorf("failed to build AWS service: %w", err)
 	}
 
 	comp.Endpoint = result.Endpoint

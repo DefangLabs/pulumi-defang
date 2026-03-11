@@ -38,8 +38,14 @@ type ProjectInputs struct {
 // ServiceInput defines the configuration for a single service.
 // YAML tags are aligned with Docker Compose service spec where possible.
 type ServiceInput struct {
+	// Build configuration (mutually exclusive with image for source of truth)
+	Build *BuildInput `pulumi:"build,optional" yaml:"build,omitempty"`
+
 	// Container image to deploy (required if no build config)
 	Image *string `pulumi:"image,optional" yaml:"image,omitempty"`
+
+	// Target platform: "linux/amd64" or "linux/arm64"
+	Platform *string `pulumi:"platform,optional" yaml:"platform,omitempty"`
 
 	// Port configurations
 	Ports []PortConfig `pulumi:"ports,optional" yaml:"ports,omitempty"`
@@ -110,6 +116,25 @@ type ResourceConfig struct {
 	// Memory as a string (e.g., "512Mi", "2Gi") or raw bytes number.
 	// Compose-go normalizes to bytes; we also accept "Mi"/"Gi" suffixes.
 	Memory *string `pulumi:"memory,optional" yaml:"memory,omitempty"`
+}
+
+// BuildInput mirrors the Docker Compose build spec.
+// Matches compose.ts BuildConfig.
+type BuildInput struct {
+	// Build context path or URL (required)
+	Context string `pulumi:"context" yaml:"context"`
+
+	// Dockerfile path relative to context (default: "Dockerfile")
+	Dockerfile *string `pulumi:"dockerfile,optional" yaml:"dockerfile,omitempty"`
+
+	// Build arguments
+	Args map[string]string `pulumi:"args,optional" yaml:"args,omitempty"`
+
+	// Shared memory size (used for build task memory sizing)
+	ShmSize *string `pulumi:"shmSize,optional" yaml:"shm_size,omitempty"`
+
+	// Multi-stage build target
+	Target *string `pulumi:"target,optional" yaml:"target,omitempty"`
 }
 
 // PostgresInput matches the x-defang-postgres Compose extension.

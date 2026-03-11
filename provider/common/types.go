@@ -28,15 +28,3 @@ type BuildResult struct {
 	Endpoints       pulumi.StringMapOutput
 	LoadBalancerDNS pulumi.StringPtrOutput
 }
-
-// ServiceBuildArgs are the inputs for building a standalone service.
-type ServiceBuildArgs struct {
-	Service ServiceConfig
-	AWS     *AWSConfig
-	GCP     *GCPConfig
-}
-
-// ServiceBuildResult holds the outputs of a standalone service build.
-type ServiceBuildResult struct {
-	Endpoint pulumi.StringOutput
-}
