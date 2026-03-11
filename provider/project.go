@@ -5,6 +5,7 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/aws"
+	providerazure "github.com/DefangLabs/pulumi-defang/provider/azure"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/gcp"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -35,6 +36,7 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 		Services: toServices(inputs.Services),
 		AWS:      toAWSConfig(inputs.AWS),
 		GCP:      toGCPConfig(inputs.GCP),
+		Azure:    toAzureConfig(inputs.Azure),
 	}
 
 	var result *common.BuildResult
@@ -45,8 +47,10 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 		result, err = provideraws.Build(ctx, name, args, childOpt)
 	case "gcp":
 		result, err = providergcp.Build(ctx, name, args, childOpt)
+	case "azure":
+		result, err = providerazure.Build(ctx, name, args, childOpt)
 	default:
-		return nil, fmt.Errorf("unsupported provider %q: must be \"aws\" or \"gcp\"", inputs.Provider)
+		return nil, fmt.Errorf("unsupported provider %q: must be \"aws\", \"gcp\", or \"azure\"", inputs.Provider)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to build %s resources: %w", inputs.Provider, err)
@@ -219,5 +223,15 @@ func toGCPConfig(g *GCPConfigInput) *common.GCPConfig {
 	return &common.GCPConfig{
 		Project: g.Project,
 		Region:  g.Region,
+	}
+}
+
+func toAzureConfig(a *AzureConfigInput) *common.AzureConfig {
+	if a == nil {
+		return nil
+	}
+	return &common.AzureConfig{
+		SubscriptionID: a.SubscriptionID,
+		Location:       a.Location,
 	}
 }

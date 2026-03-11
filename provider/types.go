@@ -20,9 +20,15 @@ type GCPConfigInput struct {
 	Region  string `pulumi:"region,optional"`
 }
 
+// AzureConfigInput defines optional Azure-specific configuration.
+type AzureConfigInput struct {
+	SubscriptionID string `pulumi:"subscriptionId,optional"`
+	Location       string `pulumi:"location,optional"`
+}
+
 // ProjectInputs defines the top-level inputs for the defang:index:Project component.
 type ProjectInputs struct {
-	// Cloud provider: "aws" or "gcp"
+	// Cloud provider: "aws", "gcp", or "azure"
 	Provider string `pulumi:"providerId" yaml:"provider"`
 
 	// Services map: name -> service config
@@ -33,6 +39,9 @@ type ProjectInputs struct {
 
 	// GCP-specific configuration
 	GCP *GCPConfigInput `pulumi:"gcp,optional"`
+
+	// Azure-specific configuration
+	Azure *AzureConfigInput `pulumi:"azure,optional"`
 }
 
 // ServiceInput defines the configuration for a single service.

@@ -16,11 +16,18 @@ type GCPConfig struct {
 	Region  string
 }
 
+// AzureConfig holds optional Azure-specific configuration overrides.
+type AzureConfig struct {
+	SubscriptionID string
+	Location       string
+}
+
 // BuildArgs are the inputs to a cloud provider's Build function.
 type BuildArgs struct {
 	Services map[string]ServiceConfig
 	AWS      *AWSConfig
 	GCP      *GCPConfig
+	Azure    *AzureConfig
 }
 
 // BuildResult holds the outputs of a cloud build.

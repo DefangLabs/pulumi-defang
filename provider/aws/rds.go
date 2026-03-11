@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
@@ -188,6 +189,7 @@ func createRDS(
 
 	// Create DB subnet group
 	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
+		Name:        pulumi.String(strings.ToLower(serviceName) + "-subnet-group"),
 		Description: pulumi.String(fmt.Sprintf("Subnet group for %s postgres", serviceName)),
 		SubnetIds:   privateSubnetIDs,
 	}, opts...)

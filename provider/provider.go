@@ -29,16 +29,18 @@ func Provider() p.Provider {
 			infer.Component[*AwsPostgres, AwsPostgresInputs, *AwsPostgresOutputs](&AwsPostgres{}),
 			infer.Component[*GcpCloudRunService, GcpCloudRunServiceInputs, *GcpCloudRunServiceOutputs](&GcpCloudRunService{}),
 			infer.Component[*GcpCloudSql, GcpCloudSqlInputs, *GcpCloudSqlOutputs](&GcpCloudSql{}),
+			infer.Component[*AzureContainerApp, AzureContainerAppInputs, *AzureContainerAppOutputs](&AzureContainerApp{}),
+			infer.Component[*AzurePostgres, AzurePostgresInputs, *AzurePostgresOutputs](&AzurePostgres{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider": "index",
 		},
 
 		Metadata: schema.Metadata{
-			Description: "Deploy containerized services to AWS or GCP with Pulumi.",
+			Description: "Deploy containerized services to AWS, GCP, or Azure with Pulumi.",
 			Keywords: []string{
 				"category/cloud", "category/infrastructure", "kind/native", "defang", "docker",
-				"cloud", "aws", "gcp", "ecs", "fargate", "cloudrun",
+				"cloud", "aws", "gcp", "azure", "ecs", "fargate", "cloudrun", "containerapp",
 			},
 			Homepage:          "https://github.com/DefangLabs/pulumi-defang",
 			Repository:        "https://github.com/DefangLabs/pulumi-defang",

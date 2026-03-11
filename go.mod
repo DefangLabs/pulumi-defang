@@ -95,6 +95,13 @@ require (
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.21.0 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/app/v2 v2.92.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v2 v2.92.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v2 v2.92.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2 v2.92.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v2 v2.92.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v2 v2.92.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.92.0 // indirect
 	github.com/pulumi/pulumi-command/sdk v1.2.1 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect

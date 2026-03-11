@@ -2,12 +2,15 @@ package gcp
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+const defaultGCPRegion = "us-central1"
 
 // serviceComponent is a local component resource used to group per-service resources in the tree.
 type serviceComponent struct {
@@ -26,8 +29,7 @@ type CloudSQLResult struct {
 
 // Build creates all GCP resources for the project.
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
-	// Create explicit GCP provider to pin the version used by all child resources
-	gcpProv, err := createGCPProvider(ctx, projectName, args.GCP, parentOpt)
+	gcpProv, region, err := createGCPProvider(ctx, projectName, args.GCP, parentOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +37,9 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 	// Create Artifact Registry repository for container images
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
-		Description: pulumi.String(fmt.Sprintf("Container images for %s", projectName)),
-		Format:      pulumi.String("DOCKER"),
+		RepositoryId: pulumi.String(strings.ToLower(projectName)),
+		Description:  pulumi.String(fmt.Sprintf("Container images for %s", projectName)),
+		Format:       pulumi.String("DOCKER"),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating artifact registry: %w", err)
@@ -70,7 +73,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp), pulumi.Provider(gcpProv)}
 
-			crResult, err := createCloudRunService(ctx, svcName, svc, recipe, svcOpts...)
+			crResult, err := createCloudRunService(ctx, svcName, svc, region, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 			}
@@ -92,7 +95,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 // BuildStandaloneCloudRun creates GCP resources for a single standalone Cloud Run service.
 func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, gcpCfg *common.GCPConfig, opts ...pulumi.ResourceOption) (*CloudRunResult, error) {
-	gcpProv, err := createGCPProvider(ctx, serviceName, gcpCfg, opts...)
+	gcpProv, region, err := createGCPProvider(ctx, serviceName, gcpCfg, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +103,7 @@ func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc common
 
 	recipe := LoadRecipe(ctx)
 
-	crResult, err := createCloudRunService(ctx, serviceName, svc, recipe, provOpts...)
+	crResult, err := createCloudRunService(ctx, serviceName, svc, region, recipe, provOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud Run service %s: %w", serviceName, err)
 	}
@@ -112,7 +115,7 @@ func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc common
 
 // BuildStandaloneCloudSQL creates GCP resources for a single standalone Cloud SQL Postgres instance.
 func BuildStandaloneCloudSQL(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, gcpCfg *common.GCPConfig, opts ...pulumi.ResourceOption) (*CloudSQLResult, error) {
-	gcpProv, err := createGCPProvider(ctx, serviceName, gcpCfg, opts...)
+	gcpProv, _, err := createGCPProvider(ctx, serviceName, gcpCfg, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +133,9 @@ func BuildStandaloneCloudSQL(ctx *pulumi.Context, serviceName string, svc common
 	}, nil
 }
 
-// createGCPProvider creates a GCP provider with default labels.
-func createGCPProvider(ctx *pulumi.Context, projectName string, gcpCfg *common.GCPConfig, opts ...pulumi.ResourceOption) (*gcp.Provider, error) {
+// createGCPProvider creates a GCP provider with default labels and returns the resolved region.
+func createGCPProvider(ctx *pulumi.Context, projectName string, gcpCfg *common.GCPConfig, opts ...pulumi.ResourceOption) (*gcp.Provider, string, error) {
+	region := defaultGCPRegion
 	gcpProvArgs := &gcp.ProviderArgs{
 		DefaultLabels: pulumi.StringMap{
 			"defang-project": pulumi.String(projectName),
@@ -143,12 +147,13 @@ func createGCPProvider(ctx *pulumi.Context, projectName string, gcpCfg *common.G
 			gcpProvArgs.Project = pulumi.StringPtr(gcpCfg.Project)
 		}
 		if gcpCfg.Region != "" {
-			gcpProvArgs.Region = pulumi.StringPtr(gcpCfg.Region)
+			region = gcpCfg.Region
+			gcpProvArgs.Region = pulumi.StringPtr(region)
 		}
 	}
 	gcpProv, err := gcp.NewProvider(ctx, "gcp", gcpProvArgs, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating GCP provider: %w", err)
+		return nil, "", fmt.Errorf("creating GCP provider: %w", err)
 	}
-	return gcpProv, nil
+	return gcpProv, region, nil
 }

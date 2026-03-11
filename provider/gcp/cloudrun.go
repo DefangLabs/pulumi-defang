@@ -2,12 +2,30 @@ package gcp
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var nonLowerAlphaNumericOrDash = regexp.MustCompile(`[^a-z0-9-]`)
+
+// sanitizeAccountId returns a GCP service account ID (6-30 chars, lowercase alphanumeric + hyphens).
+func sanitizeAccountId(name string) string {
+	id := strings.ToLower(name)
+	id = nonLowerAlphaNumericOrDash.ReplaceAllLiteralString(id, "-")
+	id = strings.Trim(id, "-")
+	if len(id) < 6 {
+		id = id + "-svcacc"
+	}
+	if len(id) > 30 {
+		id = id[:30]
+	}
+	return strings.TrimRight(id, "-")
+}
 
 type cloudRunResult struct {
 	service *cloudrunv2.Service
@@ -35,11 +53,13 @@ func createCloudRunService(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc common.ServiceConfig,
+	location string,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*cloudRunResult, error) {
-	// Create service account
+	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
 	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
+		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
 		DisplayName: pulumi.String(fmt.Sprintf("Service account for %s", serviceName)),
 	}, opts...)
 	if err != nil {
@@ -109,6 +129,7 @@ func createCloudRunService(
 
 	// Create Cloud Run service
 	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
+		Location:           pulumi.String(location),
 		Ingress:            pulumi.String(recipe.Ingress),
 		LaunchStage:        pulumi.String(recipe.LaunchStage),
 		InvokerIamDisabled: pulumi.Bool(true),
