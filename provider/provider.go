@@ -25,8 +25,10 @@ func Provider() p.Provider {
 		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
-			infer.Component[*AwsService, AwsServiceInputs, *AwsServiceOutputs](&AwsService{}),
-			infer.Component[*GcpService, GcpServiceInputs, *GcpServiceOutputs](&GcpService{}),
+			infer.Component[*AwsEcsService, AwsEcsServiceInputs, *AwsEcsServiceOutputs](&AwsEcsService{}),
+			infer.Component[*AwsPostgres, AwsPostgresInputs, *AwsPostgresOutputs](&AwsPostgres{}),
+			infer.Component[*GcpCloudRunService, GcpCloudRunServiceInputs, *GcpCloudRunServiceOutputs](&GcpCloudRunService{}),
+			infer.Component[*GcpCloudSql, GcpCloudSqlInputs, *GcpCloudSqlOutputs](&GcpCloudSql{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider": "index",

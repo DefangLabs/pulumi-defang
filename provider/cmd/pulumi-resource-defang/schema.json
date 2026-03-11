@@ -234,7 +234,7 @@
   },
   "provider": {},
   "resources": {
-    "defang:index:AwsService": {
+    "defang:index:AwsEcsService": {
       "properties": {
         "endpoint": {
           "type": "string"
@@ -294,6 +294,36 @@
           "items": {
             "$ref": "#/types/defang:index:PortConfig"
           }
+        }
+      },
+      "isComponent": true
+    },
+    "defang:index:AwsPostgres": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "inputProperties": {
+        "aws": {
+          "$ref": "#/types/defang:index:AWSConfigInput"
+        },
+        "deploy": {
+          "$ref": "#/types/defang:index:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
         },
         "postgres": {
           "$ref": "#/types/defang:index:PostgresInput"
@@ -357,7 +387,7 @@
         "projectName"
       ]
     },
-    "defang:index:GcpService": {
+    "defang:index:GcpCloudRunService": {
       "properties": {
         "endpoint": {
           "type": "string"
@@ -417,6 +447,36 @@
           "items": {
             "$ref": "#/types/defang:index:PortConfig"
           }
+        }
+      },
+      "isComponent": true
+    },
+    "defang:index:GcpCloudSql": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "inputProperties": {
+        "deploy": {
+          "$ref": "#/types/defang:index:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "gcp": {
+          "$ref": "#/types/defang:index:GCPConfigInput"
+        },
+        "image": {
+          "type": "string",
+          "plain": true
         },
         "postgres": {
           "$ref": "#/types/defang:index:PostgresInput"
