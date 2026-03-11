@@ -1,0 +1,10 @@
+name: defang-test
+runtime: go
+plugins:
+  providers:
+    - name: defang
+      path: ../../bin
+config:
+  pulumi:autonaming:
+    value:
+      pattern: Defang-${project}-${stack}-${name}-${hex(7)}

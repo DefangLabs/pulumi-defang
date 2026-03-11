@@ -1,202 +1,222 @@
-// Copyright 2016-2023, Pulumi Corporation.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package provider
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"time"
 
-	"github.com/DefangLabs/defang/src/cmd/cli/command"
-	"github.com/DefangLabs/defang/src/pkg"
-	"github.com/DefangLabs/defang/src/pkg/cli"
-	"github.com/DefangLabs/defang/src/pkg/cli/client"
-	"github.com/DefangLabs/defang/src/pkg/cli/compose"
-	"github.com/DefangLabs/defang/src/pkg/types"
-	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	provideraws "github.com/DefangLabs/pulumi-defang/provider/aws"
+	providergcp "github.com/DefangLabs/pulumi-defang/provider/gcp"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// Each resource has a controlling struct.
-// Resource behavior is determined by implementing methods on the controlling struct.
-// The `Create` method is mandatory, but other methods are optional.
-// - Check: Remap inputs before they are typed.
-// - Diff: Change how instances of a resource are compared.
-// - Update: Mutate a resource in place.
-// - Read: Get the state of a resource from the backing provider.
-// - Delete: Custom logic when the resource is deleted.
-// - Annotate: Describe fields and set defaults for a resource.
-// - WireDependencies: Control how outputs and secrets flows through values.
+// Project is the controller struct for the defang:index:Project component.
 type Project struct{}
 
-// Each resource has an input struct, defining what arguments it accepts.
-type ProjectArgs struct {
-	// Fields projected into Pulumi must be public and hava a `pulumi:"..."` tag.
-	// The pulumi tag doesn't need to match the field name, but it's generally a
-	// good idea.
-	CloudProviderID client.ProviderID `pulumi:"providerID"`
-	ConfigPaths     []string          `pulumi:"configPaths"`
+// ProjectOutputs holds the outputs of the Project component.
+type ProjectOutputs struct {
+	pulumi.ResourceState
+
+	// Per-service endpoint URLs (service name -> URL)
+	Endpoints pulumi.StringMapOutput `pulumi:"endpoints"`
+
+	// Load balancer DNS name (AWS ALB or GCP forwarding rule IP)
+	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
 }
 
-// Each resource has a state, describing the fields that exist on the created resource.
-type ProjectState struct {
-	// It is generally a good idea to embed args in outputs, but it isn't strictly necessary.
-	ProjectArgs
-	Etag     types.ETag              `pulumi:"etag"`
-	AlbArn   string                  `pulumi:"albArn"`
-	Services []*defangv1.ServiceInfo `pulumi:"services"`
-}
-
-var errNoProjectUpdate = errors.New("no project update found")
-
-// All resources must implement Create at a minimum.
-func (Project) Create(ctx context.Context, name string, input ProjectArgs, preview bool) (string, ProjectState, error) {
-	state := ProjectState{ProjectArgs: input}
-	if preview {
-		return name, state, nil
+// Construct implements the ComponentResource interface for Project.
+func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption) (*ProjectOutputs, error) {
+	comp := &ProjectOutputs{}
+	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
+		return nil, err
 	}
 
-	loader := compose.NewLoader(compose.WithProjectName(name), compose.WithPath(input.ConfigPaths...))
-	project, err := loader.LoadProject(ctx)
-	if err != nil {
-		return name, state, fmt.Errorf("failed to load project: %w", err)
+	childOpt := pulumi.Parent(comp)
+	args := common.BuildArgs{
+		Services: toServices(inputs.Services),
+		AWS:      toAWSConfig(inputs.AWS),
+		GCP:      toGCPConfig(inputs.GCP),
 	}
 
-	driver, err := NewDriver(ctx, input.CloudProviderID)
-	if err != nil {
-		return name, state, fmt.Errorf("failed to create driver: %w", err)
-	}
-
-	err = Authenticate(ctx, driver)
-	if err != nil {
-		return name, state, fmt.Errorf("failed to authenticate: %w", err)
-	}
-
-	err = configureProviderCdImage(ctx, driver, name, input.CloudProviderID)
-	if err != nil {
-		return name, state, fmt.Errorf("failed to configure provider CD image: %w", err)
-	}
-
-	deploy, err := deployProject(ctx, driver.GetFabricClient(), driver.GetProvider(), project)
-	if err != nil {
-		return name, state, fmt.Errorf("failed to deploy project: %w", err)
-	}
-
-	etag := deploy.GetEtag()
-
-	projectUpdate, err := getProjectOutputs(ctx, driver.GetProvider(), project.Name, etag)
-	if err != nil {
-		return name, state, fmt.Errorf("failed to get project outputs: %w", err)
-	}
-
-	if projectUpdate == nil {
-		return name, state, errNoProjectUpdate
-	}
-
-	state.Etag = etag
-	state.AlbArn = projectUpdate.GetAlbArn()
-	state.Services = projectUpdate.GetServices()
-
-	return name, state, nil
-}
-
-func configureProviderCdImage(
-	ctx context.Context,
-	driver IDriver,
-	projectName string,
-	providerID client.ProviderID,
-) error {
-	resp, err := driver.GetFabricClient().CanIUse(ctx, &defangv1.CanIUseRequest{
-		Project:  projectName,
-		Provider: providerID.EnumValue(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get CanIUse: %w", err)
-	}
-
-	// Allow local override of the CD image
-	cdImage := pkg.Getenv("DEFANG_CD_IMAGE", resp.GetCdImage())
-	driver.GetProvider().SetCDImage(cdImage)
-
-	return nil
-}
-
-func deployProject(
-	ctx context.Context,
-	fabric client.FabricClient,
-	provider client.Provider,
-	project *compose.Project,
-) (*defangv1.DeployResponse, error) {
-	upload := compose.UploadModeDigest
-	mode := command.Mode(defangv1.DeploymentMode_DEVELOPMENT)
-	deployTime := time.Now()
-	deploy, _, err := cli.ComposeUp(ctx, project, fabric, provider, upload, mode.Value())
-	if err != nil {
-		return nil, fmt.Errorf("failed to deploy: %w", err)
-	}
-
-	err = cli.WaitAndTail(ctx, project, fabric, provider, deploy, -1, deployTime, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to tail: %w", err)
-	}
-
-	return deploy, nil
-}
-
-func getProjectOutputs(
-	ctx context.Context,
-	providerClient client.Provider,
-	name string,
-	etag string,
-) (*defangv1.ProjectUpdate, error) {
-	getProjectUpdateMaxRetries := 10
-	var projectUpdate *defangv1.ProjectUpdate
+	var result *common.BuildResult
 	var err error
-	for range getProjectUpdateMaxRetries {
-		projectUpdate, err = providerClient.GetProjectUpdate(ctx, name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get project update: %w", err)
-		}
-		allMatch := true
-		for _, si := range projectUpdate.GetServices() {
-			if si.GetEtag() != etag {
-				allMatch = false
-			}
-		}
-		if allMatch {
-			break
-		}
 
-		err = pkg.SleepWithContext(ctx, 1*time.Second)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sleep: %w", err)
-		}
+	switch inputs.Provider {
+	case "aws":
+		result, err = provideraws.Build(ctx, name, args, childOpt)
+	case "gcp":
+		result, err = providergcp.Build(ctx, name, args, childOpt)
+	default:
+		return nil, fmt.Errorf("unsupported provider %q: must be \"aws\" or \"gcp\"", inputs.Provider)
 	}
-	return projectUpdate, nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to build %s resources: %w", inputs.Provider, err)
+	}
+
+	comp.Endpoints = result.Endpoints
+	comp.LoadBalancerDNS = result.LoadBalancerDNS
+
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"endpoints":       result.Endpoints,
+		"loadBalancerDns": result.LoadBalancerDNS,
+	}); err != nil {
+		return nil, err
+	}
+
+	return comp, nil
 }
 
-func Authenticate(ctx context.Context, driver IDriver) error {
-	_, err := cli.Whoami(ctx, driver.GetFabricClient(), driver.GetProvider())
-	if err == nil {
+// toServices converts the Pulumi-facing ServiceInput map to resolved common.ServiceConfig.
+func toServices(services map[string]ServiceInput) map[string]common.ServiceConfig {
+	result := make(map[string]common.ServiceConfig, len(services))
+	for name, svc := range services {
+		result[name] = common.ServiceConfig{
+			Image:       svc.Image,
+			Ports:       toPorts(svc.Ports),
+			Deploy:      toDeploy(svc.Deploy),
+			Environment: svc.Environment,
+			Command:     svc.Command,
+			Entrypoint:  svc.Entrypoint,
+			Postgres:    toPostgres(svc.Postgres),
+			HealthCheck: toHealthCheck(svc.HealthCheck),
+			DomainName:  svc.DomainName,
+			CloudRun:    toCloudRun(svc.CloudRun),
+		}
+	}
+	return result
+}
+
+func toPorts(ports []PortConfig) []common.ServicePortConfig {
+	result := make([]common.ServicePortConfig, len(ports))
+	for i, p := range ports {
+		result[i] = common.ServicePortConfig{
+			Target:      p.Target,
+			Mode:        p.Mode,
+			Protocol:    getPortProtocol(p),
+			AppProtocol: getAppProtocol(p),
+		}
+	}
+	return result
+}
+
+func toDeploy(d *DeployConfig) *common.DeployConfig {
+	if d == nil {
 		return nil
 	}
-
-	err = cli.NonInteractiveLogin(ctx, driver.GetFabricClient(), cli.DefangFabric)
-	if err != nil {
-		return fmt.Errorf("failed to authenticate: %w", err)
+	return &common.DeployConfig{
+		Replicas:  getReplicas(d),
+		CPUs:      getCPUs(d),
+		MemoryMiB: getMemoryMiB(d),
 	}
+}
 
-	return nil
+func toPostgres(p *PostgresConfig) *common.PostgresConfig {
+	if p == nil {
+		return nil
+	}
+	version := 17
+	if p.Version != nil {
+		version = *p.Version
+	}
+	dbName := "postgres"
+	if p.DBName != nil {
+		dbName = *p.DBName
+	}
+	username := "postgres"
+	if p.Username != nil {
+		username = *p.Username
+	}
+	availabilityType := "ZONAL"
+	if p.AvailabilityType != nil {
+		availabilityType = *p.AvailabilityType
+	}
+	backupEnabled := false
+	if p.BackupEnabled != nil {
+		backupEnabled = *p.BackupEnabled
+	}
+	pointInTimeRecovery := false
+	if p.PointInTimeRecovery != nil {
+		pointInTimeRecovery = *p.PointInTimeRecovery
+	}
+	sslMode := "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
+	if p.SslMode != nil {
+		sslMode = *p.SslMode
+	}
+	deletionProtection := false
+	if p.DeletionProtection != nil {
+		deletionProtection = *p.DeletionProtection
+	}
+	allowBurstable := true
+	if p.AllowBurstable != nil {
+		allowBurstable = *p.AllowBurstable
+	}
+	return &common.PostgresConfig{
+		Version:             version,
+		DBName:              dbName,
+		Username:            username,
+		Password:            p.Password,
+		AvailabilityType:    availabilityType,
+		BackupEnabled:       backupEnabled,
+		PointInTimeRecovery: pointInTimeRecovery,
+		SslMode:             sslMode,
+		DeletionProtection:  deletionProtection,
+		AllowBurstable:      allowBurstable,
+	}
+}
+
+func toCloudRun(c *CloudRunConfig) *common.CloudRunConfig {
+	if c == nil {
+		return nil
+	}
+	ingress := "INGRESS_TRAFFIC_ALL"
+	if c.Ingress != nil {
+		ingress = *c.Ingress
+	}
+	launchStage := "BETA"
+	if c.LaunchStage != nil {
+		launchStage = *c.LaunchStage
+	}
+	var maxReplicas int
+	if c.MaxReplicas != nil {
+		maxReplicas = *c.MaxReplicas
+	}
+	return &common.CloudRunConfig{
+		Ingress:     ingress,
+		LaunchStage: launchStage,
+		MaxReplicas: maxReplicas,
+	}
+}
+
+func toHealthCheck(h *HealthCheckConfig) *common.HealthCheckConfig {
+	if h == nil {
+		return nil
+	}
+	return &common.HealthCheckConfig{
+		Test:               h.Test,
+		IntervalSeconds:    h.IntervalSeconds,
+		TimeoutSeconds:     h.TimeoutSeconds,
+		Retries:            h.Retries,
+		StartPeriodSeconds: h.StartPeriodSeconds,
+	}
+}
+
+func toAWSConfig(a *AWSConfigInput) *common.AWSConfig {
+	if a == nil {
+		return nil
+	}
+	return &common.AWSConfig{
+		VpcID:            a.VpcID,
+		SubnetIDs:        a.SubnetIDs,
+		PrivateSubnetIDs: a.PrivateSubnetIDs,
+		Region:           a.Region,
+	}
+}
+
+func toGCPConfig(g *GCPConfigInput) *common.GCPConfig {
+	if g == nil {
+		return nil
+	}
+	return &common.GCPConfig{
+		Project: g.Project,
+		Region:  g.Region,
+	}
 }

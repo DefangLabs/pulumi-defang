@@ -4,12 +4,17 @@ pkgs.mkShell {
     pkgs.git
     pkgs.gnumake
     pkgs.gnused
-    pkgs.go_1_23
+    pkgs.go_1_24
     pkgs.less
     pkgs.nixfmt-classic
     pkgs.nodejs_22
-    pkgs.pulumi
-    pkgs.pulumiPackages.pulumi-nodejs
+    #pkgs.pulumi
+    pkgs.pulumi-bin
+    #pkgs.pulumiPackages.pulumi-language-dotnet
+    #pkgs.pulumiPackages.pulumi-go
+    #pkgs.pulumiPackages.pulumi-nodejs
+    #pkgs.pulumiPackages.pulumi-python
+    #pkgs.pulumiPackages.pulumi-language-yaml
     pkgs.pulumictl
     pkgs.python3
     pkgs.golangci-lint

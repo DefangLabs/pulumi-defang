@@ -46,8 +46,7 @@ prepare::
 
 .PHONY: ensure
 ensure:
-	cd provider && go mod tidy
-	cd sdk && go mod tidy
+	go mod tidy
 	cd tests && go mod tidy
 
 provider: $(WORKING_DIR)/bin/$(PROVIDER)
@@ -160,7 +159,7 @@ only_build: build
 
 .PHONY: lint
 lint:
-	golangci-lint run --fix --timeout 5m ./provider ./tests
+	golangci-lint run --fix --timeout 5m ./provider/... ./tests/...
 
 .PHONY: install
 install: install_nodejs_sdk install_dotnet_sdk
@@ -210,3 +209,10 @@ pre-commit: provider test lint examples docs
 .PHONY: pre-push
 pre-push:
 	#target intentionally blank
+
+.PHONY: clean
+clean:
+	rm -rf $(WORKING_DIR)/bin sdk/go sdk/nodejs sdk/python sdk/dotnet
+
+.PHONY: release
+release: clean build examples docs

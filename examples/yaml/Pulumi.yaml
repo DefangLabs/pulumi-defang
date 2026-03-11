@@ -4,16 +4,32 @@ plugins:
   providers:
     - name: defang
       path: ../../bin
+config:
+  pulumi:autonaming:
+    value:
+      pattern: Defang-${project}-${stack}-${name}-${hex(7)}
 
 resources:
   myProject:
     type: defang:Project
     properties:
-      providerID: aws
-      configPaths:
-        - ../../compose.yaml.example
+      provider: aws
+      services:
+        web:
+          image: nginx:latest
+          ports:
+            - target: 80
+              mode: ingress
+              appProtocol: http
+          deploy:
+            replicas: 1
+            resources:
+              reservations:
+                cpus: 0.25
+                memory: 512m
+          environment:
+            NODE_ENV: production
 
 outputs:
-  output:
-    albArn: ${myProject.albArn}
-    etag: ${myProject.etag}
+  endpoints: ${myProject.endpoints}
+  loadBalancerDns: ${myProject.loadBalancerDns}

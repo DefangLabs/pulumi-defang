@@ -5,3 +5,4 @@ bin
 sdk
 examples/*/Pulumi.example.yaml
 schema-defang.json
+examples/test/defang-test

@@ -15,6 +15,8 @@
 package main
 
 import (
+	"context"
+
 	p "github.com/pulumi/pulumi-go-provider"
 
 	defang "github.com/DefangLabs/pulumi-defang/provider"
@@ -22,5 +24,5 @@ import (
 
 // Serve the provider against Pulumi's Provider protocol.
 func main() {
-	_ = p.RunProvider(defang.Name, defang.Version, defang.Provider())
+	_ = p.RunProvider(context.Background(), defang.Name, defang.Version, defang.Provider())
 }
