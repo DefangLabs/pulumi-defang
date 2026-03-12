@@ -3,7 +3,7 @@ package tests
 import (
 	"context"
 
-	defang "github.com/DefangLabs/pulumi-defang/provider"
+	defang "github.com/DefangLabs/pulumi-defang/provider/defangaws"
 	"github.com/blang/semver"
 	"github.com/pulumi/pulumi-go-provider/integration"
 )

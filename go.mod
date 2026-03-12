@@ -5,9 +5,14 @@ go 1.24.7
 toolchain go1.24.11
 
 require (
+	github.com/aws/aws-sdk-go-v2/config v1.32.11
+	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.11
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/pulumi/pulumi-aws/sdk/v6 v6.66.2
 	github.com/pulumi/pulumi-awsx/sdk/v2 v2.22.0
+	github.com/pulumi/pulumi-azure-native-sdk/app/v2 v2.92.0
+	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2 v2.92.0
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v2 v2.92.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.12.0
 	github.com/pulumi/pulumi-go-provider v1.3.0
 	github.com/pulumi/pulumi/pkg/v3 v3.217.0
@@ -29,13 +34,11 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.3 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.11 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.11 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.7 // indirect
@@ -64,6 +67,7 @@ require (
 	github.com/golang/glog v1.2.4 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -95,14 +99,7 @@ require (
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.21.0 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/app/v2 v2.92.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/authorization/v2 v2.92.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v2 v2.92.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2 v2.92.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v2 v2.92.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v2 v2.92.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.92.0 // indirect
-	github.com/pulumi/pulumi-command/sdk v1.2.1 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect

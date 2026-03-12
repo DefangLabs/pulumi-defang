@@ -6,3 +6,6 @@ sdk
 examples/*/Pulumi.example.yaml
 schema-defang.json
 examples/test/defang-test
+pulumi-resource-defang-aws
+pulumi-resource-defang-azure
+pulumi-resource-defang-gcp

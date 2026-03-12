@@ -1,0 +1,3 @@
+name: defang-azure-example
+runtime: go
+description: Example using defang-azure to deploy services to Azure

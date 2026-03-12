@@ -1,65 +1,59 @@
 PROJECT_NAME := Pulumi defang Resource Provider
 
-PACK             := defang
-PACKDIR          := sdk
-PROJECT          := github.com/DefangLabs/pulumi-defang
-NODE_MODULE_NAME := @defang-io/pulumi-defang
-NUGET_PKG_NAME   := DefangLabs.defang
-
-PROVIDER        := pulumi-resource-${PACK}
-VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
+PACKS           := defang-aws defang-gcp defang-azure
+PROJECT         := github.com/DefangLabs/pulumi-defang
 PROVIDER_PATH   := provider
-VERSION_PATH    := ${PROVIDER_PATH}.Version
-IS_PRERELEASE   := $(shell git tag --sort=creatordate | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 
 GOPATH		:= $(shell go env GOPATH)
 
 WORKING_DIR     := $(shell pwd)
-EXAMPLES_DIR    := ${WORKING_DIR}/examples/yaml
 TESTPARALLELISM := 4
 
 OS    := $(shell uname)
 SHELL := /bin/bash
 
-EXAMPLE_STACK_NAME := example
+# Delegate to per-plugin Makefiles
+define plugin_targets
+.PHONY: provider_$(1) schema_$(1) go_sdk_$(1) nodejs_sdk_$(1) python_sdk_$(1) dotnet_sdk_$(1) sdks_$(1) build_$(1) clean_$(1) install_$(1)
+provider_$(1) schema_$(1) go_sdk_$(1) nodejs_sdk_$(1) python_sdk_$(1) dotnet_sdk_$(1) sdks_$(1) build_$(1) clean_$(1) install_$(1):
+	$$(MAKE) -f $(1).mk $$(patsubst %_$(1),%,$$@)
+endef
 
-prepare::
-	@if test -z "${NAME}"; then echo "NAME not set"; exit 1; fi
-	@if test -z "${REPOSITORY}"; then echo "REPOSITORY not set"; exit 1; fi
-	@if test -z "${ORG}"; then echo "ORG not set"; exit 1; fi
-	@if test ! -d "provider/cmd/pulumi-resource-defang"; then "Project already prepared"; exit 1; fi # SED_SKIP
+$(foreach p,$(PACKS),$(eval $(call plugin_targets,$(p))))
 
-	mv "provider/cmd/pulumi-resource-defang" provider/cmd/pulumi-resource-${NAME} # SED_SKIP
+# Aggregate targets
+.PHONY: provider
+provider: $(foreach p,$(PACKS),provider_$(p))
 
-	if [[ "${OS}" != "Darwin" ]]; then \
-		find . \( -path './.git' -o -path './sdk' \) -prune -o -not -name 'go.sum' -type f -exec sed -i '/SED_SKIP/!s,github.com/pulumi/pulumi-[x]yz,${REPOSITORY},g' {} \; &> /dev/null; \
-		find . \( -path './.git' -o -path './sdk' \) -prune -o -not -name 'go.sum' -type f -exec sed -i '/SED_SKIP/!s/[xX]yz/${NAME}/g' {} \; &> /dev/null; \
-		find . \( -path './.git' -o -path './sdk' \) -prune -o -not -name 'go.sum' -type f -exec sed -i '/SED_SKIP/!s/[aA]bc/${ORG}/g' {} \; &> /dev/null; \
-	fi
+.PHONY: schema
+schema: $(foreach p,$(PACKS),schema_$(p))
 
-	# In MacOS the -i parameter needs an empty string to execute in place.
-	if [[ "${OS}" == "Darwin" ]]; then \
-		find . \( -path './.git' -o -path './sdk' \) -prune -o -not -name 'go.sum' -type f -exec sed -i '' '/SED_SKIP/!s,github.com/pulumi/pulumi-[x]yz,${REPOSITORY},g' {} \; &> /dev/null; \
-		find . \( -path './.git' -o -path './sdk' \) -prune -o -not -name 'go.sum' -type f -exec sed -i '' '/SED_SKIP/!s/[xX]yz/${NAME}/g' {} \; &> /dev/null; \
-		find . \( -path './.git' -o -path './sdk' \) -prune -o -not -name 'go.sum' -type f -exec sed -i '' '/SED_SKIP/!s/[aA]bc/${ORG}/g' {} \; &> /dev/null; \
-	fi
+.PHONY: go_sdk
+go_sdk: $(foreach p,$(PACKS),go_sdk_$(p))
+
+.PHONY: nodejs_sdk
+nodejs_sdk: $(foreach p,$(PACKS),nodejs_sdk_$(p))
+
+.PHONY: python_sdk
+python_sdk: $(foreach p,$(PACKS),python_sdk_$(p))
+
+.PHONY: dotnet_sdk
+dotnet_sdk: $(foreach p,$(PACKS),dotnet_sdk_$(p))
+
+.PHONY: sdks
+sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
+
+.PHONY: build
+build: provider schema sdks
+
+.PHONY: only_build
+# Required for the codegen action that runs in pulumi/pulumi
+only_build: build
 
 .PHONY: ensure
 ensure:
 	go mod tidy
 	cd tests && go mod tidy
-
-provider: $(WORKING_DIR)/bin/$(PROVIDER)
-$(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go")
-	go build -o $(WORKING_DIR)/bin/${PROVIDER} -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER)
-
-.PHONY: provider_debug
-provider_debug:
-	(cd provider && go build -o $(WORKING_DIR)/bin/${PROVIDER} -gcflags="all=-N -l" -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER))
-
-.PHONY: schema
-schema: provider
-	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
 
 .PHONY: test_provider
 test_provider:
@@ -67,133 +61,25 @@ test_provider:
 
 .PHONY: version
 version:
-	@echo $(VERSION)
-
-dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
-dotnet_sdk: provider
-	rm -rf sdk/dotnet
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
-	cd ${PACKDIR}/dotnet/&& \
-		echo "${DOTNET_VERSION}" >version.txt && \
-		dotnet build /p:Version=${DOTNET_VERSION}
-
-.PHONY: go_sdk
-go_sdk: provider
-	rm -rf sdk/go
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language go
-
-.PHONY: nodejs_sdk
-nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
-nodejs_sdk: provider
-	rm -rf sdk/nodejs
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language nodejs
-	cd ${PACKDIR}/nodejs/ && \
-		yarn install && \
-		yarn run tsc && \
-		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
-		rm ./package.json.bak && \
-		cp ../../README.md ../../LICENSE package.json yarn.lock bin/
-
-.PHONY: python_sdk
-python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
-python_sdk: provider
-	rm -rf sdk/python
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language python
-	cp README.md ${PACKDIR}/python/
-	cd ${PACKDIR}/python/ && \
-		python3 setup.py clean --all 2>/dev/null && \
-		rm -rf ./bin/ ../python.bin/ && cp -R . ../python.bin && mv ../python.bin ./bin && \
-		sed -i.bak -e 's/^VERSION = .*/VERSION = "$(PYPI_VERSION)"/g' -e 's/^PLUGIN_VERSION = .*/PLUGIN_VERSION = "$(VERSION)"/g' ./bin/setup.py && \
-		rm ./bin/setup.py.bak && \
-		cd ./bin && python3 setup.py build sdist
-
-.PHONY: examples
-examples: go_example \
-		nodejs_example \
-		python_example \
-		dotnet_example
-
-%_example:
-	rm -rf ${WORKING_DIR}/examples/$*
-	pulumi convert \
-		--cwd ${WORKING_DIR}/examples/yaml \
-		--logtostderr \
-		--generate-only \
-		--non-interactive \
-		--language $* \
-		--out ${WORKING_DIR}/examples/$*
-
-.PHONY: docs
-docs: README.md
-	cp docs/.front-matter.md docs/_index.md
-	cat README.md >> docs/_index.md
-
-define pulumi_login
-    export PULUMI_CONFIG_PASSPHRASE=asdfqwerty1234; \
-    pulumi login --local;
-endef
-
-up::
-	$(call pulumi_login) \
-	cd ${EXAMPLES_DIR} && \
-	(pulumi stack select ${EXAMPLE_STACK_NAME} || pulumi stack init ${EXAMPLE_STACK_NAME}) && \
-	pulumi config set name ${EXAMPLE_STACK_NAME} && \
-	pulumi up -y
-
-down::
-	$(call pulumi_login) \
-	cd ${EXAMPLES_DIR} && \
-	pulumi stack select ${EXAMPLE_STACK_NAME} && \
-	pulumi destroy -y && \
-	pulumi stack rm ${EXAMPLE_STACK_NAME} -y
-
-.PHONY: build
-build: provider schema sdks
-
-.PHONY: sdks
-sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
-
-.PHONY: only_build
-# Required for the codegen action that runs in pulumi/pulumi
-only_build: build
-
-.PHONY: lint
-lint:
-	golangci-lint run --fix --timeout 5m ./provider/... ./tests/...
-
-.PHONY: install
-install: install_nodejs_sdk install_dotnet_sdk
-	cp $(WORKING_DIR)/bin/${PROVIDER} ${GOPATH}/bin
+	@$(MAKE) -f defang-aws.mk version
 
 GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test
 test: test_provider
 
-.PHONY: test_all
-test_all: test
-	cd tests/sdk/nodejs && $(GO_TEST) ./...
-	cd tests/sdk/python && $(GO_TEST) ./...
-	cd tests/sdk/go && $(GO_TEST) ./...
-	# cd tests/sdk/dotnet && $(GO_TEST) ./...
+.PHONY: lint
+lint:
+	golangci-lint run --fix --timeout 5m ./provider/... ./tests/...
 
-install_dotnet_sdk:
-	rm -rf $(WORKING_DIR)/nuget/$(NUGET_PKG_NAME).*.nupkg
-	mkdir -p $(WORKING_DIR)/nuget
-	find . -name '*.nupkg' -print -exec cp -p {} ${WORKING_DIR}/nuget \;
+.PHONY: install
+install: $(foreach p,$(PACKS),install_$(p))
 
-.PHONY: install_python_sdk
-install_python_sdk:
-	#target intentionally blank
+.PHONY: clean
+clean: $(foreach p,$(PACKS),clean_$(p))
 
-.PHONY: install_go_sdk
-install_go_sdk:
-	#target intentionally blank
-
-.PHONY: install_nodejs_sdk
-install_nodejs_sdk:
-	-yarn unlink --cwd $(WORKING_DIR)/sdk/nodejs/bin
-	yarn link --cwd $(WORKING_DIR)/sdk/nodejs/bin
+.PHONY: release
+release: clean build
 
 .PHONY: install-git-hooks
 install-git-hooks:
@@ -203,16 +89,8 @@ install-git-hooks:
 	chmod +x .git/hooks/pre-push
 
 .PHONY: pre-commit
-pre-commit: provider test lint examples docs
-	git add examples
+pre-commit: provider test lint
 
 .PHONY: pre-push
 pre-push:
 	#target intentionally blank
-
-.PHONY: clean
-clean:
-	rm -rf $(WORKING_DIR)/bin sdk/go sdk/nodejs sdk/python sdk/dotnet
-
-.PHONY: release
-release: clean build examples docs

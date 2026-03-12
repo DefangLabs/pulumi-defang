@@ -1,0 +1,3 @@
+name: defang-aws-example
+runtime: go
+description: Example using defang-aws to deploy services to AWS

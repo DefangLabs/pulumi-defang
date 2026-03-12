@@ -13,9 +13,8 @@ func TestProjectSchemaRegistered(t *testing.T) {
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang:index:Project")
+	assert.Contains(t, schema.Schema, "defang-aws:index:Project")
 	assert.Contains(t, schema.Schema, "endpoints")
-	assert.Contains(t, schema.Schema, "provider")
 	assert.Contains(t, schema.Schema, "services")
 }
 
@@ -24,7 +23,7 @@ func TestServiceSchemaRegistered(t *testing.T) {
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang:index:Service")
+	assert.Contains(t, schema.Schema, "defang-aws:index:AwsEcsService")
 	assert.Contains(t, schema.Schema, "endpoint")
 	assert.Contains(t, schema.Schema, "image")
 }
