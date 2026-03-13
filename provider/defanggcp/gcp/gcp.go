@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/artifactregistry"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )

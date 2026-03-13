@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/sql"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

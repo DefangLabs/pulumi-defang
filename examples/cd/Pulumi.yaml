@@ -1,0 +1,3 @@
+name: defang-cd
+runtime: go
+description: Defang CD - deploys services from a compose file to any cloud

@@ -2,7 +2,10 @@ module github.com/DefangLabs/pulumi-defang/examples/azure
 
 go 1.25.6
 
-replace github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure => ../../sdk/go/defang-azure
+replace (
+	github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure => ../../sdk/go/defang-azure
+	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
+)
 
 require (
 	github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure v0.0.0-00010101000000-000000000000

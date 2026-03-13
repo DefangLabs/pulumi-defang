@@ -2,7 +2,10 @@ module github.com/DefangLabs/pulumi-defang/examples/aws
 
 go 1.25.6
 
-replace github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws => ../../sdk/go/defang-aws
+replace (
+	github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws => ../../sdk/go/defang-aws
+	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
+)
 
 require (
 	github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws v0.0.0-00010101000000-000000000000

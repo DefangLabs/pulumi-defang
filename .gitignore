@@ -13,3 +13,4 @@ examples/azure/azure
 examples/aws/aws
 examples/gcp/gcp
 examples/multi-cloud/multi-cloud
+examples/cd/cd
