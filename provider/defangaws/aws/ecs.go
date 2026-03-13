@@ -7,11 +7,11 @@ import (
 	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ecs"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/rds"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/rds"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

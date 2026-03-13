@@ -9,3 +9,7 @@ examples/test/defang-test
 pulumi-resource-defang-aws
 pulumi-resource-defang-azure
 pulumi-resource-defang-gcp
+examples/azure/azure
+examples/aws/aws
+examples/gcp/gcp
+examples/multi-cloud/multi-cloud

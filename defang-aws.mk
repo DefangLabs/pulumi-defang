@@ -20,11 +20,11 @@ SHELL := /bin/bash
 .PHONY: provider
 provider: $(WORKING_DIR)/bin/$(PROVIDER)
 $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go" -not -path "./sdk/*")
-	go build -o $(WORKING_DIR)/bin/${PROVIDER} -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" $(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER)
+	go build -o "$(WORKING_DIR)/bin/${PROVIDER}" -ldflags "-X ${PROJECT}/${VERSION_PATH}=${VERSION}" "$(PROJECT)/${PROVIDER_PATH}/cmd/$(PROVIDER)"
 
 .PHONY: schema
 schema: provider
-	pulumi package get-schema $(WORKING_DIR)/bin/${PROVIDER} > ${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json
+	pulumi package get-schema "$(WORKING_DIR)/bin/${PROVIDER}" > "${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json"
 
 .PHONY: version
 version:
@@ -32,20 +32,21 @@ version:
 
 .PHONY: go_sdk
 go_sdk: provider
-	rm -rf sdk/go/${PACK}
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language go
-	@# gen-sdk outputs to sdk/go/<packname-without-hyphens>; rename to match Go import paths
-	@if [ -d "sdk/go/defangaws" ] && [ ! -d "sdk/go/${PACK}" ]; then mv "sdk/go/defangaws" "sdk/go/${PACK}"; fi
-	cd sdk/go/${PACK} && go mod init $(PROJECT)/sdk/go/${PACK} && go mod tidy
+	rm -rf "sdk/go/${PACK}"
+	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language go -o "$(WORKING_DIR)/.sdk.tmp"
+	@# gen-sdk outputs without hyphens; move to final location
+	mkdir -p sdk/go && mv "$(WORKING_DIR)/.sdk.tmp/go/defangaws" "sdk/go/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	cd "sdk/go/${PACK}" && go mod init "$(PROJECT)/sdk/go/${PACK}" && \
+		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
+		go mod tidy
 
 nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 .PHONY: nodejs_sdk
 nodejs_sdk: provider
-	rm -rf sdk/nodejs/${PACK}
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language nodejs
-	@mkdir -p sdk/nodejs/${PACK}
-	@if [ -d "sdk/nodejs/defangaws" ]; then mv sdk/nodejs/defangaws/* sdk/nodejs/${PACK}/ && rmdir sdk/nodejs/defangaws; fi
-	cd ${PACKDIR}/nodejs/${PACK}/ && \
+	rm -rf "sdk/nodejs/${PACK}"
+	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language nodejs -o "$(WORKING_DIR)/.sdk.tmp"
+	mkdir -p sdk/nodejs && mv "$(WORKING_DIR)/.sdk.tmp/nodejs/defangaws" "sdk/nodejs/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	cd "${PACKDIR}/nodejs/${PACK}/" && \
 		yarn install && \
 		yarn run tsc && \
 		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
@@ -55,12 +56,11 @@ nodejs_sdk: provider
 python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 .PHONY: python_sdk
 python_sdk: provider
-	rm -rf sdk/python/${PACK}
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language python
-	@mkdir -p sdk/python/${PACK}
-	@if [ -d "sdk/python/defangaws" ]; then mv sdk/python/defangaws/* sdk/python/${PACK}/ && rmdir sdk/python/defangaws; fi
-	cp README.md ${PACKDIR}/python/${PACK}/
-	cd ${PACKDIR}/python/${PACK}/ && \
+	rm -rf "sdk/python/${PACK}"
+	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language python -o "$(WORKING_DIR)/.sdk.tmp"
+	mkdir -p sdk/python && mv "$(WORKING_DIR)/.sdk.tmp/python/defangaws" "sdk/python/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	cp README.md "${PACKDIR}/python/${PACK}/"
+	cd "${PACKDIR}/python/${PACK}/" && \
 		python3 setup.py clean --all 2>/dev/null; \
 		rm -rf ./bin/ ../python.bin/ && cp -R . ../python.bin && mv ../python.bin ./bin && \
 		sed -i.bak -e 's/^VERSION = .*/VERSION = "$(PYPI_VERSION)"/g' -e 's/^PLUGIN_VERSION = .*/PLUGIN_VERSION = "$(VERSION)"/g' ./bin/setup.py && \
@@ -70,11 +70,10 @@ python_sdk: provider
 dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 .PHONY: dotnet_sdk
 dotnet_sdk: provider
-	rm -rf sdk/dotnet/${PACK}
-	pulumi package gen-sdk $(WORKING_DIR)/bin/$(PROVIDER) --language dotnet
-	@mkdir -p sdk/dotnet/${PACK}
-	@if [ -d "sdk/dotnet/defangaws" ]; then mv sdk/dotnet/defangaws/* sdk/dotnet/${PACK}/ && rmdir sdk/dotnet/defangaws; fi
-	cd ${PACKDIR}/dotnet/${PACK}/ && \
+	rm -rf "sdk/dotnet/${PACK}"
+	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language dotnet -o "$(WORKING_DIR)/.sdk.tmp"
+	mkdir -p sdk/dotnet && mv "$(WORKING_DIR)/.sdk.tmp/dotnet/defangaws" "sdk/dotnet/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	cd "${PACKDIR}/dotnet/${PACK}/" && \
 		echo "${DOTNET_VERSION}" >version.txt && \
 		dotnet build /p:Version=${DOTNET_VERSION}
 
@@ -86,8 +85,8 @@ build: provider schema sdks
 
 .PHONY: install
 install: provider
-	cp $(WORKING_DIR)/bin/${PROVIDER} ${GOPATH}/bin
+	cp "$(WORKING_DIR)/bin/${PROVIDER}" "${GOPATH}/bin"
 
 .PHONY: clean
 clean:
-	rm -rf $(WORKING_DIR)/bin/${PROVIDER} sdk/go/${PACK} sdk/nodejs/${PACK} sdk/python/${PACK} sdk/dotnet/${PACK}
+	rm -rf "$(WORKING_DIR)/bin/${PROVIDER}" "sdk/go/${PACK}" "sdk/nodejs/${PACK}" "sdk/python/${PACK}" "sdk/dotnet/${PACK}"

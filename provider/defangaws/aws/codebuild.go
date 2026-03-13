@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/codebuild"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ecr"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/codebuild"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

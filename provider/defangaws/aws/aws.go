@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ecs"
-	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -71,7 +71,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 	privateSubnetIDs := net.privateSubnetIDs
 
 	// Create security group for services
-	sg, err := ec2.NewSecurityGroup(ctx, "sg", &ec2.SecurityGroupArgs{
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID,
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
@@ -198,7 +198,7 @@ func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc common.Serv
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
 
-	sg, err := ec2.NewSecurityGroup(ctx, "sg", &ec2.SecurityGroupArgs{
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       net.vpcID,
 		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
@@ -292,7 +292,7 @@ func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc common
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
 
-	sg, err := ec2.NewSecurityGroup(ctx, "sg", &ec2.SecurityGroupArgs{
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       net.vpcID,
 		Description: pulumi.String("Security group for Postgres"),
 		Egress: ec2.SecurityGroupEgressArray{

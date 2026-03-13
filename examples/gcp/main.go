@@ -3,23 +3,12 @@ package main
 import (
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/go/defang-gcp/defanggcp"
 	"github.com/DefangLabs/pulumi-defang/sdk/go/defang-gcp/shared"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		// Create GCP provider — user controls project, region, auth
-		gcpProv, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-			Project: pulumi.StringPtr("my-gcp-project"),
-			Region:  pulumi.StringPtr("us-central1"),
-		})
-		if err != nil {
-			return err
-		}
-
-		// GCP Project — services deployed to Cloud Run + Cloud SQL
-		gcpProj, err := defanggcp.NewProject(ctx, "gcpProject", &defanggcp.ProjectArgs{
+		proj, err := defanggcp.NewProject(ctx, "myProject", &defanggcp.ProjectArgs{
 			Services: shared.ServiceInputMap{
 				"web": shared.ServiceInputArgs{
 					Image: pulumi.StringPtr("nginx:latest"),
@@ -41,12 +30,12 @@ func main() {
 					},
 				},
 			},
-		}, pulumi.Providers(gcpProv))
+		})
 		if err != nil {
 			return err
 		}
 
-		ctx.Export("gcpEndpoints", gcpProj.Endpoints)
+		ctx.Export("endpoints", proj.Endpoints)
 
 		return nil
 	})

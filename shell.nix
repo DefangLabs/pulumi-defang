@@ -6,7 +6,7 @@ pkgs.mkShell {
     pkgs.git
     pkgs.gnumake
     pkgs.gnused
-    pkgs.go_1_24
+    pkgs.go_1_25
     pkgs.golangci-lint
     pkgs.less
     pkgs.nixfmt-classic
