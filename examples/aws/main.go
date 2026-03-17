@@ -3,16 +3,35 @@ package main
 import (
 	defangaws "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/defangaws"
 	"github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/shared"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		proj, err := defangaws.NewProject(ctx, "myProject", &defangaws.ProjectArgs{
+		// create an s3 bucket
+		bucket, err := s3.NewBucket(ctx, "build-context", &s3.BucketArgs{
+			Bucket: pulumi.String("my-build-context-bucket"),
+		})
+		if err != nil {
+			return err
+		}
+
+		// s3 bucket object for build context
+		buildContext, err := s3.NewBucketObjectv2(ctx, "build-context-object", &s3.BucketObjectv2Args{
+			Bucket: bucket.ID(),
+			Key:    pulumi.String("uploads/aws_example"),
+			Source: pulumi.NewFileArchive("."),
+		})
+		if err != nil {
+			return err
+		}
+
+		proj, err := defangaws.NewProject(ctx, "crewai", &defangaws.ProjectArgs{
 			Services: shared.ServiceInputMap{
 				"app": shared.ServiceInputArgs{
 					Build: shared.BuildInputArgs{
-						Context:    pulumi.String("."),
+						Context:    pulumi.Sprintf("s3://%s/%s", buildContext.Bucket, buildContext.Key),
 						Dockerfile: pulumi.StringPtr("Dockerfile"),
 					},
 					Command: pulumi.StringArray{pulumi.String("./run.sh")},
@@ -51,7 +70,7 @@ func main() {
 				},
 				"worker": shared.ServiceInputArgs{
 					Build: shared.BuildInputArgs{
-						Context:    pulumi.String("."),
+						Context:    pulumi.Sprintf("s3://%s/%s", buildContext.Bucket, buildContext.Key),
 						Dockerfile: pulumi.StringPtr("Dockerfile"),
 					},
 					Command: pulumi.StringArray{
