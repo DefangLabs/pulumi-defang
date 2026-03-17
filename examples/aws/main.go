@@ -27,7 +27,7 @@ func main() {
 			return err
 		}
 
-		proj, err := defangaws.NewProject(ctx, "crewai", &defangaws.ProjectArgs{
+		proj, err := defangaws.NewProject(ctx, "myProject", &defangaws.ProjectArgs{
 			Services: shared.ServiceInputMap{
 				"app": shared.ServiceInputArgs{
 					Build: shared.BuildInputArgs{
