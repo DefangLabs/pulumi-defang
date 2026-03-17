@@ -45,7 +45,7 @@ nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if 
 nodejs_sdk: provider
 	rm -rf "sdk/nodejs/${PACK}"
 	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language nodejs -o "$(WORKING_DIR)/.sdk.tmp"
-	mkdir -p sdk/nodejs && mv "$(WORKING_DIR)/.sdk.tmp/nodejs/defangaws" "sdk/nodejs/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	mkdir -p "sdk/nodejs/${PACK}" && cp -r "$(WORKING_DIR)/.sdk.tmp/nodejs/." "sdk/nodejs/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
 	cd "${PACKDIR}/nodejs/${PACK}/" && \
 		yarn install && \
 		yarn run tsc && \
@@ -58,7 +58,7 @@ python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python $(if
 python_sdk: provider
 	rm -rf "sdk/python/${PACK}"
 	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language python -o "$(WORKING_DIR)/.sdk.tmp"
-	mkdir -p sdk/python && mv "$(WORKING_DIR)/.sdk.tmp/python/defangaws" "sdk/python/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	mkdir -p "sdk/python/${PACK}" && cp -r "$(WORKING_DIR)/.sdk.tmp/python/." "sdk/python/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
 	cp README.md "${PACKDIR}/python/${PACK}/"
 	cd "${PACKDIR}/python/${PACK}/" && \
 		python3 setup.py clean --all 2>/dev/null; \
@@ -72,7 +72,7 @@ dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(
 dotnet_sdk: provider
 	rm -rf "sdk/dotnet/${PACK}"
 	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language dotnet -o "$(WORKING_DIR)/.sdk.tmp"
-	mkdir -p sdk/dotnet && mv "$(WORKING_DIR)/.sdk.tmp/dotnet/defangaws" "sdk/dotnet/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	mkdir -p "sdk/dotnet/${PACK}" && cp -r "$(WORKING_DIR)/.sdk.tmp/dotnet/." "sdk/dotnet/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
 	cd "${PACKDIR}/dotnet/${PACK}/" && \
 		echo "${DOTNET_VERSION}" >version.txt && \
 		dotnet build /p:Version=${DOTNET_VERSION}
