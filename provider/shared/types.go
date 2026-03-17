@@ -2,6 +2,8 @@
 // Each plugin's schema will generate its own copy of these types with cloud-specific tokens.
 package shared
 
+import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+
 // ServiceInput defines the configuration for a single service.
 // YAML tags are aligned with Docker Compose service spec where possible.
 type ServiceInput struct {
@@ -87,8 +89,9 @@ type ResourceConfig struct {
 
 // BuildInput mirrors the Docker Compose build spec.
 type BuildInput struct {
-	// Build context path or URL (required)
-	Context string `pulumi:"context" yaml:"context"`
+	// Build context path or URL (required). Typed as StringOutput to support
+	// values derived from other resource outputs (e.g. an S3 object URL).
+	Context pulumi.StringOutput `pulumi:"context"`
 
 	// Dockerfile path relative to context (default: "Dockerfile")
 	Dockerfile *string `pulumi:"dockerfile,optional" yaml:"dockerfile,omitempty"`

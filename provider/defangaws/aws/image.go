@@ -68,22 +68,25 @@ type codeBuildImageBuildResource struct {
 }
 
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build shared.BuildInput) string {
-	h := sha256.New()
-	h.Write([]byte(build.Context))
-	h.Write([]byte(build.GetDockerfile()))
-	h.Write([]byte(build.GetTarget()))
-	h.Write([]byte(fmt.Sprintf("%d", build.GetShmSizeBytes())))
-	if len(build.Args) > 0 {
-		keys := make([]string, 0, len(build.Args))
-		for k := range build.Args {
-			keys = append(keys, k)
+func buildTriggerHash(build shared.BuildInput) pulumi.StringOutput {
+	staticHash := func(context string) string {
+		h := sha256.New()
+		h.Write([]byte(context))
+		h.Write([]byte(build.GetDockerfile()))
+		h.Write([]byte(build.GetTarget()))
+		h.Write([]byte(fmt.Sprintf("%d", build.GetShmSizeBytes())))
+		if len(build.Args) > 0 {
+			keys := make([]string, 0, len(build.Args))
+			for k := range build.Args {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			b, _ := json.Marshal(build.Args)
+			h.Write(b)
 		}
-		sort.Strings(keys)
-		b, _ := json.Marshal(build.Args)
-		h.Write(b)
+		return hex.EncodeToString(h.Sum(nil))[:16]
 	}
-	return hex.EncodeToString(h.Sum(nil))[:16]
+	return build.Context.ApplyT(staticHash).(pulumi.StringOutput)
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.
@@ -126,7 +129,7 @@ func buildServiceImage(
 		"projectName": cbResult.project.Name,
 		"region":      pulumi.String(infra.region),
 		"destination": cbResult.destination,
-		"triggers":    pulumi.ToStringArray([]string{triggerHash}),
+		"triggers":    pulumi.StringArray{triggerHash},
 	}, &buildResource, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild build resource for %s: %w", serviceName, err)

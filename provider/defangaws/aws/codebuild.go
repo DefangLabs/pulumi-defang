@@ -157,7 +157,9 @@ func createCodeBuildProject(
 
 	// Context must be an S3 URL
 	sourceType := "S3"
-	sourceLocation := pulumi.String(strings.TrimPrefix(build.Context, "s3://"))
+	sourceLocation := build.Context.ApplyT(func(ctx string) string {
+		return strings.TrimPrefix(ctx, "s3://")
+	}).(pulumi.StringOutput)
 
 	project, err := codebuild.NewProject(ctx, name, &codebuild.ProjectArgs{
 		Description: pulumi.Sprintf("Build image for %s", name),
