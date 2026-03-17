@@ -45,7 +45,7 @@ func main() {
 					Environment: pulumi.StringMap{
 						"DJANGO_SETTINGS_MODULE": pulumi.String("config.settings"),
 						// TODO: interpolate POSTGRES_PASSWORD from config/secret
-						"DATABASE_URL":          pulumi.String("postgres://postgres:@postgres:5432/postgres?sslmode=require"),
+						"DATABASE_URL":          pulumi.String("postgres://postgres:supersecret@postgres:5432/postgres?sslmode=require"),
 						"REDIS_URL":             pulumi.String("redis://redis:6379/0"),
 						"CELERY_BROKER_URL":     pulumi.String("redis://redis:6379/0"),
 						"CELERY_RESULT_BACKEND": pulumi.String("redis://redis:6379/0"),
@@ -84,7 +84,7 @@ func main() {
 					Environment: pulumi.StringMap{
 						"DJANGO_SETTINGS_MODULE": pulumi.String("config.settings"),
 						// TODO: interpolate POSTGRES_PASSWORD from config/secret
-						"DATABASE_URL":      pulumi.String("postgres://postgres:@postgres:5432/postgres?sslmode=require"),
+						"DATABASE_URL":      pulumi.String("postgres://postgres:supersecret@postgres:5432/postgres?sslmode=require"),
 						"REDIS_URL":         pulumi.String("redis://redis:6379/0"),
 						"OPENAI_API_KEY":    pulumi.String("defang"),
 						"DJANGO_SECRET_KEY": pulumi.String(""), // set via config/secret
@@ -109,7 +109,7 @@ func main() {
 						},
 					},
 					Environment: pulumi.StringMap{
-						"POSTGRES_PASSWORD": pulumi.String(""), // set via config/secret
+						"POSTGRES_PASSWORD": pulumi.String("supersecret"), // set via config/secret
 					},
 					Deploy: shared.DeployConfigArgs{
 						Resources: shared.ResourcesConfigArgs{
