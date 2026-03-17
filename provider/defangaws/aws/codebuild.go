@@ -76,6 +76,7 @@ func getBuildSpec(build shared.BuildInput, destination string) string {
 	}
 
 	preBuildCommands := []string{
+		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com",
 		"docker buildx create --use --driver=docker-container --use",
 	}
 
