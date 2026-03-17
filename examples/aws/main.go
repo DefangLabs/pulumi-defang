@@ -138,6 +138,44 @@ func main() {
 						},
 					},
 				},
+				"chat": shared.ServiceInputArgs{
+					Provider: shared.ProviderInputArgs{
+						Type: pulumi.String("openai"),
+						Options: shared.ProviderOptionsArgs{
+							Model: pulumi.String("chat-default"),
+						},
+					},
+					Environment: pulumi.StringMap{
+						"OPENAI_API_KEY": pulumi.String("defang"),
+					},
+					Deploy: shared.DeployConfigArgs{
+						Resources: shared.ResourcesConfigArgs{
+							Reservations: shared.ResourceConfigArgs{
+								Cpus:   pulumi.Float64Ptr(0.5),
+								Memory: pulumi.StringPtr("512M"),
+							},
+						},
+					},
+				},
+				"embedding": shared.ServiceInputArgs{
+					Provider: shared.ProviderInputArgs{
+						Type: pulumi.String("openai"),
+						Options: shared.ProviderOptionsArgs{
+							Model: pulumi.String("embedding-default"),
+						},
+					},
+					Environment: pulumi.StringMap{
+						"OPENAI_API_KEY": pulumi.String("defang"),
+					},
+					Deploy: shared.DeployConfigArgs{
+						Resources: shared.ResourcesConfigArgs{
+							Reservations: shared.ResourceConfigArgs{
+								Cpus:   pulumi.Float64Ptr(0.5),
+								Memory: pulumi.StringPtr("512M"),
+							},
+						},
+					},
+				},
 			},
 		})
 		if err != nil {
