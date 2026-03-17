@@ -120,11 +120,9 @@ func main() {
 						},
 					},
 				},
-				// x-defang-redis: Redis managed service not yet supported in Go SDK;
-				// deployed as a regular container image.
 				"redis": shared.ServiceInputArgs{
 					Image: pulumi.StringPtr("redis:6.2"),
-					// Redis: shared.RedisInputArgs{},
+					Redis: shared.RedisInputArgs{},
 					Ports: shared.PortConfigArray{
 						shared.PortConfigArgs{
 							Target: pulumi.Int(6379),

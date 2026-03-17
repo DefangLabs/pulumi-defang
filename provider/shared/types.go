@@ -34,6 +34,9 @@ type ServiceInput struct {
 	// Managed Postgres: presence enables managed postgres. Matches x-defang-postgres extension.
 	Postgres *PostgresInput `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
 
+	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
+	Redis *RedisInput `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
+
 	// Health check configuration
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional" yaml:"healthcheck,omitempty"`
 
@@ -113,6 +116,14 @@ type PostgresInput struct {
 	AllowDowntime *bool `pulumi:"allowDowntime,optional" yaml:"allow-downtime,omitempty"`
 
 	// Restore from a snapshot identifier
+	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
+}
+
+// RedisInput matches the x-defang-redis Compose extension.
+// Version is derived from image tag; FromSnapshot allows restoring from a backup.
+type RedisInput struct {
+	AllowDowntime *bool `pulumi:"allowDowntime,optional" yaml:"allow-downtime,omitempty"`
+
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
 }
 
