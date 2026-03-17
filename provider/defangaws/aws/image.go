@@ -122,7 +122,7 @@ func buildServiceImage(
 	triggerHash := buildTriggerHash(*svc.Build)
 
 	var buildResource codeBuildImageBuildResource
-	err = ctx.RegisterResource("defang:index:CodeBuildImageBuild", serviceName+"-build", pulumi.Map{
+	err = ctx.RegisterResource("defang-aws:defangaws:CodeBuildImageBuild", serviceName+"-build", pulumi.Map{
 		"projectName": cbResult.project.Name,
 		"region":      pulumi.String(infra.region),
 		"destination": cbResult.destination,
