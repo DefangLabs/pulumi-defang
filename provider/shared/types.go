@@ -34,6 +34,9 @@ type ServiceInput struct {
 	// Managed Postgres: presence enables managed postgres. Matches x-defang-postgres extension.
 	Postgres *PostgresInput `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
 
+	// Managed Large Language Model Provider configuration
+	Provider *ProviderInput `pulumi:"provider,optional" yaml:"provider,omitempty"`
+
 	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
 	Redis *RedisInput `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
 
@@ -117,6 +120,16 @@ type PostgresInput struct {
 
 	// Restore from a snapshot identifier
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
+}
+
+type ProviderOptions struct {
+	Model string `pulumi:"model,optional" yaml:"model,omitempty"`
+}
+
+// ProviderInput defines the configuration for a language model provider.
+type ProviderInput struct {
+	Type    string          `pulumi:"type" yaml:"type"`
+	Options ProviderOptions `pulumi:"options" yaml:"options"`
 }
 
 // RedisInput matches the x-defang-redis Compose extension.
