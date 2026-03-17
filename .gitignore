@@ -1,6 +1,7 @@
 .direnv
 .envrc
 .pulumi-state
+.pulumi
 bin
 sdk
 examples/*/Pulumi.example.yaml
