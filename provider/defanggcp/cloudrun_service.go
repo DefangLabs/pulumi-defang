@@ -3,7 +3,6 @@ package defanggcp
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -40,7 +39,7 @@ func (*GcpCloudRunService) Construct(ctx *pulumi.Context, name, typ string, inpu
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := common.ToServiceConfig(shared.ServiceInput{
+	svc := shared.ServiceInput{
 		Build:       inputs.Build,
 		Image:       inputs.Image,
 		Platform:    inputs.Platform,
@@ -51,7 +50,7 @@ func (*GcpCloudRunService) Construct(ctx *pulumi.Context, name, typ string, inpu
 		Entrypoint:  inputs.Entrypoint,
 		HealthCheck: inputs.HealthCheck,
 		DomainName:  inputs.DomainName,
-	})
+	}
 
 	result, err := providergcp.BuildStandaloneCloudRun(ctx, name, svc, childOpt)
 	if err != nil {

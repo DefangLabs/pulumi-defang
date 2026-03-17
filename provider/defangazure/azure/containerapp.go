@@ -3,7 +3,7 @@ package azure
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -40,7 +40,7 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 func createContainerApp(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	infra *sharedInfra,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,

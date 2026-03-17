@@ -47,7 +47,7 @@ func main() {
 		}
 
 		args := common.BuildArgs{
-			Services: common.ToServices(services),
+			Services: services,
 		}
 
 		var result *common.BuildResult

@@ -6,7 +6,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
@@ -117,8 +117,9 @@ func fargateResources(cpus float64, memoryMiB int) (cpu string, memory string) {
 
 // portProtocol normalizes the transport protocol for ECS container port mappings.
 // Only "tcp" and "udp" are valid; matches TS: ep.protocol === "udp" ? "udp" : "tcp"
-func portProtocol(p common.ServicePortConfig) string {
-	if p.Protocol == "udp" {
+func portProtocol(p shared.PortConfig) string {
+	proto := shared.GetPortProtocol(p)
+	if proto == "udp" {
 		return "udp"
 	}
 	return "tcp"
@@ -128,7 +129,7 @@ func portProtocol(p common.ServicePortConfig) string {
 func createECSService(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	args *ecsServiceArgs,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
@@ -263,7 +264,7 @@ func createECSService(
 			}
 
 			// Only create TG/LR for http, http2, grpc (matches TS createTgLrPair)
-			appProto := port.AppProtocol
+			appProto := shared.GetAppProtocol(port)
 			if appProto != "http" && appProto != "http2" && appProto != "grpc" {
 				continue
 			}

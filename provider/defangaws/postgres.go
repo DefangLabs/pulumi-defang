@@ -35,9 +35,10 @@ func (*AwsPostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AwsP
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := common.ServiceConfig{
-		Postgres:    common.ToPostgres(inputs.Postgres, inputs.Image, inputs.Environment),
-		Deploy:      common.ToDeploy(inputs.Deploy),
+	svc := shared.ServiceInput{
+		Postgres:    inputs.Postgres,
+		Image:       inputs.Image,
+		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 	}
 

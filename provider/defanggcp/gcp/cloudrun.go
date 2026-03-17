@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -52,7 +52,7 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 func createCloudRunService(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	location string,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,

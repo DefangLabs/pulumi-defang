@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/rds"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -175,14 +175,14 @@ func postgresEngineVersion(version int) string {
 func createRDS(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	vpcID pulumi.StringOutput,
 	privateSubnetIDs pulumi.StringArrayOutput,
 	serviceSG *ec2.SecurityGroup,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*rdsResult, error) {
-	pg := svc.Postgres
+	pg := svc.ResolvePostgres()
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}

@@ -3,7 +3,6 @@ package defangazure
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -34,11 +33,11 @@ func (*AzurePostgres) Construct(ctx *pulumi.Context, name, typ string, inputs Az
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := common.ServiceConfig{
+	svc := shared.ServiceInput{
 		Image:       inputs.Image,
-		Deploy:      common.ToDeploy(inputs.Deploy),
+		Postgres:    inputs.Postgres,
+		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
-		Postgres:    common.ToPostgres(inputs.Postgres, inputs.Image, inputs.Environment),
 	}
 
 	result, err := providerazure.BuildStandalonePostgres(ctx, name, svc, childOpt)

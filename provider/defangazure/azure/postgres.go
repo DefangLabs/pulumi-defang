@@ -3,7 +3,7 @@ package azure
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -34,12 +34,12 @@ func azurePostgresVersion(version int) string {
 func createPostgresFlexible(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	infra *sharedInfra,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*postgresResult, error) {
-	pg := svc.Postgres
+	pg := svc.ResolvePostgres()
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}

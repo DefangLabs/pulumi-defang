@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -102,7 +103,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 // BuildStandaloneCloudRun creates GCP resources for a single standalone Cloud Run service.
 // The GCP provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, opts ...pulumi.ResourceOption) (*CloudRunResult, error) {
+func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*CloudRunResult, error) {
 	region := gcpRegion(ctx)
 	recipe := LoadRecipe(ctx)
 
@@ -118,7 +119,7 @@ func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc common
 
 // BuildStandaloneCloudSQL creates GCP resources for a single standalone Cloud SQL Postgres instance.
 // The GCP provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneCloudSQL(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, opts ...pulumi.ResourceOption) (*CloudSQLResult, error) {
+func BuildStandaloneCloudSQL(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*CloudSQLResult, error) {
 	recipe := LoadRecipe(ctx)
 
 	sqlResult, err := createCloudSQL(ctx, serviceName, svc, recipe, opts...)

@@ -38,7 +38,7 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 
 	childOpt := pulumi.Parent(comp)
 	args := common.BuildArgs{
-		Services: common.ToServices(inputs.Services),
+		Services: inputs.Services,
 	}
 
 	result, err := providerazure.Build(ctx, name, args, childOpt)

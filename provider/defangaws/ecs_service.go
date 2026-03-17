@@ -41,7 +41,7 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := common.ToServiceConfig(shared.ServiceInput{
+	svc := shared.ServiceInput{
 		Build:       inputs.Build,
 		Image:       inputs.Image,
 		Platform:    inputs.Platform,
@@ -52,7 +52,7 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 		Entrypoint:  inputs.Entrypoint,
 		HealthCheck: inputs.HealthCheck,
 		DomainName:  inputs.DomainName,
-	})
+	}
 
 	result, err := provideraws.BuildStandaloneECS(ctx, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v2"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -122,7 +123,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 // BuildStandaloneContainerApp creates Azure resources for a single standalone Container App.
 // The Azure provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneContainerApp(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, opts ...pulumi.ResourceOption) (*ContainerAppResult, error) {
+func BuildStandaloneContainerApp(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*ContainerAppResult, error) {
 	location := azureLocation(ctx)
 
 	rg, err := resources.NewResourceGroup(ctx, serviceName+"-rg", &resources.ResourceGroupArgs{
@@ -160,7 +161,7 @@ func BuildStandaloneContainerApp(ctx *pulumi.Context, serviceName string, svc co
 
 // BuildStandalonePostgres creates Azure resources for a single standalone PostgreSQL Flexible Server.
 // The Azure provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
+func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
 	location := azureLocation(ctx)
 
 	rg, err := resources.NewResourceGroup(ctx, serviceName+"-rg", &resources.ResourceGroupArgs{

@@ -3,6 +3,8 @@ package common
 import (
 	"regexp"
 	"strconv"
+
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 )
 
 // Based on https://www.ietf.org/rfc/rfc3986.txt, using the pattern for query
@@ -32,25 +34,10 @@ func ParseHealthCheckPathPort(test []string) (path string, port int) {
 	return
 }
 
-// IsManagedService returns true if the service is a managed backing service (e.g., Postgres).
-func IsManagedService(svc ServiceConfig) bool {
-	return svc.Postgres != nil
-}
-
-// HasPort returns true if any port has the given mode.
-func HasPort(svc ServiceConfig, mode string) bool {
-	for _, p := range svc.Ports {
-		if p.Mode == mode {
-			return true
-		}
-	}
-	return false
-}
-
 // NeedIngress returns true if any non-managed service in the map has ingress ports.
-func NeedIngress(services map[string]ServiceConfig) bool {
+func NeedIngress(services map[string]shared.ServiceInput) bool {
 	for _, svc := range services {
-		if HasPort(svc, "ingress") && !IsManagedService(svc) {
+		if svc.HasIngressPorts() && svc.Postgres == nil {
 			return true
 		}
 	}

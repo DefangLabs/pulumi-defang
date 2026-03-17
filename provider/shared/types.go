@@ -138,3 +138,133 @@ type AWSConfigInput struct {
 	SubnetIDs        []string `pulumi:"subnetIds,optional"`
 	PrivateSubnetIDs []string `pulumi:"privateSubnetIds,optional"`
 }
+
+// PostgresConfig holds resolved managed Postgres configuration.
+// Derived from PostgresInput + image tag + environment variables.
+type PostgresConfig struct {
+	Version       int    // Major version (derived from image tag, e.g. postgres:16 → 16)
+	DBName        string // From POSTGRES_DB env or default "postgres"
+	Username      string // From POSTGRES_USER env or default "postgres"
+	Password      string // From POSTGRES_PASSWORD env
+	AllowDowntime bool   // From x-defang-postgres "allow-downtime"
+	FromSnapshot  string // From x-defang-postgres "from-snapshot"
+}
+
+// ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
+func (s ServiceInput) ResolvePostgres() *PostgresConfig {
+	if s.Postgres == nil {
+		return nil
+	}
+
+	version := 0
+	if s.Image != nil {
+		version = GetPostgresVersion(ParseImageTag(*s.Image))
+	}
+
+	dbName := "postgres"
+	if v, ok := s.Environment["POSTGRES_DB"]; ok && v != "" {
+		dbName = v
+	}
+	username := "postgres"
+	if v, ok := s.Environment["POSTGRES_USER"]; ok && v != "" {
+		username = v
+	}
+	password := s.Environment["POSTGRES_PASSWORD"]
+
+	allowDowntime := false
+	if s.Postgres.AllowDowntime != nil {
+		allowDowntime = *s.Postgres.AllowDowntime
+	}
+	fromSnapshot := ""
+	if s.Postgres.FromSnapshot != nil {
+		fromSnapshot = *s.Postgres.FromSnapshot
+	}
+
+	return &PostgresConfig{
+		Version:       version,
+		DBName:        dbName,
+		Username:      username,
+		Password:      password,
+		AllowDowntime: allowDowntime,
+		FromSnapshot:  fromSnapshot,
+	}
+}
+
+// GetImage returns the container image, defaulting to "nginx:latest".
+func (s ServiceInput) GetImage() string {
+	if s.Image != nil {
+		return *s.Image
+	}
+	return "nginx:latest"
+}
+
+// GetReplicas returns the replica count, defaulting to 1.
+func (s ServiceInput) GetReplicas() int {
+	if s.Deploy != nil && s.Deploy.Replicas != nil && *s.Deploy.Replicas > 0 {
+		return *s.Deploy.Replicas
+	}
+	return 1
+}
+
+// GetCPUs returns the CPU reservation, defaulting to 0.25.
+func (s ServiceInput) GetCPUs() float64 {
+	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.CPUs != nil {
+		return *s.Deploy.Resources.Reservations.CPUs
+	}
+	return 0.25
+}
+
+// GetMemoryMiB returns the memory reservation in MiB, defaulting to 512.
+func (s ServiceInput) GetMemoryMiB() int {
+	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.Memory != nil {
+		return ParseMemoryMiB(*s.Deploy.Resources.Reservations.Memory)
+	}
+	return 512
+}
+
+// NeedsBuild returns true if the service has a build config.
+func (s ServiceInput) NeedsBuild() bool {
+	return s.Build != nil
+}
+
+// GetPlatform returns the platform, defaulting to "linux/amd64".
+func (s ServiceInput) GetPlatform() string {
+	if s.Platform != nil {
+		return *s.Platform
+	}
+	return "linux/amd64"
+}
+
+// HasIngressPorts returns true if any port has mode "ingress".
+func (s ServiceInput) HasIngressPorts() bool {
+	for _, p := range s.Ports {
+		if p.Mode == "ingress" {
+			return true
+		}
+	}
+	return false
+}
+
+// GetDockerfile returns the Dockerfile path, defaulting to "Dockerfile".
+func (b BuildInput) GetDockerfile() string {
+	if b.Dockerfile != nil {
+		return *b.Dockerfile
+	}
+	return "Dockerfile"
+}
+
+// GetTarget returns the build target, defaulting to "".
+func (b BuildInput) GetTarget() string {
+	if b.Target != nil {
+		return *b.Target
+	}
+	return ""
+}
+
+// GetShmSizeBytes returns the shared memory size in bytes, defaulting to 0.
+func (b BuildInput) GetShmSizeBytes() int {
+	if b.ShmSize != nil {
+		return ParseMemoryMiB(*b.ShmSize) * 1024 * 1024
+	}
+	return 0
+}

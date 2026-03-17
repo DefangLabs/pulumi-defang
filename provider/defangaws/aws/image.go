@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
@@ -68,12 +68,12 @@ type codeBuildImageBuildResource struct {
 }
 
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build common.BuildConfig) string {
+func buildTriggerHash(build shared.BuildInput) string {
 	h := sha256.New()
 	h.Write([]byte(build.Context))
-	h.Write([]byte(build.Dockerfile))
-	h.Write([]byte(build.Target))
-	h.Write([]byte(fmt.Sprintf("%d", build.ShmSize)))
+	h.Write([]byte(build.GetDockerfile()))
+	h.Write([]byte(build.GetTarget()))
+	h.Write([]byte(fmt.Sprintf("%d", build.GetShmSizeBytes())))
 	if len(build.Args) > 0 {
 		keys := make([]string, 0, len(build.Args))
 		for k := range build.Args {
@@ -91,7 +91,7 @@ func buildTriggerHash(build common.BuildConfig) string {
 func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	infra *imageInfra,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
@@ -147,7 +147,7 @@ func buildServiceImage(
 func getServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	infra *imageInfra,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {

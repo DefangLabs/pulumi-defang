@@ -3,7 +3,6 @@ package defangazure
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -40,7 +39,7 @@ func (*AzureContainerApp) Construct(ctx *pulumi.Context, name, typ string, input
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := common.ToServiceConfig(shared.ServiceInput{
+	svc := shared.ServiceInput{
 		Build:       inputs.Build,
 		Image:       inputs.Image,
 		Platform:    inputs.Platform,
@@ -51,7 +50,7 @@ func (*AzureContainerApp) Construct(ctx *pulumi.Context, name, typ string, input
 		Entrypoint:  inputs.Entrypoint,
 		HealthCheck: inputs.HealthCheck,
 		DomainName:  inputs.DomainName,
-	})
+	}
 
 	result, err := providerazure.BuildStandaloneContainerApp(ctx, name, svc, childOpt)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
@@ -185,7 +186,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 
 // BuildStandaloneECS creates all AWS resources for a single standalone ECS service.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*EcsServiceResult, error) {
+func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*EcsServiceResult, error) {
 	recipe := LoadRecipe(ctx)
 
 	region, err := aws.GetRegion(ctx, nil)
@@ -284,7 +285,7 @@ func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc common.Serv
 
 // BuildStandalonePostgres creates AWS resources for a standalone RDS Postgres instance.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc common.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
+func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
 	recipe := LoadRecipe(ctx)
 
 	net, err := resolveNetworking(ctx, awsCfg, opts...)

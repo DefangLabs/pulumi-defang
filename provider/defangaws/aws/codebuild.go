@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/codebuild"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
@@ -52,11 +52,8 @@ func platformToArch(platform string) string {
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
 // Matches TS getBuildSpec: pre_build sets up buildx, build runs docker buildx build --push.
-func getBuildSpec(build common.BuildConfig, destination string) string {
-	dockerfile := build.Dockerfile
-	if dockerfile == "" {
-		dockerfile = "Dockerfile"
-	}
+func getBuildSpec(build shared.BuildInput, destination string) string {
+	dockerfile := build.GetDockerfile()
 
 	// Build args in deterministic order (matches TS: Object.keys(buildArgs).sort())
 	var buildArgsStr string
@@ -74,8 +71,8 @@ func getBuildSpec(build common.BuildConfig, destination string) string {
 	}
 
 	var targetArg string
-	if build.Target != "" {
-		targetArg = fmt.Sprintf("--target %s", build.Target)
+	if target := build.GetTarget(); target != "" {
+		targetArg = fmt.Sprintf("--target %s", target)
 	}
 
 	preBuildCommands := []string{
@@ -109,7 +106,7 @@ func getBuildSpec(build common.BuildConfig, destination string) string {
 func createCodeBuildProject(
 	ctx *pulumi.Context,
 	name string,
-	build common.BuildConfig,
+	build shared.BuildInput,
 	platform string,
 	codeBuildRole *iam.Role,
 	logGroup *cloudwatch.LogGroup,
@@ -130,7 +127,7 @@ func createCodeBuildProject(
 		baseImage = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
 	}
 
-	computeType := codeBuildComputeType(build.ShmSize)
+	computeType := codeBuildComputeType(build.GetShmSizeBytes())
 
 	// Destination: repo:tag where we push the built image
 	destination := ecrRepoURL.ApplyT(func(url string) string {

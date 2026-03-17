@@ -3,7 +3,6 @@ package defanggcp
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -34,9 +33,10 @@ func (*GcpCloudSql) Construct(ctx *pulumi.Context, name, typ string, inputs GcpC
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := common.ServiceConfig{
-		Postgres:    common.ToPostgres(inputs.Postgres, inputs.Image, inputs.Environment),
-		Deploy:      common.ToDeploy(inputs.Deploy),
+	svc := shared.ServiceInput{
+		Postgres:    inputs.Postgres,
+		Image:       inputs.Image,
+		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 	}
 

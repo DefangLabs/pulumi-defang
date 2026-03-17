@@ -3,7 +3,7 @@ package gcp
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -63,11 +63,11 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 func createCloudSQL(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc common.ServiceConfig,
+	svc shared.ServiceInput,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*cloudSQLResult, error) {
-	pg := svc.Postgres
+	pg := svc.ResolvePostgres()
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}
