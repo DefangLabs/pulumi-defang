@@ -43,13 +43,8 @@ func main() {
 						},
 					},
 					Environment: pulumi.StringMap{
-						"DJANGO_SETTINGS_MODULE": pulumi.String("config.settings"),
-						"DATABASE_URL":           pulumi.String("postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=require"),
-						"REDIS_URL":              pulumi.String("redis://redis:6379/0"),
-						"CELERY_BROKER_URL":      pulumi.String("redis://redis:6379/0"),
-						"CELERY_RESULT_BACKEND":  pulumi.String("redis://redis:6379/0"),
-						"DJANGO_SECRET_KEY":      pulumi.String(""), // set via config/secret
-						"SSL_MODE":               pulumi.String(""), // set via config/secret
+						"DATABASE_URL": pulumi.String("postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=require"),
+						"REDIS_URL":    pulumi.String("redis://redis:6379/0"),
 					},
 					HealthCheck: shared.HealthCheckConfigArgs{
 						Test:               pulumi.StringArray{pulumi.String("CMD"), pulumi.String("curl"), pulumi.String("-f"), pulumi.String("http://localhost:8000/")},
