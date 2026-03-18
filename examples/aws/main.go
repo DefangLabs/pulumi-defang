@@ -20,14 +20,14 @@ func main() {
 		// s3 bucket object for build context
 		buildContext, err := s3.NewBucketObjectv2(ctx, "build-context-object", &s3.BucketObjectv2Args{
 			Bucket: bucket.ID(),
-			Key:    pulumi.String("uploads/aws_example"),
+			Key:    pulumi.String("uploads/sample"),
 			Source: pulumi.NewFileArchive("."),
 		})
 		if err != nil {
 			return err
 		}
 
-		proj, err := defangaws.NewProject(ctx, "myProject", &defangaws.ProjectArgs{
+		proj, err := defangaws.NewProject(ctx, "sample", &defangaws.ProjectArgs{
 			Services: shared.ServiceInputMap{
 				"app": shared.ServiceInputArgs{
 					Build: shared.BuildInputArgs{
