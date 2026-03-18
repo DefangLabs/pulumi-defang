@@ -131,7 +131,8 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			rdsResult, err := createRDS(ctx, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
+			configProvider := NewConfigProvider(projectName)
+			rdsResult, err := createRDS(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
 			}
@@ -285,7 +286,7 @@ func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc shared.Serv
 
 // BuildStandalonePostgres creates AWS resources for a standalone RDS Postgres instance.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
+func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
 	recipe := LoadRecipe(ctx)
 
 	net, err := resolveNetworking(ctx, awsCfg, opts...)
@@ -309,7 +310,7 @@ func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc shared
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
-	rdsResult, err := createRDS(ctx, serviceName, svc, net.vpcID, net.privateSubnetIDs, sg, recipe, opts...)
+	rdsResult, err := createRDS(ctx, configProvider, serviceName, svc, net.vpcID, net.privateSubnetIDs, sg, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS: %w", err)
 	}

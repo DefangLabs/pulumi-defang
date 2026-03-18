@@ -62,6 +62,7 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 // createCloudSQL creates a managed Cloud SQL Postgres instance.
 func createCloudSQL(
 	ctx *pulumi.Context,
+	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
 	recipe Recipe,

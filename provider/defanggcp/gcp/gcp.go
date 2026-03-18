@@ -69,7 +69,8 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			sqlResult, err := createCloudSQL(ctx, svcName, svc, recipe, svcOpts...)
+			configProvider := NewConfigProvider(projectName)
+			sqlResult, err := createCloudSQL(ctx, configProvider, svcName, svc, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 			}
@@ -119,10 +120,10 @@ func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc shared
 
 // BuildStandaloneCloudSQL creates GCP resources for a single standalone Cloud SQL Postgres instance.
 // The GCP provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneCloudSQL(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*CloudSQLResult, error) {
+func BuildStandaloneCloudSQL(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*CloudSQLResult, error) {
 	recipe := LoadRecipe(ctx)
 
-	sqlResult, err := createCloudSQL(ctx, serviceName, svc, recipe, opts...)
+	sqlResult, err := createCloudSQL(ctx, configProvider, serviceName, svc, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud SQL for %s: %w", serviceName, err)
 	}

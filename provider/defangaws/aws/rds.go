@@ -174,6 +174,7 @@ func postgresEngineVersion(version int) string {
 // createRDS creates a managed RDS Postgres instance for a service.
 func createRDS(
 	ctx *pulumi.Context,
+	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
 	vpcID pulumi.StringOutput,

@@ -84,7 +84,8 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			pgResult, err := createPostgresFlexible(ctx, svcName, svc, infra, recipe, svcOpts...)
+			configProvider := NewConfigProvider(projectName)
+			pgResult, err := createPostgresFlexible(ctx, configProvider, svcName, svc, infra, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 			}
@@ -161,7 +162,7 @@ func BuildStandaloneContainerApp(ctx *pulumi.Context, serviceName string, svc sh
 
 // BuildStandalonePostgres creates Azure resources for a single standalone PostgreSQL Flexible Server.
 // The Azure provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
+func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
 	location := azureLocation(ctx)
 
 	rg, err := resources.NewResourceGroup(ctx, serviceName+"-rg", &resources.ResourceGroupArgs{
@@ -175,7 +176,7 @@ func BuildStandalonePostgres(ctx *pulumi.Context, serviceName string, svc shared
 	infra := &sharedInfra{resourceGroup: rg}
 	recipe := LoadRecipe(ctx)
 
-	pgResult, err := createPostgresFlexible(ctx, serviceName, svc, infra, recipe, opts...)
+	pgResult, err := createPostgresFlexible(ctx, configProvider, serviceName, svc, infra, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating PostgreSQL for %s: %w", serviceName, err)
 	}

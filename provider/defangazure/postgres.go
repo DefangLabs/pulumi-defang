@@ -3,6 +3,7 @@ package defangazure
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -13,6 +14,7 @@ type AzurePostgres struct{}
 
 // AzurePostgresInputs defines the inputs for a standalone Azure PostgreSQL Flexible Server.
 type AzurePostgresInputs struct {
+	ProjectName *string               `pulumi:"project_name"`
 	Image       *string               `pulumi:"image,optional"`
 	Postgres    *shared.PostgresInput `pulumi:"postgres,optional"`
 	Deploy      *shared.DeployConfig  `pulumi:"deploy,optional"`
@@ -40,7 +42,8 @@ func (*AzurePostgres) Construct(ctx *pulumi.Context, name, typ string, inputs Az
 		Environment: inputs.Environment,
 	}
 
-	result, err := providerazure.BuildStandalonePostgres(ctx, name, svc, childOpt)
+	configProvider := azure.NewConfigProvider(*inputs.ProjectName)
+	result, err := providerazure.BuildStandalonePostgres(ctx, configProvider, name, svc, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure PostgreSQL: %w", err)
 	}

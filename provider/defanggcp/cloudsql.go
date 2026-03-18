@@ -13,6 +13,7 @@ type GcpCloudSql struct{}
 
 // GcpCloudSqlInputs defines the inputs for a standalone GCP Cloud SQL Postgres instance.
 type GcpCloudSqlInputs struct {
+	ProjectName *string               `pulumi:"project_name"`
 	Postgres    *shared.PostgresInput `pulumi:"postgres,optional"`
 	Image       *string               `pulumi:"image,optional"`
 	Deploy      *shared.DeployConfig  `pulumi:"deploy,optional"`
@@ -40,7 +41,8 @@ func (*GcpCloudSql) Construct(ctx *pulumi.Context, name, typ string, inputs GcpC
 		Environment: inputs.Environment,
 	}
 
-	result, err := providergcp.BuildStandaloneCloudSQL(ctx, name, svc, childOpt)
+	configProvider := providergcp.NewConfigProvider(*inputs.ProjectName)
+	result, err := providergcp.BuildStandaloneCloudSQL(ctx, configProvider, name, svc, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud SQL: %w", err)
 	}

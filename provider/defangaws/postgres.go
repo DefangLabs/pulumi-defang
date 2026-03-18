@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -14,7 +15,7 @@ type AwsPostgres struct{}
 
 // AwsPostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
 type AwsPostgresInputs struct {
-	Project     *string                `pulumi:"project"`
+	ProjectName *string                `pulumi:"project_name"`
 	Postgres    *shared.PostgresInput  `pulumi:"postgres,optional"`
 	Image       *string                `pulumi:"image,optional"`
 	Deploy      *shared.DeployConfig   `pulumi:"deploy,optional"`
@@ -43,7 +44,8 @@ func (*AwsPostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AwsP
 		Environment: inputs.Environment,
 	}
 
-	result, err := provideraws.BuildStandalonePostgres(ctx, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
+	configProvider := aws.NewConfigProvider(*inputs.ProjectName)
+	result, err := provideraws.BuildStandalonePostgres(ctx, configProvider, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS Postgres: %w", err)
 	}

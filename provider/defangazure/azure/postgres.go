@@ -33,6 +33,7 @@ func azurePostgresVersion(version int) string {
 // createPostgresFlexible creates an Azure Database for PostgreSQL Flexible Server.
 func createPostgresFlexible(
 	ctx *pulumi.Context,
+	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
 	infra *sharedInfra,
