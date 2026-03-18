@@ -27,14 +27,29 @@ func getParameterValue(ctx *pulumi.Context, projectName string, sourceName strin
 		}).(pulumi.StringOutput)
 	}
 
+	path := getSecretID("", projectName, ctx.Stack())
+
 	gpr := ssm.GetParametersByPathOutput(ctx, ssm.GetParametersByPathOutputArgs{
-		Path:           pulumi.String(getSecretID(sourceName, projectName, ctx.Stack())),
+		Path:           pulumi.String(path),
 		WithDecryption: pulumi.Bool(true),
 	})
 
-	return pulumi.StringOutput(gpr.Values())
+	return gpr.Names().ApplyT(func(names []string) pulumi.StringOutput {
+		return gpr.Values().ApplyT(func(vals []string) pulumi.StringOutput {
+			return findValueForName(names, vals, sourceName)
+		}).(pulumi.StringOutput)
+	}).(pulumi.StringOutput)
 }
 
 func getSecretID(sourceName, projectName, stackName string) string {
-	return fmt.Sprintf("/%s/%s/%s", projectName, stackName, sourceName)
+	return fmt.Sprintf("/Defang/%s/%s/%s", projectName, stackName, sourceName)
+}
+
+func findValueForName(names, vals []string, sourceName string) pulumi.StringOutput {
+	for i, name := range names {
+		if name == getSecretID(sourceName, "", "") {
+			return pulumi.String(vals[i]).ToStringOutput()
+		}
+	}
+	return pulumi.String("").ToStringOutput()
 }
