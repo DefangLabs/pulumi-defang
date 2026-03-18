@@ -28,13 +28,13 @@ func getParameterValue(ctx *pulumi.Context, projectName string, sourceName strin
 	}
 
 	gpr := ssm.GetParametersByPathOutput(ctx, ssm.GetParametersByPathOutputArgs{
-		Path:           pulumi.String(getSecretID(sourceName, projectName)),
+		Path:           pulumi.String(getSecretID(sourceName, projectName, ctx.Stack())),
 		WithDecryption: pulumi.Bool(true),
 	})
 
 	return pulumi.StringOutput(gpr.Values())
 }
 
-func getSecretID(sourceName, projectName string) string {
-	return fmt.Sprintf("/%s/%s", projectName, sourceName)
+func getSecretID(sourceName, projectName, stackName string) string {
+	return fmt.Sprintf("/%s/%s/%s", projectName, stackName, sourceName)
 }
