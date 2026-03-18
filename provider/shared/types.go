@@ -196,6 +196,8 @@ func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider Config
 	username := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER")
 	password := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD")
 
+	// TODO: set defaults for username and dbName if not provided
+
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {
 		allowDowntime = *s.Postgres.AllowDowntime
