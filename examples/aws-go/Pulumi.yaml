@@ -1,3 +1,7 @@
 name: defang-aws-go-example
 runtime: go
 description: Example using defang-aws to deploy services to AWS
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
