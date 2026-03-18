@@ -166,6 +166,10 @@ type AWSConfigInput struct {
 	PrivateSubnetIDs []string `pulumi:"privateSubnetIds,optional"`
 }
 
+type ConfigProvider interface {
+	GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput
+}
+
 // PostgresConfig holds resolved managed Postgres configuration.
 // Derived from PostgresInput + image tag + environment variables.
 type PostgresConfig struct {
@@ -215,6 +219,56 @@ func (s ServiceInput) ResolvePostgres() *PostgresConfig {
 		AllowDowntime: allowDowntime,
 		FromSnapshot:  fromSnapshot,
 	}
+}
+
+func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string) pulumi.StringOutput {
+	if s.Environment == nil {
+		return pulumi.StringOutput{}
+	}
+
+	value, exists := s.Environment[key]
+	if !exists {
+		return pulumi.StringOutput{}
+	}
+
+	if value == nil {
+		// If the value is explicitly set to nil, treat it as a sensitive config reference
+		return configProvider.GetConfig(ctx, key)
+	}
+
+	v := *value
+	if v == "" {
+		return pulumi.StringOutput{}
+	}
+
+	return pulumi.Sprintf("%s", v).ApplyT(func(v string) pulumi.StringOutput {
+		return interpolateEnvironmentVariable(ctx, configProvider, v)
+	}).(pulumi.StringOutput)
+}
+
+func interpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
+	parsed := ParseInterpolatedString(value)
+
+	parts := make([]pulumi.StringOutput, len(parsed))
+	for i, match := range parsed {
+		if !match.IsVar {
+			parts[i] = pulumi.String(match.Literal).ToStringOutput()
+		} else {
+			parts[i] = configProvider.GetConfig(ctx, match.Variable)
+		}
+	}
+
+	// Fold over parts, joining with ApplyT since pulumi.Concat doesn't exist in Go
+	result := parts[0]
+	for _, part := range parts[1:] {
+		p := part // capture loop var
+		result = result.ApplyT(func(acc string) pulumi.StringOutput {
+			return p.ApplyT(func(s string) string {
+				return acc + s
+			}).(pulumi.StringOutput)
+		}).(pulumi.StringOutput)
+	}
+	return result
 }
 
 // GetImage returns the container image, defaulting to "nginx:latest".
