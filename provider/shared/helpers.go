@@ -115,3 +115,40 @@ func ParseImageTag(image string) string {
 	}
 	return ""
 }
+
+type Match struct {
+	Literal  string
+	Variable string
+	IsVar    bool
+}
+
+func Literal(s string) Match  { return Match{Literal: s} }
+func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
+
+var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
+
+func ParseInterpolatedString(s string) []Match {
+	var result []Match
+	lastIndex := 0
+
+	for _, match := range interpolationRegex.FindAllStringSubmatchIndex(s, -1) {
+		fullStart, fullEnd := match[0], match[1]
+		varStart, varEnd := match[2], match[3]
+
+		// Skip escaped: preceding char is '$'
+		if fullStart > 0 && s[fullStart-1] == '$' {
+			continue
+		}
+
+		if lastIndex < fullStart {
+			result = append(result, Literal(s[lastIndex:fullStart]))
+		}
+		result = append(result, Variable(s[varStart:varEnd]))
+		lastIndex = fullEnd
+	}
+
+	if lastIndex < len(s) {
+		result = append(result, Literal(s[lastIndex:]))
+	}
+	return result
+}

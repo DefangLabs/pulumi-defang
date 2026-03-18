@@ -2,7 +2,6 @@ package aws
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 
@@ -35,45 +34,8 @@ func getConfigOrEnvValue(ctx *pulumi.Context, s shared.ServiceInput, projectName
 	}).(pulumi.StringOutput)
 }
 
-type Match struct {
-	Literal  string
-	Variable string
-	IsVar    bool
-}
-
-func Literal(s string) Match  { return Match{Literal: s} }
-func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
-
-var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
-
-func ParseInterpolatedString(s string) []Match {
-	var result []Match
-	lastIndex := 0
-
-	for _, match := range interpolationRegex.FindAllStringSubmatchIndex(s, -1) {
-		fullStart, fullEnd := match[0], match[1]
-		varStart, varEnd := match[2], match[3]
-
-		// Skip escaped: preceding char is '$'
-		if fullStart > 0 && s[fullStart-1] == '$' {
-			continue
-		}
-
-		if lastIndex < fullStart {
-			result = append(result, Literal(s[lastIndex:fullStart]))
-		}
-		result = append(result, Variable(s[varStart:varEnd]))
-		lastIndex = fullEnd
-	}
-
-	if lastIndex < len(s) {
-		result = append(result, Literal(s[lastIndex:]))
-	}
-	return result
-}
-
 func interpolateEnvironmentVariable(ctx *pulumi.Context, projectName, value string) pulumi.StringOutput {
-	parsed := ParseInterpolatedString(value)
+	parsed := shared.ParseInterpolatedString(value)
 
 	parts := make([]pulumi.StringOutput, len(parsed))
 	for i, match := range parsed {
