@@ -70,7 +70,7 @@ func main() {
 						},
 					},
 					Environment: pulumi.StringMap{
-						"POSTGRES_PASSWORD": nil, // set via config/secret
+						"POSTGRES_PASSWORD": pulumi.String("${POSTGRES_PASSWORD}"), // set via config/secret
 					},
 					Deploy: shared.DeployConfigArgs{
 						Resources: shared.ResourcesConfigArgs{
