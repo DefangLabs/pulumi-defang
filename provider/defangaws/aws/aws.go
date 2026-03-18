@@ -137,6 +137,19 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:%d", rdsResult.instance.Address, 5432)
+			// } else if svc.Redis != nil {
+			// 	// Managed Redis → ElastiCache (not implemented yet)
+			// 	if err := ctx.RegisterComponentResource("defang-aws:index:AwsRedis", svcName, comp, opts[0]); err != nil {
+			// 		return nil, fmt.Errorf("registering redis component %s: %w", svcName, err)
+			// 	}
+			// 	svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+			// 	redisResult, err := createElasticache(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
+			// 	if err != nil {
+			// 		return nil, fmt.Errorf("creating Redis for %s: %w", svcName, err)
+			// 	}
+			// 	endpoints[svcName] = pulumi.Sprintf("%s:%d", redisResult.instance.Address, 6379)
+			// 	return nil, fmt.Errorf("Redis services are not yet supported on AWS")
 		} else {
 			// Container service → ECS
 			if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", svcName, comp, opts[0]); err != nil {
