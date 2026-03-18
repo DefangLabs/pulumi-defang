@@ -121,6 +121,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 
+	configProvider := NewConfigProvider(projectName)
 	for svcName, svc := range args.Services {
 		comp := &serviceComponent{}
 
@@ -131,7 +132,6 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			configProvider := NewConfigProvider(projectName)
 			rdsResult, err := createRDS(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
