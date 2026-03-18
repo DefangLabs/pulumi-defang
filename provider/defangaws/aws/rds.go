@@ -183,7 +183,7 @@ func createRDS(
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*rdsResult, error) {
-	pg := svc.ResolvePostgres()
+	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}
@@ -234,9 +234,9 @@ func createRDS(
 		Engine:                   pulumi.String("postgres"),
 		EngineVersion:            pulumi.String(engineVersion),
 		InstanceClass:            pulumi.String(instanceClass),
-		DbName:                   pulumi.String(pg.DBName),
-		Username:                 pulumi.String(pg.Username),
-		Password:                 pulumi.String(pg.Password),
+		DbName:                   pg.DBName,
+		Username:                 pg.Username,
+		Password:                 pg.Password,
 		AllowMajorVersionUpgrade: pulumi.Bool(pg.AllowDowntime),
 		ApplyImmediately:         pulumi.Bool(pg.AllowDowntime),
 		DbSubnetGroupName:        subnetGroup.Name,

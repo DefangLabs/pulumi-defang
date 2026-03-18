@@ -173,16 +173,16 @@ type ConfigProvider interface {
 // PostgresConfig holds resolved managed Postgres configuration.
 // Derived from PostgresInput + image tag + environment variables.
 type PostgresConfig struct {
-	Version       int    // Major version (derived from image tag, e.g. postgres:16 → 16)
-	DBName        string // From POSTGRES_DB env or default "postgres"
-	Username      string // From POSTGRES_USER env or default "postgres"
-	Password      string // From POSTGRES_PASSWORD env
-	AllowDowntime bool   // From x-defang-postgres "allow-downtime"
-	FromSnapshot  string // From x-defang-postgres "from-snapshot"
+	Version       int                // Major version (derived from image tag, e.g. postgres:16 → 16)
+	DBName        pulumi.StringInput // From POSTGRES_DB env or default "postgres"
+	Username      pulumi.StringInput // From POSTGRES_USER env or default "postgres"
+	Password      pulumi.StringInput // From POSTGRES_PASSWORD env
+	AllowDowntime bool               // From x-defang-postgres "allow-downtime"
+	FromSnapshot  string             // From x-defang-postgres "from-snapshot"
 }
 
 // ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
-func (s ServiceInput) ResolvePostgres() *PostgresConfig {
+func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfig {
 	if s.Postgres == nil {
 		return nil
 	}
@@ -192,15 +192,9 @@ func (s ServiceInput) ResolvePostgres() *PostgresConfig {
 		version = GetPostgresVersion(ParseImageTag(*s.Image))
 	}
 
-	dbName := "postgres"
-	if v, ok := s.Environment["POSTGRES_DB"]; ok && v != "" {
-		dbName = v
-	}
-	username := "postgres"
-	if v, ok := s.Environment["POSTGRES_USER"]; ok && v != "" {
-		username = v
-	}
-	password := s.Environment["POSTGRES_PASSWORD"]
+	dbName := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB")
+	username := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER")
+	password := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD")
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {

@@ -40,7 +40,7 @@ func createPostgresFlexible(
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*postgresResult, error) {
-	pg := svc.ResolvePostgres()
+	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}
@@ -54,8 +54,8 @@ func createPostgresFlexible(
 
 	// Admin credentials
 	username := pg.Username
-	if username == "" {
-		username = "postgres"
+	if username == pulumi.String("") {
+		username = pulumi.String("postgres")
 	}
 
 	serverArgs := &dbforpostgresql.ServerArgs{
@@ -72,8 +72,8 @@ func createPostgresFlexible(
 			BackupRetentionDays: pulumi.Int(backupRetention),
 			GeoRedundantBackup:  pulumi.String(string(geoBackup)),
 		},
-		AdministratorLogin:         pulumi.String(username),
-		AdministratorLoginPassword: pulumi.String(pg.Password),
+		AdministratorLogin:         pg.Username,
+		AdministratorLoginPassword: pg.Password,
 	}
 	if recipe.HighAvailability {
 		serverArgs.HighAvailability = &dbforpostgresql.HighAvailabilityArgs{
@@ -87,11 +87,11 @@ func createPostgresFlexible(
 	}
 
 	// Create database if non-default
-	if pg.DBName != "" && pg.DBName != "postgres" {
+	if pg.DBName != pulumi.String("") && pg.DBName != pulumi.String("postgres") {
 		_, err := dbforpostgresql.NewDatabase(ctx, serviceName+"-db", &dbforpostgresql.DatabaseArgs{
 			ResourceGroupName: infra.resourceGroup.Name,
 			ServerName:        server.Name,
-			DatabaseName:      pulumi.String(pg.DBName),
+			DatabaseName:      pg.DBName,
 		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating PostgreSQL database: %w", err)

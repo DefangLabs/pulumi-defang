@@ -68,7 +68,7 @@ func createCloudSQL(
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*cloudSQLResult, error) {
-	pg := svc.ResolvePostgres()
+	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
 	}
@@ -113,15 +113,15 @@ func createCloudSQL(
 	}
 
 	// Create user
-	if pg.Password != "" {
+	if pg.Password != pulumi.String("") {
 		username := pg.Username
-		if username == "" {
-			username = "postgres"
+		if username == pulumi.String("") {
+			username = pulumi.String("postgres")
 		}
 		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
-			Name:           pulumi.String(username),
+			Name:           username,
 			Instance:       instance.Name,
-			Password:       pulumi.String(pg.Password),
+			Password:       pg.Password,
 			Type:           pulumi.String("BUILT_IN"),
 			DeletionPolicy: pulumi.String("ABANDON"),
 		}, append(opts, pulumi.RetainOnDelete(true))...)
@@ -131,9 +131,9 @@ func createCloudSQL(
 	}
 
 	// Create database if non-default
-	if pg.DBName != "" && pg.DBName != "postgres" {
+	if pg.DBName != pulumi.String("") && pg.DBName != pulumi.String("postgres") {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
-			Name:           pulumi.String(pg.DBName),
+			Name:           pg.DBName,
 			Instance:       instance.Name,
 			DeletionPolicy: pulumi.String("ABANDON"),
 		}, append(opts, pulumi.RetainOnDelete(true))...)
