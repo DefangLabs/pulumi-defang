@@ -23,7 +23,7 @@ type ServiceInput struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`

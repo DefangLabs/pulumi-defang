@@ -14,10 +14,11 @@ type AwsPostgres struct{}
 
 // AwsPostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
 type AwsPostgresInputs struct {
-	Postgres    *shared.PostgresInput `pulumi:"postgres,optional"`
-	Image       *string               `pulumi:"image,optional"`
-	Deploy      *shared.DeployConfig  `pulumi:"deploy,optional"`
-	Environment map[string]string     `pulumi:"environment,optional"`
+	Project     *string                `pulumi:"project"`
+	Postgres    *shared.PostgresInput  `pulumi:"postgres,optional"`
+	Image       *string                `pulumi:"image,optional"`
+	Deploy      *shared.DeployConfig   `pulumi:"deploy,optional"`
+	Environment map[string]*string     `pulumi:"environment,optional"`
 	AWS         *shared.AWSConfigInput `pulumi:"aws,optional"`
 }
 

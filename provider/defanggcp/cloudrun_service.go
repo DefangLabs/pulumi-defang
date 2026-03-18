@@ -18,7 +18,7 @@ type GcpCloudRunServiceInputs struct {
 	Platform    *string                   `pulumi:"platform,optional"`
 	Ports       []shared.PortConfig       `pulumi:"ports,optional"`
 	Deploy      *shared.DeployConfig      `pulumi:"deploy,optional"`
-	Environment map[string]string         `pulumi:"environment,optional"`
+	Environment map[string]*string        `pulumi:"environment,optional"`
 	Command     []string                  `pulumi:"command,optional"`
 	Entrypoint  []string                  `pulumi:"entrypoint,optional"`
 	HealthCheck *shared.HealthCheckConfig `pulumi:"healthCheck,optional"`

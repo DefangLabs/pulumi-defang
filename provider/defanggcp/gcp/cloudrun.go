@@ -76,10 +76,12 @@ func createCloudRunService(
 		},
 	}
 	for k, v := range svc.Environment {
-		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
-			Name:  pulumi.String(k),
-			Value: pulumi.String(v),
-		})
+		if v != nil {
+			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
+				Name:  pulumi.String(k),
+				Value: pulumi.String(*v),
+			})
+		}
 	}
 
 	// Build port config

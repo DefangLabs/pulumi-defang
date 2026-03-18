@@ -55,10 +55,12 @@ func createContainerApp(
 		},
 	}
 	for k, v := range svc.Environment {
-		envs = append(envs, app.EnvironmentVarArgs{
-			Name:  pulumi.String(k),
-			Value: pulumi.String(v),
-		})
+		if v != nil {
+			envs = append(envs, app.EnvironmentVarArgs{
+				Name:  pulumi.String(k),
+				Value: pulumi.String(*v),
+			})
+		}
 	}
 
 	// Resource limits

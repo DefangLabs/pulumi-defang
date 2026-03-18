@@ -16,7 +16,7 @@ type GcpCloudSqlInputs struct {
 	Postgres    *shared.PostgresInput `pulumi:"postgres,optional"`
 	Image       *string               `pulumi:"image,optional"`
 	Deploy      *shared.DeployConfig  `pulumi:"deploy,optional"`
-	Environment map[string]string     `pulumi:"environment,optional"`
+	Environment map[string]*string    `pulumi:"environment,optional"`
 }
 
 // GcpCloudSqlOutputs holds the outputs of a GcpCloudSql component.

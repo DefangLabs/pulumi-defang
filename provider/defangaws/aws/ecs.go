@@ -156,10 +156,12 @@ func createECSService(
 		})
 	}
 	for k, v := range svc.Environment {
-		envVars = append(envVars, map[string]interface{}{
-			"name":  k,
-			"value": v,
-		})
+		if v != nil {
+			envVars = append(envVars, map[string]interface{}{
+				"name":  k,
+				"value": *v,
+			})
+		}
 	}
 
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
