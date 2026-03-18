@@ -88,7 +88,7 @@ func createCloudSQL(
 			BackupRetentionSettings: &sql.DatabaseInstanceSettingsBackupConfigurationBackupRetentionSettingsArgs{
 				RetainedBackups: pulumi.Int(30),
 			},
-			StartTime:                  pulumi.String("04:00"),
+			StartTime:                   pulumi.String("04:00"),
 			TransactionLogRetentionDays: pulumi.Int(7),
 		}
 	}

@@ -300,12 +300,12 @@ func createECSService(
 			}
 
 			tgArgs := &lb.TargetGroupArgs{
-				Port:                          pulumi.Int(port.Target),
-				Protocol:                      pulumi.String("HTTP"),
-				TargetType:                    pulumi.String("ip"),
-				VpcId:                         args.vpcID,
-				LoadBalancingAlgorithmType:     pulumi.String("least_outstanding_requests"),
-				DeregistrationDelay:            pulumi.Int(recipe.DeregistrationDelay),
+				Port:                       pulumi.Int(port.Target),
+				Protocol:                   pulumi.String("HTTP"),
+				TargetType:                 pulumi.String("ip"),
+				VpcId:                      args.vpcID,
+				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
+				DeregistrationDelay:        pulumi.Int(recipe.DeregistrationDelay),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{
 					Path:               pulumi.String("/"),
 					Port:               pulumi.String("traffic-port"),
