@@ -67,36 +67,6 @@ func main() {
 						},
 					},
 				},
-				"worker": shared.ServiceInputArgs{
-					Build: shared.BuildInputArgs{
-						Context:    pulumi.Sprintf("s3://%s/%s", buildContext.Bucket, buildContext.Key),
-						Dockerfile: pulumi.StringPtr("Dockerfile"),
-					},
-					Command: pulumi.StringArray{
-						pulumi.String("celery"),
-						pulumi.String("-A"),
-						pulumi.String("config"),
-						pulumi.String("worker"),
-						pulumi.String("-l"),
-						pulumi.String("info"),
-					},
-					Environment: pulumi.StringMap{
-						"DJANGO_SETTINGS_MODULE": pulumi.String("config.settings"),
-						"DATABASE_URL":           pulumi.String("postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=require"),
-						"REDIS_URL":              pulumi.String("redis://redis:6379/0"),
-						"OPENAI_API_KEY":         pulumi.String("defang"),
-						"DJANGO_SECRET_KEY":      pulumi.String(""), // set via config/secret
-						"SSL_MODE":               pulumi.String(""), // set via config/secret
-					},
-					Deploy: shared.DeployConfigArgs{
-						Resources: shared.ResourcesConfigArgs{
-							Reservations: shared.ResourceConfigArgs{
-								Cpus:   pulumi.Float64Ptr(0.5),
-								Memory: pulumi.StringPtr("512M"),
-							},
-						},
-					},
-				},
 				"postgres": shared.ServiceInputArgs{
 					Image:    pulumi.StringPtr("pgvector/pgvector:pg16"),
 					Postgres: shared.PostgresInputArgs{},
@@ -141,25 +111,6 @@ func main() {
 						Type: pulumi.String("openai"),
 						Options: shared.ProviderOptionsArgs{
 							Model: pulumi.String("chat-default"),
-						},
-					},
-					Environment: pulumi.StringMap{
-						"OPENAI_API_KEY": pulumi.String("defang"),
-					},
-					Deploy: shared.DeployConfigArgs{
-						Resources: shared.ResourcesConfigArgs{
-							Reservations: shared.ResourceConfigArgs{
-								Cpus:   pulumi.Float64Ptr(0.5),
-								Memory: pulumi.StringPtr("512M"),
-							},
-						},
-					},
-				},
-				"embedding": shared.ServiceInputArgs{
-					Provider: shared.ProviderInputArgs{
-						Type: pulumi.String("openai"),
-						Options: shared.ProviderOptionsArgs{
-							Model: pulumi.String("embedding-default"),
 						},
 					},
 					Environment: pulumi.StringMap{
