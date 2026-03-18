@@ -37,7 +37,7 @@ func ParseHealthCheckPathPort(test []string) (path string, port int) {
 // NeedIngress returns true if any non-managed service in the map has ingress ports.
 func NeedIngress(services map[string]shared.ServiceInput) bool {
 	for _, svc := range services {
-		if svc.HasIngressPorts() && svc.Postgres == nil {
+		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil {
 			return true
 		}
 	}

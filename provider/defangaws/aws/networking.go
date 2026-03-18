@@ -4,12 +4,13 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-awsx/sdk/v3/go/awsx/ec2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type networkingResult struct {
-	vpcID            pulumi.StringOutput
-	publicSubnetIDs  pulumi.StringArrayOutput
-	privateSubnetIDs pulumi.StringArrayOutput
+	vpcID            pulumix.Output[string]
+	publicSubnetIDs  pulumix.Output[[]string]
+	privateSubnetIDs pulumix.Output[[]string]
 }
 
 // resolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
@@ -28,9 +29,9 @@ func resolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulum
 			privateSubnetIDs = subnetIDs
 		}
 		return &networkingResult{
-			vpcID:            pulumi.String(cfg.VpcID).ToStringOutput(),
-			publicSubnetIDs:  subnetIDs.ToStringArrayOutput(),
-			privateSubnetIDs: privateSubnetIDs.ToStringArrayOutput(),
+			vpcID:            pulumix.Val(cfg.VpcID),
+			publicSubnetIDs:  pulumix.Output[[]string](subnetIDs.ToStringArrayOutput()),
+			privateSubnetIDs: pulumix.Output[[]string](privateSubnetIDs.ToStringArrayOutput()),
 		}, nil
 	}
 
@@ -49,8 +50,8 @@ func resolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulum
 	}
 
 	return &networkingResult{
-		vpcID:            vpc.VpcId,
-		publicSubnetIDs:  vpc.PublicSubnetIds,
-		privateSubnetIDs: vpc.PrivateSubnetIds,
+		vpcID:            pulumix.Output[string](vpc.VpcId),
+		publicSubnetIDs:  pulumix.Output[[]string](vpc.PublicSubnetIds),
+		privateSubnetIDs: pulumix.Output[[]string](vpc.PrivateSubnetIds),
 	}, nil
 }

@@ -2,9 +2,11 @@ package aws
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type ConfigProvider struct {
@@ -22,34 +24,30 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.Stri
 func getParameterValue(ctx *pulumi.Context, projectName string, sourceName string) pulumi.StringOutput {
 	// In dry-run mode, return a placeholder value
 	if ctx.DryRun() {
-		return pulumi.Sprintf("dry-run-%s", sourceName).ApplyT(func(v string) string {
-			return v
-		}).(pulumi.StringOutput)
+		return pulumi.Sprintf("dry-run-%s", sourceName)
 	}
 
-	path := getSecretID("", projectName, ctx.Stack())
+	path := getSecretPath(projectName, ctx.Stack())
 
 	gpr := ssm.GetParametersByPathOutput(ctx, ssm.GetParametersByPathOutputArgs{
 		Path:           pulumi.String(path),
 		WithDecryption: pulumi.Bool(true),
 	})
 
-	return gpr.Names().ApplyT(func(names []string) pulumi.StringOutput {
-		return gpr.Values().ApplyT(func(vals []string) pulumi.StringOutput {
-			return findValueForName(names, vals, sourceName)
-		}).(pulumi.StringOutput)
-	}).(pulumi.StringOutput)
+	return pulumi.StringOutput(pulumix.Apply2Err(gpr.Names(), gpr.Values(), func(names, vals []string) (string, error) {
+		return findValueForName(names, vals, sourceName)
+	}))
 }
 
-func getSecretID(sourceName, projectName, stackName string) string {
-	return fmt.Sprintf("/Defang/%s/%s/%s", projectName, stackName, sourceName)
+func getSecretPath(projectName, stackName string) string {
+	return fmt.Sprintf("/Defang/%s/%s/", projectName, stackName)
 }
 
-func findValueForName(names, vals []string, sourceName string) pulumi.StringOutput {
+func findValueForName(names, vals []string, sourceName string) (string, error) {
 	for i, name := range names {
-		if name == getSecretID(sourceName, "", "") {
-			return pulumi.String(vals[i]).ToStringOutput()
+		if sourceName == path.Base(name) {
+			return vals[i], nil
 		}
 	}
-	return pulumi.String("").ToStringOutput()
+	return "", fmt.Errorf("value not found for name: %s", sourceName)
 }

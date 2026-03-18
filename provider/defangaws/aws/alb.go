@@ -6,6 +6,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type albResult struct {
@@ -16,15 +17,15 @@ type albResult struct {
 // createALB creates an Application Load Balancer with an HTTP listener.
 func createALB(
 	ctx *pulumi.Context,
-	vpcID pulumi.StringOutput,
-	subnetIDs pulumi.StringArrayOutput,
+	vpcID pulumix.Output[string],
+	subnetIDs pulumix.Output[[]string],
 	serviceSG *ec2.SecurityGroup,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*albResult, error) {
 	// Create ALB security group allowing HTTP/HTTPS ingress
 	albSG, err := ec2.NewSecurityGroup(ctx, "alb-sg", &ec2.SecurityGroupArgs{
-		VpcId:       vpcID,
+		VpcId:       pulumi.StringOutput(vpcID),
 		Description: pulumi.String("ALB security group"),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
@@ -71,7 +72,7 @@ func createALB(
 		Internal:                 pulumi.Bool(false),
 		LoadBalancerType:         pulumi.String("application"),
 		SecurityGroups:           pulumi.StringArray{albSG.ID()},
-		Subnets:                  subnetIDs,
+		Subnets:                  pulumi.StringArrayOutput(subnetIDs),
 		EnableDeletionProtection: pulumi.Bool(recipe.DeletionProtection),
 	}, opts...)
 	if err != nil {

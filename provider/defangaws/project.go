@@ -7,6 +7,7 @@ import (
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // Project is the controller struct for the defang-aws:index:Project component.
@@ -26,10 +27,10 @@ type ProjectOutputs struct {
 	pulumi.ResourceState
 
 	// Per-service endpoint URLs (service name -> URL)
-	Endpoints pulumi.StringMapOutput `pulumi:"endpoints"`
+	Endpoints pulumix.Output[map[string]string] `pulumi:"endpoints"`
 
 	// Load balancer DNS name (AWS ALB)
-	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
+	LoadBalancerDNS pulumix.Output[*string] `pulumi:"loadBalancerDns,optional"`
 }
 
 // Construct implements the ComponentResource interface for Project.
@@ -49,8 +50,8 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
 	}
 
-	comp.Endpoints = result.Endpoints
-	comp.LoadBalancerDNS = result.LoadBalancerDNS
+	comp.Endpoints = pulumix.Output[map[string]string](result.Endpoints)
+	comp.LoadBalancerDNS = pulumix.Output[*string](result.LoadBalancerDNS)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       result.Endpoints,

@@ -181,6 +181,10 @@ type PostgresConfig struct {
 	FromSnapshot  string             // From x-defang-postgres "from-snapshot"
 }
 
+// see https://hub.docker.com/_/postgres for default values
+const DEFAULT_POSTGRES_USER = "postgres"
+const DEFAULT_POSTGRES_DB = "postgres"
+
 // ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
 func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfig {
 	if s.Postgres == nil {
@@ -192,9 +196,9 @@ func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider Config
 		version = GetPostgresVersion(ParseImageTag(*s.Image))
 	}
 
-	dbName := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB")
-	username := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER")
-	password := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD")
+	dbName := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
+	username := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
+	password := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "")
 
 	// TODO: set defaults for username and dbName if not provided
 
@@ -217,14 +221,14 @@ func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider Config
 	}
 }
 
-func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string) pulumi.StringOutput {
+func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string, defaultValue string) pulumi.StringOutput {
 	if s.Environment == nil {
 		return pulumi.StringOutput{}
 	}
 
 	value, exists := s.Environment[key]
 	if !exists {
-		return pulumi.StringOutput{}
+		return pulumi.String(defaultValue).ToStringOutput()
 	}
 
 	if value == nil {
@@ -234,10 +238,10 @@ func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s S
 
 	v := *value
 	if v == "" {
-		return pulumi.StringOutput{}
+		return pulumi.String("").ToStringOutput()
 	}
 
-	return pulumi.Sprintf("%s", v).ApplyT(func(v string) pulumi.StringOutput {
+	return pulumi.String(v).ToStringOutput().ApplyT(func(v string) pulumi.StringOutput {
 		return interpolateEnvironmentVariable(ctx, configProvider, v)
 	}).(pulumi.StringOutput)
 }

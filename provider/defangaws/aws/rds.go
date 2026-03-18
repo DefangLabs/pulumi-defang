@@ -9,6 +9,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/rds"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type rdsResult struct {
@@ -176,8 +177,8 @@ func createRDS(
 	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
-	vpcID pulumi.StringOutput,
-	privateSubnetIDs pulumi.StringArrayOutput,
+	vpcID pulumix.Output[string],
+	privateSubnetIDs pulumix.Output[[]string],
 	serviceSG *ec2.SecurityGroup,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
@@ -190,7 +191,7 @@ func createRDS(
 	// Create DB subnet group
 	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
 		Description: pulumi.String(fmt.Sprintf("Subnet group for %s postgres", serviceName)),
-		SubnetIds:   privateSubnetIDs,
+		SubnetIds:   pulumi.StringArrayOutput(privateSubnetIDs),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating DB subnet group: %w", err)
@@ -198,7 +199,7 @@ func createRDS(
 
 	// Create security group for RDS
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       vpcID,
+		VpcId:       pulumi.StringOutput(vpcID),
 		Description: pulumi.String(fmt.Sprintf("RDS security group for %s", serviceName)),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{

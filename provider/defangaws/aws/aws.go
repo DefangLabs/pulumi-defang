@@ -11,6 +11,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // serviceComponent is a local component resource used to group per-service resources in the tree.
@@ -20,13 +21,13 @@ type serviceComponent struct {
 
 // EcsServiceResult holds the per-service outputs for an ECS service.
 type EcsServiceResult struct {
-	Endpoint   pulumi.StringOutput
+	Endpoint   pulumix.Output[string]
 	HasIngress bool
 }
 
 // PostgresResult holds the per-service outputs for an RDS Postgres instance.
 type PostgresResult struct {
-	Endpoint pulumi.StringOutput
+	Endpoint pulumix.Output[string]
 }
 
 // Build creates all AWS resources for the project.
@@ -73,7 +74,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 
 	// Create security group for services
 	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
-		VpcId:       vpcID,
+		VpcId:       pulumi.StringOutput(vpcID),
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -136,20 +137,27 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 			if err != nil {
 				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
 			}
-			endpoints[svcName] = pulumi.Sprintf("%s:%d", rdsResult.instance.Address, 5432)
-			// } else if svc.Redis != nil {
-			// 	// Managed Redis → ElastiCache (not implemented yet)
-			// 	if err := ctx.RegisterComponentResource("defang-aws:index:AwsRedis", svcName, comp, opts[0]); err != nil {
-			// 		return nil, fmt.Errorf("registering redis component %s: %w", svcName, err)
-			// 	}
-			// 	svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+			endpoints[svcName] = pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](rdsResult.instance.Address), func(addr string) string {
+				return fmt.Sprintf("%s:%d", addr, 5432)
+			}))
+		} else if svc.Redis != nil {
+			// Managed Redis → ElastiCache
+			if err := ctx.RegisterComponentResource("defang-aws:index:AwsRedis", svcName, comp, opts[0]); err != nil {
+				return nil, fmt.Errorf("registering redis component %s: %w", svcName, err)
+			}
+			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			// 	redisResult, err := createElasticache(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
-			// 	if err != nil {
-			// 		return nil, fmt.Errorf("creating Redis for %s: %w", svcName, err)
-			// 	}
-			// 	endpoints[svcName] = pulumi.Sprintf("%s:%d", redisResult.instance.Address, 6379)
-			// 	return nil, fmt.Errorf("Redis services are not yet supported on AWS")
+			redisResult, err := createElasticache(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating Redis for %s: %w", svcName, err)
+			}
+			port := 6379
+			if len(svc.Ports) > 0 {
+				port = svc.Ports[0].Target
+			}
+			endpoints[svcName] = pulumi.StringOutput(pulumix.Apply(redisResult.address, func(addr string) string {
+				return fmt.Sprintf("%s:%d", addr, port)
+			}))
 		} else {
 			// Container service → ECS
 			if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", svcName, comp, opts[0]); err != nil {
@@ -179,7 +187,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 			}
 
 			if ecsResult.hasIngress {
-				endpoints[svcName] = ecsResult.endpoint
+				endpoints[svcName] = pulumi.StringOutput(ecsResult.endpoint)
 			} else {
 				endpoints[svcName] = pulumi.Sprintf("%s (no ingress)", svcName)
 			}
@@ -214,7 +222,7 @@ func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc shared.Serv
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       net.vpcID,
+		VpcId:       pulumi.StringOutput(net.vpcID),
 		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -288,7 +296,7 @@ func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc shared.Serv
 
 	endpoint := ecsResult.endpoint
 	if !ecsResult.hasIngress {
-		endpoint = pulumi.Sprintf("%s (no ingress)", serviceName)
+		endpoint = pulumix.Val(fmt.Sprintf("%s (no ingress)", serviceName))
 	}
 
 	return &EcsServiceResult{
@@ -308,7 +316,7 @@ func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigPr
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       net.vpcID,
+		VpcId:       pulumi.StringOutput(net.vpcID),
 		Description: pulumi.String("Security group for Postgres"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -328,7 +336,11 @@ func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigPr
 		return nil, fmt.Errorf("creating RDS: %w", err)
 	}
 
+	endpoint := pulumix.Apply(pulumix.Output[string](rdsResult.instance.Address), func(addr string) string {
+		return fmt.Sprintf("%s:%d", addr, 5432)
+	})
+
 	return &PostgresResult{
-		Endpoint: pulumi.Sprintf("%s:%d", rdsResult.instance.Address, 5432),
+		Endpoint: endpoint,
 	}, nil
 }

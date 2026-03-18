@@ -13,24 +13,25 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type ecsServiceArgs struct {
 	cluster   *ecs.Cluster
 	execRole  *iam.Role
 	logGroup  *cloudwatch.LogGroup
-	vpcID     pulumi.StringOutput
-	subnetIDs pulumi.StringArrayOutput
+	vpcID     pulumix.Output[string]
+	subnetIDs pulumix.Output[[]string]
 	sg        *ec2.SecurityGroup
 	listener  *lb.Listener     // nil if no ALB
 	alb       *lb.LoadBalancer // nil if no ALB
 	region    string
-	imageURI  pulumi.StringOutput // container image URI (built or pre-built)
+	imageURI  pulumix.Output[string] // container image URI (built or pre-built)
 }
 
 type ecsServiceResult struct {
 	service    *ecs.Service
-	endpoint   pulumi.StringOutput
+	endpoint   pulumix.Output[string]
 	hasIngress bool
 }
 
@@ -190,10 +191,7 @@ func createECSService(
 		}
 	}
 
-	containerDefsJSON := pulumi.All(args.logGroup.Name, args.imageURI).ApplyT(func(vals []interface{}) (string, error) {
-		logGroupName := vals[0].(string)
-		imageURI := vals[1].(string)
-
+	containerDefsJSON := pulumix.Apply2Err(args.logGroup.Name, args.imageURI, func(logGroupName, imageURI string) (string, error) {
 		containerDef := map[string]interface{}{
 			"name":         serviceName,
 			"image":        imageURI,
@@ -225,7 +223,7 @@ func createECSService(
 			return "", err
 		}
 		return string(b), nil
-	}).(pulumi.StringOutput)
+	})
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
@@ -238,7 +236,7 @@ func createECSService(
 		Memory:                  pulumi.String(fargateMemory),
 		ExecutionRoleArn:        args.execRole.Arn,
 		TaskRoleArn:             taskRole.Arn,
-		ContainerDefinitions:    containerDefsJSON,
+		ContainerDefinitions:    pulumi.StringOutput(containerDefsJSON),
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
 			CpuArchitecture:       pulumi.String("ARM64"),
 			OperatingSystemFamily: pulumi.String("LINUX"),
@@ -256,7 +254,7 @@ func createECSService(
 	// Create target group and listener rule if service has ingress ports
 	var loadBalancers ecs.ServiceLoadBalancerArray
 	var lbDependsOn []pulumi.Resource
-	var endpointOutput pulumi.StringOutput
+	var endpointOutput pulumix.Output[string]
 
 	if svc.HasIngressPorts() && args.listener != nil {
 		firstIngress := true
@@ -303,7 +301,7 @@ func createECSService(
 				Port:                       pulumi.Int(port.Target),
 				Protocol:                   pulumi.String("HTTP"),
 				TargetType:                 pulumi.String("ip"),
-				VpcId:                      args.vpcID,
+				VpcId:                      pulumi.StringOutput(args.vpcID),
 				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
 				DeregistrationDelay:        pulumi.Int(recipe.DeregistrationDelay),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{
@@ -399,7 +397,7 @@ func createECSService(
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
-			Subnets:        args.subnetIDs,
+			Subnets:        pulumi.StringArrayOutput(args.subnetIDs),
 			SecurityGroups: pulumi.StringArray{args.sg.ID()},
 			AssignPublicIp: pulumi.Bool(true),
 		},
@@ -436,7 +434,7 @@ func createECSService(
 
 	hasIngress := svc.HasIngressPorts() && args.listener != nil
 	if hasIngress {
-		endpointOutput = pulumi.Sprintf("service %s via ALB", serviceName)
+		endpointOutput = pulumix.Val(fmt.Sprintf("service %s via ALB", serviceName))
 	}
 
 	return &ecsServiceResult{

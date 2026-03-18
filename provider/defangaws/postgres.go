@@ -8,6 +8,7 @@ import (
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // AwsPostgres is the controller struct for the defang-aws:index:AwsPostgres component.
@@ -26,7 +27,7 @@ type AwsPostgresInputs struct {
 // AwsPostgresOutputs holds the outputs of an AwsPostgres component.
 type AwsPostgresOutputs struct {
 	pulumi.ResourceState
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	Endpoint pulumix.Output[string] `pulumi:"endpoint"`
 }
 
 // Construct implements the ComponentResource interface for AwsPostgres.
@@ -53,7 +54,7 @@ func (*AwsPostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AwsP
 	comp.Endpoint = result.Endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint": pulumi.StringOutput(result.Endpoint),
 	}); err != nil {
 		return nil, err
 	}

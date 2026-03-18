@@ -5,11 +5,12 @@ import (
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type ecrResult struct {
 	repository *ecr.Repository
-	repoURL    pulumi.StringOutput
+	repoURL    pulumix.Output[string]
 }
 
 // createECRRepo creates an ECR repository for built images.
@@ -19,7 +20,7 @@ func createECRRepo(
 	opts ...pulumi.ResourceOption,
 ) (*ecrResult, error) {
 	repo, err := ecr.NewRepository(ctx, name, &ecr.RepositoryArgs{
-		ForceDelete:      pulumi.Bool(true),
+		ForceDelete:        pulumi.Bool(true),
 		ImageTagMutability: pulumi.String("MUTABLE"),
 	}, opts...)
 	if err != nil {
@@ -28,6 +29,6 @@ func createECRRepo(
 
 	return &ecrResult{
 		repository: repo,
-		repoURL:    repo.RepositoryUrl,
+		repoURL:    pulumix.Output[string](repo.RepositoryUrl),
 	}, nil
 }

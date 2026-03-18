@@ -7,6 +7,7 @@ import (
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // AwsEcsService is the controller struct for the defang-aws:index:AwsEcsService component.
@@ -30,7 +31,7 @@ type AwsEcsServiceInputs struct {
 // AwsEcsServiceOutputs holds the outputs of an AwsEcsService component.
 type AwsEcsServiceOutputs struct {
 	pulumi.ResourceState
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	Endpoint pulumix.Output[string] `pulumi:"endpoint"`
 }
 
 // Construct implements the ComponentResource interface for AwsEcsService.
@@ -62,7 +63,7 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 	comp.Endpoint = result.Endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint": pulumi.StringOutput(result.Endpoint),
 	}); err != nil {
 		return nil, err
 	}

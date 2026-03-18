@@ -12,12 +12,13 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // codeBuildResult holds the outputs of creating a CodeBuild project.
 type codeBuildResult struct {
 	project     *codebuild.Project
-	destination pulumi.StringOutput // ECR image URL (repo:tag) where the built image is pushed
+	destination pulumix.Output[string] // ECR image URL (repo:tag) where the built image is pushed
 }
 
 // codeBuildComputeType maps shm_size (in bytes) to CodeBuild compute type.
@@ -112,7 +113,7 @@ func createCodeBuildProject(
 	platform string,
 	codeBuildRole *iam.Role,
 	logGroup *cloudwatch.LogGroup,
-	ecrRepoURL pulumi.StringOutput,
+	ecrRepoURL pulumix.Output[string],
 	region string,
 	opts ...pulumi.ResourceOption,
 ) (*codeBuildResult, error) {
@@ -132,9 +133,14 @@ func createCodeBuildProject(
 	computeType := codeBuildComputeType(build.GetShmSizeBytes())
 
 	// Destination: repo:tag where we push the built image
-	destination := ecrRepoURL.ApplyT(func(url string) string {
+	destination := pulumix.Apply(ecrRepoURL, func(url string) string {
 		return url + ":latest"
-	}).(pulumi.StringOutput)
+	})
+
+	// The buildspec needs the destination at apply time
+	buildspecOutput := pulumix.Apply(destination, func(dest string) string {
+		return getBuildSpec(build, dest)
+	})
 
 	// Build environment variables (build args become env vars)
 	envVars := codebuild.ProjectEnvironmentEnvironmentVariableArray{
@@ -150,18 +156,11 @@ func createCodeBuildProject(
 		})
 	}
 
-	buildspec := getBuildSpec(build, "") // placeholder, will use destination in source
-
-	// The buildspec needs the destination at apply time
-	buildspecOutput := destination.ApplyT(func(dest string) string {
-		return getBuildSpec(build, dest)
-	}).(pulumi.StringOutput)
-
 	// Context must be an S3 URL
 	sourceType := "S3"
-	sourceLocation := build.Context.ApplyT(func(ctx string) string {
+	sourceLocation := pulumix.Apply(build.Context, func(ctx string) string {
 		return strings.TrimPrefix(ctx, "s3://")
-	}).(pulumi.StringOutput)
+	})
 
 	project, err := codebuild.NewProject(ctx, name, &codebuild.ProjectArgs{
 		Description: pulumi.Sprintf("Build image for %s", name),
@@ -189,15 +188,13 @@ func createCodeBuildProject(
 		},
 		Source: &codebuild.ProjectSourceArgs{
 			Type:      pulumi.String(sourceType),
-			Location:  sourceLocation,
-			Buildspec: buildspecOutput,
+			Location:  pulumi.StringOutput(sourceLocation),
+			Buildspec: pulumi.StringOutput(buildspecOutput),
 		},
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild project: %w", err)
 	}
-
-	_ = buildspec // suppress unused warning
 
 	return &codeBuildResult{
 		project:     project,
@@ -237,10 +234,7 @@ func createCodeBuildRole(
 
 	// Inline policy with CloudWatch Logs, S3, ECR permissions
 	// Matches TS createCodeBuildRole policy statements
-	policyDoc := pulumi.All(logGroup.Arn, ecrRepo.Arn).ApplyT(func(args []interface{}) (string, error) {
-		logGroupArn := args[0].(string)
-		ecrRepoArn := args[1].(string)
-
+	policyDoc := pulumix.Apply2Err(logGroup.Arn, ecrRepo.Arn, func(logGroupArn, ecrRepoArn string) (string, error) {
 		policy := map[string]interface{}{
 			"Version": "2012-10-17",
 			"Statement": []map[string]interface{}{
@@ -299,11 +293,11 @@ func createCodeBuildRole(
 
 		b, err := json.Marshal(policy)
 		return string(b), err
-	}).(pulumi.StringOutput)
+	})
 
 	_, err = iam.NewRolePolicy(ctx, name+"-policy", &iam.RolePolicyArgs{
 		Role:   role.Name,
-		Policy: policyDoc,
+		Policy: pulumi.StringOutput(policyDoc),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild role policy: %w", err)

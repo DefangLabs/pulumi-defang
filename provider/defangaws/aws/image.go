@@ -12,13 +12,14 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // imageInfra holds shared infrastructure for building container images.
 // Created once per project, shared across all services that need builds.
 type imageInfra struct {
 	ecrRepo       *ecr.Repository
-	ecrRepoURL    pulumi.StringOutput
+	ecrRepoURL    pulumix.Output[string]
 	codeBuildRole *iam.Role
 	logGroup      *cloudwatch.LogGroup
 	region        string
@@ -56,7 +57,7 @@ type imageBuildResult struct {
 	// imageURI is the ECR image URI to use in task definitions.
 	// For built images: "123.dkr.ecr.region.amazonaws.com/repo:tag"
 	// For pre-built images: the original image string.
-	imageURI pulumi.StringOutput
+	imageURI pulumix.Output[string]
 }
 
 // codeBuildImageBuildResource is a Pulumi resource state for the CodeBuildImageBuild custom resource.
@@ -68,7 +69,7 @@ type codeBuildImageBuildResource struct {
 }
 
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build shared.BuildInput) pulumi.StringOutput {
+func buildTriggerHash(build shared.BuildInput) pulumix.Output[string] {
 	staticHash := func(context string) string {
 		h := sha256.New()
 		h.Write([]byte(context))
@@ -86,7 +87,7 @@ func buildTriggerHash(build shared.BuildInput) pulumi.StringOutput {
 		}
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}
-	return build.Context.ApplyT(staticHash).(pulumi.StringOutput)
+	return pulumix.Apply(build.Context, staticHash)
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.
@@ -128,15 +129,15 @@ func buildServiceImage(
 	err = ctx.RegisterResource("defang-aws:defangaws:CodeBuildImageBuild", serviceName+"-build", pulumi.Map{
 		"projectName": cbResult.project.Name,
 		"region":      pulumi.String(infra.region),
-		"destination": cbResult.destination,
-		"triggers":    pulumi.StringArray{triggerHash},
+		"destination": pulumi.StringOutput(cbResult.destination),
+		"triggers":    pulumi.StringArray{pulumi.StringOutput(triggerHash)},
 	}, &buildResource, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild build resource for %s: %w", serviceName, err)
 	}
 
 	// Use the image output from the build resource (destination with potential digest)
-	imageURI := buildResource.Image
+	imageURI := pulumix.Output[string](buildResource.Image)
 
 	return &imageBuildResult{
 		imageURI: imageURI,
@@ -153,15 +154,15 @@ func getServiceImage(
 	svc shared.ServiceInput,
 	infra *imageInfra,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
+) (pulumix.Output[string], error) {
 	if svc.Build != nil && infra != nil {
 		result, err := buildServiceImage(ctx, serviceName, svc, infra, opts...)
 		if err != nil {
-			return pulumi.StringOutput{}, err
+			return pulumix.Output[string]{}, err
 		}
 		return result.imageURI, nil
 	}
 
 	// Use pre-built image (either service.image or default)
-	return pulumi.String(svc.GetImage()).ToStringOutput(), nil
+	return pulumix.Val(svc.GetImage()), nil
 }
