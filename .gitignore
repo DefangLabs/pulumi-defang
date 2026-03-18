@@ -4,15 +4,9 @@
 .pulumi
 bin
 sdk
-examples/*/Pulumi.example.yaml
+examples/**/.defang
+examples/**/Pulumi.*.yaml
 schema-defang.json
 pulumi-resource-defang-aws
 pulumi-resource-defang-azure
 pulumi-resource-defang-gcp
-examples/aws/aws
-examples/azure/azure
-examples/cd/cd
-examples/gcp/gcp
-examples/go/provider-defang
-examples/multi-cloud/multi-cloud
-examples/**/Pulumi.*.yaml

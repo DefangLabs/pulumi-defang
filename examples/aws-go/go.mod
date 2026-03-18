@@ -1,4 +1,4 @@
-module github.com/DefangLabs/pulumi-defang/examples/aws
+module github.com/DefangLabs/pulumi-defang/examples/aws-go
 
 go 1.25.6
 
