@@ -99,3 +99,19 @@ pre-commit: provider test lint
 .PHONY: pre-push
 pre-push:
 	#target intentionally blank
+
+.PHONY: go_example
+go_example:
+	cd examples/aws-go && go build .
+
+.PHONY: nodejs_example
+nodejs_example:
+	cd examples/aws-nodejs && npm install && npm run build
+
+.PHONY: python_example
+python_example:
+	cd examples/aws-python && pip install -q -r requirements.txt && python -m py_compile __main__.py
+
+.PHONY: dotnet_example
+dotnet_example:
+	cd examples/aws-dotnet && dotnet build

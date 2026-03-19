@@ -1,0 +1,15 @@
+{
+    "name": "aws-nodejs-example",
+    "version": "1.0.0",
+    "dependencies": {
+        "@defang-io/pulumi-defang-aws": "file:../../sdk/nodejs/defang-aws",
+        "@pulumi/pulumi": "^3.142.0"
+    },
+    "devDependencies": {
+        "@types/node": "^18",
+        "typescript": "^4.3.5"
+    },
+    "scripts": {
+        "build": "tsc"
+    }
+}

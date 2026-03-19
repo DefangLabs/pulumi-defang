@@ -1,0 +1,7 @@
+name: defang-aws-dotnet-example
+runtime: dotnet
+description: Example using defang-aws to deploy services to AWS
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin

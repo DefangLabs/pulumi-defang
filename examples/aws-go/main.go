@@ -1,7 +1,7 @@
 package main
 
 import (
-	defangaws "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/defangaws"
+	defangaws "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws"
 	"github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
