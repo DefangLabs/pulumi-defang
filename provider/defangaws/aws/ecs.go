@@ -227,6 +227,11 @@ func createECSService(
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
+	cpuArch := "X86_64"
+	if platformToArch(svc.GetPlatform()) == "arm64" {
+		cpuArch = "ARM64"
+	}
+
 	// Create task definition
 	taskDef, err := ecs.NewTaskDefinition(ctx, serviceName, &ecs.TaskDefinitionArgs{
 		Family:                  pulumi.String(serviceName),
@@ -238,7 +243,7 @@ func createECSService(
 		TaskRoleArn:             taskRole.Arn,
 		ContainerDefinitions:    pulumi.StringOutput(containerDefsJSON),
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
-			CpuArchitecture:       pulumi.String("ARM64"),
+			CpuArchitecture:       pulumi.String(cpuArch),
 			OperatingSystemFamily: pulumi.String("LINUX"),
 		},
 		Tags: pulumi.StringMap{
