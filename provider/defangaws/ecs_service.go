@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -18,6 +19,7 @@ type AwsEcsServiceInputs struct {
 	Build       *shared.BuildInput        `pulumi:"build,optional"`
 	Image       *string                   `pulumi:"image,optional"`
 	Platform    *string                   `pulumi:"platform,optional"`
+	ProjectName string                    `pulumi:"project_name"`
 	Ports       []shared.PortConfig       `pulumi:"ports,optional"`
 	Deploy      *shared.DeployConfig      `pulumi:"deploy,optional"`
 	Environment map[string]*string        `pulumi:"environment,optional"`
@@ -55,7 +57,8 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 		DomainName:  inputs.DomainName,
 	}
 
-	result, err := provideraws.BuildStandaloneECS(ctx, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
+	configProvider := aws.NewConfigProvider(inputs.ProjectName)
+	result, err := provideraws.BuildStandaloneECS(ctx, configProvider, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS ECS service: %w", err)
 	}

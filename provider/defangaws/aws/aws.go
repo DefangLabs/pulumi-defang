@@ -208,7 +208,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 
 // BuildStandaloneECS creates all AWS resources for a single standalone ECS service.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*EcsServiceResult, error) {
+func BuildStandaloneECS(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*EcsServiceResult, error) {
 	recipe := LoadRecipe(ctx)
 
 	region, err := aws.GetRegion(ctx, nil)
@@ -278,7 +278,7 @@ func BuildStandaloneECS(ctx *pulumi.Context, serviceName string, svc shared.Serv
 		return nil, fmt.Errorf("resolving image for %s: %w", serviceName, err)
 	}
 
-	ecsResult, err := createECSService(ctx, serviceName, svc, &ecsServiceArgs{
+	ecsResult, err := createECSService(ctx, configProvider, serviceName, svc, &ecsServiceArgs{
 		cluster:   cluster,
 		execRole:  execRole,
 		logGroup:  logGroup,
