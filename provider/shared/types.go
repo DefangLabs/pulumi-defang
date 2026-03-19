@@ -196,9 +196,9 @@ func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider Config
 		version = GetPostgresVersion(ParseImageTag(*s.Image))
 	}
 
-	dbName := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
-	username := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
-	password := getConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "")
+	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
+	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
+	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "")
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {
@@ -219,7 +219,7 @@ func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider Config
 	}
 }
 
-func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string, defaultValue string) pulumi.StringOutput {
+func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string, defaultValue string) pulumi.StringOutput {
 	if s.Environment == nil {
 		return pulumi.StringOutput{}
 	}

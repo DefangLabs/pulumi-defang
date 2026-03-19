@@ -32,6 +32,80 @@ func (testMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	return args.Args, nil
 }
 
+func str(s string) *string { return &s }
+
+func TestGetConfigOrEnvValue(t *testing.T) {
+	tests := []struct {
+		name         string
+		environment  map[string]*string
+		key          string
+		defaultValue string
+		configs      map[string]string
+		// wantUnknown skips value assertion (zero output returned for nil env map)
+		wantUnknown bool
+		expected    string
+	}{
+		{
+			name:        "nil environment returns zero output",
+			environment: nil,
+			key:         "MY_KEY",
+			wantUnknown: true,
+		},
+		{
+			name:         "key absent returns default",
+			environment:  map[string]*string{},
+			key:          "MY_KEY",
+			defaultValue: "default",
+			expected:     "default",
+		},
+		{
+			name:        "nil value delegates to config provider",
+			environment: map[string]*string{"MY_KEY": nil},
+			key:         "MY_KEY",
+			configs:     map[string]string{"MY_KEY": "from-config"},
+			expected:    "from-config",
+		},
+		{
+			name:        "empty string value returns empty",
+			environment: map[string]*string{"MY_KEY": str("")},
+			key:         "MY_KEY",
+			expected:    "",
+		},
+		{
+			name:        "plain string value returned as-is",
+			environment: map[string]*string{"MY_KEY": str("hello")},
+			key:         "MY_KEY",
+			expected:    "hello",
+		},
+		{
+			name:        "interpolated value resolved via config provider",
+			environment: map[string]*string{"MY_KEY": str("prefix_${SECRET}_suffix")},
+			key:         "MY_KEY",
+			configs:     map[string]string{"SECRET": "resolved"},
+			expected:    "prefix_resolved_suffix",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				svc := ServiceInput{Environment: tt.environment}
+				provider := &mockConfigProvider{values: tt.configs}
+				out := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
+
+				if !tt.wantUnknown {
+					out.ApplyT(func(got string) string {
+						assert.Equal(t, tt.expected, got)
+						return got
+					})
+				}
+				return nil
+			}, pulumi.WithMocks("proj", "stack", testMocks{}))
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestInterpolateEnvironmentVariable(t *testing.T) {
 	tests := []struct {
 		name     string
