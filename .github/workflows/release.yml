@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
     - name: Install Go
@@ -64,7 +64,7 @@ jobs:
     environment: publish
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Unshallow clone for tags
         run: git fetch --prune --unshallow --tags
       - name: Install Go
@@ -79,7 +79,7 @@ jobs:
         uses: pulumi/action-install-pulumi-cli@v2.0.0
       - if: ${{ matrix.language == 'nodejs'}}
         name: Setup Node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: ${{matrix.nodeversion}}
           registry-url: ${{env.NPM_REGISTRY_URL}}
@@ -90,7 +90,7 @@ jobs:
           dotnet-version: ${{matrix.dotnetversion}}
       - if: ${{ matrix.language == 'python'}}
         name: Setup Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v5
         with:
           python-version: ${{matrix.pythonversion}}
       - name: Generate SDK
