@@ -14,6 +14,13 @@ GOPATH		:= $(shell go env GOPATH)
 
 WORKING_DIR     := $(shell pwd)
 
+# Derive the major version to construct a Go-conventions-compliant module path.
+# Go requires /vN suffix for major versions > 1 (e.g. sdk/v2/go/defang-gcp).
+MAJOR_VERSION    := $(shell echo "$(VERSION)" | sed -E 's/v?([0-9]+)\..*/\1/')
+SDK_VERSION_INFIX := $(if $(filter-out 1,$(MAJOR_VERSION)),v$(MAJOR_VERSION)/,)
+SDK_GO_DIR       := sdk/$(SDK_VERSION_INFIX)go/$(PACK)
+SDK_MODULE       := $(PROJECT)/sdk/$(SDK_VERSION_INFIX)go/$(PACK)
+
 OS    := $(shell uname)
 SHELL := /bin/bash
 
@@ -32,10 +39,10 @@ version:
 
 .PHONY: go_sdk
 go_sdk: provider
-	rm -rf "sdk/go/${PACK}"
+	rm -rf "$(SDK_GO_DIR)"
 	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language go -o "$(WORKING_DIR)/.sdk.tmp"
-	mkdir -p sdk/go && mv "$(WORKING_DIR)/.sdk.tmp/go/defanggcp" "sdk/go/${PACK}" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
-	cd "sdk/go/${PACK}" && go mod init "$(PROJECT)/sdk/go/${PACK}" && \
+	mkdir -p "$(dir $(SDK_GO_DIR))" && mv "$(WORKING_DIR)/.sdk.tmp/go/defanggcp" "$(SDK_GO_DIR)" && rm -rf "$(WORKING_DIR)/.sdk.tmp"
+	cd "$(SDK_GO_DIR)" && go mod init "$(SDK_MODULE)" && \
 		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
 		go mod tidy
 
@@ -88,4 +95,4 @@ install: provider
 
 .PHONY: clean
 clean:
-	rm -rf "$(WORKING_DIR)/bin/${PROVIDER}" "sdk/go/${PACK}" "sdk/nodejs/${PACK}" "sdk/python/${PACK}" "sdk/dotnet/${PACK}"
+	rm -rf "$(WORKING_DIR)/bin/${PROVIDER}" "$(SDK_GO_DIR)" "sdk/nodejs/${PACK}" "sdk/python/${PACK}" "sdk/dotnet/${PACK}"
