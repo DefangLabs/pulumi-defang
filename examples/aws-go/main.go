@@ -32,7 +32,7 @@ func main() {
 						Context:    pulumi.Sprintf("s3://%s/%s", buildContext.Bucket, buildContext.Key),
 						Dockerfile: pulumi.StringPtr("Dockerfile"),
 					},
-					Command: pulumi.StringArray{pulumi.String("./run.sh")},
+					// Command: pulumi.StringArray{pulumi.String("./run.sh")},
 					Ports: shared.PortConfigArray{
 						shared.PortConfigArgs{
 							Target:      pulumi.Int(8000),
