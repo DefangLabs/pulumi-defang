@@ -2,52 +2,68 @@ package aws
 
 import (
 	"fmt"
-	"path"
+	"path/filepath"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type ConfigProvider struct {
 	projectName string
+	cache       map[string]pulumi.StringOutput
 }
 
 func NewConfigProvider(projectName string) *ConfigProvider {
-	return &ConfigProvider{projectName: projectName}
+	return &ConfigProvider{projectName: projectName, cache: make(map[string]pulumi.StringOutput)}
 }
 
 func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput {
-	return getParameterValue(ctx, cp.projectName, key)
-}
-
-func getParameterValue(ctx *pulumi.Context, projectName string, sourceName string) pulumi.StringOutput {
 	// In dry-run mode, return a placeholder value
 	if ctx.DryRun() {
-		return pulumi.Sprintf("dry-run-%s", sourceName)
+		return pulumi.Sprintf("dry-run-%s", key).ToStringOutput()
 	}
 
+	if val, ok := cp.cache[key]; ok {
+		return val
+	}
+	values, err := getParametersByPath(ctx, cp.projectName)
+	if err != nil {
+		return pulumi.StringOutput{}
+	}
+
+	// update cache with retrieved values
+	for k, v := range values {
+		cp.cache[k] = pulumi.String(v).ToStringOutput()
+	}
+
+	if val, ok := cp.cache[key]; ok {
+		return val
+	}
+
+	return pulumi.StringOutput{}
+}
+
+func getParametersByPath(ctx *pulumi.Context, projectName string) (map[string]string, error) {
 	path := getSecretPath(projectName, ctx.Stack())
+	withDecryption := true
 
-	gpr := ssm.GetParametersByPathOutput(ctx, ssm.GetParametersByPathOutputArgs{
-		Path:           pulumi.String(path),
-		WithDecryption: pulumi.Bool(true),
+	gpr, err := ssm.GetParametersByPath(ctx, &ssm.GetParametersByPathArgs{
+		Path:           path,
+		WithDecryption: &withDecryption,
 	})
+	if err != nil {
+		return nil, err
+	}
 
-	return pulumi.StringOutput(pulumix.Apply2Err(gpr.Names(), gpr.Values(), func(names, vals []string) (string, error) {
-		return findValueForName(names, vals, sourceName)
-	}))
+	result := make(map[string]string)
+	for i, name := range gpr.Names {
+		baseName := filepath.Base(name)
+		result[baseName] = gpr.Values[i]
+	}
+
+	return result, nil
 }
 
 func getSecretPath(projectName, stackName string) string {
 	return fmt.Sprintf("/Defang/%s/%s/", projectName, stackName)
-}
-
-func findValueForName(names, vals []string, sourceName string) (string, error) {
-	for i, name := range names {
-		if sourceName == path.Base(name) {
-			return vals[i], nil
-		}
-	}
-	return "", fmt.Errorf("value not found for name: %s", sourceName)
 }
