@@ -55,18 +55,22 @@ ensure:
 	go mod tidy
 	cd tests && go mod tidy
 
+GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
+
 .PHONY: test_provider
 test_provider:
-	cd tests && go test -short -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM} ./...
+	cd tests && ${GO_TEST} -short ./...
+
+.PHONY: test_unit
+test_unit:
+	${GO_TEST} ./provider/...
+
+.PHONY: test
+test: test_unit test_provider
 
 .PHONY: version
 version:
 	@$(MAKE) -f defang-aws.mk version
-
-GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
-
-.PHONY: test
-test: test_provider
 
 .PHONY: lint
 lint:
