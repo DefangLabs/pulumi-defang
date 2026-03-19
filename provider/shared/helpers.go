@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 // GetPortProtocol returns the protocol, defaulting to "tcp".
@@ -149,6 +151,60 @@ func ParseInterpolatedString(s string) []Match {
 
 	if lastIndex < len(s) {
 		result = append(result, Literal(s[lastIndex:]))
+	}
+	return result
+}
+
+func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string, defaultValue string) pulumi.StringOutput {
+	if s.Environment == nil {
+		return pulumi.StringOutput{}
+	}
+
+	value, exists := s.Environment[key]
+	if !exists {
+		return pulumi.String(defaultValue).ToStringOutput()
+	}
+
+	if value == nil {
+		// If the value is explicitly set to nil, treat it as a sensitive config reference
+		return configProvider.GetConfig(ctx, key)
+	}
+
+	v := *value
+	if v == "" {
+		return pulumi.String("").ToStringOutput()
+	}
+
+	return pulumi.String(v).ToStringOutput().ApplyT(func(v string) pulumi.StringOutput {
+		return InterpolateEnvironmentVariable(ctx, configProvider, v)
+	}).(pulumi.StringOutput)
+}
+
+func InterpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
+	parsed := ParseInterpolatedString(value)
+
+	if len(parsed) == 0 {
+		return pulumi.String("").ToStringOutput()
+	}
+
+	parts := make([]pulumi.StringOutput, len(parsed))
+	for i, match := range parsed {
+		if !match.IsVar {
+			parts[i] = pulumi.String(match.Literal).ToStringOutput()
+		} else {
+			parts[i] = configProvider.GetConfig(ctx, match.Variable)
+		}
+	}
+
+	// Fold over parts, joining with ApplyT since pulumi.Concat doesn't exist in Go
+	result := parts[0]
+	for _, part := range parts[1:] {
+		p := part // capture loop var
+		result = result.ApplyT(func(acc string) pulumi.StringOutput {
+			return p.ApplyT(func(s string) string {
+				return acc + s
+			}).(pulumi.StringOutput)
+		}).(pulumi.StringOutput)
 	}
 	return result
 }
