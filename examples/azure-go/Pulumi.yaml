@@ -1,3 +1,7 @@
 name: defang-azure-go-example
 runtime: go
 description: Example using defang-azure to deploy services to Azure
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin

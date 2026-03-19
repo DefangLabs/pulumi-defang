@@ -1,3 +1,7 @@
 name: defang-gcp-go-example
 runtime: go
 description: Example using defang-gcp to deploy services to GCP
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
