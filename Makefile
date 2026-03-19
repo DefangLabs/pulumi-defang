@@ -5,6 +5,7 @@ PROJECT         := github.com/DefangLabs/pulumi-defang
 PROVIDER_PATH   := provider
 
 GOPATH		:= $(shell go env GOPATH)
+export GOTOOLCHAIN := go1.25.6
 
 WORKING_DIR     := $(shell pwd)
 TESTPARALLELISM := 4
