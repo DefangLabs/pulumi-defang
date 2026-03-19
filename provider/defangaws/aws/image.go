@@ -87,7 +87,7 @@ func buildTriggerHash(build shared.BuildInput) pulumix.Output[string] {
 		}
 		return hex.EncodeToString(h.Sum(nil))[:16]
 	}
-	return pulumix.Apply(build.Context, staticHash)
+	return pulumix.Apply(pulumi.String(build.Context), staticHash)
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.

@@ -158,7 +158,7 @@ func createCodeBuildProject(
 
 	// Context must be an S3 URL
 	sourceType := "S3"
-	sourceLocation := pulumix.Apply(build.Context, func(ctx string) string {
+	sourceLocation := pulumix.Apply(pulumi.String(build.Context), func(ctx string) string {
 		return strings.TrimPrefix(ctx, "s3://")
 	})
 

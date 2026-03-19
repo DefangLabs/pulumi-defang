@@ -95,9 +95,8 @@ type ResourceConfig struct {
 
 // BuildInput mirrors the Docker Compose build spec.
 type BuildInput struct {
-	// Build context path or URL (required). Typed as StringOutput to support
-	// values derived from other resource outputs (e.g. an S3 object URL).
-	Context pulumi.StringOutput `pulumi:"context"`
+	// Build context path or URL (required).
+	Context string `pulumi:"context"`
 
 	// Dockerfile path relative to context (default: "Dockerfile")
 	Dockerfile *string `pulumi:"dockerfile,optional" yaml:"dockerfile,omitempty"`
