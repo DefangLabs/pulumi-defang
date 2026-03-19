@@ -240,11 +240,11 @@ func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s S
 	}
 
 	return pulumi.String(v).ToStringOutput().ApplyT(func(v string) pulumi.StringOutput {
-		return interpolateEnvironmentVariable(ctx, configProvider, v)
+		return InterpolateEnvironmentVariable(ctx, configProvider, v)
 	}).(pulumi.StringOutput)
 }
 
-func interpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
+func InterpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
 	parsed := ParseInterpolatedString(value)
 
 	parts := make([]pulumi.StringOutput, len(parsed))

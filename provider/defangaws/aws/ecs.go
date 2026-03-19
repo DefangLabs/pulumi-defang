@@ -129,6 +129,7 @@ func portProtocol(p shared.PortConfig) string {
 // createECSService creates an ECS Fargate service for a container service.
 func createECSService(
 	ctx *pulumi.Context,
+	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
 	args *ecsServiceArgs,
@@ -158,9 +159,10 @@ func createECSService(
 	}
 	for k, v := range svc.Environment {
 		if v != nil {
+			resolved := shared.InterpolateEnvironmentVariable(ctx, configProvider, *v) // resolve value from config or env
 			envVars = append(envVars, map[string]interface{}{
 				"name":  k,
-				"value": *v,
+				"value": resolved,
 			})
 		}
 	}

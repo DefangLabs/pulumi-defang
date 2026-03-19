@@ -170,7 +170,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 				return nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 			}
 
-			ecsResult, err := createECSService(ctx, svcName, svc, &ecsServiceArgs{
+			ecsResult, err := createECSService(ctx, configProvider, svcName, svc, &ecsServiceArgs{
 				cluster:   cluster,
 				execRole:  execRole,
 				logGroup:  logGroup,
