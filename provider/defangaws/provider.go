@@ -28,7 +28,8 @@ func Provider() p.Provider {
 			// infer.Component[*AwsRedis, AwsRedisInputs, *AwsRedisOutputs](&AwsRedis{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
-			"provider": "index",
+			"provider":  "index",
+			"defangaws": "index",
 		},
 
 		Metadata: schema.Metadata{
