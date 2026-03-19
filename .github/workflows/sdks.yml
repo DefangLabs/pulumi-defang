@@ -14,8 +14,6 @@ jobs:
       matrix:
         dotnetversion:
           - 6.0.x
-        goversion:
-          - 1.21.x
         nodeversion:
           - 20.x
         pythonversion:
@@ -38,7 +36,7 @@ jobs:
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{matrix.goversion}}
+        go-version-file: go.mod
 
     - name: Install pulumictl
       uses: jaxxstorm/action-install-gh-release@v1.12.0
