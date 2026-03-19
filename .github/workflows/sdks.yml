@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         dotnetversion:
-          - 6.0.x
+          - 8.0.x
         nodeversion:
           - 20.x
         pythonversion:
