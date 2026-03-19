@@ -3,6 +3,7 @@ package aws
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -11,6 +12,8 @@ import (
 type ConfigProvider struct {
 	projectName string
 	cache       map[string]pulumi.StringOutput
+	mu          sync.Mutex
+	fetched     bool
 }
 
 func NewConfigProvider(projectName string) *ConfigProvider {
@@ -23,17 +26,17 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.Stri
 		return pulumi.Sprintf("dry-run-%s", key).ToStringOutput()
 	}
 
-	if val, ok := cp.cache[key]; ok {
-		return val
-	}
-	values, err := getParametersByPath(ctx, cp.projectName)
-	if err != nil {
-		return pulumi.StringOutput{}
-	}
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
 
-	// update cache with retrieved values
-	for k, v := range values {
-		cp.cache[k] = pulumi.String(v).ToStringOutput()
+	if !cp.fetched {
+		values, err := getParametersByPath(ctx, cp.projectName)
+		if err == nil {
+			cp.fetched = true
+			for k, v := range values {
+				cp.cache[k] = pulumi.String(v).ToStringOutput()
+			}
+		}
 	}
 
 	if val, ok := cp.cache[key]; ok {
