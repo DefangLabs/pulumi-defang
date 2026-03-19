@@ -247,6 +247,10 @@ func getConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s S
 func InterpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
 	parsed := ParseInterpolatedString(value)
 
+	if len(parsed) == 0 {
+		return pulumi.String("").ToStringOutput()
+	}
+
 	parts := make([]pulumi.StringOutput, len(parsed))
 	for i, match := range parsed {
 		if !match.IsVar {
