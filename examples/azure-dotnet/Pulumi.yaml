@@ -1,5 +1,5 @@
 name: defang-azure-yaml
-runtime: go
+runtime: dotnet
 description: Example using defang-azure to deploy services to Azure (Pulumi YAML)
 plugins:
   providers:

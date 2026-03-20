@@ -1,7 +1,7 @@
 import pulumi
-import pulumi_defang_aws as defang_aws
+import pulumi_defang_gcp as defang_gcp
 
-aws_yaml = defang_aws.Project("aws-yaml", services={
+gcp_yaml = defang_gcp.defanggcp.Project("gcp-yaml", services={
     "app": {
         "image": "nginx",
         "ports": [{
@@ -11,4 +11,4 @@ aws_yaml = defang_aws.Project("aws-yaml", services={
         }],
     },
 })
-pulumi.export("endpoints", aws_yaml.endpoints)
+pulumi.export("endpoints", gcp_yaml.endpoints)

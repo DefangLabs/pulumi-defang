@@ -65,7 +65,7 @@ jobs:
         uses: ./.github/actions/build-sdk
         with:
           language: ${{ matrix.language }}
-          provider: ${{ matrix.provider }}
+          provider: defang-${{ matrix.provider }}
 
       - name: Compress SDK folder
         run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/${{ matrix.provider }} .
@@ -98,6 +98,6 @@ jobs:
           - python
           - dotnet
         provider:
-          - defang-aws
-          - defang-gcp
-          - defang-azure
+          - aws
+          - gcp
+          - azure

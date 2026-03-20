@@ -94,24 +94,31 @@ install-git-hooks:
 	chmod +x .git/hooks/pre-push
 
 .PHONY: pre-commit
-pre-commit: provider test lint
+pre-commit: provider test lint sdks examples
 
 .PHONY: pre-push
 pre-push:
 	#target intentionally blank
 
-.PHONY: go_example
-go_example:
-	cd examples/aws-go && go build .
+# Generate language examples from YAML sources
+# Requires providers to be built first: make install
+EXAMPLE_PROVIDERS  := aws gcp azure
+EXAMPLE_LANGUAGES  := go nodejs python dotnet
 
-.PHONY: nodejs_example
-nodejs_example:
-	cd examples/aws-nodejs && npm install && npm run build
+.PHONY: examples
+examples: $(foreach p,$(EXAMPLE_PROVIDERS),gen_examples_$(p))
 
-.PHONY: python_example
-python_example:
-	cd examples/aws-python && pip install -q -r requirements.txt && python -m py_compile __main__.py
+define example_target
+.PHONY: example_$(1)_$(2)
+example_$(1)_$(2): install_defang-$(1)
+	cd examples/$(1)-yaml && pulumi convert --language $(2) --generate-only --out ../$(1)-$(2)
+endef
 
-.PHONY: dotnet_example
-dotnet_example:
-	cd examples/aws-dotnet && dotnet build
+$(foreach p,$(EXAMPLE_PROVIDERS),$(foreach l,$(EXAMPLE_LANGUAGES),$(eval $(call example_target,$(p),$(l)))))
+
+define gen_examples_provider_target
+.PHONY: gen_examples_$(1)
+gen_examples_$(1): $(foreach l,$(EXAMPLE_LANGUAGES),example_$(1)_$(l))
+endef
+
+$(foreach p,$(EXAMPLE_PROVIDERS),$(eval $(call gen_examples_provider_target,$(p))))

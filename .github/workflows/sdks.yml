@@ -18,9 +18,9 @@ jobs:
         - dotnet
         - go
         provider:
-        - defang-aws
-        - defang-gcp
-        - defang-azure
+        - aws
+        - gcp
+        - azure
 
     steps:
     - name: Checkout Repo
@@ -30,17 +30,27 @@ jobs:
       uses: ./.github/actions/build-sdk
       with:
         language: ${{ matrix.language }}
-        provider: ${{ matrix.provider }}
+        provider: defang-${{ matrix.provider }}
 
-    - name: Check worktree clean
+    - name: Check clean sdks working tree
       run: |
         git update-index -q --refresh
-        if ! git diff-files --quiet; then
-            >&2 echo "error: working tree is not clean, aborting!"
-            git status
-            git diff
-            exit 1
+        if ! git diff-index --quiet HEAD -- sdks/; then
+          >&2 echo "error: sdks directory is not clean, aborting!"
+          git status sdks/
+          git diff sdks/
+          exit 1
         fi
 
     - name: Build Example
-      run: make ${{ matrix.language }}_example
+      run: make example_${{ matrix.provider }}_${{ matrix.language }}
+
+    - name: Check clean examples working tree
+      run: |
+        git update-index -q --refresh
+        if ! git diff-index --quiet HEAD -- examples/; then
+            >&2 echo "error: examples directory is not clean, aborting!"
+            git status examples/
+            git diff examples/
+            exit 1
+        fi

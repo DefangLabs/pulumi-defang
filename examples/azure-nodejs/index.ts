@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
-import * as defang_aws from "@defang-io/pulumi-defang-aws";
+import * as defang_azure from "@defang-io/pulumi-defang-azure";
 
-const awsYaml = new defang_aws.Project("aws-yaml", {services: {
+const azureYaml = new defang_azure.defangazure.Project("azure-yaml", {services: {
     app: {
         image: "nginx",
         ports: [{
@@ -11,4 +11,4 @@ const awsYaml = new defang_aws.Project("aws-yaml", {services: {
         }],
     },
 }});
-export const endpoints = awsYaml.endpoints;
+export const endpoints = azureYaml.endpoints;

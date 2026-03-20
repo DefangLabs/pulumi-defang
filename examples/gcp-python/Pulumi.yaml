@@ -1,5 +1,5 @@
 name: defang-gcp-yaml
-runtime: go
+runtime: python
 description: Example using defang-gcp to deploy services to GCP (Pulumi YAML)
 plugins:
   providers:

@@ -1,20 +1,20 @@
 using System.Collections.Generic;
 using System.Linq;
 using Pulumi;
-using DefangAws = DefangLabs.DefangAws;
+using DefangGcp = DefangLabs.DefangGcp;
 
 return await Deployment.RunAsync(() => 
 {
-    var awsYaml = new DefangAws.Project("aws-yaml", new()
+    var gcpYaml = new DefangGcp.Defanggcp.Project("gcp-yaml", new()
     {
         Services = 
         {
-            { "app", new DefangAws.Shared.Inputs.ServiceInputArgs
+            { "app", new DefangGcp.Shared.Inputs.ServiceInputArgs
             {
                 Image = "nginx",
                 Ports = new[]
                 {
-                    new DefangAws.Shared.Inputs.PortConfigArgs
+                    new DefangGcp.Shared.Inputs.PortConfigArgs
                     {
                         Target = 80,
                         Mode = "ingress",
@@ -27,7 +27,7 @@ return await Deployment.RunAsync(() =>
 
     return new Dictionary<string, object?>
     {
-        ["endpoints"] = awsYaml.Endpoints,
+        ["endpoints"] = gcpYaml.Endpoints,
     };
 });
 

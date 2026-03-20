@@ -1,1 +1,2 @@
-../../sdk/python/defang-aws
+pulumi-defang-aws==2.1.0-alpha+dirty
+pulumi>=3.0.0,<4.0.0
