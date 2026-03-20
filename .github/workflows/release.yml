@@ -31,21 +31,25 @@ jobs:
   publish_binary:
     name: publish
     runs-on: ubuntu-latest
+    env:
+      # jaxxstorm/action-install-gh-release does not yet have a Node.js 24
+      # compatible release; remove once it does.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: 1.22.x
     - name: Install pulumictl
-      uses: jaxxstorm/action-install-gh-release@v1.14.0
+      uses: jaxxstorm/action-install-gh-release@v2.1.0
       with:
         repo: pulumi/pulumictl
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v6
+      uses: goreleaser/goreleaser-action@v7
       with:
         distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
         args: -p 3 release
@@ -55,24 +59,28 @@ jobs:
     runs-on: ubuntu-latest
     needs: publish_binary
     environment: publish
+    env:
+      # jaxxstorm/action-install-gh-release and pulumi/action-install-pulumi-cli
+      # do not yet have Node.js 24 compatible releases; remove once they do.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Unshallow clone for tags
         run: git fetch --prune --unshallow --tags
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.goversion }}
       - name: Install pulumictl
-        uses: jaxxstorm/action-install-gh-release@v1.14.0
+        uses: jaxxstorm/action-install-gh-release@v2.1.0
         with:
           repo: pulumi/pulumictl
       - name: Install Pulumi CLI
         uses: pulumi/action-install-pulumi-cli@v2.0.0
       - if: ${{ matrix.language == 'nodejs'}}
         name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{matrix.nodeversion}}
           registry-url: ${{ env.NPM_REGISTRY_URL }}
@@ -81,12 +89,12 @@ jobs:
         run: npm install -g npm@latest
       - if: ${{ matrix.language == 'dotnet'}}
         name: Setup DotNet
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{matrix.dotnetversion}}
       - if: ${{ matrix.language == 'python'}}
         name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{matrix.pythonversion}}
       - name: Generate SDK
@@ -94,7 +102,7 @@ jobs:
       - name: Compress SDK folder
         run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/${{ matrix.provider }} .
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.language }}-${{ matrix.provider }}-sdk.tar.gz
           path: ${{ github.workspace}}/sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz
