@@ -1,0 +1,61 @@
+name: Setup and Build SDK
+description: Installs Go, pulumictl, Pulumi CLI, and the language-specific toolchain, then builds the SDK.
+
+inputs:
+  language:
+    description: SDK language to set up (nodejs, python, dotnet, go)
+    required: true
+  provider:
+    description: Provider to build the SDK for (e.g. defang-aws, defang-gcp, defang-azure)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Unshallow clone for tags
+      shell: bash
+      run: git fetch --prune --unshallow --tags
+
+    - name: Install Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - name: Install pulumictl
+      shell: bash
+      run: |
+        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    - name: Install Pulumi CLI
+      uses: pulumi/actions@v6
+
+    - if: ${{ inputs.language == 'nodejs' }}
+      name: Setup Node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 22.x
+        registry-url: https://registry.npmjs.org
+
+    - if: ${{ inputs.language == 'nodejs' }}
+      name: Upgrade npm for Trusted Publishers support
+      shell: bash
+      run: npm install -g npm@latest
+
+    - if: ${{ inputs.language == 'dotnet' }}
+      name: Setup DotNet
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 8.0.x
+
+    - if: ${{ inputs.language == 'python' }}
+      name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.9"
+
+    - name: Build SDK
+      shell: bash
+      run: make ${{ inputs.language }}_sdk_${{ inputs.provider }}

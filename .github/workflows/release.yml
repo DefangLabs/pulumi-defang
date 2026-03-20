@@ -60,41 +60,13 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v6
-      - name: Unshallow clone for tags
-        run: git fetch --prune --unshallow --tags
-      - name: Install Go
-        uses: actions/setup-go@v6
+
+      - name: Setup and build SDK
+        uses: ./.github/actions/build-sdk
         with:
-          go-version: ${{ matrix.goversion }}
-      - name: Install pulumictl
-        run: |
-          gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
-          tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
-        env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Install Pulumi CLI
-        uses: pulumi/actions@v6
-      - if: ${{ matrix.language == 'nodejs'}}
-        name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{matrix.nodeversion}}
-          registry-url: ${{ env.NPM_REGISTRY_URL }}
-      - if: ${{ matrix.language == 'nodejs'}}
-        name: Upgrade npm for Trusted Publishers support
-        run: npm install -g npm@latest
-      - if: ${{ matrix.language == 'dotnet'}}
-        name: Setup DotNet
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{matrix.dotnetversion}}
-      - if: ${{ matrix.language == 'python'}}
-        name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{matrix.pythonversion}}
-      - name: Generate SDK
-        run: make ${{ matrix.language }}_sdk_${{ matrix.provider }}
+          language: ${{ matrix.language }}
+          provider: ${{ matrix.provider }}
+
       - name: Compress SDK folder
         run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/${{ matrix.provider }} .
       - name: Upload artifacts
@@ -121,18 +93,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dotnetversion:
-          - 6.0.x
-        goversion:
-          - 1.22.x
         language:
           - nodejs
           - python
           - dotnet
-        nodeversion:
-          - 22.x
-        pythonversion:
-          - "3.9"
         provider:
           - defang-aws
           - defang-gcp

@@ -12,63 +12,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dotnetversion:
-          - 8.0.x
-        nodeversion:
-          - 20.x
-        pythonversion:
-          - "3.9"
-        # javaversion:
-        # - "11"
         language:
         - nodejs
         - python
         - dotnet
         - go
-        # - java
+        provider:
+        - defang-aws
+        - defang-gcp
+        - defang-azure
 
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v6
-    - name: Unshallow clone for tags
-      run: git fetch --prune --unshallow --tags
 
-    - name: Install Go
-      uses: actions/setup-go@v6
+    - name: Setup and build SDK
+      uses: ./.github/actions/build-sdk
       with:
-        go-version-file: go.mod
-
-    - name: Install pulumictl
-      run: |
-        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
-        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
-      env:
-        GH_TOKEN: ${{ github.token }}
-
-    - name: Install pulumi
-      uses: pulumi/actions@v6
-
-    - if: ${{ matrix.language == 'nodejs'}}
-      name: Setup Node
-      uses: actions/setup-node@v6
-      with:
-        node-version: ${{matrix.nodeversion}}
-        registry-url: https://registry.npmjs.org
-
-    - if: ${{ matrix.language == 'dotnet'}}
-      name: Setup DotNet
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: ${{matrix.dotnetversion}}
-
-    - if: ${{ matrix.language == 'python'}}
-      name: Setup Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{matrix.pythonversion}}
-
-    - name: Build SDK
-      run: make ${{ matrix.language }}_sdk
+        language: ${{ matrix.language }}
+        provider: ${{ matrix.provider }}
 
     - name: Check worktree clean
       run: |
