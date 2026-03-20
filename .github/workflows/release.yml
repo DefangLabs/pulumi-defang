@@ -75,6 +75,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{matrix.nodeversion}}
+          registry-url: ${{ env.NPM_REGISTRY_URL }}
       - if: ${{ matrix.language == 'dotnet'}}
         name: Setup DotNet
         uses: actions/setup-dotnet@v4
@@ -101,7 +102,7 @@ jobs:
           packages-dir: ${{github.workspace}}/sdk/python/${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
         name: Publish package to npm
-        run: npm publish --access public
+        run: npm publish --provenance --access public
         working-directory: ${{github.workspace}}/sdk/nodejs/${{ matrix.provider }}/bin
       - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
         name: publish nuget package
