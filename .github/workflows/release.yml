@@ -105,7 +105,9 @@ jobs:
           packages-dir: ${{github.workspace}}/sdk/python/${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
         name: Publish package to npm
-        run: npm publish --access public
+        run: |
+          DIST_TAG=$(node -e "const v=require('./package.json').version;const m=v.match(/-([a-zA-Z]+)/);process.stdout.write(m?m[1]:'latest')")
+          npm publish --access public --tag "$DIST_TAG"
         working-directory: ${{github.workspace}}/sdk/nodejs/${{ matrix.provider }}/bin
       - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
         name: publish nuget package
