@@ -45,34 +45,6 @@ jobs:
           exit 1
         fi
 
-  build_examples:
-    name: Build Examples
-    runs-on: ubuntu-latest
-    concurrency:
-      group: build-examples-${{ github.ref }}
-      cancel-in-progress: true
-    strategy:
-      fail-fast: false
-      matrix:
-        language:
-        - nodejs
-        - python
-        - dotnet
-        - go
-        provider:
-        - aws
-        - gcp
-        - azure
-
-    steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v6
-
-    - name: Build Example
-      run: make example_${{ matrix.provider }}_${{ matrix.language }}
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-
     - name: Check clean examples working tree
       run: |
         git update-index -q --refresh
@@ -82,6 +54,11 @@ jobs:
             git diff examples/
             exit 1
         fi
+
+    - name: Build Example
+      run: make example_${{ matrix.provider }}_${{ matrix.language }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
 
     - name: Ensure clean example versions
       run: |
