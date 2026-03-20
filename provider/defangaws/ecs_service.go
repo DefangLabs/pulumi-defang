@@ -15,18 +15,18 @@ type AwsEcsService struct{}
 
 // AwsEcsServiceInputs defines the inputs for a standalone AWS ECS service.
 type AwsEcsServiceInputs struct {
-	Build       *shared.BuildInput        `pulumi:"build,optional"`
-	Image       *string                   `pulumi:"image,optional"`
-	Platform    *string                   `pulumi:"platform,optional"`
-	ProjectName string                    `pulumi:"project_name"`
-	Ports       []shared.PortConfig       `pulumi:"ports,optional"`
-	Deploy      *shared.DeployConfig      `pulumi:"deploy,optional"`
-	Environment map[string]*string        `pulumi:"environment,optional"`
-	Command     []string                  `pulumi:"command,optional"`
-	Entrypoint  []string                  `pulumi:"entrypoint,optional"`
-	HealthCheck *shared.HealthCheckConfig `pulumi:"healthCheck,optional"`
-	DomainName  *string                   `pulumi:"domainName,optional"`
-	AWS         *shared.AWSConfigInput    `pulumi:"aws,optional"`
+	Build       *shared.BuildConfig        `pulumi:"build,optional"`
+	Image       *string                    `pulumi:"image,optional"`
+	Platform    *string                    `pulumi:"platform,optional"`
+	ProjectName string                     `pulumi:"project_name"`
+	Ports       []shared.ServicePortConfig `pulumi:"ports,optional"`
+	Deploy      *shared.DeployConfig       `pulumi:"deploy,optional"`
+	Environment map[string]*string         `pulumi:"environment,optional"`
+	Command     []string                   `pulumi:"command,optional"`
+	Entrypoint  []string                   `pulumi:"entrypoint,optional"`
+	HealthCheck *shared.HealthCheckConfig  `pulumi:"healthCheck,optional"`
+	DomainName  *string                    `pulumi:"domainName,optional"`
+	AWS         *shared.AWSConfigInput     `pulumi:"aws,optional"`
 }
 
 // AwsEcsServiceOutputs holds the outputs of an AwsEcsService component.

@@ -118,7 +118,7 @@ func fargateResources(cpus float64, memoryMiB int) (cpu string, memory string) {
 
 // portProtocol normalizes the transport protocol for ECS container port mappings.
 // Only "tcp" and "udp" are valid; matches TS: ep.protocol === "udp" ? "udp" : "tcp"
-func portProtocol(p shared.PortConfig) string {
+func portProtocol(p shared.ServicePortConfig) string {
 	proto := shared.GetPortProtocol(p)
 	if proto == "udp" {
 		return "udp"
@@ -183,84 +183,99 @@ func createECSService(
 	memMiB := svc.GetMemoryMiB()
 
 	// Build environment variables (matches TS getContainerDefinition)
-	envVars := []map[string]interface{}{
-		{"name": "DEFANG_SERVICE", "value": serviceName},
+	// Static env vars are known at plan time; dynamic ones come from interpolation as outputs.
+	staticEnvVars := []ContainerEnvironment{
+		{Name: "DEFANG_SERVICE", Value: serviceName},
 	}
 	if svc.DomainName != nil {
-		envVars = append(envVars, map[string]interface{}{
-			"name":  "DEFANG_FQDN",
-			"value": *svc.DomainName,
+		staticEnvVars = append(staticEnvVars, ContainerEnvironment{
+			Name:  "DEFANG_FQDN",
+			Value: *svc.DomainName,
 		})
 	}
+	type dynamicEnvVar struct {
+		name   string
+		output pulumi.StringOutput
+	}
+	var dynamicEnvVars []dynamicEnvVar
 	for k, v := range svc.Environment {
 		if v != nil {
 			resolved := shared.InterpolateEnvironmentVariable(ctx, configProvider, *v) // resolve value from config or env
-			envVars = append(envVars, map[string]interface{}{
-				"name":  k,
-				"value": resolved,
-			})
+			dynamicEnvVars = append(dynamicEnvVars, dynamicEnvVar{name: k, output: resolved})
 		}
 	}
 
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
-	var portMappings []map[string]interface{}
+	var portMappings []ContainerPortMapping
 	for _, p := range svc.Ports {
-		pm := map[string]interface{}{
-			"containerPort": p.Target,
-			"hostPort":      p.Target,
-			"protocol":      portProtocol(p),
-		}
-		portMappings = append(portMappings, pm)
+		portMappings = append(portMappings, ContainerPortMapping{
+			ContainerPort: p.Target,
+			HostPort:      p.Target,
+			Protocol:      portProtocol(p),
+		})
 	}
 
 	// Build health check with clamped values (matches TS clamp ranges)
-	var healthCheck map[string]interface{}
+	var healthCheck *ContainerHealthCheck
 	if svc.HealthCheck != nil && len(svc.HealthCheck.Test) > 0 {
-		healthCheck = map[string]interface{}{
-			"command":  svc.HealthCheck.Test,
-			"interval": clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30),
-			"timeout":  clampInt(svc.HealthCheck.TimeoutSeconds, 2, 60, 5),
-			"retries":  clampInt(svc.HealthCheck.Retries, 1, 10, 3),
+		healthCheck = &ContainerHealthCheck{
+			Command:  svc.HealthCheck.Test,
+			Interval: clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30),
+			Timeout:  clampInt(svc.HealthCheck.TimeoutSeconds, 2, 60, 5),
+			Retries:  clampInt(svc.HealthCheck.Retries, 1, 10, 3),
 		}
 		startPeriod := clampInt(svc.HealthCheck.StartPeriodSeconds, 0, 300, 0)
 		if startPeriod > 0 {
-			healthCheck["startPeriod"] = startPeriod
+			healthCheck.StartPeriod = startPeriod
 		}
 	}
 
-	containerDefsJSON := pulumix.Apply2Err(args.LogGroup.Name, args.ImageURI, func(logGroupName, imageURI string) (string, error) {
-		containerDef := map[string]interface{}{
-			"name":         serviceName,
-			"image":        imageURI,
-			"essential":    true,
-			"portMappings": portMappings,
-			"environment":  envVars,
+	// Collect all outputs to resolve: logGroupName, imageURI, and dynamic env var values
+	allOutputs := []interface{}{args.LogGroup.Name, args.ImageURI}
+	for _, d := range dynamicEnvVars {
+		allOutputs = append(allOutputs, d.output)
+	}
+
+	containerDefsJSON := pulumi.All(allOutputs...).ApplyT(func(resolved []interface{}) (string, error) {
+		logGroupName := resolved[0].(string)
+		imageURI := resolved[1].(string)
+
+		// Build full env var list: static + resolved dynamic
+		envVars := make([]ContainerEnvironment, len(staticEnvVars), len(staticEnvVars)+len(dynamicEnvVars))
+		copy(envVars, staticEnvVars)
+		for i, d := range dynamicEnvVars {
+			envVars = append(envVars, ContainerEnvironment{
+				Name:  d.name,
+				Value: resolved[2+i].(string),
+			})
 		}
 
-		if len(svc.Command) > 0 {
-			containerDef["command"] = svc.Command
-		}
-		if len(svc.Entrypoint) > 0 {
-			containerDef["entryPoint"] = svc.Entrypoint
-		}
-		if healthCheck != nil {
-			containerDef["healthCheck"] = healthCheck
-		}
-
-		containerDef["logConfiguration"] = map[string]interface{}{
-			"logDriver": "awslogs",
-			"options": map[string]interface{}{
-				"awslogs-group":         logGroupName,
-				"awslogs-region":        args.Region,
-				"awslogs-stream-prefix": serviceName,
+		essential := true
+		containerDef := ContainerDefinition{
+			Name:         serviceName,
+			Image:        imageURI,
+			Essential:    &essential,
+			PortMappings: portMappings,
+			Environment:  envVars,
+			Command:      svc.Command,
+			EntryPoint:   svc.Entrypoint,
+			HealthCheck:  healthCheck,
+			LogConfiguration: &ContainerLogConfiguration{
+				LogDriver: "awslogs",
+				Options: map[string]string{
+					"awslogs-group":         logGroupName,
+					"awslogs-region":        args.Region,
+					"awslogs-stream-prefix": serviceName,
+				},
 			},
 		}
-		b, err := json.Marshal([]interface{}{containerDef})
+
+		b, err := json.Marshal([]ContainerDefinition{containerDef})
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("marshaling container definitions: %w", err)
 		}
 		return string(b), nil
-	})
+	}).(pulumi.StringOutput)
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
@@ -278,7 +293,7 @@ func createECSService(
 		Memory:                  pulumi.String(fargateMemory),
 		ExecutionRoleArn:        args.ExecRole.Arn,
 		TaskRoleArn:             taskRole.Arn,
-		ContainerDefinitions:    pulumi.StringOutput(containerDefsJSON),
+		ContainerDefinitions:    containerDefsJSON,
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
 			CpuArchitecture:       pulumi.String(cpuArch),
 			OperatingSystemFamily: pulumi.String("LINUX"),

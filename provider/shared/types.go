@@ -8,7 +8,7 @@ import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 // YAML tags are aligned with Docker Compose service spec where possible.
 type ServiceInput struct {
 	// Build configuration (mutually exclusive with image for source of truth)
-	Build *BuildInput `pulumi:"build,optional" yaml:"build,omitempty"`
+	Build *BuildConfig `pulumi:"build,optional" yaml:"build,omitempty"`
 
 	// Container image to deploy (required if no build config)
 	Image *string `pulumi:"image,optional" yaml:"image,omitempty"`
@@ -17,7 +17,7 @@ type ServiceInput struct {
 	Platform *string `pulumi:"platform,optional" yaml:"platform,omitempty"`
 
 	// Port configurations
-	Ports []PortConfig `pulumi:"ports,optional" yaml:"ports,omitempty"`
+	Ports []ServicePortConfig `pulumi:"ports,optional" yaml:"ports,omitempty"`
 
 	// Deployment configuration (replicas, resources)
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
@@ -34,9 +34,6 @@ type ServiceInput struct {
 	// Managed Postgres: presence enables managed postgres. Matches x-defang-postgres extension.
 	Postgres *PostgresInput `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
 
-	// Managed Large Language Model Provider configuration
-	Provider *ProviderInput `pulumi:"provider,optional" yaml:"provider,omitempty"`
-
 	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
 	Redis *RedisInput `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
 
@@ -45,10 +42,28 @@ type ServiceInput struct {
 
 	// Custom domain name
 	DomainName *string `pulumi:"domainName,optional" yaml:"domainname,omitempty"`
+
+	Networks map[string]*ServiceNetworkConfig `pulumi:"networks,optional" yaml:"networks,omitempty"`
+
+	DependsOn map[string]*DependsOnConfig `pulumi:"dependsOn,optional" yaml:"depends_on,omitempty"`
 }
 
-// PortConfig defines a port mapping for a service.
-type PortConfig struct {
+type NetworkConfigInput struct {
+	Internal bool `pulumi:"internal,optional" yaml:"internal,omitempty"`
+	//   IPAM *IPAMConfigInput `pulumi:"ipam,optional" yaml:"ipam,omitempty"`
+}
+
+type DependsOnConfig struct {
+	Condition *string `pulumi:"condition,optional" yaml:"condition,omitempty"`
+	Required  bool    `pulumi:"required,optional" yaml:"required,omitempty"`
+}
+
+type ServiceNetworkConfig struct {
+	// Aliases []string `pulumi:"aliases,optional" yaml:"aliases,omitempty"`
+}
+
+// ServicePortConfig defines a port mapping for a service.
+type ServicePortConfig struct {
 	// Container port
 	Target int `pulumi:"target" yaml:"target"`
 
@@ -69,17 +84,17 @@ type DeployConfig struct {
 	Replicas *int `pulumi:"replicas,optional" yaml:"replicas,omitempty"`
 
 	// Resource reservations and limits
-	Resources *ResourcesConfig `pulumi:"resources,optional" yaml:"resources,omitempty"`
+	Resources *Resources `pulumi:"resources,optional" yaml:"resources,omitempty"`
 }
 
-// ResourcesConfig defines resource reservations and limits.
+// Resources defines resource reservations and limits.
 // Mirrors Docker Compose deploy.resources spec.
-type ResourcesConfig struct {
+type Resources struct {
 	// Resource reservations (guaranteed minimums)
 	Reservations *ResourceConfig `pulumi:"reservations,optional" yaml:"reservations,omitempty"`
 
 	// Resource limits (hard caps)
-	Limits *ResourceConfig `pulumi:"limits,optional" yaml:"limits,omitempty"`
+	// Limits *ResourceConfig `pulumi:"limits,optional" yaml:"limits,omitempty"`
 }
 
 // ResourceConfig defines CPU and memory for a single resource bound.
@@ -93,8 +108,8 @@ type ResourceConfig struct {
 	Memory *string `pulumi:"memory,optional" yaml:"memory,omitempty"`
 }
 
-// BuildInput mirrors the Docker Compose build spec.
-type BuildInput struct {
+// BuildConfig mirrors the Docker Compose build spec.
+type BuildConfig struct {
 	// Build context path or URL (required).
 	Context string `pulumi:"context"`
 
@@ -119,16 +134,6 @@ type PostgresInput struct {
 
 	// Restore from a snapshot identifier
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
-}
-
-type ProviderOptions struct {
-	Model string `pulumi:"model,optional" yaml:"model,omitempty"`
-}
-
-// ProviderInput defines the configuration for a language model provider.
-type ProviderInput struct {
-	Type    string          `pulumi:"type" yaml:"type"`
-	Options ProviderOptions `pulumi:"options" yaml:"options"`
 }
 
 // RedisInput matches the x-defang-redis Compose extension.
@@ -274,7 +279,7 @@ func (s ServiceInput) HasIngressPorts() bool {
 }
 
 // GetDockerfile returns the Dockerfile path, defaulting to "Dockerfile".
-func (b BuildInput) GetDockerfile() string {
+func (b BuildConfig) GetDockerfile() string {
 	if b.Dockerfile != nil {
 		return *b.Dockerfile
 	}
@@ -282,7 +287,7 @@ func (b BuildInput) GetDockerfile() string {
 }
 
 // GetTarget returns the build target, defaulting to "".
-func (b BuildInput) GetTarget() string {
+func (b BuildConfig) GetTarget() string {
 	if b.Target != nil {
 		return *b.Target
 	}
@@ -290,7 +295,7 @@ func (b BuildInput) GetTarget() string {
 }
 
 // GetShmSizeBytes returns the shared memory size in bytes, defaulting to 0.
-func (b BuildInput) GetShmSizeBytes() int {
+func (b BuildConfig) GetShmSizeBytes() int {
 	if b.ShmSize != nil {
 		return ParseMemoryMiB(*b.ShmSize) * 1024 * 1024
 	}

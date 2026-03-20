@@ -9,7 +9,7 @@ import (
 )
 
 // GetPortProtocol returns the protocol, defaulting to "tcp".
-func GetPortProtocol(p PortConfig) string {
+func GetPortProtocol(p ServicePortConfig) string {
 	if p.Protocol != "" {
 		return p.Protocol
 	}
@@ -17,7 +17,7 @@ func GetPortProtocol(p PortConfig) string {
 }
 
 // GetAppProtocol returns the application protocol, defaulting to "http".
-func GetAppProtocol(p PortConfig) string {
+func GetAppProtocol(p ServicePortConfig) string {
 	if p.AppProtocol != "" {
 		return p.AppProtocol
 	}

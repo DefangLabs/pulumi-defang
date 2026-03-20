@@ -12,8 +12,8 @@ func main() {
 			Services: shared.ServiceInputMap{
 				"app": &shared.ServiceInputArgs{
 					Image: pulumi.String("nginx"),
-					Ports: shared.PortConfigArray{
-						&shared.PortConfigArgs{
+					Ports: shared.ServicePortConfigArray{
+						&shared.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
 							Mode:        pulumi.String("ingress"),
 							AppProtocol: pulumi.String("http"),

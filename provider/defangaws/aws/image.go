@@ -69,7 +69,7 @@ type codeBuildImageBuildResource struct {
 }
 
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build shared.BuildInput) pulumix.Output[string] {
+func buildTriggerHash(build shared.BuildConfig) pulumix.Output[string] {
 	staticHash := func(context string) string {
 		h := sha256.New()
 		h.Write([]byte(context))

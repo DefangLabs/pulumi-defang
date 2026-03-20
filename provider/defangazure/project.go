@@ -15,7 +15,8 @@ type Project struct{}
 // ProjectInputs defines the top-level inputs for the Azure Project component.
 type ProjectInputs struct {
 	// Services map: name -> service config
-	Services map[string]shared.ServiceInput `pulumi:"services" yaml:"services"`
+	Services map[string]shared.ServiceInput       `pulumi:"services" yaml:"services"`
+	Networks map[string]shared.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.

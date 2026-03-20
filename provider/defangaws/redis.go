@@ -16,13 +16,13 @@ type AwsRedis struct{}
 
 // AwsRedisInputs defines the inputs for a standalone AWS ElastiCache Redis instance.
 type AwsRedisInputs struct {
-	ProjectName *string                `pulumi:"project_name"`
-	Redis       *shared.RedisInput     `pulumi:"redis,optional"`
-	Image       *string                `pulumi:"image,optional"`
-	Ports       []shared.PortConfig    `pulumi:"ports,optional"`
-	Deploy      *shared.DeployConfig   `pulumi:"deploy,optional"`
-	Environment map[string]*string     `pulumi:"environment,optional"`
-	AWS         *shared.AWSConfigInput `pulumi:"aws,optional"`
+	ProjectName *string                    `pulumi:"project_name"`
+	Redis       *shared.RedisInput         `pulumi:"redis,optional"`
+	Image       *string                    `pulumi:"image,optional"`
+	Ports       []shared.ServicePortConfig `pulumi:"ports,optional"`
+	Deploy      *shared.DeployConfig       `pulumi:"deploy,optional"`
+	Environment map[string]*string         `pulumi:"environment,optional"`
+	AWS         *shared.AWSConfigInput     `pulumi:"aws,optional"`
 }
 
 // AwsRedisOutputs holds the outputs of an AwsRedis component.

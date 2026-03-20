@@ -6,9 +6,9 @@ import (
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 
+	csharpGen "github.com/pulumi/pulumi/pkg/v3/codegen/dotnet"
 	nodejsGen "github.com/pulumi/pulumi/pkg/v3/codegen/nodejs"
 	pythonGen "github.com/pulumi/pulumi/pkg/v3/codegen/python"
-	csharpGen "github.com/pulumi/pulumi/pkg/v3/codegen/dotnet"
 )
 
 // Version is initialized by the Go linker to contain the semver of this build.

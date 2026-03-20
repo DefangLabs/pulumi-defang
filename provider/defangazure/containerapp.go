@@ -15,10 +15,10 @@ type AzureContainerApp struct{}
 
 // AzureContainerAppInputs defines the inputs for a standalone Azure Container App.
 type AzureContainerAppInputs struct {
-	Build       *shared.BuildInput        `pulumi:"build,optional"`
+	Build       *shared.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                   `pulumi:"image,optional"`
 	Platform    *string                   `pulumi:"platform,optional"`
-	Ports       []shared.PortConfig       `pulumi:"ports,optional"`
+	Ports       []shared.ServicePortConfig       `pulumi:"ports,optional"`
 	Deploy      *shared.DeployConfig      `pulumi:"deploy,optional"`
 	Environment map[string]*string        `pulumi:"environment,optional"`
 	Command     []string                  `pulumi:"command,optional"`

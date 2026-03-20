@@ -14,7 +14,7 @@ return await Deployment.RunAsync(() =>
                 Image = "nginx",
                 Ports = new[]
                 {
-                    new DefangAws.Shared.Inputs.PortConfigArgs
+                    new DefangAws.Shared.Inputs.ServicePortConfigArgs
                     {
                         Target = 80,
                         Mode = "ingress",
