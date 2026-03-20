@@ -9,7 +9,7 @@ import (
 )
 
 type containerAppResult struct {
-	app *app.ContainerApp
+	App *app.ContainerApp
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -36,12 +36,12 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 	return 2.0, "4.00Gi"
 }
 
-// createContainerApp creates an Azure Container App.
-func createContainerApp(
+// CreateContainerApp creates an Azure Container App.
+func CreateContainerApp(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc shared.ServiceInput,
-	infra *sharedInfra,
+	infra *SharedInfra,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
@@ -115,8 +115,8 @@ func createContainerApp(
 	}
 
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
-		ResourceGroupName:    infra.resourceGroup.Name,
-		ManagedEnvironmentId: infra.environment.ID().ToStringOutput(),
+		ResourceGroupName:    infra.ResourceGroup.Name,
+		ManagedEnvironmentId: infra.Environment.ID().ToStringOutput(),
 		Configuration: &app.ConfigurationArgs{
 			Ingress: ingress,
 		},
@@ -145,5 +145,5 @@ func createContainerApp(
 		return nil, fmt.Errorf("creating Container App: %w", err)
 	}
 
-	return &containerAppResult{app: containerApp}, nil
+	return &containerAppResult{App: containerApp}, nil
 }

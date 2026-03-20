@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v2"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -18,24 +17,14 @@ type serviceComponent struct {
 	pulumi.ResourceState
 }
 
-// sharedInfra holds resources shared across all services in a project.
-type sharedInfra struct {
-	resourceGroup *resources.ResourceGroup
-	environment   *app.ManagedEnvironment
+// SharedInfra holds resources shared across all services in a project.
+type SharedInfra struct {
+	ResourceGroup *resources.ResourceGroup
+	Environment   *app.ManagedEnvironment
 }
 
-// ContainerAppResult holds the per-service outputs for a Container App.
-type ContainerAppResult struct {
-	Endpoint pulumi.StringOutput
-}
-
-// PostgresResult holds the per-service outputs for a PostgreSQL Flexible Server.
-type PostgresResult struct {
-	Endpoint pulumi.StringOutput
-}
-
-// azureLocation reads the Azure location from Pulumi stack config, falling back to the default.
-func azureLocation(ctx *pulumi.Context) string {
+// Location reads the Azure location from Pulumi stack config, falling back to the default.
+func Location(ctx *pulumi.Context) string {
 	cfg := config.New(ctx, "azure-native")
 	if l := cfg.Get("location"); l != "" {
 		return l
@@ -46,7 +35,7 @@ func azureLocation(ctx *pulumi.Context) string {
 // Build creates all Azure resources for the project.
 // The Azure provider must be passed via the parent chain (pulumi.Providers on the parent component).
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
-	location := azureLocation(ctx)
+	location := Location(ctx)
 	opts := []pulumi.ResourceOption{parentOpt}
 
 	// Create resource group
@@ -66,9 +55,9 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
 
-	infra := &sharedInfra{
-		resourceGroup: rg,
-		environment:   env,
+	infra := &SharedInfra{
+		ResourceGroup: rg,
+		Environment:   env,
 	}
 
 	recipe := LoadRecipe(ctx)
@@ -85,11 +74,11 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 			configProvider := NewConfigProvider(projectName)
-			pgResult, err := createPostgresFlexible(ctx, configProvider, svcName, svc, infra, recipe, svcOpts...)
+			pgResult, err := CreatePostgresFlexible(ctx, configProvider, svcName, svc, infra, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 			}
-			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.server.FullyQualifiedDomainName)
+			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 		} else {
 			// Container service → Container App
 			if err := ctx.RegisterComponentResource("defang-azure:index:AzureContainerApp", svcName, comp, opts[0]); err != nil {
@@ -97,11 +86,11 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			caResult, err := createContainerApp(ctx, svcName, svc, infra, recipe, svcOpts...)
+			caResult, err := CreateContainerApp(ctx, svcName, svc, infra, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Container App %s: %w", svcName, err)
 			}
-			endpoints[svcName] = caResult.app.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
+			endpoints[svcName] = caResult.App.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
 				if fqdn != "" {
 					return fmt.Sprintf("https://%s", fqdn)
 				}
@@ -122,66 +111,4 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	}, nil
 }
 
-// BuildStandaloneContainerApp creates Azure resources for a single standalone Container App.
-// The Azure provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneContainerApp(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*ContainerAppResult, error) {
-	location := azureLocation(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, serviceName+"-rg", &resources.ResourceGroupArgs{
-		Location: pulumi.String(location),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating resource group: %w", err)
-	}
-
-	env, err := app.NewManagedEnvironment(ctx, serviceName+"-env", &app.ManagedEnvironmentArgs{
-		ResourceGroupName: rg.Name,
-		Location:          pulumi.String(location),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating managed environment: %w", err)
-	}
-
-	infra := &sharedInfra{resourceGroup: rg, environment: env}
-	recipe := LoadRecipe(ctx)
-
-	caResult, err := createContainerApp(ctx, serviceName, svc, infra, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating Container App %s: %w", serviceName, err)
-	}
-
-	endpoint := caResult.app.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
-		if fqdn != "" {
-			return fmt.Sprintf("https://%s", fqdn)
-		}
-		return ""
-	}).(pulumi.StringOutput)
-
-	return &ContainerAppResult{Endpoint: endpoint}, nil
-}
-
-// BuildStandalonePostgres creates Azure resources for a single standalone PostgreSQL Flexible Server.
-// The Azure provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
-	location := azureLocation(ctx)
-
-	rg, err := resources.NewResourceGroup(ctx, serviceName+"-rg", &resources.ResourceGroupArgs{
-		Location: pulumi.String(location),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating resource group: %w", err)
-	}
-
-	// Postgres doesn't need Container Apps environment
-	infra := &sharedInfra{resourceGroup: rg}
-	recipe := LoadRecipe(ctx)
-
-	pgResult, err := createPostgresFlexible(ctx, configProvider, serviceName, svc, infra, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating PostgreSQL for %s: %w", serviceName, err)
-	}
-
-	return &PostgresResult{
-		Endpoint: pulumi.Sprintf("%s:5432", pgResult.server.FullyQualifiedDomainName),
-	}, nil
-}

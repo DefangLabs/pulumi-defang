@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
-	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -42,16 +42,28 @@ func (*AzurePostgres) Construct(ctx *pulumi.Context, name, typ string, inputs Az
 		Environment: inputs.Environment,
 	}
 
+	location := azure.Location(ctx)
+
+	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+		Location: pulumi.String(location),
+	}, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("creating resource group: %w", err)
+	}
+
+	infra := &azure.SharedInfra{ResourceGroup: rg}
+	recipe := azure.LoadRecipe(ctx)
 	configProvider := azure.NewConfigProvider(*inputs.ProjectName)
-	result, err := providerazure.BuildStandalonePostgres(ctx, configProvider, name, svc, childOpt)
+
+	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, recipe, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure PostgreSQL: %w", err)
 	}
 
-	comp.Endpoint = result.Endpoint
+	comp.Endpoint = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint": comp.Endpoint,
 	}); err != nil {
 		return nil, err
 	}

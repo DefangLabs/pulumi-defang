@@ -3,8 +3,10 @@ package defangazure
 import (
 	"fmt"
 
-	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
+	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	azureapp "github.com/pulumi/pulumi-azure-native-sdk/app/v2"
+	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -52,15 +54,40 @@ func (*AzureContainerApp) Construct(ctx *pulumi.Context, name, typ string, input
 		DomainName:  inputs.DomainName,
 	}
 
-	result, err := providerazure.BuildStandaloneContainerApp(ctx, name, svc, childOpt)
+	location := azure.Location(ctx)
+
+	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+		Location: pulumi.String(location),
+	}, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("creating resource group: %w", err)
+	}
+
+	env, err := azureapp.NewManagedEnvironment(ctx, name+"-env", &azureapp.ManagedEnvironmentArgs{
+		ResourceGroupName: rg.Name,
+		Location:          pulumi.String(location),
+	}, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("creating managed environment: %w", err)
+	}
+
+	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
+	recipe := azure.LoadRecipe(ctx)
+
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, recipe, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}
 
-	comp.Endpoint = result.Endpoint
+	comp.Endpoint = caResult.App.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
+		if fqdn != "" {
+			return fmt.Sprintf("https://%s", fqdn)
+		}
+		return ""
+	}).(pulumi.StringOutput)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint": comp.Endpoint,
 	}); err != nil {
 		return nil, err
 	}

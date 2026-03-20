@@ -9,7 +9,7 @@ import (
 )
 
 type postgresResult struct {
-	server *dbforpostgresql.Server
+	Server *dbforpostgresql.Server
 }
 
 // azurePostgresVersion maps a major version number to the Azure server version string.
@@ -30,13 +30,13 @@ func azurePostgresVersion(version int) string {
 	}
 }
 
-// createPostgresFlexible creates an Azure Database for PostgreSQL Flexible Server.
-func createPostgresFlexible(
+// CreatePostgresFlexible creates an Azure Database for PostgreSQL Flexible Server.
+func CreatePostgresFlexible(
 	ctx *pulumi.Context,
 	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
-	infra *sharedInfra,
+	infra *SharedInfra,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*postgresResult, error) {
@@ -59,7 +59,7 @@ func createPostgresFlexible(
 	}
 
 	serverArgs := &dbforpostgresql.ServerArgs{
-		ResourceGroupName: infra.resourceGroup.Name,
+		ResourceGroupName: infra.ResourceGroup.Name,
 		Version:           pulumi.String(azurePostgresVersion(pg.Version)),
 		Sku: &dbforpostgresql.SkuArgs{
 			Name: pulumi.String(recipe.SkuName),
@@ -89,7 +89,7 @@ func createPostgresFlexible(
 	// Create database if non-default
 	if pg.DBName != pulumi.String("") && pg.DBName != pulumi.String("postgres") {
 		_, err := dbforpostgresql.NewDatabase(ctx, serviceName+"-db", &dbforpostgresql.DatabaseArgs{
-			ResourceGroupName: infra.resourceGroup.Name,
+			ResourceGroupName: infra.ResourceGroup.Name,
 			ServerName:        server.Name,
 			DatabaseName:      pg.DBName,
 		}, opts...)
@@ -100,7 +100,7 @@ func createPostgresFlexible(
 
 	// Allow Azure services to connect (firewall rule for 0.0.0.0)
 	_, err = dbforpostgresql.NewFirewallRule(ctx, serviceName+"-allow-azure", &dbforpostgresql.FirewallRuleArgs{
-		ResourceGroupName: infra.resourceGroup.Name,
+		ResourceGroupName: infra.ResourceGroup.Name,
 		ServerName:        server.Name,
 		StartIpAddress:    pulumi.String("0.0.0.0"),
 		EndIpAddress:      pulumi.String("0.0.0.0"),
@@ -109,5 +109,5 @@ func createPostgresFlexible(
 		return nil, fmt.Errorf("creating PostgreSQL firewall rule: %w", err)
 	}
 
-	return &postgresResult{server: server}, nil
+	return &postgresResult{Server: server}, nil
 }
