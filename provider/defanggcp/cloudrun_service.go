@@ -52,15 +52,17 @@ func (*GcpCloudRunService) Construct(ctx *pulumi.Context, name, typ string, inpu
 		DomainName:  inputs.DomainName,
 	}
 
-	result, err := providergcp.BuildStandaloneCloudRun(ctx, name, svc, childOpt)
+	region := providergcp.GcpRegion(ctx)
+	recipe := providergcp.LoadRecipe(ctx)
+	crResult, err := providergcp.CreateCloudRunService(ctx, name, svc, region, recipe, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
 	}
 
-	comp.Endpoint = result.Endpoint
+	comp.Endpoint = crResult.Service.Uri
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint": crResult.Service.Uri,
 	}); err != nil {
 		return nil, err
 	}

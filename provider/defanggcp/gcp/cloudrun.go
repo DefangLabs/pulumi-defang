@@ -27,8 +27,8 @@ func sanitizeAccountId(name string) string {
 	return strings.TrimRight(id, "-")
 }
 
-type cloudRunResult struct {
-	service *cloudrunv2.Service
+type CloudRunResult struct {
+	Service *cloudrunv2.Service
 }
 
 // cloudRunLimits returns CPU and memory limits for Cloud Run.
@@ -48,15 +48,15 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 	return fmt.Sprintf("%g", cpu), fmt.Sprintf("%dMi", mem)
 }
 
-// createCloudRunService creates a Cloud Run service.
-func createCloudRunService(
+// CreateCloudRunService creates a Cloud Run service.
+func CreateCloudRunService(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc shared.ServiceInput,
 	location string,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
-) (*cloudRunResult, error) {
+) (*CloudRunResult, error) {
 	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
 	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
@@ -163,7 +163,7 @@ func createCloudRunService(
 		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
 	}
 
-	return &cloudRunResult{
-		service: crService,
+	return &CloudRunResult{
+		Service: crService,
 	}, nil
 }

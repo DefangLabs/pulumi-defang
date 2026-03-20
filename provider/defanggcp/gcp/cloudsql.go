@@ -8,8 +8,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-type cloudSQLResult struct {
-	instance *sql.DatabaseInstance
+type CloudSQLResult struct {
+	Instance *sql.DatabaseInstance
 }
 
 // gcpPostgresVersion maps a major version number to the GCP database version string.
@@ -59,15 +59,15 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 	return fmt.Sprintf("db-custom-%d-%d", cpu, mem)
 }
 
-// createCloudSQL creates a managed Cloud SQL Postgres instance.
-func createCloudSQL(
+// CreateCloudSQL creates a managed Cloud SQL Postgres instance.
+func CreateCloudSQL(
 	ctx *pulumi.Context,
 	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
-) (*cloudSQLResult, error) {
+) (*CloudSQLResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
@@ -142,7 +142,7 @@ func createCloudSQL(
 		}
 	}
 
-	return &cloudSQLResult{
-		instance: instance,
+	return &CloudSQLResult{
+		Instance: instance,
 	}, nil
 }

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -18,18 +17,8 @@ type serviceComponent struct {
 	pulumi.ResourceState
 }
 
-// CloudRunResult holds the per-service outputs for a Cloud Run service.
-type CloudRunResult struct {
-	Endpoint pulumi.StringOutput
-}
-
-// CloudSQLResult holds the per-service outputs for a Cloud SQL Postgres instance.
-type CloudSQLResult struct {
-	Endpoint pulumi.StringOutput
-}
-
-// gcpRegion reads the GCP region from Pulumi stack config, falling back to the default.
-func gcpRegion(ctx *pulumi.Context) string {
+// GcpRegion reads the GCP region from Pulumi stack config, falling back to the default.
+func GcpRegion(ctx *pulumi.Context) string {
 	cfg := config.New(ctx, "gcp")
 	if r := cfg.Get("region"); r != "" {
 		return r
@@ -40,7 +29,7 @@ func gcpRegion(ctx *pulumi.Context) string {
 // Build creates all GCP resources for the project.
 // The GCP provider must be passed via the parent chain (pulumi.Providers on the parent component).
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
-	region := gcpRegion(ctx)
+	region := GcpRegion(ctx)
 	opts := []pulumi.ResourceOption{parentOpt}
 
 	// Create Artifact Registry repository for container images
@@ -70,11 +59,11 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 			configProvider := NewConfigProvider(projectName)
-			sqlResult, err := createCloudSQL(ctx, configProvider, svcName, svc, recipe, svcOpts...)
+			sqlResult, err := CreateCloudSQL(ctx, configProvider, svcName, svc, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 			}
-			endpoints[svcName] = pulumi.Sprintf("%s:5432", sqlResult.instance.PublicIpAddress)
+			endpoints[svcName] = pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
 		} else {
 			// Container service → Cloud Run
 			if err := ctx.RegisterComponentResource("defang-gcp:index:GcpCloudRunService", svcName, comp, opts[0]); err != nil {
@@ -82,11 +71,11 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			crResult, err := createCloudRunService(ctx, svcName, svc, region, recipe, svcOpts...)
+			crResult, err := CreateCloudRunService(ctx, svcName, svc, region, recipe, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 			}
-			endpoints[svcName] = crResult.service.Uri
+			endpoints[svcName] = crResult.Service.Uri
 		}
 
 		if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
@@ -99,36 +88,5 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	return &common.BuildResult{
 		Endpoints:       endpoints.ToStringMapOutput(),
 		LoadBalancerDNS: pulumi.StringPtr("").ToStringPtrOutput(),
-	}, nil
-}
-
-// BuildStandaloneCloudRun creates GCP resources for a single standalone Cloud Run service.
-// The GCP provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneCloudRun(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*CloudRunResult, error) {
-	region := gcpRegion(ctx)
-	recipe := LoadRecipe(ctx)
-
-	crResult, err := createCloudRunService(ctx, serviceName, svc, region, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating Cloud Run service %s: %w", serviceName, err)
-	}
-
-	return &CloudRunResult{
-		Endpoint: crResult.service.Uri,
-	}, nil
-}
-
-// BuildStandaloneCloudSQL creates GCP resources for a single standalone Cloud SQL Postgres instance.
-// The GCP provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneCloudSQL(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, opts ...pulumi.ResourceOption) (*CloudSQLResult, error) {
-	recipe := LoadRecipe(ctx)
-
-	sqlResult, err := createCloudSQL(ctx, configProvider, serviceName, svc, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating Cloud SQL for %s: %w", serviceName, err)
-	}
-
-	return &CloudSQLResult{
-		Endpoint: pulumi.Sprintf("%s:5432", sqlResult.instance.PublicIpAddress),
 	}, nil
 }

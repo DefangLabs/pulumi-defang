@@ -42,15 +42,17 @@ func (*GcpCloudSql) Construct(ctx *pulumi.Context, name, typ string, inputs GcpC
 	}
 
 	configProvider := providergcp.NewConfigProvider(*inputs.ProjectName)
-	result, err := providergcp.BuildStandaloneCloudSQL(ctx, configProvider, name, svc, childOpt)
+	recipe := providergcp.LoadRecipe(ctx)
+	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, name, svc, recipe, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud SQL: %w", err)
 	}
 
-	comp.Endpoint = result.Endpoint
+	endpoint := pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
+	comp.Endpoint = endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint": endpoint,
 	}); err != nil {
 		return nil, err
 	}
