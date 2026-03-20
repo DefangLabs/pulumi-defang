@@ -15,9 +15,9 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-// imageInfra holds shared infrastructure for building container images.
+// ImageInfra holds shared infrastructure for building container images.
 // Created once per project, shared across all services that need builds.
-type imageInfra struct {
+type ImageInfra struct {
 	ecrRepo       *ecr.Repository
 	ecrRepoURL    pulumix.Output[string]
 	codeBuildRole *iam.Role
@@ -25,14 +25,14 @@ type imageInfra struct {
 	region        string
 }
 
-// createImageInfra creates the shared infrastructure needed for image builds:
+// CreateImageInfra creates the shared infrastructure needed for image builds:
 // ECR repository and CodeBuild IAM role.
-func createImageInfra(
+func CreateImageInfra(
 	ctx *pulumi.Context,
 	logGroup *cloudwatch.LogGroup,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (*imageInfra, error) {
+) (*ImageInfra, error) {
 	ecrResult, err := createECRRepo(ctx, "builds", opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECR repo for builds: %w", err)
@@ -43,7 +43,7 @@ func createImageInfra(
 		return nil, fmt.Errorf("creating CodeBuild role: %w", err)
 	}
 
-	return &imageInfra{
+	return &ImageInfra{
 		ecrRepo:       ecrResult.repository,
 		ecrRepoURL:    ecrResult.repoURL,
 		codeBuildRole: cbRole,
@@ -96,7 +96,7 @@ func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc shared.ServiceInput,
-	infra *imageInfra,
+	infra *ImageInfra,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
@@ -144,15 +144,15 @@ func buildServiceImage(
 	}, nil
 }
 
-// getServiceImage returns the container image URI for a service.
+// GetServiceImage returns the container image URI for a service.
 // If the service has a build config, it builds the image via CodeBuild.
 // Otherwise, it returns the pre-configured image.
 // Matches TS getServiceImage in cd/aws/defang_service.ts.
-func getServiceImage(
+func GetServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc shared.ServiceInput,
-	infra *imageInfra,
+	infra *ImageInfra,
 	opts ...pulumi.ResourceOption,
 ) (pulumix.Output[string], error) {
 	if svc.Build != nil && infra != nil {

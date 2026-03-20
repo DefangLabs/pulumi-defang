@@ -6,7 +6,9 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
@@ -29,10 +31,10 @@ type ECSServiceArgs struct {
 	ImageURI  pulumix.Output[string] // container image URI (built or pre-built)
 }
 
-type ecsServiceResult struct {
-	service    *ecs.Service
-	endpoint   pulumix.Output[string]
-	hasIngress bool
+type EcsServiceResult struct {
+	Service    *ecs.Service
+	Endpoint   pulumix.Output[string]
+	HasIngress bool
 }
 
 // clampInt clamps v to [min, max]. Returns fallback if v is nil.
@@ -126,43 +128,8 @@ func portProtocol(p shared.ServicePortConfig) string {
 	return "tcp"
 }
 
-// newECSServiceComponent registers a component resource for a container service,
-// creates its ECS children, registers outputs, and returns the endpoint.
-func NewECSServiceComponent(
-	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
-	serviceName string,
-	svc shared.ServiceInput,
-	args *ECSServiceArgs,
-	recipe Recipe,
-	parentOpt pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
-	comp := &serviceComponent{}
-	if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", serviceName, comp, parentOpt); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering ECS service component %s: %w", serviceName, err)
-	}
-	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-	ecsResult, err := createECSService(ctx, configProvider, serviceName, svc, args, recipe, opts...)
-	if err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
-	}
-
-	var endpoint pulumi.StringOutput
-	if ecsResult.hasIngress {
-		endpoint = pulumi.StringOutput(ecsResult.endpoint)
-	} else {
-		endpoint = pulumi.Sprintf("%s (no ingress)", serviceName)
-	}
-
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
-	}
-	return endpoint, nil
-}
-
-// createECSService creates an ECS Fargate service for a container service.
-func createECSService(
+// CreateECSService creates an ECS Fargate service for a container service.
+func CreateECSService(
 	ctx *pulumi.Context,
 	configProvider shared.ConfigProvider,
 	serviceName string,
@@ -170,7 +137,7 @@ func createECSService(
 	args *ECSServiceArgs,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
-) (*ecsServiceResult, error) {
+) (*EcsServiceResult, error) {
 
 	// Create task role
 	taskRole, err := createTaskRole(ctx, serviceName, opts...)
@@ -494,9 +461,96 @@ func createECSService(
 		endpointOutput = pulumix.Val(fmt.Sprintf("service %s via ALB", serviceName))
 	}
 
-	return &ecsServiceResult{
-		service:    ecsService,
-		endpoint:   endpointOutput,
-		hasIngress: hasIngress,
+	return &EcsServiceResult{
+		Service:    ecsService,
+		Endpoint:   endpointOutput,
+		HasIngress: hasIngress,
+	}, nil
+}
+
+// BuildECSArgs creates all shared AWS infrastructure for a standalone ECS service and
+// returns the args to pass to NewECSServiceComponent.
+// The AWS provider must be passed via opts (pulumi.Providers on the parent component).
+func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*ECSServiceArgs, error) {
+	recipe := LoadRecipe(ctx)
+
+	region, err := aws.GetRegion(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting AWS region: %w", err)
+	}
+
+	net, err := ResolveNetworking(ctx, awsCfg, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("resolving networking: %w", err)
+	}
+
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
+		VpcId:       pulumi.StringOutput(net.VpcID),
+		Description: pulumi.String("Security group for services"),
+		Egress: ec2.SecurityGroupEgressArray{
+			&ec2.SecurityGroupEgressArgs{
+				Protocol:   pulumi.String("-1"),
+				FromPort:   pulumi.Int(0),
+				ToPort:     pulumi.Int(0),
+				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			},
+		},
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating security group: %w", err)
+	}
+
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating ECS cluster: %w", err)
+	}
+
+	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
+		RetentionInDays: pulumi.Int(recipe.LogRetentionDays),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating log group: %w", err)
+	}
+
+	execRole, err := CreateExecutionRole(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating execution role: %w", err)
+	}
+
+	var imgInfra *ImageInfra
+	if svc.NeedsBuild() {
+		imgInfra, err = CreateImageInfra(ctx, logGroup, region.Name, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
+		}
+	}
+
+	var httpListener *lb.Listener
+	var svcALB *lb.LoadBalancer
+	if svc.HasIngressPorts() {
+		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, recipe, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating ALB: %w", err)
+		}
+		httpListener = albRes.HttpListener
+		svcALB = albRes.Alb
+	}
+
+	imageURI, err := GetServiceImage(ctx, serviceName, svc, imgInfra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("resolving image for %s: %w", serviceName, err)
+	}
+
+	return &ECSServiceArgs{
+		Cluster:   cluster,
+		ExecRole:  execRole,
+		LogGroup:  logGroup,
+		VpcID:     net.VpcID,
+		SubnetIDs: net.PublicSubnetIDs,
+		Sg:        sg,
+		Listener:  httpListener,
+		Alb:       svcALB,
+		Region:    region.Name,
+		ImageURI:  imageURI,
 	}, nil
 }

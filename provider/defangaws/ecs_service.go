@@ -63,7 +63,7 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 	}
 
 	recipe := provideraws.LoadRecipe(ctx)
-	endpoint, err := provideraws.NewECSServiceComponent(ctx, configProvider, name, svc, ecsArgs, recipe, childOpt)
+	endpoint, err := NewECSServiceComponent(ctx, configProvider, name, svc, ecsArgs, recipe, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ECS service: %w", err)
 	}
@@ -77,4 +77,44 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 	}
 
 	return comp, nil
+}
+
+// serviceComponent is a local component resource used to group per-service resources in the tree.
+type serviceComponent struct {
+	pulumi.ResourceState
+}
+
+// newECSServiceComponent registers a component resource for a container service,
+// creates its ECS children, registers outputs, and returns the endpoint.
+func NewECSServiceComponent(
+	ctx *pulumi.Context,
+	configProvider shared.ConfigProvider,
+	serviceName string,
+	svc shared.ServiceInput,
+	args *provideraws.ECSServiceArgs,
+	recipe provideraws.Recipe,
+	parentOpt pulumi.ResourceOption,
+) (pulumi.StringOutput, error) {
+	comp := &serviceComponent{}
+	if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", serviceName, comp, parentOpt); err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("registering ECS service component %s: %w", serviceName, err)
+	}
+	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+	ecsResult, err := provideraws.CreateECSService(ctx, configProvider, serviceName, svc, args, recipe, opts...)
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
+	}
+
+	var endpoint pulumi.StringOutput
+	if ecsResult.HasIngress {
+		endpoint = pulumi.StringOutput(ecsResult.Endpoint)
+	} else {
+		endpoint = pulumi.Sprintf("%s (no ingress)", serviceName)
+	}
+
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
+	}
+	return endpoint, nil
 }
