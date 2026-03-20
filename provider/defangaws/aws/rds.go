@@ -12,8 +12,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-type rdsResult struct {
-	instance *rds.Instance
+type RDSResult struct {
+	Instance *rds.Instance
 }
 
 // nodeInfo describes an RDS instance type's resources and cost.
@@ -171,8 +171,8 @@ func postgresEngineVersion(version int) string {
 	}
 }
 
-// createRDS creates a managed RDS Postgres instance for a service.
-func createRDS(
+// CreateRDS creates a managed RDS Postgres instance for a service.
+func CreateRDS(
 	ctx *pulumi.Context,
 	configProvider shared.ConfigProvider,
 	serviceName string,
@@ -182,7 +182,7 @@ func createRDS(
 	serviceSG *ec2.SecurityGroup,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
-) (*rdsResult, error) {
+) (*RDSResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
 		return nil, fmt.Errorf("postgres config is nil")
@@ -256,7 +256,7 @@ func createRDS(
 		return nil, fmt.Errorf("creating RDS instance: %w", err)
 	}
 
-	return &rdsResult{
-		instance: instance,
+	return &RDSResult{
+		Instance: instance,
 	}, nil
 }

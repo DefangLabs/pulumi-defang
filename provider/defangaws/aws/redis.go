@@ -28,7 +28,7 @@ func newRedisComponent(
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	redisResult, err := createElasticache(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
+	redisResult, err := CreateElasticache(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}
@@ -37,7 +37,7 @@ func newRedisComponent(
 	if len(svc.Ports) > 0 {
 		port = svc.Ports[0].Target
 	}
-	endpoint := pulumi.StringOutput(pulumix.Apply(redisResult.address, func(addr string) string {
+	endpoint := pulumi.StringOutput(pulumix.Apply(redisResult.Address, func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, port)
 	}))
 

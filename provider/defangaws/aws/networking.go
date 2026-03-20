@@ -7,14 +7,14 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-type networkingResult struct {
-	vpcID            pulumix.Output[string]
-	publicSubnetIDs  pulumix.Output[[]string]
-	privateSubnetIDs pulumix.Output[[]string]
+type NetworkingResult struct {
+	VpcID            pulumix.Output[string]
+	PublicSubnetIDs  pulumix.Output[[]string]
+	PrivateSubnetIDs pulumix.Output[[]string]
 }
 
-// resolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
-func resolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*networkingResult, error) {
+// ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
+func ResolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*NetworkingResult, error) {
 	if cfg != nil && cfg.VpcID != "" {
 		// Use provided VPC and subnet IDs
 		subnetIDs := make(pulumi.StringArray, len(cfg.SubnetIDs))
@@ -28,10 +28,10 @@ func resolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulum
 		if len(privateSubnetIDs) == 0 {
 			privateSubnetIDs = subnetIDs
 		}
-		return &networkingResult{
-			vpcID:            pulumix.Val(cfg.VpcID),
-			publicSubnetIDs:  pulumix.Output[[]string](subnetIDs.ToStringArrayOutput()),
-			privateSubnetIDs: pulumix.Output[[]string](privateSubnetIDs.ToStringArrayOutput()),
+		return &NetworkingResult{
+			VpcID:            pulumix.Val(cfg.VpcID),
+			PublicSubnetIDs:  pulumix.Output[[]string](subnetIDs.ToStringArrayOutput()),
+			PrivateSubnetIDs: pulumix.Output[[]string](privateSubnetIDs.ToStringArrayOutput()),
 		}, nil
 	}
 
@@ -49,9 +49,9 @@ func resolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulum
 		return nil, err
 	}
 
-	return &networkingResult{
-		vpcID:            pulumix.Output[string](vpc.VpcId),
-		publicSubnetIDs:  pulumix.Output[[]string](vpc.PublicSubnetIds),
-		privateSubnetIDs: pulumix.Output[[]string](vpc.PrivateSubnetIds),
+	return &NetworkingResult{
+		VpcID:            pulumix.Output[string](vpc.VpcId),
+		PublicSubnetIDs:  pulumix.Output[[]string](vpc.PublicSubnetIds),
+		PrivateSubnetIDs: pulumix.Output[[]string](vpc.PrivateSubnetIds),
 	}, nil
 }

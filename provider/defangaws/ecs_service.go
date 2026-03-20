@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -57,16 +56,22 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 		DomainName:  inputs.DomainName,
 	}
 
-	configProvider := aws.NewConfigProvider(inputs.ProjectName)
-	result, err := provideraws.BuildStandaloneECS(ctx, configProvider, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
+	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
+	ecsArgs, err := provideraws.BuildECSArgs(ctx, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build AWS ECS service: %w", err)
+		return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)
 	}
 
-	comp.Endpoint = result.Endpoint
+	recipe := provideraws.LoadRecipe(ctx)
+	endpoint, err := provideraws.NewECSServiceComponent(ctx, configProvider, name, svc, ecsArgs, recipe, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ECS service: %w", err)
+	}
+
+	comp.Endpoint = pulumix.Output[string](endpoint)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": pulumi.StringOutput(result.Endpoint),
+		"endpoint": endpoint,
 	}); err != nil {
 		return nil, err
 	}

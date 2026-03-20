@@ -7,6 +7,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	awssdk "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -46,15 +47,40 @@ func (*AwsPostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AwsP
 	}
 
 	configProvider := aws.NewConfigProvider(*inputs.ProjectName)
-	result, err := provideraws.BuildStandalonePostgres(ctx, configProvider, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
+	recipe := aws.LoadRecipe(ctx)
+
+	net, err := provideraws.ResolveNetworking(ctx, common.ToAWSConfig(inputs.AWS), childOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build AWS Postgres: %w", err)
+		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
 
-	comp.Endpoint = result.Endpoint
+	sg, err := awssdk.NewSecurityGroup(ctx, name, &awssdk.SecurityGroupArgs{
+		VpcId:       pulumi.StringOutput(net.VpcID),
+		Description: pulumi.String("Security group for Postgres"),
+		Egress: awssdk.SecurityGroupEgressArray{
+			&awssdk.SecurityGroupEgressArgs{
+				Protocol:   pulumi.String("-1"),
+				FromPort:   pulumi.Int(0),
+				ToPort:     pulumi.Int(0),
+				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			},
+		},
+	}, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("creating security group: %w", err)
+	}
+
+	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, name, svc, net.VpcID, net.PrivateSubnetIDs, sg, recipe, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("creating RDS: %w", err)
+	}
+
+	comp.Endpoint = pulumix.Apply(pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
+		return fmt.Sprintf("%s:%d", addr, 5432)
+	})
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": pulumi.StringOutput(result.Endpoint),
+		"endpoint": pulumi.StringOutput(comp.Endpoint),
 	}); err != nil {
 		return nil, err
 	}

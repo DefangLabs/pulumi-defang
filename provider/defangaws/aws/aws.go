@@ -11,28 +11,11 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 // serviceComponent is a local component resource used to group per-service resources in the tree.
 type serviceComponent struct {
 	pulumi.ResourceState
-}
-
-// EcsServiceResult holds the per-service outputs for an ECS service.
-type EcsServiceResult struct {
-	Endpoint   pulumix.Output[string]
-	HasIngress bool
-}
-
-// PostgresResult holds the per-service outputs for an RDS Postgres instance.
-type PostgresResult struct {
-	Endpoint pulumix.Output[string]
-}
-
-// RedisResult holds the outputs for a standalone ElastiCache Redis instance.
-type RedisResult struct {
-	Endpoint pulumi.StringOutput
 }
 
 // Build creates all AWS resources for the project.
@@ -69,13 +52,13 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 	}
 
 	// Create or use existing VPC and subnets
-	net, err := resolveNetworking(ctx, awsCfg, opts...)
+	net, err := ResolveNetworking(ctx, awsCfg, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
-	vpcID := net.vpcID
-	subnetIDs := net.publicSubnetIDs
-	privateSubnetIDs := net.privateSubnetIDs
+	vpcID := net.VpcID
+	subnetIDs := net.PublicSubnetIDs
+	privateSubnetIDs := net.PrivateSubnetIDs
 
 	// Create security group for services
 	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
@@ -145,17 +128,17 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 			if imgErr != nil {
 				return nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 			}
-			endpoint, err = newECSServiceComponent(ctx, configProvider, svcName, svc, &ecsServiceArgs{
-				cluster:   cluster,
-				execRole:  execRole,
-				logGroup:  logGroup,
-				vpcID:     vpcID,
-				subnetIDs: subnetIDs,
-				sg:        sg,
-				listener:  httpListener,
-				alb:       alb,
-				region:    region.Name,
-				imageURI:  imageURI,
+			endpoint, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &ECSServiceArgs{
+				Cluster:   cluster,
+				ExecRole:  execRole,
+				LogGroup:  logGroup,
+				VpcID:     vpcID,
+				SubnetIDs: subnetIDs,
+				Sg:        sg,
+				Listener:  httpListener,
+				Alb:       alb,
+				Region:    region.Name,
+				ImageURI:  imageURI,
 			}, recipe, opts[0])
 		}
 		if err != nil {
@@ -170,9 +153,10 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 	}, nil
 }
 
-// BuildStandaloneECS creates all AWS resources for a single standalone ECS service.
+// BuildECSArgs creates all shared AWS infrastructure for a standalone ECS service and
+// returns the args to pass to NewECSServiceComponent.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneECS(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*EcsServiceResult, error) {
+func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*ECSServiceArgs, error) {
 	recipe := LoadRecipe(ctx)
 
 	region, err := aws.GetRegion(ctx, nil)
@@ -180,13 +164,13 @@ func BuildStandaloneECS(ctx *pulumi.Context, configProvider shared.ConfigProvide
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	net, err := resolveNetworking(ctx, awsCfg, opts...)
+	net, err := ResolveNetworking(ctx, awsCfg, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.vpcID),
+		VpcId:       pulumi.StringOutput(net.VpcID),
 		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -229,12 +213,12 @@ func BuildStandaloneECS(ctx *pulumi.Context, configProvider shared.ConfigProvide
 	var httpListener *lb.Listener
 	var svcALB *lb.LoadBalancer
 	if svc.HasIngressPorts() {
-		albResult, err := createALB(ctx, net.vpcID, net.publicSubnetIDs, sg, recipe, opts...)
+		albRes, err := createALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, recipe, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
-		httpListener = albResult.httpListener
-		svcALB = albResult.alb
+		httpListener = albRes.httpListener
+		svcALB = albRes.alb
 	}
 
 	imageURI, err := getServiceImage(ctx, serviceName, svc, imgInfra, opts...)
@@ -242,112 +226,17 @@ func BuildStandaloneECS(ctx *pulumi.Context, configProvider shared.ConfigProvide
 		return nil, fmt.Errorf("resolving image for %s: %w", serviceName, err)
 	}
 
-	ecsResult, err := createECSService(ctx, configProvider, serviceName, svc, &ecsServiceArgs{
-		cluster:   cluster,
-		execRole:  execRole,
-		logGroup:  logGroup,
-		vpcID:     net.vpcID,
-		subnetIDs: net.publicSubnetIDs,
-		sg:        sg,
-		listener:  httpListener,
-		alb:       svcALB,
-		region:    region.Name,
-		imageURI:  imageURI,
-	}, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
-	}
-
-	endpoint := ecsResult.endpoint
-	if !ecsResult.hasIngress {
-		endpoint = pulumix.Val(fmt.Sprintf("%s (no ingress)", serviceName))
-	}
-
-	return &EcsServiceResult{
-		Endpoint:   endpoint,
-		HasIngress: ecsResult.hasIngress,
+	return &ECSServiceArgs{
+		Cluster:   cluster,
+		ExecRole:  execRole,
+		LogGroup:  logGroup,
+		VpcID:     net.VpcID,
+		SubnetIDs: net.PublicSubnetIDs,
+		Sg:        sg,
+		Listener:  httpListener,
+		Alb:       svcALB,
+		Region:    region.Name,
+		ImageURI:  imageURI,
 	}, nil
 }
 
-// BuildStandalonePostgres creates AWS resources for a standalone RDS Postgres instance.
-// The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*PostgresResult, error) {
-	recipe := LoadRecipe(ctx)
-
-	net, err := resolveNetworking(ctx, awsCfg, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving networking: %w", err)
-	}
-
-	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.vpcID),
-		Description: pulumi.String("Security group for Postgres"),
-		Egress: ec2.SecurityGroupEgressArray{
-			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
-	rdsResult, err := createRDS(ctx, configProvider, serviceName, svc, net.vpcID, net.privateSubnetIDs, sg, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating RDS: %w", err)
-	}
-
-	endpoint := pulumix.Apply(pulumix.Output[string](rdsResult.instance.Address), func(addr string) string {
-		return fmt.Sprintf("%s:%d", addr, 5432)
-	})
-
-	return &PostgresResult{
-		Endpoint: endpoint,
-	}, nil
-}
-
-
-// BuildStandaloneRedis creates AWS resources for a standalone ElastiCache Redis instance.
-// The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildStandaloneRedis(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*RedisResult, error) {
-	recipe := LoadRecipe(ctx)
-
-	net, err := resolveNetworking(ctx, awsCfg, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving networking: %w", err)
-	}
-
-	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.vpcID),
-		Description: pulumi.String("Security group for Redis"),
-		Egress: ec2.SecurityGroupEgressArray{
-			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
-	redisResult, err := createElasticache(ctx, configProvider, serviceName, svc, net.vpcID, net.privateSubnetIDs, sg, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ElastiCache: %w", err)
-	}
-
-	port := 6379
-	if len(svc.Ports) > 0 {
-		port = svc.Ports[0].Target
-	}
-	endpoint := pulumi.StringOutput(pulumix.Apply(redisResult.address, func(addr string) string {
-			return fmt.Sprintf("%s:%d", addr, port)
-	}))
-
-	return &RedisResult{Endpoint: endpoint}, nil
-}

@@ -28,12 +28,12 @@ func newPostgresComponent(
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	rdsResult, err := createRDS(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
+	rdsResult, err := CreateRDS(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating RDS for %s: %w", serviceName, err)
 	}
 
-	endpoint := pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](rdsResult.instance.Address), func(addr string) string {
+	endpoint := pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, 5432)
 	}))
 

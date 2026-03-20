@@ -12,8 +12,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-type elasticacheResult struct {
-	address pulumix.Output[string] // primary or configuration endpoint address
+type ElasticacheResult struct {
+	Address pulumix.Output[string] // primary or configuration endpoint address
 }
 
 // ElastiCache node type catalogs.
@@ -115,8 +115,8 @@ func transitEncryptionSupported(engine, engineVersion string) bool {
 	return v.GTE(min705)
 }
 
-// createElasticache creates a managed ElastiCache Redis/Valkey replication group for a service.
-func createElasticache(
+// CreateElasticache creates a managed ElastiCache Redis/Valkey replication group for a service.
+func CreateElasticache(
 	ctx *pulumi.Context,
 	_ shared.ConfigProvider,
 	serviceName string,
@@ -126,7 +126,7 @@ func createElasticache(
 	serviceSG *ec2.SecurityGroup,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
-) (*elasticacheResult, error) {
+) (*ElasticacheResult, error) {
 	if svc.Redis == nil {
 		return nil, fmt.Errorf("redis config is nil")
 	}
@@ -246,5 +246,5 @@ func createElasticache(
 		},
 	)
 
-	return &elasticacheResult{address: address}, nil
+	return &ElasticacheResult{Address: address}, nil
 }
