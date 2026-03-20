@@ -13,10 +13,9 @@ env:
   PROVIDER: "defang"
   # THIS GITHUB_TOKEN IS A REQUIREMENT TO BE ABLE TO WRITE TO GH RELEASES
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  # IF YOU NEED TO PUBLISH A NPM PACKAGE THEN ENSURE A NPM_TOKEN SECRET IS SET
-  # AND PUBLISH_NPM: TRUE. IF YOU WANT TO PUBLISH TO A PRIVATE NPM REGISTRY
-  # THEN ENSURE THE NPM_REGISTRY_URL IS CHANGED
-  NPM_TOKEN: ${{ secrets.NPMJS_AUTH_TOKEN }}
+  # IF YOU NEED TO PUBLISH A NPM PACKAGE THEN ENSURE PUBLISH_NPM: TRUE.
+  # IF YOU WANT TO PUBLISH TO A PRIVATE NPM REGISTRY THEN ENSURE THE NPM_REGISTRY_URL IS CHANGED
+  # Authentication is handled via npm Trusted Publishers (no token required).
   PUBLISH_NPM: true
   NPM_REGISTRY_URL: https://registry.npmjs.org
   # IF YOU NEED TO PUBLISH A NUGET PACKAGE THEN ENSURE AN NUGET_PUBLISH_KEY
@@ -110,11 +109,9 @@ jobs:
           password: ${{ env.PYPI_PASSWORD }}
           packages-dir: ${{github.workspace}}/sdk/python/${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
-        uses: JS-DevTools/npm-publish@v3
-        with:
-          access: "public"
-          token: ${{ env.NPM_TOKEN }}
-          package: ${{github.workspace}}/sdk/nodejs/${{ matrix.provider }}/bin/package.json
+        name: Publish package to npm
+        run: npm publish --access public
+        working-directory: ${{github.workspace}}/sdk/nodejs/${{ matrix.provider }}/bin
       - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
         name: publish nuget package
         run: |
