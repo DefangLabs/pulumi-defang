@@ -1,2 +1,2 @@
-pulumi-defang-gcp==2.1.0-alpha+dirty
+pulumi-defang-gcp==2.1.0-alpha
 pulumi>=3.0.0,<4.0.0

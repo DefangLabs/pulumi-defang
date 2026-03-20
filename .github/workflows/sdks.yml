@@ -54,3 +54,10 @@ jobs:
             git diff examples/
             exit 1
         fi
+
+    - name: Ensure clean example versions
+      run: |
+        if grep -r '+dirty' examples/; then
+          >&2 echo "error: found +dirty version in examples. Regenerate examples with `make examples` and commit the changes."
+          exit 1
+        fi
