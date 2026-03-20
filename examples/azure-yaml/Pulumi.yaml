@@ -1,0 +1,23 @@
+name: defang-azure-yaml
+runtime: yaml
+description: Example using defang-azure to deploy services to Azure (Pulumi YAML)
+
+plugins:
+  providers:
+    - name: defang-azure
+      path: ../../bin
+
+resources:
+  azure-yaml:
+    type: defang-azure:defangazure:Project
+    properties:
+      services:
+        app:
+          image: nginx
+          ports:
+            - target: 80
+              mode: ingress
+              appProtocol: http
+
+outputs:
+  endpoints: ${azure-yaml.endpoints}
