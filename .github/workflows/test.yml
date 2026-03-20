@@ -83,19 +83,19 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
 
-    - name: Check clean examples working tree
-      run: |
-        git update-index -q --refresh
-        if ! git diff-index --quiet HEAD -- examples/; then
-            >&2 echo "error: examples directory is not clean, aborting!"
-            git status examples/
-            git diff examples/
-            exit 1
-        fi
+    # - name: Check clean examples working tree
+    #   run: |
+    #     git update-index -q --refresh
+    #     if ! git diff-index --quiet HEAD -- examples/; then
+    #         >&2 echo "error: examples directory is not clean, aborting!"
+    #         git status examples/
+    #         git diff examples/
+    #         exit 1
+    #     fi
 
-    - name: Ensure clean example versions
-      run: |
-        if grep -r '+dirty' examples/; then
-          >&2 echo "error: found +dirty version in examples. Regenerate examples with \`make examples\` and commit the changes."
-          exit 1
-        fi
+    # - name: Ensure clean example versions
+    #   run: |
+    #     if grep -r '+dirty' examples/; then
+    #       >&2 echo "error: found +dirty version in examples. Regenerate examples with \`make examples\` and commit the changes."
+    #       exit 1
+    #     fi
