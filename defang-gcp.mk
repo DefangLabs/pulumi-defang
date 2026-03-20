@@ -46,7 +46,7 @@ go_sdk: provider
 		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
 		go mod tidy
 
-nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
+nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed 's/^v//')
 .PHONY: nodejs_sdk
 nodejs_sdk: provider
 	rm -rf "sdk/nodejs/${PACK}"
