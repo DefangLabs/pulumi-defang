@@ -75,7 +75,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{matrix.nodeversion}}
-          registry-url: ${{env.NPM_REGISTRY_URL}}
       - if: ${{ matrix.language == 'dotnet'}}
         name: Setup DotNet
         uses: actions/setup-dotnet@v4
