@@ -9,6 +9,9 @@ jobs:
   build_sdks:
     name: Build SDKs
     runs-on: ubuntu-latest
+    concurrency:
+      group: build-sdks-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +48,9 @@ jobs:
   build_examples:
     name: Build Examples
     runs-on: ubuntu-latest
+    concurrency:
+      group: build-examples-${{ github.ref }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:

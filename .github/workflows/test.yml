@@ -6,6 +6,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    concurrency:
+      group: test-${{ github.ref }}
+      cancel-in-progress: true
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v4
@@ -29,4 +32,3 @@ jobs:
     #   with:
     #     version: latest
     #     args: --timeout=5m --config=.golangci.yaml provider
-    
