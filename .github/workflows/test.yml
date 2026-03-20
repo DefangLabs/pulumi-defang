@@ -14,9 +14,11 @@ jobs:
       with:
         go-version-file: go.mod
     - name: Install pulumictl
-      uses: jaxxstorm/action-install-gh-release@v1.14.0
-      with:
-        repo: pulumi/pulumictl
+      run: |
+        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
     - run: make provider

@@ -31,10 +31,6 @@ jobs:
   publish_binary:
     name: publish
     runs-on: ubuntu-latest
-    env:
-      # jaxxstorm/action-install-gh-release does not yet have a Node.js 24
-      # compatible release; remove once it does.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
     - name: Checkout Repo
       uses: actions/checkout@v6
@@ -45,9 +41,11 @@ jobs:
       with:
         go-version: 1.25.x
     - name: Install pulumictl
-      uses: jaxxstorm/action-install-gh-release@v2.1.0
-      with:
-        repo: pulumi/pulumictl
+      run: |
+        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v7
       with:
@@ -59,10 +57,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: publish_binary
     environment: publish
-    env:
-      # jaxxstorm/action-install-gh-release and pulumi/action-install-pulumi-cli
-      # do not yet have Node.js 24 compatible releases; remove once they do.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v6
@@ -73,11 +67,13 @@ jobs:
         with:
           go-version: ${{ matrix.goversion }}
       - name: Install pulumictl
-        uses: jaxxstorm/action-install-gh-release@v2.1.0
-        with:
-          repo: pulumi/pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Install Pulumi CLI
-        uses: pulumi/action-install-pulumi-cli@v2.0.0
+        uses: pulumi/actions@v6
       - if: ${{ matrix.language == 'nodejs'}}
         name: Setup Node
         uses: actions/setup-node@v6

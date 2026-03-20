@@ -9,10 +9,6 @@ jobs:
   build_sdks:
     name: Build SDKs
     runs-on: ubuntu-latest
-    env:
-      # jaxxstorm/action-install-gh-release does not yet have a Node.js 24
-      # compatible release; remove once it does.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     strategy:
       fail-fast: false
       matrix:
@@ -43,12 +39,14 @@ jobs:
         go-version-file: go.mod
 
     - name: Install pulumictl
-      uses: jaxxstorm/action-install-gh-release@v2.1.0
-      with:
-        repo: pulumi/pulumictl
+      run: |
+        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
 
     - name: Install pulumi
-      uses: pulumi/actions@v5
+      uses: pulumi/actions@v6
 
     - if: ${{ matrix.language == 'nodejs'}}
       name: Setup Node
