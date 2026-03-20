@@ -43,7 +43,7 @@ jobs:
         fi
 
   build_examples:
-    name: Build SDKs
+    name: Build Examples
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
