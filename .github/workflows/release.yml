@@ -68,7 +68,7 @@ jobs:
           provider: defang-${{ matrix.provider }}
 
       - name: Compress SDK folder
-        run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/${{ matrix.provider }} .
+        run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/defang-${{ matrix.provider }} .
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -78,17 +78,17 @@ jobs:
         name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: ${{github.workspace}}/sdk/python/${{ matrix.provider }}/bin/dist
+          packages-dir: ${{github.workspace}}/sdk/python/defang-${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
         name: Publish package to npm
         run: |
           DIST_TAG=$(node -e "const v=require('./package.json').version;const m=v.match(/-([a-zA-Z]+)/);process.stdout.write(m?m[1]:'latest')")
           npm publish --access public --tag "$DIST_TAG"
-        working-directory: ${{github.workspace}}/sdk/nodejs/${{ matrix.provider }}/bin
+        working-directory: ${{github.workspace}}/sdk/nodejs/defang-${{ matrix.provider }}/bin
       - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
         name: publish nuget package
         run: |
-          dotnet nuget push ${{github.workspace}}/sdk/dotnet/${{ matrix.provider }}/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
+          dotnet nuget push ${{github.workspace}}/sdk/dotnet/defang-${{ matrix.provider }}/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
           echo "done publishing packages"
     strategy:
       fail-fast: false
@@ -143,6 +143,15 @@ jobs:
           if git diff --cached --quiet; then
             echo "No example changes to commit"
           else
+            BRANCH="chore/regenerate-examples-${{ github.ref_name }}"
+            git checkout -b "$BRANCH"
             git commit -m "chore: regenerate examples for ${{ github.ref_name }}"
-            git push origin main
+            git push origin "$BRANCH"
+            gh pr create \
+              --title "chore: regenerate examples for ${{ github.ref_name }}" \
+              --body "Automated regeneration of examples triggered by release ${{ github.ref_name }}." \
+              --base main \
+              --head "$BRANCH"
           fi
+        env:
+          GH_TOKEN: ${{ github.token }}
