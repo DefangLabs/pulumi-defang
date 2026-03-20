@@ -126,6 +126,41 @@ func portProtocol(p shared.PortConfig) string {
 	return "tcp"
 }
 
+// newECSServiceComponent registers a component resource for a container service,
+// creates its ECS children, registers outputs, and returns the endpoint.
+func newECSServiceComponent(
+	ctx *pulumi.Context,
+	configProvider shared.ConfigProvider,
+	serviceName string,
+	svc shared.ServiceInput,
+	args *ecsServiceArgs,
+	recipe Recipe,
+	parentOpt pulumi.ResourceOption,
+) (pulumi.StringOutput, error) {
+	comp := &serviceComponent{}
+	if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", serviceName, comp, parentOpt); err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("registering ECS service component %s: %w", serviceName, err)
+	}
+	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+	ecsResult, err := createECSService(ctx, configProvider, serviceName, svc, args, recipe, opts...)
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
+	}
+
+	var endpoint pulumi.StringOutput
+	if ecsResult.hasIngress {
+		endpoint = pulumi.StringOutput(ecsResult.endpoint)
+	} else {
+		endpoint = pulumi.Sprintf("%s (no ingress)", serviceName)
+	}
+
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
+	}
+	return endpoint, nil
+}
+
 // createECSService creates an ECS Fargate service for a container service.
 func createECSService(
 	ctx *pulumi.Context,

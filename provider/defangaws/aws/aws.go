@@ -124,53 +124,23 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 
 	configProvider := NewConfigProvider(projectName)
 	for svcName, svc := range args.Services {
-		comp := &serviceComponent{}
+		var endpoint pulumi.StringOutput
+		var err error
 
-		if svc.Postgres != nil {
+		switch {
+		case svc.Postgres != nil:
 			// Managed Postgres → RDS
-			if err := ctx.RegisterComponentResource("defang-aws:index:AwsPostgres", svcName, comp, opts[0]); err != nil {
-				return nil, fmt.Errorf("registering postgres component %s: %w", svcName, err)
-			}
-			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-			rdsResult, err := createRDS(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating RDS for %s: %w", svcName, err)
-			}
-			endpoints[svcName] = pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](rdsResult.instance.Address), func(addr string) string {
-				return fmt.Sprintf("%s:%d", addr, 5432)
-			}))
-		} else if svc.Redis != nil {
+			endpoint, err = newPostgresComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, opts[0])
+		case svc.Redis != nil:
 			// Managed Redis → ElastiCache
-			if err := ctx.RegisterComponentResource("defang-aws:index:AwsRedis", svcName, comp, opts[0]); err != nil {
-				return nil, fmt.Errorf("registering redis component %s: %w", svcName, err)
-			}
-			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-			redisResult, err := createElasticache(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, svcOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating Redis for %s: %w", svcName, err)
-			}
-			port := 6379
-			if len(svc.Ports) > 0 {
-				port = svc.Ports[0].Target
-			}
-			endpoints[svcName] = pulumi.StringOutput(pulumix.Apply(redisResult.address, func(addr string) string {
-				return fmt.Sprintf("%s:%d", addr, port)
-			}))
-		} else {
+			endpoint, err = newRedisComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, opts[0])
+		default:
 			// Container service → ECS
-			if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", svcName, comp, opts[0]); err != nil {
-				return nil, fmt.Errorf("registering ECS service component %s: %w", svcName, err)
+			imageURI, imgErr := getServiceImage(ctx, svcName, svc, imgInfra, opts[0])
+			if imgErr != nil {
+				return nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 			}
-			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-			imageURI, err := getServiceImage(ctx, svcName, svc, imgInfra, svcOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
-			}
-
-			ecsResult, err := createECSService(ctx, configProvider, svcName, svc, &ecsServiceArgs{
+			endpoint, err = newECSServiceComponent(ctx, configProvider, svcName, svc, &ecsServiceArgs{
 				cluster:   cluster,
 				execRole:  execRole,
 				logGroup:  logGroup,
@@ -181,23 +151,12 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 				alb:       alb,
 				region:    region.Name,
 				imageURI:  imageURI,
-			}, recipe, svcOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating ECS service %s: %w", svcName, err)
-			}
-
-			if ecsResult.hasIngress {
-				endpoints[svcName] = pulumi.StringOutput(ecsResult.endpoint)
-			} else {
-				endpoints[svcName] = pulumi.Sprintf("%s (no ingress)", svcName)
-			}
+			}, recipe, opts[0])
 		}
-
-		if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-			"endpoint": endpoints[svcName],
-		}); err != nil {
-			return nil, fmt.Errorf("registering outputs for %s: %w", svcName, err)
+		if err != nil {
+			return nil, err
 		}
+		endpoints[svcName] = endpoint
 	}
 
 	return &common.BuildResult{
