@@ -5,6 +5,9 @@ on:
       - .devcontainer
       - examples
 
+permissions:
+  contents: read
+
 jobs:
   build_sdks:
     name: Build SDKs
