@@ -24,14 +24,8 @@ env:
   NUGET_PUBLISH_KEY: ${{ secrets.NUGET_PUBLISH_KEY }}
   NUGET_FEED_URL: https://api.nuget.org/v3/index.json
   PUBLISH_NUGET: true
-  # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE AN PYPI_API_TOKEN
-  # SECRET IS SET AND PUBLISH_PYPI: TRUE. IF YOU WANT TO PUBLISH TO AN ALTERNATIVE
-  # PYPI REGISTRY THEN ENSURE THE PYPI_REPOSITORY_URL IS SET. IF YOU ARE USING AN API_TOKEN THEN
-  # YOU DO NOT NEED TO CHANGE THE PYPI_USERNAME (__token__) , IF YOU ARE USING PASSWORD AUTHENTICATION THEN YOU WILL
-  # NEED TO CHANGE TO USE THE CORRECT PASSWORD
-  PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-  PYPI_USERNAME: "__token__"
-  # PYPI_REPOSITORY_URL: ""
+  # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE PUBLISH_PYPI: TRUE.
+  # Authentication is handled via PyPI Trusted Publishers (no token required).
   PUBLISH_PYPI: true
 jobs:
   publish_binary:
@@ -105,8 +99,6 @@ jobs:
         name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: ${{ env.PYPI_USERNAME }}
-          password: ${{ env.PYPI_PASSWORD }}
           packages-dir: ${{github.workspace}}/sdk/python/${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
         name: Publish package to npm
