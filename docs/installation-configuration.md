@@ -7,13 +7,12 @@ layout: package
 
 The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.
 
-The Defang Pulumi Provider is available in most pulumi languages. 
+The Defang Pulumi Provider is available in most pulumi languages.
 
 * JavaScript/TypeScript: [`@defang-io/pulumi-defang`](https://www.npmjs.com/package/@defang-io/pulumi-defang)
 * Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
 * Go: [`github.com/DefangLabs/pulumi-defang/sdk/v1/go/defang`](https://github.com/DefangLabs/pulumi-defang)
 * .NET: [`DefangLabs.Defang`](https://www.nuget.org/packages/DefangLabs.Defang/)
-* Java: Coming soon
 
 ### Installing the Pulumi Plugin directly
 ```
@@ -28,7 +27,7 @@ Sign up for [Defang](https://defang.io) with your Github account.
 
 #### Authenticating in Github Actions workflows
 
-When run in a Github Actions workflow, the Defang Pulumi Provider will automatically use environment variables Github to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` env vars.
+When run in a Github Actions workflow, the Defang Pulumi Provider will automatically use environment variables Github provides to authenticate your Github user with Defang if you give your workflow the [appropriate permissions](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect#adding-permissions-settings). Defang use the `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` environment variables.
 
 #### Authenticating with `defang token`
 
@@ -41,10 +40,6 @@ You will also need to authenticate with your cloud provider.
 * For AWS, there are many ways to authenticate
     - Use the [`aws-actions/configure-aws-credentials`](https://github.com/aws-actions/configure-aws-credentials) Github Action
     - Use AWS Access Keys by setting the `AWS_ACCESS_KEY_ID`, and `AWS_ACCESS_KEY_SECRET` env vars.
-* For Digital Ocean, you will need to set the following env vars:
-    - `DIGITALOCEAN_TOKEN`
-    - `SPACES_ACCESS_KEY_ID`
-    - `SPACES_SECRET_ACCESS_KEY`
 * For Google Cloud, you may wish to use the [`google-github-actions/auth`](https://github.com/google-github-actions/auth) Github Action
 
 ## Using Pulumi Cloud
