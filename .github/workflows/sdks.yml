@@ -69,15 +69,7 @@ jobs:
       with:
         python-version: ${{matrix.pythonversion}}
 
-    - if: ${{ matrix.language == 'java'}}
-      name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        cache: gradle
-        distribution: temurin
-        java-version: ${{matrix.javaversion}}
-
-    - name: Build SDK
+- name: Build SDK
       run: make ${{ matrix.language }}_sdk
 
     - name: Check worktree clean
