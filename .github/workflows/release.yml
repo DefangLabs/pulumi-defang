@@ -143,6 +143,15 @@ jobs:
           if git diff --cached --quiet; then
             echo "No example changes to commit"
           else
+            BRANCH="chore/regenerate-examples-${{ github.ref_name }}"
+            git checkout -b "$BRANCH"
             git commit -m "chore: regenerate examples for ${{ github.ref_name }}"
-            git push origin main
+            git push origin "$BRANCH"
+            gh pr create \
+              --title "chore: regenerate examples for ${{ github.ref_name }}" \
+              --body "Automated regeneration of examples triggered by release ${{ github.ref_name }}." \
+              --base main \
+              --head "$BRANCH"
           fi
+        env:
+          GH_TOKEN: ${{ github.token }}
