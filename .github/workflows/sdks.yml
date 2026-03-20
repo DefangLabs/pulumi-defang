@@ -42,6 +42,26 @@ jobs:
           exit 1
         fi
 
+  build_examples:
+    name: Build SDKs
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+        - nodejs
+        - python
+        - dotnet
+        - go
+        provider:
+        - aws
+        - gcp
+        - azure
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v6
+
     - name: Build Example
       run: make example_${{ matrix.provider }}_${{ matrix.language }}
       env:
