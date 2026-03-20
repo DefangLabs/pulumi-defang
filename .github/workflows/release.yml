@@ -132,6 +132,8 @@ jobs:
 
       - name: Regenerate examples
         run: make examples
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Commit and push updated examples
         run: |

@@ -44,6 +44,8 @@ jobs:
 
     - name: Build Example
       run: make example_${{ matrix.provider }}_${{ matrix.language }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
 
     - name: Check clean examples working tree
       run: |
