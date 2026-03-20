@@ -150,9 +150,9 @@ func BuildStandaloneContainerApp(ctx *pulumi.Context, serviceName string, svc sh
 		return nil, fmt.Errorf("creating Container App %s: %w", serviceName, err)
 	}
 
-	endpoint := caResult.app.LatestRevisionFqdn.ApplyT(func(fqdn *string) string {
-		if fqdn != nil && *fqdn != "" {
-			return fmt.Sprintf("https://%s", *fqdn)
+	endpoint := caResult.app.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
+		if fqdn != "" {
+			return fmt.Sprintf("https://%s", fqdn)
 		}
 		return ""
 	}).(pulumi.StringOutput)

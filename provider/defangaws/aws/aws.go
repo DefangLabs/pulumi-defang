@@ -30,6 +30,11 @@ type PostgresResult struct {
 	Endpoint pulumix.Output[string]
 }
 
+// RedisResult holds the outputs for a standalone ElastiCache Redis instance.
+type RedisResult struct {
+	Endpoint pulumi.StringOutput
+}
+
 // Build creates all AWS resources for the project.
 // The AWS provider must be passed via the parent chain (pulumi.Providers on the parent component).
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCfg *common.AWSConfig, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
@@ -302,4 +307,47 @@ func BuildStandalonePostgres(ctx *pulumi.Context, configProvider shared.ConfigPr
 	return &PostgresResult{
 		Endpoint: endpoint,
 	}, nil
+}
+
+
+// BuildStandaloneRedis creates AWS resources for a standalone ElastiCache Redis instance.
+// The AWS provider must be passed via opts (pulumi.Providers on the parent component).
+func BuildStandaloneRedis(ctx *pulumi.Context, configProvider shared.ConfigProvider, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*RedisResult, error) {
+	recipe := LoadRecipe(ctx)
+
+	net, err := resolveNetworking(ctx, awsCfg, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("resolving networking: %w", err)
+	}
+
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
+		VpcId:       pulumi.StringOutput(net.vpcID),
+		Description: pulumi.String("Security group for Redis"),
+		Egress: ec2.SecurityGroupEgressArray{
+			&ec2.SecurityGroupEgressArgs{
+				Protocol:   pulumi.String("-1"),
+				FromPort:   pulumi.Int(0),
+				ToPort:     pulumi.Int(0),
+				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			},
+		},
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating security group: %w", err)
+	}
+
+	redisResult, err := createElasticache(ctx, configProvider, serviceName, svc, net.vpcID, net.privateSubnetIDs, sg, recipe, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating ElastiCache: %w", err)
+	}
+
+	port := 6379
+	if len(svc.Ports) > 0 {
+		port = svc.Ports[0].Target
+	}
+	endpoint := pulumi.StringOutput(pulumix.Apply(redisResult.address, func(addr string) string {
+			return fmt.Sprintf("%s:%d", addr, port)
+	}))
+
+	return &RedisResult{Endpoint: endpoint}, nil
 }
