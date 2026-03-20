@@ -46,10 +46,11 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		expected    string
 	}{
 		{
-			name:        "nil environment returns zero output",
-			environment: nil,
-			key:         "MY_KEY",
-			wantUnknown: true,
+			name:         "nil environment uses default",
+			environment:  nil,
+			key:          "MY_KEY",
+			defaultValue: "fallback",
+			expected:     "fallback",
 		},
 		{
 			name:         "key absent returns default",

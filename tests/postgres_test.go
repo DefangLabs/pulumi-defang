@@ -24,10 +24,6 @@ func TestConstructAwsPostgres(t *testing.T) {
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
-			// Non-nil environment ensures GetConfigOrEnvValue returns a valid
-			// StringOutput for POSTGRES_PASSWORD (not a zero-value output), which
-			// prevents a panic inside rds.NewInstance when it calls ToSecret.
-			"environment": property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 
@@ -45,7 +41,6 @@ func TestConstructAwsPostgresWithAllowDowntime(t *testing.T) {
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
 			})),
-			"environment": property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 
@@ -63,7 +58,6 @@ func TestConstructAwsPostgresWithSnapshot(t *testing.T) {
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"fromSnapshot": property.New("rds:myproject-db-2024-01-01"),
 			})),
-			"environment": property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 
@@ -101,7 +95,6 @@ func TestConstructGcpCloudSql(t *testing.T) {
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:15"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
-			"environment":  property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 
@@ -119,7 +112,6 @@ func TestConstructGcpCloudSqlWithAllowDowntime(t *testing.T) {
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
 			})),
-			"environment": property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 
@@ -156,7 +148,6 @@ func TestConstructAzurePostgres(t *testing.T) {
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
-			"environment":  property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 
@@ -174,7 +165,6 @@ func TestConstructAzurePostgresWithAllowDowntime(t *testing.T) {
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
 			})),
-			"environment": property.New(property.NewMap(map[string]property.Value{})),
 		}),
 	})
 

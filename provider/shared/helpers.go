@@ -156,10 +156,9 @@ func ParseInterpolatedString(s string) []Match {
 }
 
 func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string, defaultValue string) pulumi.StringOutput {
-	if s.Environment == nil {
-		return pulumi.StringOutput{}
-	}
-
+	// Reading from a nil map in Go returns (nil, false) without panicking, so a
+	// nil Environment is equivalent to an empty one: missing keys fall through to
+	// the default value.
 	value, exists := s.Environment[key]
 	if !exists {
 		return pulumi.String(defaultValue).ToStringOutput()
