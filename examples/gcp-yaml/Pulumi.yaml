@@ -1,0 +1,23 @@
+name: defang-gcp-yaml
+runtime: yaml
+description: Example using defang-gcp to deploy services to GCP (Pulumi YAML)
+
+plugins:
+  providers:
+    - name: defang-gcp
+      path: ../../bin
+
+resources:
+  gcp-yaml:
+    type: defang-gcp:defanggcp:Project
+    properties:
+      services:
+        app:
+          image: nginx
+          ports:
+            - target: 80
+              mode: ingress
+              appProtocol: http
+
+outputs:
+  endpoints: ${gcp-yaml.endpoints}

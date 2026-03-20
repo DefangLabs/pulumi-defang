@@ -1,20 +1,20 @@
 { pkgs ? import <nixpkgs> { } }:
 pkgs.mkShell {
   buildInputs = [
+    pkgs.azure-cli
+    pkgs.dotnet-sdk
     pkgs.git
     pkgs.gnumake
     pkgs.gnused
-    pkgs.go_1_23
+    pkgs.go_1_25
+    pkgs.golangci-lint
     pkgs.less
     pkgs.nixfmt-classic
     pkgs.nodejs_22
-    pkgs.pulumi
-    pkgs.pulumiPackages.pulumi-nodejs
+    pkgs.pulumi-bin
     pkgs.pulumictl
     pkgs.python3
-    pkgs.golangci-lint
     pkgs.python312Packages.setuptools
-    pkgs.dotnet-sdk
     pkgs.vim
     pkgs.yarn
   ];

@@ -13,10 +13,9 @@ env:
   PROVIDER: "defang"
   # THIS GITHUB_TOKEN IS A REQUIREMENT TO BE ABLE TO WRITE TO GH RELEASES
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  # IF YOU NEED TO PUBLISH A NPM PACKAGE THEN ENSURE A NPM_TOKEN SECRET IS SET
-  # AND PUBLISH_NPM: TRUE. IF YOU WANT TO PUBLISH TO A PRIVATE NPM REGISTRY
-  # THEN ENSURE THE NPM_REGISTRY_URL IS CHANGED
-  NPM_TOKEN: ${{ secrets.NPMJS_AUTH_TOKEN }}
+  # IF YOU NEED TO PUBLISH A NPM PACKAGE THEN ENSURE PUBLISH_NPM: TRUE.
+  # IF YOU WANT TO PUBLISH TO A PRIVATE NPM REGISTRY THEN ENSURE THE NPM_REGISTRY_URL IS CHANGED
+  # Authentication is handled via npm Trusted Publishers (no token required).
   PUBLISH_NPM: true
   NPM_REGISTRY_URL: https://registry.npmjs.org
   # IF YOU NEED TO PUBLISH A NUGET PACKAGE THEN ENSURE AN NUGET_PUBLISH_KEY
@@ -25,14 +24,8 @@ env:
   NUGET_PUBLISH_KEY: ${{ secrets.NUGET_PUBLISH_KEY }}
   NUGET_FEED_URL: https://api.nuget.org/v3/index.json
   PUBLISH_NUGET: true
-  # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE AN PYPI_API_TOKEN
-  # SECRET IS SET AND PUBLISH_PYPI: TRUE. IF YOU WANT TO PUBLISH TO AN ALTERNATIVE
-  # PYPI REGISTRY THEN ENSURE THE PYPI_REPOSITORY_URL IS SET. IF YOU ARE USING AN API_TOKEN THEN
-  # YOU DO NOT NEED TO CHANGE THE PYPI_USERNAME (__token__) , IF YOU ARE USING PASSWORD AUTHENTICATION THEN YOU WILL
-  # NEED TO CHANGE TO USE THE CORRECT PASSWORD
-  PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-  PYPI_USERNAME: "__token__"
-  # PYPI_REPOSITORY_URL: ""
+  # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE PUBLISH_PYPI: TRUE.
+  # Authentication is handled via PyPI Trusted Publishers (no token required).
   PUBLISH_PYPI: true
 jobs:
   publish_binary:
@@ -40,19 +33,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v2
+      uses: actions/checkout@v6
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
-        go-version: 1.22.x
+        go-version: 1.25.x
     - name: Install pulumictl
-      uses: jaxxstorm/action-install-gh-release@v1.14.0
-      with:
-        repo: pulumi/pulumictl
+      run: |
+        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@v6
+      uses: goreleaser/goreleaser-action@v7
       with:
         distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
         args: -p 3 release
@@ -64,84 +59,90 @@ jobs:
     environment: publish
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Unshallow clone for tags
-        run: git fetch --prune --unshallow --tags
-      - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/checkout@v6
+
+      - name: Setup and build SDK
+        uses: ./.github/actions/build-sdk
         with:
-          go-version: ${{ matrix.goversion }}
-      - name: Install pulumictl
-        uses: jaxxstorm/action-install-gh-release@v1.14.0
-        with:
-          repo: pulumi/pulumictl
-      - name: Install Pulumi CLI
-        uses: pulumi/action-install-pulumi-cli@v2.0.0
-      - if: ${{ matrix.language == 'nodejs'}}
-        name: Setup Node
-        uses: actions/setup-node@v1
-        with:
-          node-version: ${{matrix.nodeversion}}
-          registry-url: ${{env.NPM_REGISTRY_URL}}
-      - if: ${{ matrix.language == 'dotnet'}}
-        name: Setup DotNet
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{matrix.dotnetversion}}
-      - if: ${{ matrix.language == 'python'}}
-        name: Setup Python
-        uses: actions/setup-python@v1
-        with:
-          python-version: ${{matrix.pythonversion}}
-      - name: Generate SDK
-        run: make ${{ matrix.language }}_sdk
-      - name: Check worktree clean
-        run: |
-          git update-index -q --refresh
-          if ! git diff-files --quiet; then
-              >&2 echo "error: working tree is not clean, aborting!"
-              git status
-              git diff
-              exit 1
-          fi
+          language: ${{ matrix.language }}
+          provider: defang-${{ matrix.provider }}
+
       - name: Compress SDK folder
-        run: tar -zcf sdk/${{ matrix.language }}.tar.gz -C sdk/${{ matrix.language }} .
+        run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/${{ matrix.provider }} .
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.language }}-sdk.tar.gz
-          path: ${{ github.workspace}}/sdk/${{ matrix.language }}.tar.gz
+          name: ${{ matrix.language }}-${{ matrix.provider }}-sdk.tar.gz
+          path: ${{ github.workspace}}/sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz
       - if: ${{ matrix.language == 'python' && env.PUBLISH_PYPI == 'true' }}
         name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: ${{ env.PYPI_USERNAME }}
-          password: ${{ env.PYPI_PASSWORD }}
-          packages-dir: ${{github.workspace}}/sdk/python/bin/dist
+          packages-dir: ${{github.workspace}}/sdk/python/${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
-        uses: JS-DevTools/npm-publish@v1
-        with:
-          access: "public"
-          token: ${{ env.NPM_TOKEN }}
-          package: ${{github.workspace}}/sdk/nodejs/bin/package.json
+        name: Publish package to npm
+        run: |
+          DIST_TAG=$(node -e "const v=require('./package.json').version;const m=v.match(/-([a-zA-Z]+)/);process.stdout.write(m?m[1]:'latest')")
+          npm publish --access public --tag "$DIST_TAG"
+        working-directory: ${{github.workspace}}/sdk/nodejs/${{ matrix.provider }}/bin
       - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
         name: publish nuget package
         run: |
-          dotnet nuget push ${{github.workspace}}/sdk/dotnet/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
+          dotnet nuget push ${{github.workspace}}/sdk/dotnet/${{ matrix.provider }}/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
           echo "done publishing packages"
     strategy:
       fail-fast: false
       matrix:
-        dotnetversion:
-          - 6.0.x
-        goversion:
-          - 1.22.x
         language:
           - nodejs
           - python
           - dotnet
-          - go
-        nodeversion:
-          - 22.x
-        pythonversion:
-          - "3.9"
+        provider:
+          - aws
+          - gcp
+          - azure
+
+  regenerate_examples:
+    name: Regenerate Examples
+    runs-on: ubuntu-latest
+    needs: publish_binary
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Unshallow clone for tags
+        run: git fetch --prune --unshallow --tags
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@v6
+
+      - name: Regenerate examples
+        run: make examples
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Commit and push updated examples
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add examples/
+          if git diff --cached --quiet; then
+            echo "No example changes to commit"
+          else
+            git commit -m "chore: regenerate examples for ${{ github.ref_name }}"
+            git push origin main
+          fi

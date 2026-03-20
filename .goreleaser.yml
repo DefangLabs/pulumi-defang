@@ -9,8 +9,8 @@ before:
     - make go_sdk
 
 builds:
-  - id: pulumi-resource-defang
-    binary: pulumi-resource-defang
+  - id: pulumi-resource-defang-aws
+    binary: pulumi-resource-defang-aws
     dir: provider
     env:
       - CGO_ENABLED=0
@@ -22,8 +22,38 @@ builds:
       - windows
       - linux
     ldflags:
-      - -X github.com/DefangLabs/pulumi-defang/provider/Version={{.Tag}}
-    main: ./cmd/pulumi-resource-defang/
+      - -X github.com/DefangLabs/pulumi-defang/provider/defangaws.Version={{.Tag}}
+    main: ./cmd/pulumi-resource-defang-aws/
+  - id: pulumi-resource-defang-gcp
+    binary: pulumi-resource-defang-gcp
+    dir: provider
+    env:
+      - CGO_ENABLED=0
+    goarch:
+      - amd64
+      - arm64
+    goos:
+      - darwin
+      - windows
+      - linux
+    ldflags:
+      - -X github.com/DefangLabs/pulumi-defang/provider/defanggcp.Version={{.Tag}}
+    main: ./cmd/pulumi-resource-defang-gcp/
+  - id: pulumi-resource-defang-azure
+    binary: pulumi-resource-defang-azure
+    dir: provider
+    env:
+      - CGO_ENABLED=0
+    goarch:
+      - amd64
+      - arm64
+    goos:
+      - darwin
+      - windows
+      - linux
+    ldflags:
+      - -X github.com/DefangLabs/pulumi-defang/provider/defangazure.Version={{.Tag}}
+    main: ./cmd/pulumi-resource-defang-azure/
 
 changelog:
   disable: true

@@ -11,17 +11,22 @@ You can find complete working TypeScript, Python, Go, .NET, and Yaml code sample
 {{< chooser language "typescript,python,go,dotnet,yaml" >}}
 {{% choosable language typescript %}}
 ```typescript
-import * as pulumi from "@pulumi/pulumi";
-import * as defang from "@defang-io/pulumi-defang";
+import * as defangaws from "@defang-io/pulumi-defang-aws";
 
-const myProject = new defang.Project("myProject", {
-    providerID: "aws",
-    configPaths: ["compose.yaml"],
+const project = new defangaws.Project("aws-nodejs", {
+    services: {
+        app: {
+            image: "nginx",
+            ports: [{
+                target: 80,
+                mode: "ingress",
+                appProtocol: "http",
+            }],
+        },
+    },
 });
-export const output = {
-    albArn: myProject.albArn,
-    etag: myProject.etag,
-};
+
+export const endpoints = project.endpoints;
 ```
 
 {{% /choosable %}}
@@ -47,25 +52,33 @@ pulumi.export("output", {
 package main
 
 import (
-	"example.com/pulumi-defang/sdk/go/defang"
+	defangaws "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws"
+	"github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		myProject, err := defang.NewProject(ctx, "myProject", &defang.ProjectArgs{
-			ProviderID: pulumi.String("aws"),
-			ConfigPaths: pulumi.StringArray{
-				pulumi.String("compose.yaml"),
-			},
+		proj, err := defangaws.NewProject(ctx, "aws-go", &defangaws.ProjectArgs{
+			Services: shared.ServiceInputMap{
+				"app": shared.ServiceInputArgs{
+					Image: pulumi.String("nginx:latest"),
+					Ports: shared.PortConfigArray{
+						shared.PortConfigArgs{
+							Target:      pulumi.Int(80),
+							Mode:        pulumi.StringPtr("ingress"),
+							AppProtocol: pulumi.StringPtr("http"),
+						},
+					},
+
+				},
 		})
 		if err != nil {
 			return err
 		}
-		ctx.Export("output", pulumi.StringMap{
-			"albArn": myProject.AlbArn,
-			"etag":   myProject.Etag,
-		})
+
+		ctx.Export("endpoints", proj.Endpoints)
+
 		return nil
 	})
 }
@@ -76,31 +89,32 @@ func main() {
 {{% choosable language dotnet %}}
 ```dotnet
 using System.Collections.Generic;
-using System.Linq;
 using Pulumi;
-using Defang = DefangLabs.Defang;
+using DefangLabs.DefangAws;
+using DefangLabs.DefangAws.Shared.Inputs;
 
 return await Deployment.RunAsync(() =>
 {
-    var myProject = new Defang.Project("myProject", new()
+    var project = new Project("aws-dotnet", new ProjectArgs
     {
-        ProviderID = "aws",
-        ConfigPaths = new[]
+        Services =
         {
-            "./compose.yaml",
+            ["app"] = new ServiceInputArgs
+            {
+                Image = "nginx",
+                Ports =
+                {
+                    new PortConfigArgs { Target = 80, Mode = "ingress", AppProtocol = "http" },
+                },
+            },
         },
     });
 
     return new Dictionary<string, object?>
     {
-        ["output"] =
-        {
-            { "albArn", myProject.AlbArn },
-            { "etag", myProject.Etag },
-        },
+        ["endpoints"] = project.Endpoints,
     };
 });
-
 ```
 
 {{% /choosable %}}

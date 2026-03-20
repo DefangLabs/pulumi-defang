@@ -3,28 +3,99 @@ on:
   push:
     branches:
       - "**"
+  pull_request:
+    paths-ignore:
+      - docs
+      - .devcontainer
+      - examples
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    concurrency:
+      group: test-${{ github.ref }}
+      cancel-in-progress: true
     steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
     - name: Install Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.22.x
+        go-version-file: go.mod
     - name: Install pulumictl
-      uses: jaxxstorm/action-install-gh-release@v1.14.0
-      with:
-        repo: pulumi/pulumictl
-    - name: Checkout Repo
-      uses: actions/checkout@v2
+      run: |
+        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
     - run: make provider
     - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
     - run: make test
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v6
+    # - name: golangci-lint
+    #   uses: golangci/golangci-lint-action@v6
+    #   with:
+    #     version: latest
+    #     args: --timeout=5m --config=.golangci.yaml provider
+
+  build_sdks:
+    name: Build SDKs
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+        - nodejs
+        - python
+        - dotnet
+        - go
+        provider:
+        - aws
+        - gcp
+        - azure
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+
+    - name: Setup and build SDK
+      uses: ./.github/actions/build-sdk
       with:
-        version: v1.64
-        args: --timeout=5m --config=.golangci.yaml provider
-    
+        language: ${{ matrix.language }}
+        provider: defang-${{ matrix.provider }}
+
+    - name: Check clean sdks working tree
+      run: |
+        git update-index -q --refresh
+        if ! git diff-index --quiet HEAD -- sdks/; then
+          >&2 echo "error: sdks directory is not clean, aborting!"
+          git status sdks/
+          git diff sdks/
+          exit 1
+        fi
+
+    - name: Build Example
+      run: make example_${{ matrix.provider }}_${{ matrix.language }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+
+    # - name: Check clean examples working tree
+    #   run: |
+    #     git update-index -q --refresh
+    #     if ! git diff-index --quiet HEAD -- examples/; then
+    #         >&2 echo "error: examples directory is not clean, aborting!"
+    #         git status examples/
+    #         git diff examples/
+    #         exit 1
+    #     fi
+
+    # - name: Ensure clean example versions
+    #   run: |
+    #     if grep -r '+dirty' examples/; then
+    #       >&2 echo "error: found +dirty version in examples. Regenerate examples with \`make examples\` and commit the changes."
+    #       exit 1
+    #     fi

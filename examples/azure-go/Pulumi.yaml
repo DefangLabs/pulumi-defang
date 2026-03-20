@@ -1,0 +1,7 @@
+name: defang-azure-yaml
+runtime: go
+description: Example using defang-azure to deploy services to Azure (Pulumi YAML)
+plugins:
+  providers:
+    - name: defang-azure
+      path: ../../bin

@@ -1,17 +1,34 @@
 package tests
 
 import (
-	defang "github.com/DefangLabs/pulumi-defang/provider"
+	"context"
+
+	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws"
+	defangazure "github.com/DefangLabs/pulumi-defang/provider/defangazure"
+	defanggcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp"
 	"github.com/blang/semver"
+	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/integration"
 )
 
-// Create a test server.
 func makeTestServer() integration.Server {
-	defang.ActiveDriver = &defang.Driver{
-		Provider:     &CloudProviderMock{},
-		FabricClient: &FabricClientMock{},
-	}
+	return mustNewServer(defangaws.Name, defangaws.Provider())
+}
 
-	return integration.NewServer(defang.Name, semver.MustParse("1.0.0"), defang.Provider())
+func makeAzureTestServer() integration.Server {
+	return mustNewServer(defangazure.Name, defangazure.Provider())
+}
+
+func makeGcpTestServer() integration.Server {
+	return mustNewServer(defanggcp.Name, defanggcp.Provider())
+}
+
+func mustNewServer(name string, provider p.Provider) integration.Server {
+	server, err := integration.NewServer(context.Background(), name, semver.MustParse("1.0.0"),
+		integration.WithProvider(provider),
+	)
+	if err != nil {
+		panic(err)
+	}
+	return server
 }

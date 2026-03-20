@@ -1,0 +1,7 @@
+name: defang-multi-cloud-example
+runtime: go
+description: Example deploying the same service to AWS, GCP, and Azure using defang
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
