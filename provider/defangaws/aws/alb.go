@@ -9,20 +9,20 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-type albResult struct {
-	alb          *lb.LoadBalancer
-	httpListener *lb.Listener
+type AlbResult struct {
+	Alb          *lb.LoadBalancer
+	HttpListener *lb.Listener
 }
 
-// createALB creates an Application Load Balancer with an HTTP listener.
-func createALB(
+// CreateALB creates an Application Load Balancer with an HTTP listener.
+func CreateALB(
 	ctx *pulumi.Context,
 	vpcID pulumix.Output[string],
 	subnetIDs pulumix.Output[[]string],
 	serviceSG *ec2.SecurityGroup,
 	recipe Recipe,
 	opts ...pulumi.ResourceOption,
-) (*albResult, error) {
+) (*AlbResult, error) {
 	// Create ALB security group allowing HTTP/HTTPS ingress
 	albSG, err := ec2.NewSecurityGroup(ctx, "alb-sg", &ec2.SecurityGroupArgs{
 		VpcId:       pulumi.StringOutput(vpcID),
@@ -99,8 +99,8 @@ func createALB(
 		return nil, fmt.Errorf("creating HTTP listener: %w", err)
 	}
 
-	return &albResult{
-		alb:          alb,
-		httpListener: httpListener,
+	return &AlbResult{
+		Alb:          alb,
+		HttpListener: httpListener,
 	}, nil
 }

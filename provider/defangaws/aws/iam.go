@@ -8,8 +8,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// createExecutionRole creates the shared ECS task execution role.
-func createExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*iam.Role, error) {
+// CreateExecutionRole creates the shared ECS task execution role.
+func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*iam.Role, error) {
 	assumeRolePolicy, _ := json.Marshal(map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
