@@ -3,16 +3,16 @@ module github.com/DefangLabs/pulumi-defang/examples/multi-cloud
 go 1.25.6
 
 replace (
-	github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws => ../../sdk/go/defang-aws
-	github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure => ../../sdk/go/defang-azure
-	github.com/DefangLabs/pulumi-defang/sdk/go/defang-gcp => ../../sdk/go/defang-gcp
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../../sdk/go/defang-aws
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure => ../../sdk/go/defang-azure
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp => ../../sdk/go/defang-gcp
 	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 )
 
 require (
-	github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws v0.0.0-00010101000000-000000000000
-	github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure v0.0.0-00010101000000-000000000000
-	github.com/DefangLabs/pulumi-defang/sdk/go/defang-gcp v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.23.0
 	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.91.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.30.1

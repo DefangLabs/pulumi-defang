@@ -7,17 +7,21 @@ import (
 
 // Recipe holds AWS-specific tuning knobs with IS_DEV defaults.
 type Recipe struct {
-	LogRetentionDays        int    `json:"log-retention-days"`
-	DeletionProtection      bool   `json:"deletion-protection"`
-	StorageEncrypted        bool   `json:"storage-encrypted"`
+	AllowBurstable          bool   `json:"allow-burstable"`
+	AllowOverwriteRecords   bool   `json:"allow-overwrite-records"`
 	BackupRetentionDays     int    `json:"backup-retention-days"`
-	FargateCapacityProvider string `json:"fargate-capacity-provider"`
-	MinHealthyPercent       int    `json:"min-healthy-percent"`
+	BackupWindow            string `json:"backup-window"` // UTC window for automated backups, e.g. "04:00-05:00"
+	DeletionProtection      bool   `json:"deletion-protection"`
 	DeregistrationDelay     int    `json:"deregistration-delay"`
+	FargateCapacityProvider string `json:"fargate-capacity-provider"`
+	ForceDestroyHostedzone  bool   `json:"force-destroy-hostedzone"`
 	HealthCheckInterval     int    `json:"health-check-interval"`
 	HealthCheckThreshold    int    `json:"health-check-threshold"`
-	AllowBurstable          bool   `json:"allow-burstable"`
+	LogRetentionDays        int    `json:"log-retention-days"`
+	MinHealthyPercent       int    `json:"min-healthy-percent"`
 	RDSNodeType             string `json:"rds-node-type"` // "burstable", "general", "memory-optimized"
+	RetainDnsOnDelete       bool   `json:"retain-dns-on-delete"`
+	StorageEncrypted        bool   `json:"storage-encrypted"`
 }
 
 // DefaultRecipe returns a Recipe initialized with IS_DEV defaults.
@@ -27,6 +31,7 @@ func DefaultRecipe() Recipe {
 		DeletionProtection:      false,
 		StorageEncrypted:        false,
 		BackupRetentionDays:     0,
+		BackupWindow:            "04:00-05:00",
 		FargateCapacityProvider: "FARGATE_SPOT",
 		MinHealthyPercent:       0,
 		DeregistrationDelay:     0,

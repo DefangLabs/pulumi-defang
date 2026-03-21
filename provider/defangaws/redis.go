@@ -3,7 +3,6 @@ package defangaws
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
@@ -29,7 +28,8 @@ type AwsRedisInputs struct {
 // AwsRedisOutputs holds the outputs of an AwsRedis component.
 type AwsRedisOutputs struct {
 	pulumi.ResourceState
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	Endpoint   pulumi.StringOutput `pulumi:"endpoint"`
+	Dependency pulumi.Resource     // typically CNAME record, for dependees
 }
 
 // Construct implements the ComponentResource interface for AwsRedis.
@@ -57,13 +57,8 @@ func (*AwsRedis) Construct(ctx *pulumi.Context, name, typ string, inputs AwsRedi
 	configProvider := provideraws.NewConfigProvider(*inputs.ProjectName)
 	recipe := provideraws.LoadRecipe(ctx)
 
-	net, err := provideraws.ResolveNetworking(ctx, common.ToAWSConfig(inputs.AWS), childOpt)
-	if err != nil {
-		return nil, fmt.Errorf("resolving networking: %w", err)
-	}
-
 	sg, err := awsec2.NewSecurityGroup(ctx, name, &awsec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.VpcID),
+		VpcId:       pulumi.String(inputs.AWS.VpcID),
 		Description: pulumi.String("Security group for Redis"),
 		Egress: awsec2.SecurityGroupEgressArray{
 			&awsec2.SecurityGroupEgressArgs{
@@ -78,7 +73,11 @@ func (*AwsRedis) Construct(ctx *pulumi.Context, name, typ string, inputs AwsRedi
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
-	redisResult, err := provideraws.CreateElasticache(ctx, configProvider, name, svc, net.VpcID, net.PrivateSubnetIDs, sg, recipe, childOpt)
+	privateSubnetIDs := make(pulumi.StringArray, len(inputs.AWS.PrivateSubnetIDs))
+	for i, id := range inputs.AWS.PrivateSubnetIDs {
+		privateSubnetIDs[i] = pulumi.String(id)
+	}
+	redisResult, err := provideraws.CreateElasticache(ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, "", recipe, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache: %w", err)
 	}
@@ -91,15 +90,22 @@ func (*AwsRedis) Construct(ctx *pulumi.Context, name, typ string, inputs AwsRedi
 		return fmt.Sprintf("%s:%d", addr, port)
 	}))
 
+	comp.Dependency = redisResult.Record
 	comp.Endpoint = endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": endpoint,
+		"dependency": redisResult.Record,
+		"endpoint":   endpoint,
 	}); err != nil {
 		return nil, err
 	}
 
 	return comp, nil
+}
+
+type RedisResult struct {
+	Endpoint   pulumi.StringOutput
+	Dependency pulumi.Resource
 }
 
 // newRedisComponent registers a component resource for a managed Redis service,
@@ -109,21 +115,24 @@ func newRedisComponent(
 	configProvider shared.ConfigProvider,
 	serviceName string,
 	svc shared.ServiceInput,
-	vpcID pulumix.Output[string],
-	privateSubnetIDs pulumix.Output[[]string],
+	vpcID pulumi.StringInput,
+	privateSubnetIDs pulumi.StringArrayInput,
 	sg *ec2.SecurityGroup,
+	privateZoneId pulumi.IDInput,
+	privateFqdn string,
 	recipe provideraws.Recipe,
+	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
+) (*RedisResult, error) {
 	comp := &serviceComponent{}
 	if err := ctx.RegisterComponentResource("defang-aws:index:AwsRedis", serviceName, comp, parentOpt); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering redis component %s: %w", serviceName, err)
+		return nil, fmt.Errorf("registering redis component %s: %w", serviceName, err)
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	redisResult, err := provideraws.CreateElasticache(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, recipe, opts...)
+	redisResult, err := provideraws.CreateElasticache(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, privateZoneId, privateFqdn, recipe, deps, opts...)
 	if err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}
 
 	port := 6379
@@ -135,7 +144,10 @@ func newRedisComponent(
 	}))
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
-	return endpoint, nil
+	return &RedisResult{
+		Endpoint:   endpoint,
+		Dependency: redisResult.Record,
+	}, nil
 }

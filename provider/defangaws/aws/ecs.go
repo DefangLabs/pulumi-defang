@@ -19,16 +19,16 @@ import (
 )
 
 type ECSServiceArgs struct {
-	Cluster   *ecs.Cluster
-	ExecRole  *iam.Role
-	LogGroup  *cloudwatch.LogGroup
-	VpcID     pulumix.Output[string]
-	SubnetIDs pulumix.Output[[]string]
-	Sg        *ec2.SecurityGroup
-	Listener  *lb.Listener     // nil if no ALB
-	Alb       *lb.LoadBalancer // nil if no ALB
-	Region    string
-	ImageURI  pulumix.Output[string] // container image URI (built or pre-built)
+	Cluster         *ecs.Cluster
+	ExecRole        *iam.Role
+	LogGroup        *cloudwatch.LogGroup
+	VpcID           pulumi.StringInput
+	PublicSubnetIDs pulumi.StringArrayInput
+	Sg              *ec2.SecurityGroup
+	Listener        *lb.Listener
+	Alb             *lb.LoadBalancer
+	Region          string
+	ImageURI        pulumi.StringInput // container image URI (built or pre-built)
 }
 
 type EcsServiceResult struct {
@@ -136,6 +136,7 @@ func CreateECSService(
 	svc shared.ServiceInput,
 	args *ECSServiceArgs,
 	recipe Recipe,
+	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*EcsServiceResult, error) {
 
@@ -325,12 +326,12 @@ func CreateECSService(
 				Port:                       pulumi.Int(port.Target),
 				Protocol:                   pulumi.String("HTTP"),
 				TargetType:                 pulumi.String("ip"),
-				VpcId:                      pulumi.StringOutput(args.VpcID),
+				VpcId:                      pulumi.StringInput(args.VpcID),
 				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
 				DeregistrationDelay:        pulumi.Int(recipe.DeregistrationDelay),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{
+					// Port:               pulumi.String("traffic-port"),
 					Path:               pulumi.String("/"),
-					Port:               pulumi.String("traffic-port"),
 					HealthyThreshold:   pulumi.Int(recipe.HealthCheckThreshold),
 					UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
 					Interval:           pulumi.Int(interval),
@@ -421,7 +422,7 @@ func CreateECSService(
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
-			Subnets:        pulumi.StringArrayOutput(args.SubnetIDs),
+			Subnets:        pulumi.StringArrayInput(args.PublicSubnetIDs),
 			SecurityGroups: pulumi.StringArray{args.Sg.ID()},
 			AssignPublicIp: pulumi.Bool(true),
 		},
@@ -451,7 +452,11 @@ func CreateECSService(
 		ecsServiceArgs.LaunchType = pulumi.String("FARGATE")
 	}
 
-	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, append(opts, pulumi.DependsOn(lbDependsOn))...)
+	ecsServiceOpts := append(opts, pulumi.DependsOn(lbDependsOn))
+	if len(deps) > 0 {
+		ecsServiceOpts = append(ecsServiceOpts, pulumi.DependsOn(deps))
+	}
+	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, ecsServiceOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}
@@ -479,7 +484,7 @@ func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInp
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	net, err := ResolveNetworking(ctx, awsCfg, opts...)
+	net, err := ResolveNetworking(ctx, awsCfg, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -542,15 +547,15 @@ func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInp
 	}
 
 	return &ECSServiceArgs{
-		Cluster:   cluster,
-		ExecRole:  execRole,
-		LogGroup:  logGroup,
-		VpcID:     net.VpcID,
-		SubnetIDs: net.PublicSubnetIDs,
-		Sg:        sg,
-		Listener:  httpListener,
-		Alb:       svcALB,
-		Region:    region.Name,
-		ImageURI:  imageURI,
+		Cluster:         cluster,
+		ExecRole:        execRole,
+		LogGroup:        logGroup,
+		VpcID:           net.VpcID,
+		PublicSubnetIDs: net.PublicSubnetIDs,
+		Sg:              sg,
+		Listener:        httpListener,
+		Alb:             svcALB,
+		Region:          region.Name,
+		ImageURI:        imageURI,
 	}, nil
 }

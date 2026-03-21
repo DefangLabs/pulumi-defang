@@ -3,7 +3,6 @@ package defangaws
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -57,17 +56,18 @@ func (*AwsEcsService) Construct(ctx *pulumi.Context, name, typ string, inputs Aw
 	}
 
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
-	ecsArgs, err := provideraws.BuildECSArgs(ctx, name, svc, common.ToAWSConfig(inputs.AWS), childOpt)
+	ecsArgs, err := provideraws.BuildECSArgs(ctx, name, svc, inputs.AWS, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)
 	}
 
 	recipe := provideraws.LoadRecipe(ctx)
-	endpoint, err := NewECSServiceComponent(ctx, configProvider, name, svc, ecsArgs, recipe, childOpt)
+	ecsResult, err := NewECSServiceComponent(ctx, configProvider, name, svc, ecsArgs, recipe, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ECS service: %w", err)
 	}
 
+	endpoint := ecsResult.Endpoint
 	comp.Endpoint = pulumix.Output[string](endpoint)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
@@ -84,6 +84,11 @@ type serviceComponent struct {
 	pulumi.ResourceState
 }
 
+type ECSResult struct {
+	Endpoint   pulumi.StringOutput
+	Dependency pulumi.Resource // the ECS service, for dependees
+}
+
 // newECSServiceComponent registers a component resource for a container service,
 // creates its ECS children, registers outputs, and returns the endpoint.
 func NewECSServiceComponent(
@@ -93,17 +98,18 @@ func NewECSServiceComponent(
 	svc shared.ServiceInput,
 	args *provideraws.ECSServiceArgs,
 	recipe provideraws.Recipe,
+	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
+) (*ECSResult, error) {
 	comp := &serviceComponent{}
 	if err := ctx.RegisterComponentResource("defang-aws:index:AwsEcsService", serviceName, comp, parentOpt); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering ECS service component %s: %w", serviceName, err)
+		return nil, fmt.Errorf("registering ECS service component %s: %w", serviceName, err)
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	ecsResult, err := provideraws.CreateECSService(ctx, configProvider, serviceName, svc, args, recipe, opts...)
+	ecsResult, err := provideraws.CreateECSService(ctx, configProvider, serviceName, svc, args, recipe, deps, opts...)
 	if err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
+		return nil, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
 	}
 
 	var endpoint pulumi.StringOutput
@@ -114,7 +120,10 @@ func NewECSServiceComponent(
 	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
-	return endpoint, nil
+	return &ECSResult{
+		Endpoint:   endpoint,
+		Dependency: ecsResult.Service,
+	}, nil
 }

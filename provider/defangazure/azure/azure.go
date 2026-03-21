@@ -68,7 +68,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 		if svc.Postgres != nil {
 			// Managed Postgres → Flexible Server
-			if err := ctx.RegisterComponentResource("defang-azure:index:AzurePostgres", svcName, comp, opts[0]); err != nil {
+			if err := ctx.RegisterComponentResource("defang-azure:index:AzurePostgres", svcName, comp, opts...); err != nil {
 				return nil, fmt.Errorf("registering Azure Postgres component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
@@ -81,7 +81,7 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 		} else {
 			// Container service → Container App
-			if err := ctx.RegisterComponentResource("defang-azure:index:AzureContainerApp", svcName, comp, opts[0]); err != nil {
+			if err := ctx.RegisterComponentResource("defang-azure:index:AzureContainerApp", svcName, comp, opts...); err != nil {
 				return nil, fmt.Errorf("registering Container App component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}

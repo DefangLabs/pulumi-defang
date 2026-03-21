@@ -110,8 +110,8 @@ type ResourceConfig struct {
 
 // BuildConfig mirrors the Docker Compose build spec.
 type BuildConfig struct {
-	// Build context path or URL (required).
-	Context string `pulumi:"context"`
+	// Build context path or URL (required). May be a computed Pulumi output (e.g. S3 URL).
+	Context pulumi.StringInput `pulumi:"context"`
 
 	// Dockerfile path relative to context (default: "Dockerfile")
 	Dockerfile *string `pulumi:"dockerfile,optional" yaml:"dockerfile,omitempty"`
@@ -165,9 +165,10 @@ type HealthCheckConfig struct {
 
 // AWSConfigInput defines optional AWS-specific infrastructure configuration (not auth/region).
 type AWSConfigInput struct {
-	VpcID            string   `pulumi:"vpcId,optional"`
-	SubnetIDs        []string `pulumi:"subnetIds,optional"`
 	PrivateSubnetIDs []string `pulumi:"privateSubnetIds,optional"`
+	PublicSubnetIDs  []string `pulumi:"subnetIds,optional"`
+	PrivateZoneID    string   `pulumi:"privateZoneId,optional"`
+	VpcID            string   `pulumi:"vpcId,optional"`
 }
 
 type ConfigProvider interface {

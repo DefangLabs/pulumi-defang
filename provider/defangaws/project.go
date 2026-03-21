@@ -51,7 +51,7 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 		Services: inputs.Services,
 	}
 
-	result, err := Build(ctx, name, args, common.ToAWSConfig(inputs.AWS), childOpt)
+	result, err := Build(ctx, name, args, inputs.AWS, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
 	}
@@ -103,13 +103,15 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 	}
 
 	// Create or use existing VPC and subnets
-	net, err := provideraws.ResolveNetworking(ctx, awsCfg, opts...)
+	net, err := provideraws.ResolveNetworking(ctx, awsCfg, recipe, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
 	vpcID := net.VpcID
 	subnetIDs := net.PublicSubnetIDs
 	privateSubnetIDs := net.PrivateSubnetIDs
+	privateZoneID := net.PrivateZoneID
+	privateDomain := net.PrivateDomain
 
 	// Create security group for services
 	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
@@ -160,42 +162,79 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
+	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
 	configProvider := provideraws.NewConfigProvider(projectName)
-	for svcName, svc := range args.Services {
+
+	services := common.TopologicalSort(args.Services)
+	for _, svcName := range services {
+		svc := args.Services[svcName]
+
+		// Collect dependency resources from services this one depends on
+		var deps []pulumi.Resource
+		for dep := range svc.DependsOn {
+			if r, ok := dependencies[dep]; ok {
+				deps = append(deps, r)
+			}
+		}
+
+		var dependency pulumi.Resource
 		var endpoint pulumi.StringOutput
 		var err error
+
+		var privateFqdn string
+		if privateDomain != "" {
+			privateFqdn = svcName + "." + privateDomain
+		}
 
 		switch {
 		case svc.Postgres != nil:
 			// Managed Postgres → RDS
-			endpoint, err = newPostgresComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, opts[0])
+			var pgResult *PostgresResult
+			pgResult, err = newPostgresComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, privateZoneID, privateFqdn, recipe, deps, opts[0])
+			if pgResult != nil {
+				dependency = pgResult.Dependency
+				endpoint = pgResult.Endpoint
+			}
 		case svc.Redis != nil:
 			// Managed Redis → ElastiCache
-			endpoint, err = newRedisComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, recipe, opts[0])
+			var redisResult *RedisResult
+			redisResult, err = newRedisComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, privateZoneID, privateFqdn, recipe, deps, opts[0])
+			if redisResult != nil {
+				dependency = redisResult.Dependency
+				endpoint = redisResult.Endpoint
+			}
 		default:
 			// Container service → ECS
 			imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, imgInfra, opts[0])
 			if imgErr != nil {
 				return nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 			}
-			endpoint, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
-				Cluster:   cluster,
-				ExecRole:  execRole,
-				LogGroup:  logGroup,
-				VpcID:     vpcID,
-				SubnetIDs: subnetIDs,
-				Sg:        sg,
-				Listener:  httpListener,
-				Alb:       alb,
-				Region:    region.Name,
-				ImageURI:  imageURI,
-			}, recipe, opts[0])
+			var ecsResult *ECSResult
+			ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
+				Cluster:         cluster,
+				ExecRole:        execRole,
+				LogGroup:        logGroup,
+				VpcID:           vpcID,
+				PublicSubnetIDs: subnetIDs,
+				Sg:              sg,
+				Listener:        httpListener,
+				Alb:             alb,
+				Region:          region.Name,
+				ImageURI:        imageURI,
+			}, recipe, deps, opts[0])
+			if ecsResult != nil {
+				dependency = ecsResult.Dependency
+				endpoint = ecsResult.Endpoint
+			}
 		}
 		if err != nil {
 			return nil, err
 		}
 		endpoints[svcName] = endpoint
+		if dependency != nil {
+			dependencies[svcName] = dependency
+		}
 	}
 
 	return &common.BuildResult{

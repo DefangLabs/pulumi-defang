@@ -158,8 +158,8 @@ func createCodeBuildProject(
 
 	// Context must be an S3 URL
 	sourceType := "S3"
-	sourceLocation := pulumix.Apply(pulumi.String(build.Context), func(ctx string) string {
-		return strings.TrimPrefix(ctx, "s3://")
+	sourceLocation := pulumix.Apply(pulumix.Output[string](build.Context.ToStringOutput()), func(s string) string {
+		return strings.TrimPrefix(s, "s3://")
 	})
 
 	project, err := codebuild.NewProject(ctx, name, &codebuild.ProjectArgs{
@@ -297,7 +297,7 @@ func createCodeBuildRole(
 
 	_, err = iam.NewRolePolicy(ctx, name+"-policy", &iam.RolePolicyArgs{
 		Role:   role.Name,
-		Policy: pulumi.StringOutput(policyDoc),
+		Policy: policyDoc,
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild role policy: %w", err)

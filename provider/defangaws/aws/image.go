@@ -5,7 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
@@ -57,7 +58,7 @@ type imageBuildResult struct {
 	// imageURI is the ECR image URI to use in task definitions.
 	// For built images: "123.dkr.ecr.region.amazonaws.com/repo:tag"
 	// For pre-built images: the original image string.
-	imageURI pulumix.Output[string]
+	imageURI pulumi.StringOutput
 }
 
 // codeBuildImageBuildResource is a Pulumi resource state for the CodeBuildImageBuild custom resource.
@@ -68,26 +69,44 @@ type codeBuildImageBuildResource struct {
 	Image   pulumi.StringOutput `pulumi:"image"`
 }
 
-// buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build shared.BuildConfig) pulumix.Output[string] {
-	staticHash := func(context string) string {
-		h := sha256.New()
-		h.Write([]byte(context))
-		h.Write([]byte(build.GetDockerfile()))
-		h.Write([]byte(build.GetTarget()))
-		h.Write([]byte(fmt.Sprintf("%d", build.GetShmSizeBytes())))
-		if len(build.Args) > 0 {
-			keys := make([]string, 0, len(build.Args))
-			for k := range build.Args {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			b, _ := json.Marshal(build.Args)
-			h.Write(b)
+func isEphemeralBuildArg(key string) bool {
+	return strings.HasSuffix(key, "_TOKEN")
+}
+
+// Hide ephemeral build args (eg. GITHUB_TOKEN) so we get the same imageTag each CI run
+func removeEphemeralBuildArgs(args map[string]string) map[string]string {
+	args = maps.Clone(args) // shallow clone
+	for key := range args {
+		if isEphemeralBuildArg(key) {
+			args[key] = "Removed ephemeral token"
 		}
-		return hex.EncodeToString(h.Sum(nil))[:16]
 	}
-	return pulumix.Apply(pulumi.String(build.Context), staticHash)
+	return args
+}
+
+func sha1hash(inputs ...string) string {
+	h := sha256.New()
+	for _, c := range inputs {
+		h.Write([]byte(c))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
+func buildTriggerHash(build *shared.BuildConfig) pulumi.StringOutput {
+	// Must also hash buildArgs, in case tarball is the same; stably serialize to a string
+	argsStr, _ := json.Marshal(removeEphemeralBuildArgs(build.Args))
+	var dockerfile, target string
+	if build.Dockerfile != nil {
+		dockerfile = *build.Dockerfile
+	}
+	if build.Target != nil {
+		target = *build.Target
+	}
+	return pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
+		contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
+		return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
+	}))
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.
@@ -123,24 +142,22 @@ func buildServiceImage(
 	// Create the CodeBuildImageBuild custom resource to trigger the actual build.
 	// This resource calls the AWS SDK to start the build, polls until done, and returns the image URL.
 	// If Create fails, the resource is not in state → next `pulumi up` retries automatically.
-	triggerHash := buildTriggerHash(*svc.Build)
+	triggerHash := buildTriggerHash(svc.Build)
 
 	var buildResource codeBuildImageBuildResource
 	err = ctx.RegisterResource("defang-aws:defangaws:CodeBuildImageBuild", serviceName+"-build", pulumi.Map{
 		"projectName": cbResult.project.Name,
 		"region":      pulumi.String(infra.region),
-		"destination": pulumi.StringOutput(cbResult.destination),
-		"triggers":    pulumi.StringArray{pulumi.StringOutput(triggerHash)},
+		"destination": cbResult.destination,
+		"triggers":    pulumi.StringArray{triggerHash},
 	}, &buildResource, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild build resource for %s: %w", serviceName, err)
 	}
 
 	// Use the image output from the build resource (destination with potential digest)
-	imageURI := pulumix.Output[string](buildResource.Image)
-
 	return &imageBuildResult{
-		imageURI: imageURI,
+		imageURI: buildResource.Image,
 	}, nil
 }
 
@@ -154,15 +171,15 @@ func GetServiceImage(
 	svc shared.ServiceInput,
 	infra *ImageInfra,
 	opts ...pulumi.ResourceOption,
-) (pulumix.Output[string], error) {
+) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {
 		result, err := buildServiceImage(ctx, serviceName, svc, infra, opts...)
 		if err != nil {
-			return pulumix.Output[string]{}, err
+			return pulumi.StringOutput{}, err
 		}
 		return result.imageURI, nil
 	}
 
 	// Use pre-built image (either service.image or default)
-	return pulumix.Val(svc.GetImage()), nil
+	return pulumi.String(svc.GetImage()).ToStringOutput(), nil
 }
