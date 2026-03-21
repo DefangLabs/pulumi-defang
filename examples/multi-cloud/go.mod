@@ -3,9 +3,9 @@ module github.com/DefangLabs/pulumi-defang/examples/multi-cloud
 go 1.25.6
 
 replace (
-	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../../sdk/go/defang-aws
-	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure => ../../sdk/go/defang-azure
-	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp => ../../sdk/go/defang-gcp
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../../sdk/v2/go/defang-aws
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure => ../../sdk/v2/go/defang-azure
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp => ../../sdk/v2/go/defang-gcp
 	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 )
 
