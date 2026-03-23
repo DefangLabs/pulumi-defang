@@ -7,6 +7,7 @@
       "Bash(go build:*)",
       "Bash(go list:*)",
       "Bash(go test:*)",
+      "Bash(golangci-lint:*)",
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(tail:*)"
