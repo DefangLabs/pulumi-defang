@@ -31,6 +31,7 @@ schema: $(foreach p,$(PACKS),schema_$(p))
 
 .PHONY: go_sdk
 go_sdk: $(foreach p,$(PACKS),go_sdk_$(p))
+	@! egrep -r '^type .+Input\w*Input' sdk/v2 || (echo "Error: InputInput types found in Go SDK code" ; false)
 
 .PHONY: nodejs_sdk
 nodejs_sdk: $(foreach p,$(PACKS),nodejs_sdk_$(p))
