@@ -32,9 +32,9 @@ func NormalizeDNS(name string) string {
 func CreateRecord(
 	ctx *pulumi.Context, name string, typ RecordType, args route53.RecordArgs, opts ...pulumi.ResourceOption,
 ) (*route53.Record, error) {
-	if args.ZoneId == nil {
-		// TODO: look up the zone by name
-	}
+	// TODO: look up the zone by name
+	// if args.ZoneId == nil {
+	// }
 	// Route 53 treats www.example.com (without a trailing dot) and www.example.com. (with a trailing dot) as identical.
 	normalized := NormalizeDNS(name)
 	args.Name = pulumi.String(normalized)
