@@ -130,10 +130,11 @@ func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
 var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
 
 func ParseInterpolatedString(s string) []Match {
-	var result []Match
+	matches := interpolationRegex.FindAllStringSubmatchIndex(s, -1)
+	result := make([]Match, 0, len(matches))
 	lastIndex := 0
 
-	for _, match := range interpolationRegex.FindAllStringSubmatchIndex(s, -1) {
+	for _, match := range matches {
 		fullStart, fullEnd := match[0], match[1]
 		varStart, varEnd := match[2], match[3]
 

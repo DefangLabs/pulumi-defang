@@ -161,7 +161,7 @@ func CreateECSService(
 	memMiB := svc.GetMemoryMiB()
 
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
-	var portMappings []ContainerPortMapping
+	portMappings := make([]ContainerPortMapping, 0, len(svc.Ports))
 	for _, p := range svc.Ports {
 		portMappings = append(portMappings, ContainerPortMapping{
 			ContainerPort: p.Target,
