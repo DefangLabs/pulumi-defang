@@ -94,11 +94,11 @@ install-git-hooks:
 	chmod +x .git/hooks/pre-push
 
 .PHONY: pre-commit
-pre-commit: provider test lint sdks examples
+pre-commit: provider test lint
 
 .PHONY: pre-push
 pre-push:
-	#target intentionally blank
+	sdks
 
 # Generate language examples from YAML sources
 # Requires providers to be built first: make install
