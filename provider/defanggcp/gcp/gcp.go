@@ -43,8 +43,6 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 	}
 	_ = ar
 
-	recipe := LoadRecipe(ctx)
-
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 
@@ -53,25 +51,25 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 		if svc.Postgres != nil {
 			// Managed Postgres → Cloud SQL
-			if err := ctx.RegisterComponentResource("defang-gcp:index:GcpCloudSql", svcName, comp, opts[0]); err != nil {
+			if err := ctx.RegisterComponentResource("defang-gcp:index:Postgres", svcName, comp, opts...); err != nil {
 				return nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 			configProvider := NewConfigProvider(projectName)
-			sqlResult, err := CreateCloudSQL(ctx, configProvider, svcName, svc, recipe, svcOpts...)
+			sqlResult, err := CreateCloudSQL(ctx, configProvider, svcName, svc, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
 		} else {
 			// Container service → Cloud Run
-			if err := ctx.RegisterComponentResource("defang-gcp:index:GcpCloudRunService", svcName, comp, opts[0]); err != nil {
+			if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, comp, opts...); err != nil {
 				return nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			crResult, err := CreateCloudRunService(ctx, svcName, svc, region, recipe, svcOpts...)
+			crResult, err := CreateCloudRunService(ctx, svcName, svc, region, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 			}

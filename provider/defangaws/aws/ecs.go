@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
@@ -18,17 +18,27 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
+// SharedInfra holds project-level AWS resources shared across all services.
+type SharedInfra struct {
+	Cluster          *ecs.Cluster
+	ExecRole         *iam.Role
+	LogGroup         *cloudwatch.LogGroup
+	VpcID            pulumi.StringInput
+	PublicSubnetIDs  pulumi.StringArrayInput
+	PrivateSubnetIDs pulumi.StringArrayInput
+	PrivateZoneID    pulumi.IDInput
+	PrivateDomain    string
+	Sg               *ec2.SecurityGroup
+	HttpListener     *lb.Listener     // nil if no ALB
+	Alb              *lb.LoadBalancer // nil if no ALB
+	Region           string
+	ImageInfra       *ImageInfra // nil if no builds needed
+}
+
+// ECSServiceArgs holds per-service arguments for CreateECSService.
 type ECSServiceArgs struct {
-	Cluster   *ecs.Cluster
-	ExecRole  *iam.Role
-	LogGroup  *cloudwatch.LogGroup
-	VpcID     pulumix.Output[string]
-	SubnetIDs pulumix.Output[[]string]
-	Sg        *ec2.SecurityGroup
-	Listener  *lb.Listener     // nil if no ALB
-	Alb       *lb.LoadBalancer // nil if no ALB
-	Region    string
-	ImageURI  pulumix.Output[string] // container image URI (built or pre-built)
+	Infra    *SharedInfra
+	ImageURI pulumi.StringInput // container image URI (built or pre-built)
 }
 
 type EcsServiceResult struct {
@@ -84,8 +94,8 @@ func fixupFargateCPU(vCpu float64) int {
 
 // fixupFargateMemory returns the nearest valid Fargate memory in MiB for the given CPU units.
 // See: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html
-func fixupFargateMemory(cpuUnits, memoryMiB int) int {
-	switch cpuUnits {
+func fixupFargateMemory(cpu, memoryMiB int) int {
+	switch cpu {
 	case 256:
 		return makeMinMaxCeil(memoryMiB, 512, 2048, 1024)
 	case 512:
@@ -101,7 +111,7 @@ func fixupFargateMemory(cpuUnits, memoryMiB int) int {
 	case 16384:
 		return makeMinMaxCeil(memoryMiB, 32768, 122880, 4096)
 	default:
-		return makeMinMaxCeil(memoryMiB, 512, 2048, 1024)
+		panic("Unsupported value for cpu: " + strconv.Itoa(cpu))
 	}
 }
 
@@ -111,7 +121,7 @@ func fargateResources(cpus float64, memoryMiB int) (cpu string, memory string) {
 	cpuUnits := fixupFargateCPU(cpus)
 	mem := fixupFargateMemory(cpuUnits, memoryMiB)
 	// If memory exceeds this CPU tier's max, bump to next CPU tier
-	for mem < memoryMiB && cpuUnits < 16384 {
+	for mem < memoryMiB {
 		cpuUnits *= 2
 		mem = fixupFargateMemory(cpuUnits, memoryMiB)
 	}
@@ -120,8 +130,8 @@ func fargateResources(cpus float64, memoryMiB int) (cpu string, memory string) {
 
 // portProtocol normalizes the transport protocol for ECS container port mappings.
 // Only "tcp" and "udp" are valid; matches TS: ep.protocol === "udp" ? "udp" : "tcp"
-func portProtocol(p shared.ServicePortConfig) string {
-	proto := shared.GetPortProtocol(p)
+func portProtocol(p compose.ServicePortConfig) ContainerPortProtocol {
+	proto := compose.GetPortProtocol(p)
 	if proto == "udp" {
 		return "udp"
 	}
@@ -131,11 +141,11 @@ func portProtocol(p shared.ServicePortConfig) string {
 // CreateECSService creates an ECS Fargate service for a container service.
 func CreateECSService(
 	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
+	configProvider compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	args *ECSServiceArgs,
-	recipe Recipe,
+	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*EcsServiceResult, error) {
 
@@ -149,36 +159,13 @@ func CreateECSService(
 	cpus := svc.GetCPUs()
 	memMiB := svc.GetMemoryMiB()
 
-	// Build environment variables (matches TS getContainerDefinition)
-	// Static env vars are known at plan time; dynamic ones come from interpolation as outputs.
-	staticEnvVars := []ContainerEnvironment{
-		{Name: "DEFANG_SERVICE", Value: serviceName},
-	}
-	if svc.DomainName != nil {
-		staticEnvVars = append(staticEnvVars, ContainerEnvironment{
-			Name:  "DEFANG_FQDN",
-			Value: *svc.DomainName,
-		})
-	}
-	type dynamicEnvVar struct {
-		name   string
-		output pulumi.StringOutput
-	}
-	var dynamicEnvVars []dynamicEnvVar
-	for k, v := range svc.Environment {
-		if v != nil {
-			resolved := shared.InterpolateEnvironmentVariable(ctx, configProvider, *v) // resolve value from config or env
-			dynamicEnvVars = append(dynamicEnvVars, dynamicEnvVar{name: k, output: resolved})
-		}
-	}
-
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
 	var portMappings []ContainerPortMapping
 	for _, p := range svc.Ports {
 		portMappings = append(portMappings, ContainerPortMapping{
 			ContainerPort: p.Target,
-			HostPort:      p.Target,
-			Protocol:      portProtocol(p),
+			// HostPort:      p.Target,
+			Protocol: portProtocol(p),
 		})
 	}
 
@@ -186,7 +173,7 @@ func CreateECSService(
 	var healthCheck *ContainerHealthCheck
 	if svc.HealthCheck != nil && len(svc.HealthCheck.Test) > 0 {
 		healthCheck = &ContainerHealthCheck{
-			Command:  svc.HealthCheck.Test,
+			Command:  pulumi.ToStringArray(svc.HealthCheck.Test),
 			Interval: clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30),
 			Timeout:  clampInt(svc.HealthCheck.TimeoutSeconds, 2, 60, 5),
 			Retries:  clampInt(svc.HealthCheck.Retries, 1, 10, 3),
@@ -197,52 +184,92 @@ func CreateECSService(
 		}
 	}
 
-	// Collect all outputs to resolve: logGroupName, imageURI, and dynamic env var values
-	allOutputs := []interface{}{args.LogGroup.Name, args.ImageURI}
-	for _, d := range dynamicEnvVars {
-		allOutputs = append(allOutputs, d.output)
+	infra := args.Infra
+
+	// Build environment variables (plain strings, resolved before JSON marshaling)
+	type plainEnvVar struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	envVars := []plainEnvVar{
+		{Name: "DEFANG_SERVICE", Value: serviceName},
+	}
+	if svc.DomainName != nil {
+		envVars = append(envVars, plainEnvVar{Name: "DEFANG_FQDN", Value: *svc.DomainName})
+	}
+	for k, v := range svc.Environment {
+		envVars = append(envVars, plainEnvVar{Name: k, Value: v})
 	}
 
-	containerDefsJSON := pulumi.All(allOutputs...).ApplyT(func(resolved []interface{}) (string, error) {
-		logGroupName := resolved[0].(string)
-		imageURI := resolved[1].(string)
-
-		// Build full env var list: static + resolved dynamic
-		envVars := make([]ContainerEnvironment, len(staticEnvVars), len(staticEnvVars)+len(dynamicEnvVars))
-		copy(envVars, staticEnvVars)
-		for i, d := range dynamicEnvVars {
-			envVars = append(envVars, ContainerEnvironment{
-				Name:  d.name,
-				Value: resolved[2+i].(string),
-			})
+	// Build health check for JSON (plain types, no Pulumi outputs)
+	type plainHealthCheck struct {
+		Command     []string `json:"command"`
+		Interval    int      `json:"interval,omitempty"`
+		Timeout     int      `json:"timeout,omitempty"`
+		Retries     int      `json:"retries,omitempty"`
+		StartPeriod int      `json:"startPeriod,omitempty"`
+	}
+	var plainHC *plainHealthCheck
+	if healthCheck != nil {
+		plainHC = &plainHealthCheck{
+			Command:     svc.HealthCheck.Test,
+			Interval:    healthCheck.Interval,
+			Timeout:     healthCheck.Timeout,
+			Retries:     healthCheck.Retries,
+			StartPeriod: healthCheck.StartPeriod,
 		}
+	}
 
-		essential := true
-		containerDef := ContainerDefinition{
-			Name:         serviceName,
-			Image:        imageURI,
-			Essential:    &essential,
-			PortMappings: portMappings,
-			Environment:  envVars,
-			Command:      svc.Command,
-			EntryPoint:   svc.Entrypoint,
-			HealthCheck:  healthCheck,
-			LogConfiguration: &ContainerLogConfiguration{
-				LogDriver: "awslogs",
-				Options: map[string]string{
-					"awslogs-group":         logGroupName,
-					"awslogs-region":        args.Region,
-					"awslogs-stream-prefix": serviceName,
+	// Resolve outputs (image URI, log group name) before building the container
+	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
+	// so all values must be concrete before marshaling.
+	containerDefsJSON := pulumi.All(args.ImageURI, infra.LogGroup.Name).ApplyT(
+		func(resolved []interface{}) (string, error) {
+			imageURI := resolved[0].(string)
+			logGroupName := resolved[1].(string)
+
+			type plainLogConfig struct {
+				LogDriver string            `json:"logDriver"`
+				Options   map[string]string `json:"options,omitempty"`
+			}
+			type plainContainerDef struct {
+				Name             string                 `json:"name"`
+				Image            string                 `json:"image"`
+				Essential        *bool                  `json:"essential,omitempty"`
+				PortMappings     []ContainerPortMapping `json:"portMappings,omitempty"`
+				Environment      []plainEnvVar          `json:"environment,omitempty"`
+				Command          []string               `json:"command,omitempty"`
+				EntryPoint       []string               `json:"entryPoint,omitempty"`
+				HealthCheck      *plainHealthCheck      `json:"healthCheck,omitempty"`
+				LogConfiguration *plainLogConfig        `json:"logConfiguration,omitempty"`
+			}
+
+			essential := true
+			containerDefs := []plainContainerDef{{
+				Name:         serviceName,
+				Essential:    &essential,
+				PortMappings: portMappings,
+				Environment:  envVars,
+				Command:      svc.Command,
+				EntryPoint:   svc.Entrypoint,
+				HealthCheck:  plainHC,
+				Image:        imageURI,
+				LogConfiguration: &plainLogConfig{
+					LogDriver: "awslogs",
+					Options: map[string]string{
+						"awslogs-group":         logGroupName,
+						"awslogs-region":        infra.Region,
+						"awslogs-stream-prefix": serviceName,
+					},
 				},
-			},
-		}
+			}}
 
-		b, err := json.Marshal([]ContainerDefinition{containerDef})
-		if err != nil {
-			return "", fmt.Errorf("marshaling container definitions: %w", err)
-		}
-		return string(b), nil
-	}).(pulumi.StringOutput)
+			jsonBytes, err := json.Marshal(containerDefs)
+			if err != nil {
+				return "", fmt.Errorf("marshaling container definitions: %w", err)
+			}
+			return string(jsonBytes), nil
+		}).(pulumi.StringOutput)
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
@@ -258,7 +285,7 @@ func CreateECSService(
 		RequiresCompatibilities: pulumi.StringArray{pulumi.String("FARGATE")},
 		Cpu:                     pulumi.String(fargateCPU),
 		Memory:                  pulumi.String(fargateMemory),
-		ExecutionRoleArn:        args.ExecRole.Arn,
+		ExecutionRoleArn:        infra.ExecRole.Arn,
 		TaskRoleArn:             taskRole.Arn,
 		ContainerDefinitions:    containerDefsJSON,
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
@@ -280,7 +307,7 @@ func CreateECSService(
 	var lbDependsOn []pulumi.Resource
 	var endpointOutput pulumix.Output[string]
 
-	if svc.HasIngressPorts() && args.Listener != nil {
+	if svc.HasIngressPorts() && infra.HttpListener != nil {
 		firstIngress := true
 		for _, port := range svc.Ports {
 			if port.Mode != "ingress" {
@@ -288,7 +315,7 @@ func CreateECSService(
 			}
 
 			// Only create TG/LR for http, http2, grpc (matches TS createTgLrPair)
-			appProto := shared.GetAppProtocol(port)
+			appProto := compose.GetAppProtocol(port)
 			if appProto != "http" && appProto != "http2" && appProto != "grpc" {
 				continue
 			}
@@ -296,7 +323,7 @@ func CreateECSService(
 			tgName := targetGroupName(serviceName, port.Target, appProto)
 
 			// Target group health check (matches TS createTargetGroup in lb.ts)
-			defaultInterval := recipe.HealthCheckInterval
+			defaultInterval := HealthCheckInterval.Get(ctx)
 			interval := defaultInterval
 			if svc.HealthCheck != nil {
 				interval = clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, defaultInterval)
@@ -325,13 +352,13 @@ func CreateECSService(
 				Port:                       pulumi.Int(port.Target),
 				Protocol:                   pulumi.String("HTTP"),
 				TargetType:                 pulumi.String("ip"),
-				VpcId:                      pulumi.StringOutput(args.VpcID),
+				VpcId:                      pulumi.StringInput(infra.VpcID),
 				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
-				DeregistrationDelay:        pulumi.Int(recipe.DeregistrationDelay),
+				DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{
+					// Port:               pulumi.String("traffic-port"),
 					Path:               pulumi.String("/"),
-					Port:               pulumi.String("traffic-port"),
-					HealthyThreshold:   pulumi.Int(recipe.HealthCheckThreshold),
+					HealthyThreshold:   pulumi.Int(HealthCheckThreshold.Get(ctx)),
 					UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
 					Interval:           pulumi.Int(interval),
 					Timeout:            pulumi.Int(timeout),
@@ -365,11 +392,11 @@ func CreateECSService(
 						Values: pulumi.StringArray{pulumi.String(*svc.DomainName)},
 					},
 				})
-			} else if args.Alb != nil {
+			} else if infra.Alb != nil {
 				// Fall back to ALB DNS name (matches TS fallback behavior)
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
-						Values: pulumi.StringArray{args.Alb.DnsName},
+						Values: pulumi.StringArray{infra.Alb.DnsName},
 					},
 				})
 			} else {
@@ -392,7 +419,7 @@ func CreateECSService(
 			}
 
 			lr, lrErr := lb.NewListenerRule(ctx, tgName+"-rule", &lb.ListenerRuleArgs{
-				ListenerArn: args.Listener.Arn,
+				ListenerArn: infra.HttpListener.Arn,
 				Actions: lb.ListenerRuleActionArray{
 					&lb.ListenerRuleActionArgs{
 						Type:           pulumi.String("forward"),
@@ -417,12 +444,12 @@ func CreateECSService(
 
 	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)
 	ecsServiceArgs := &ecs.ServiceArgs{
-		Cluster:        args.Cluster.Arn,
+		Cluster:        infra.Cluster.Arn,
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
-			Subnets:        pulumi.StringArrayOutput(args.SubnetIDs),
-			SecurityGroups: pulumi.StringArray{args.Sg.ID()},
+			Subnets:        pulumi.StringArrayInput(infra.PublicSubnetIDs),
+			SecurityGroups: pulumi.StringArray{infra.Sg.ID()},
 			AssignPublicIp: pulumi.Bool(true),
 		},
 		LoadBalancers: loadBalancers,
@@ -430,7 +457,7 @@ func CreateECSService(
 			Enable:   pulumi.Bool(true),
 			Rollback: pulumi.Bool(true),
 		},
-		DeploymentMinimumHealthyPercent: pulumi.Int(recipe.MinHealthyPercent),
+		DeploymentMinimumHealthyPercent: pulumi.Int(MinHealthyPercent.Get(ctx)),
 		EnableEcsManagedTags:            pulumi.Bool(true),
 		PropagateTags:                   pulumi.String("SERVICE"),
 		Tags: pulumi.StringMap{
@@ -439,7 +466,7 @@ func CreateECSService(
 	}
 
 	// Use capacity provider strategy if configured, otherwise default launch type
-	capacityProvider := recipe.FargateCapacityProvider
+	capacityProvider := FargateCapacityProvider.Get(ctx)
 	if capacityProvider != "" {
 		ecsServiceArgs.CapacityProviderStrategies = ecs.ServiceCapacityProviderStrategyArray{
 			&ecs.ServiceCapacityProviderStrategyArgs{
@@ -451,12 +478,16 @@ func CreateECSService(
 		ecsServiceArgs.LaunchType = pulumi.String("FARGATE")
 	}
 
-	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, append(opts, pulumi.DependsOn(lbDependsOn))...)
+	ecsServiceOpts := append(opts, pulumi.DependsOn(lbDependsOn))
+	if len(deps) > 0 {
+		ecsServiceOpts = append(ecsServiceOpts, pulumi.DependsOn(deps))
+	}
+	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, ecsServiceOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}
 
-	hasIngress := svc.HasIngressPorts() && args.Listener != nil
+	hasIngress := svc.HasIngressPorts() && infra.HttpListener != nil
 	if hasIngress {
 		endpointOutput = pulumix.Val(fmt.Sprintf("service %s via ALB", serviceName))
 	}
@@ -468,12 +499,9 @@ func CreateECSService(
 	}, nil
 }
 
-// BuildECSArgs creates all shared AWS infrastructure for a standalone ECS service and
-// returns the args to pass to NewECSServiceComponent.
+// BuildSharedInfra creates all shared AWS infrastructure for a standalone ECS service.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInput, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*ECSServiceArgs, error) {
-	recipe := LoadRecipe(ctx)
-
+func BuildSharedInfra(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*SharedInfra, error) {
 	region, err := aws.GetRegion(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting AWS region: %w", err)
@@ -506,7 +534,7 @@ func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInp
 	}
 
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(recipe.LogRetentionDays),
+		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
@@ -528,7 +556,7 @@ func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInp
 	var httpListener *lb.Listener
 	var svcALB *lb.LoadBalancer
 	if svc.HasIngressPorts() {
-		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, recipe, opts...)
+		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
@@ -536,21 +564,103 @@ func BuildECSArgs(ctx *pulumi.Context, serviceName string, svc shared.ServiceInp
 		svcALB = albRes.Alb
 	}
 
-	imageURI, err := GetServiceImage(ctx, serviceName, svc, imgInfra, opts...)
+	return &SharedInfra{
+		Cluster:          cluster,
+		ExecRole:         execRole,
+		LogGroup:         logGroup,
+		VpcID:            net.VpcID,
+		PublicSubnetIDs:  net.PublicSubnetIDs,
+		PrivateSubnetIDs: net.PrivateSubnetIDs,
+		PrivateZoneID:    net.PrivateZoneID,
+		PrivateDomain:    net.PrivateDomain,
+		Sg:               sg,
+		HttpListener:     httpListener,
+		Alb:              svcALB,
+		Region:           region.Name,
+		ImageInfra:       imgInfra,
+	}, nil
+}
+
+// BuildProjectInfra creates shared AWS infrastructure for a multi-service project.
+func BuildProjectInfra(ctx *pulumi.Context, projectName string, services map[string]compose.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*SharedInfra, error) {
+	region, err := aws.GetRegion(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("resolving image for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	return &ECSServiceArgs{
-		Cluster:   cluster,
-		ExecRole:  execRole,
-		LogGroup:  logGroup,
-		VpcID:     net.VpcID,
-		SubnetIDs: net.PublicSubnetIDs,
-		Sg:        sg,
-		Listener:  httpListener,
-		Alb:       svcALB,
-		Region:    region.Name,
-		ImageURI:  imageURI,
+	net, err := ResolveNetworking(ctx, awsCfg, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("resolving networking: %w", err)
+	}
+
+	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
+		VpcId:       pulumi.StringOutput(net.VpcID),
+		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
+		Egress: ec2.SecurityGroupEgressArray{
+			&ec2.SecurityGroupEgressArgs{
+				Protocol:   pulumi.String("-1"),
+				FromPort:   pulumi.Int(0),
+				ToPort:     pulumi.Int(0),
+				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			},
+		},
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating security group: %w", err)
+	}
+
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating ECS cluster: %w", err)
+	}
+
+	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
+		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating log group: %w", err)
+	}
+
+	execRole, err := CreateExecutionRole(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating execution role: %w", err)
+	}
+
+	var imgInfra *ImageInfra
+	for _, svc := range services {
+		if svc.NeedsBuild() {
+			imgInfra, err = CreateImageInfra(ctx, logGroup, region.Name, opts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
+			}
+			break
+		}
+	}
+
+	var httpListener *lb.Listener
+	var alb *lb.LoadBalancer
+	if common.NeedIngress(services) {
+		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating ALB: %w", err)
+		}
+		httpListener = albRes.HttpListener
+		alb = albRes.Alb
+	}
+
+	return &SharedInfra{
+		Cluster:          cluster,
+		ExecRole:         execRole,
+		LogGroup:         logGroup,
+		VpcID:            net.VpcID,
+		PublicSubnetIDs:  net.PublicSubnetIDs,
+		PrivateSubnetIDs: net.PrivateSubnetIDs,
+		PrivateZoneID:    net.PrivateZoneID,
+		PrivateDomain:    net.PrivateDomain,
+		Sg:               sg,
+		HttpListener:     httpListener,
+		Alb:              alb,
+		Region:           region.Name,
+		ImageInfra:       imgInfra,
 	}, nil
 }

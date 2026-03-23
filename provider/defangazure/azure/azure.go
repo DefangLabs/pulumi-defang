@@ -60,7 +60,6 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 		Environment:   env,
 	}
 
-	recipe := LoadRecipe(ctx)
 	endpoints := pulumi.StringMap{}
 
 	for svcName, svc := range args.Services {
@@ -68,25 +67,25 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, paren
 
 		if svc.Postgres != nil {
 			// Managed Postgres → Flexible Server
-			if err := ctx.RegisterComponentResource("defang-azure:index:AzurePostgres", svcName, comp, opts[0]); err != nil {
+			if err := ctx.RegisterComponentResource("defang-azure:index:Postgres", svcName, comp, opts...); err != nil {
 				return nil, fmt.Errorf("registering Azure Postgres component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 			configProvider := NewConfigProvider(projectName)
-			pgResult, err := CreatePostgresFlexible(ctx, configProvider, svcName, svc, infra, recipe, svcOpts...)
+			pgResult, err := CreatePostgresFlexible(ctx, configProvider, svcName, svc, infra, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 		} else {
 			// Container service → Container App
-			if err := ctx.RegisterComponentResource("defang-azure:index:AzureContainerApp", svcName, comp, opts[0]); err != nil {
+			if err := ctx.RegisterComponentResource("defang-azure:index:AzureContainerApp", svcName, comp, opts...); err != nil {
 				return nil, fmt.Errorf("registering Container App component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			caResult, err := CreateContainerApp(ctx, svcName, svc, infra, recipe, svcOpts...)
+			caResult, err := CreateContainerApp(ctx, svcName, svc, infra, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Container App %s: %w", svcName, err)
 			}

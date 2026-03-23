@@ -3,47 +3,46 @@ package defanggcp
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// GcpCloudSql is the controller struct for the defang-gcp:index:GcpCloudSql component.
-type GcpCloudSql struct{}
+// Postgres is the controller struct for the defang-gcp:index:Postgres component.
+type Postgres struct{}
 
 // GcpCloudSqlInputs defines the inputs for a standalone GCP Cloud SQL Postgres instance.
 type GcpCloudSqlInputs struct {
-	ProjectName *string               `pulumi:"project_name"`
-	Postgres    *shared.PostgresInput `pulumi:"postgres,optional"`
-	Image       *string               `pulumi:"image,optional"`
-	Deploy      *shared.DeployConfig  `pulumi:"deploy,optional"`
-	Environment map[string]*string    `pulumi:"environment,optional"`
+	ProjectName string                 `pulumi:"project_name"`
+	Postgres    *compose.PostgresInput `pulumi:"postgres,optional"`
+	Image       *string                `pulumi:"image,optional"`
+	Deploy      *compose.DeployConfig  `pulumi:"deploy,optional"`
+	Environment map[string]string      `pulumi:"environment,optional"`
 }
 
-// GcpCloudSqlOutputs holds the outputs of a GcpCloudSql component.
+// GcpCloudSqlOutputs holds the outputs of a Postgres component.
 type GcpCloudSqlOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
 }
 
-// Construct implements the ComponentResource interface for GcpCloudSql.
-func (*GcpCloudSql) Construct(ctx *pulumi.Context, name, typ string, inputs GcpCloudSqlInputs, opts pulumi.ResourceOption) (*GcpCloudSqlOutputs, error) {
+// Construct implements the ComponentResource interface for Postgres.
+func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs GcpCloudSqlInputs, opts pulumi.ResourceOption) (*GcpCloudSqlOutputs, error) {
 	comp := &GcpCloudSqlOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := shared.ServiceInput{
+	svc := compose.ServiceConfig{
 		Postgres:    inputs.Postgres,
 		Image:       inputs.Image,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 	}
 
-	configProvider := providergcp.NewConfigProvider(*inputs.ProjectName)
-	recipe := providergcp.LoadRecipe(ctx)
-	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, name, svc, recipe, childOpt)
+	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
+	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, name, svc, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud SQL: %w", err)
 	}

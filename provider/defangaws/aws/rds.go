@@ -5,11 +5,11 @@ import (
 	"math"
 	"sort"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/rds"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type RDSResult struct {
@@ -155,32 +155,18 @@ func cheapestMatch(catalog map[string]nodeInfo, minCPUs float64, minGiB float64)
 	return matches[0].name
 }
 
-// postgresEngineVersion maps a major version to an RDS engine version string.
-func postgresEngineVersion(version int) string {
-	switch version {
-	case 14:
-		return "14"
-	case 15:
-		return "15"
-	case 16:
-		return "16"
-	case 17:
-		return "17"
-	default:
-		return "17"
-	}
-}
+const defaultPostgresPort = 5432
 
 // CreateRDS creates a managed RDS Postgres instance for a service.
 func CreateRDS(
 	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
+	configProvider compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
-	vpcID pulumix.Output[string],
-	privateSubnetIDs pulumix.Output[[]string],
+	svc compose.ServiceConfig,
+	vpcID pulumi.StringInput,
+	privateSubnetIDs pulumi.StringArrayInput,
 	serviceSG *ec2.SecurityGroup,
-	recipe Recipe,
+	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
@@ -188,10 +174,20 @@ func CreateRDS(
 		return nil, fmt.Errorf("postgres config is nil")
 	}
 
+	port := defaultPostgresPort
+	if len(svc.Ports) > 0 && svc.Ports[0].Target > 0 {
+		port = svc.Ports[0].Target
+	}
+
+	tags := pulumi.StringMap{
+		"defang:service": pulumi.String(serviceName),
+	}
+
 	// Create DB subnet group
 	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
-		Description: pulumi.String(fmt.Sprintf("Subnet group for %s postgres", serviceName)),
-		SubnetIds:   pulumi.StringArrayOutput(privateSubnetIDs),
+		Description: pulumi.String(common.DefangComment),
+		SubnetIds:   privateSubnetIDs.ToStringArrayOutput(),
+		Tags:        tags,
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating DB subnet group: %w", err)
@@ -199,13 +195,13 @@ func CreateRDS(
 
 	// Create security group for RDS
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(vpcID),
+		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String(fmt.Sprintf("RDS security group for %s", serviceName)),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
 				Protocol:       pulumi.String("tcp"),
-				FromPort:       pulumi.Int(5432),
-				ToPort:         pulumi.Int(5432),
+				FromPort:       pulumi.Int(port),
+				ToPort:         pulumi.Int(port),
 				SecurityGroups: pulumi.StringArray{serviceSG.ID()},
 			},
 		},
@@ -217,21 +213,29 @@ func CreateRDS(
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
+		Tags: tags,
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS security group: %w", err)
 	}
 
-	instanceClass := rdsInstanceClass(svc.GetCPUs(), svc.GetMemoryMiB(), recipe.RDSNodeType)
+	instanceClass := rdsInstanceClass(svc.GetCPUs(), svc.GetMemoryMiB(), RDSNodeType.Get(ctx))
 
-	// Resolve version: 0 means latest
-	engineVersion := postgresEngineVersion(pg.Version)
+	// Final snapshot: create one when deletion protection is on (production)
+	deletionProtection := DeletionProtection.Get(ctx)
+	skipFinalSnapshot := !deletionProtection
+	var finalSnapshotIdentifier pulumi.StringPtrInput
+	if !skipFinalSnapshot {
+		finalSnapshotIdentifier = pulumi.String(fmt.Sprintf("%s-%s-%s-final", ctx.Project(), ctx.Stack(), serviceName))
+	}
+
+	backupRetentionDays := BackupRetentionDays.Get(ctx)
 
 	rdsArgs := &rds.InstanceArgs{
 		AllocatedStorage:         pulumi.Int(20),
 		MaxAllocatedStorage:      pulumi.Int(500),
 		Engine:                   pulumi.String("postgres"),
-		EngineVersion:            pulumi.String(engineVersion),
+		EngineVersion:            pg.Version,
 		InstanceClass:            pulumi.String(instanceClass),
 		DbName:                   pg.DBName,
 		Username:                 pg.Username,
@@ -240,23 +244,34 @@ func CreateRDS(
 		ApplyImmediately:         pulumi.Bool(pg.AllowDowntime),
 		DbSubnetGroupName:        subnetGroup.Name,
 		VpcSecurityGroupIds:      pulumi.StringArray{rdsSG.ID()},
-		SkipFinalSnapshot:        pulumi.Bool(true),
+		SkipFinalSnapshot:        pulumi.Bool(skipFinalSnapshot),
+		FinalSnapshotIdentifier:  finalSnapshotIdentifier,
 		PubliclyAccessible:       pulumi.Bool(false),
-		DeletionProtection:       pulumi.Bool(recipe.DeletionProtection),
-		StorageEncrypted:         pulumi.Bool(recipe.StorageEncrypted),
+		DeletionProtection:       pulumi.Bool(deletionProtection),
+		StorageEncrypted:         pulumi.Bool(StorageEncrypted.Get(ctx)),
 		AutoMinorVersionUpgrade:  pulumi.Bool(true),
-		BackupRetentionPeriod:    pulumi.Int(recipe.BackupRetentionDays),
+		BackupRetentionPeriod:    pulumi.Int(backupRetentionDays),
+		Tags:                     tags,
+	}
+	if backupRetentionDays > 0 {
+		rdsArgs.BackupWindow = pulumi.String(BackupWindow.Get(ctx))
 	}
 	if pg.FromSnapshot != "" {
 		rdsArgs.SnapshotIdentifier = pulumi.String(pg.FromSnapshot)
 	}
 
-	instance, err := rds.NewInstance(ctx, serviceName, rdsArgs, opts...)
+	rdsOpts := append(opts, pulumi.IgnoreChanges([]string{"storageEncrypted"}))
+	if len(deps) > 0 {
+		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
+	}
+	instance, err := rds.NewInstance(ctx, serviceName, rdsArgs, rdsOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS instance: %w", err)
 	}
 
-	return &RDSResult{
+	result := &RDSResult{
 		Instance: instance,
-	}, nil
+	}
+
+	return result, nil
 }

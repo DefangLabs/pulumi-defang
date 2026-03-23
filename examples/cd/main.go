@@ -8,7 +8,7 @@ import (
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 	"go.yaml.in/yaml/v3"
@@ -16,10 +16,10 @@ import (
 
 // composeFile is the subset of a Docker Compose file we care about.
 type composeFile struct {
-	Services map[string]shared.ServiceInput `yaml:"services"`
+	Services map[string]compose.ServiceConfig `yaml:"services"`
 }
 
-func parseCompose(path string) (map[string]shared.ServiceInput, error) {
+func parseCompose(path string) (map[string]compose.ServiceConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading compose file: %w", err)

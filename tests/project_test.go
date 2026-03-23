@@ -23,7 +23,7 @@ func TestServiceSchemaRegistered(t *testing.T) {
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-aws:index:AwsEcsService")
+	assert.Contains(t, schema.Schema, "defang-aws:index:Service")
 	assert.Contains(t, schema.Schema, "endpoint")
 	assert.Contains(t, schema.Schema, "image")
 }

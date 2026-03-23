@@ -3,7 +3,7 @@ package azure
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -12,32 +12,13 @@ type postgresResult struct {
 	Server *dbforpostgresql.Server
 }
 
-// azurePostgresVersion maps a major version number to the Azure server version string.
-func azurePostgresVersion(version int) string {
-	switch version {
-	case 13:
-		return "13"
-	case 14:
-		return "14"
-	case 15:
-		return "15"
-	case 16:
-		return "16"
-	case 17:
-		return "17"
-	default:
-		return "16"
-	}
-}
-
 // CreatePostgresFlexible creates an Azure Database for PostgreSQL Flexible Server.
 func CreatePostgresFlexible(
 	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
+	configProvider compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*postgresResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
@@ -46,9 +27,9 @@ func CreatePostgresFlexible(
 	}
 
 	// Backup config
-	backupRetention := recipe.BackupRetentionDays
+	backupRetention := BackupRetentionDays.Get(ctx)
 	geoBackup := dbforpostgresql.GeoRedundantBackupEnumDisabled
-	if recipe.GeoRedundantBackup {
+	if GeoRedundantBackup.Get(ctx) {
 		geoBackup = dbforpostgresql.GeoRedundantBackupEnumEnabled
 	}
 
@@ -60,13 +41,13 @@ func CreatePostgresFlexible(
 
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Version:           pulumi.String(azurePostgresVersion(pg.Version)),
+		Version:           pg.Version,
 		Sku: &dbforpostgresql.SkuArgs{
-			Name: pulumi.String(recipe.SkuName),
+			Name: pulumi.String(SkuName.Get(ctx)),
 			Tier: pulumi.String(string(dbforpostgresql.SkuTierBurstable)),
 		},
 		Storage: &dbforpostgresql.StorageArgs{
-			StorageSizeGB: pulumi.Int(recipe.StorageSizeGB),
+			StorageSizeGB: pulumi.Int(StorageSizeGB.Get(ctx)),
 		},
 		Backup: &dbforpostgresql.BackupTypeArgs{
 			BackupRetentionDays: pulumi.Int(backupRetention),
@@ -75,7 +56,7 @@ func CreatePostgresFlexible(
 		AdministratorLogin:         pg.Username,
 		AdministratorLoginPassword: pg.Password,
 	}
-	if recipe.HighAvailability {
+	if HighAvailability.Get(ctx) {
 		serverArgs.HighAvailability = &dbforpostgresql.HighAvailabilityArgs{
 			Mode: pulumi.String(string(dbforpostgresql.HighAvailabilityModeZoneRedundant)),
 		}

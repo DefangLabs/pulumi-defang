@@ -13,26 +13,26 @@ func TestGcpProjectSchemaRegistered(t *testing.T) {
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-gcp:defanggcp:Project")
+	assert.Contains(t, schema.Schema, "defang-gcp:index:Project")
 	assert.Contains(t, schema.Schema, "endpoints")
 	assert.Contains(t, schema.Schema, "services")
 }
 
-func TestGcpCloudRunServiceSchemaRegistered(t *testing.T) {
+func TestGcpServiceSchemaRegistered(t *testing.T) {
 	server := makeGcpTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-gcp:defanggcp:GcpCloudRunService")
+	assert.Contains(t, schema.Schema, "defang-gcp:index:Service")
 	assert.Contains(t, schema.Schema, "endpoint")
 	assert.Contains(t, schema.Schema, "image")
 }
 
-func TestGcpCloudSqlSchemaRegistered(t *testing.T) {
+func TestGcpPostgresSchemaRegistered(t *testing.T) {
 	server := makeGcpTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-gcp:defanggcp:GcpCloudSql")
+	assert.Contains(t, schema.Schema, "defang-gcp:index:Postgres")
 	assert.Contains(t, schema.Schema, "endpoint")
 }

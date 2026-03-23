@@ -1,7 +1,7 @@
 package tests
 
-// AwsRedis is the standalone ElastiCache Redis component for AWS. These tests verify
-// that the AwsRedis component correctly handles a variety of input configurations.
+// Redis is the standalone ElastiCache Redis component for AWS. These tests verify
+// that the Redis component correctly handles a variety of input configurations.
 
 import (
 	"testing"
@@ -11,13 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// awsConfig is the minimal AWS config needed by standalone AWS components.
+var awsConfig = property.New(property.NewMap(map[string]property.Value{
+	"vpcId": property.New("vpc-12345"),
+}))
+
 func TestConstructAwsRedis(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsRedis"),
+		Urn: awsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
+			"aws":          awsConfig,
 		}),
 	})
 
@@ -28,10 +34,11 @@ func TestConstructAwsRedisWithImage(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsRedis"),
+		Urn: awsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
+			"aws":          awsConfig,
 		}),
 	})
 
@@ -42,10 +49,11 @@ func TestConstructAwsRedisWithValkey(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsRedis"),
+		Urn: awsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("valkey/valkey:8"),
+			"aws":          awsConfig,
 		}),
 	})
 
@@ -56,7 +64,7 @@ func TestConstructAwsRedisWithCustomPort(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsRedis"),
+		Urn: awsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
@@ -66,6 +74,7 @@ func TestConstructAwsRedisWithCustomPort(t *testing.T) {
 					"mode":   property.New("host"),
 				})),
 			})),
+			"aws": awsConfig,
 		}),
 	})
 
@@ -76,13 +85,14 @@ func TestConstructAwsRedisWithAllowDowntime(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsRedis"),
+		Urn: awsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
 			"redis": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
 			})),
+			"aws": awsConfig,
 		}),
 	})
 
@@ -93,7 +103,7 @@ func TestConstructAwsRedisWithVPC(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsRedis"),
+		Urn: awsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("redis:7.2"),

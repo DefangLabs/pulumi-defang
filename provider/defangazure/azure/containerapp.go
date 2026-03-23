@@ -3,7 +3,7 @@ package azure
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -40,13 +40,10 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 func CreateContainerApp(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
-	image := svc.GetImage()
-
 	// Build environment variables
 	envs := app.EnvironmentVarArray{
 		app.EnvironmentVarArgs{
@@ -55,12 +52,10 @@ func CreateContainerApp(
 		},
 	}
 	for k, v := range svc.Environment {
-		if v != nil {
-			envs = append(envs, app.EnvironmentVarArgs{
-				Name:  pulumi.String(k),
-				Value: pulumi.String(*v),
-			})
-		}
+		envs = append(envs, app.EnvironmentVarArgs{
+			Name:  pulumi.String(k),
+			Value: pulumi.String(v),
+		})
 	}
 
 	// Resource limits
@@ -69,8 +64,8 @@ func CreateContainerApp(
 	// Scale config
 	minReplicas := svc.GetReplicas()
 	maxReplicas := minReplicas
-	if recipe.MaxReplicas > 0 {
-		maxReplicas = recipe.MaxReplicas
+	if MaxReplicas.Get(ctx) > 0 {
+		maxReplicas = MaxReplicas.Get(ctx)
 	}
 
 	// Ingress config
@@ -128,9 +123,9 @@ func CreateContainerApp(
 			Containers: app.ContainerArray{
 				app.ContainerArgs{
 					Name:    pulumi.String(serviceName),
-					Image:   pulumi.String(image),
-					Command: pulumi.ToStringArray(svc.Entrypoint),
-					Args:    pulumi.ToStringArray(svc.Command),
+					Image:   pulumi.String(*svc.Image), // TODO: support build config
+					Command: compose.ToPulumiStringArray(svc.Entrypoint),
+					Args:    compose.ToPulumiStringArray(svc.Command),
 					Env:     envs,
 					Probes:  probes,
 					Resources: &app.ContainerResourcesArgs{

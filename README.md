@@ -52,8 +52,8 @@ pulumi.export("output", {
 package main
 
 import (
-	defangaws "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws"
-	"github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/shared"
+	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
+	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 

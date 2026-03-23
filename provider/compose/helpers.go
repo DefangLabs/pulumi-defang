@@ -1,4 +1,4 @@
-package shared
+package compose
 
 import (
 	"regexp"
@@ -155,28 +155,32 @@ func ParseInterpolatedString(s string) []Match {
 	return result
 }
 
-func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceInput, key string, defaultValue string) pulumi.StringOutput {
-	// Reading from a nil map in Go returns (nil, false) without panicking, so a
+func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceConfig, key string, defaultValue string) pulumi.StringOutput {
+	// Reading from a nil map in Go returns "" without panicking, so a
 	// nil Environment is equivalent to an empty one: missing keys fall through to
 	// the default value.
-	value, exists := s.Environment[key]
-	if !exists {
-		return pulumi.String(defaultValue).ToStringOutput()
+	v, ok := s.Environment[key]
+	if !ok {
+		v = defaultValue
 	}
+	return pulumi.String(v).ToStringOutput()
+}
 
-	if value == nil {
-		// If the value is explicitly set to nil, treat it as a sensitive config reference
-		return configProvider.GetConfig(ctx, key)
+// StringPtrToInput converts a plain *string to a pulumi.StringPtrInput.
+func StringPtrToInput(s *string) pulumi.StringPtrInput {
+	if s == nil {
+		return nil
 	}
+	return pulumi.String(*s)
+}
 
-	v := *value
-	if v == "" {
-		return pulumi.String("").ToStringOutput()
+// ToPulumiStringArray converts a plain []string to a pulumi.StringArray.
+func ToPulumiStringArray(ss []string) pulumi.StringArray {
+	arr := make(pulumi.StringArray, len(ss))
+	for i, s := range ss {
+		arr[i] = pulumi.String(s)
 	}
-
-	return pulumi.String(v).ToStringOutput().ApplyT(func(v string) pulumi.StringOutput {
-		return InterpolateEnvironmentVariable(ctx, configProvider, v)
-	}).(pulumi.StringOutput)
+	return arr
 }
 
 func InterpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {

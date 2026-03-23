@@ -3,39 +3,39 @@ package defangazure
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// AzurePostgres is the controller struct for the defang-azure:index:AzurePostgres component.
-type AzurePostgres struct{}
+// Postgres is the controller struct for the defang-azure:index:Postgres component.
+type Postgres struct{}
 
 // AzurePostgresInputs defines the inputs for a standalone Azure PostgreSQL Flexible Server.
 type AzurePostgresInputs struct {
-	ProjectName *string               `pulumi:"project_name"`
-	Image       *string               `pulumi:"image,optional"`
-	Postgres    *shared.PostgresInput `pulumi:"postgres,optional"`
-	Deploy      *shared.DeployConfig  `pulumi:"deploy,optional"`
-	Environment map[string]*string    `pulumi:"environment,optional"`
+	ProjectName string                 `pulumi:"project_name"`
+	Image       *string                `pulumi:"image,optional"`
+	Postgres    *compose.PostgresInput `pulumi:"postgres,optional"`
+	Deploy      *compose.DeployConfig  `pulumi:"deploy,optional"`
+	Environment map[string]string      `pulumi:"environment,optional"`
 }
 
-// AzurePostgresOutputs holds the outputs of an AzurePostgres component.
+// AzurePostgresOutputs holds the outputs of an Postgres component.
 type AzurePostgresOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
 }
 
-// Construct implements the ComponentResource interface for AzurePostgres.
-func (*AzurePostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AzurePostgresInputs, opts pulumi.ResourceOption) (*AzurePostgresOutputs, error) {
+// Construct implements the ComponentResource interface for Postgres.
+func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs AzurePostgresInputs, opts pulumi.ResourceOption) (*AzurePostgresOutputs, error) {
 	comp := &AzurePostgresOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := shared.ServiceInput{
+	svc := compose.ServiceConfig{
 		Image:       inputs.Image,
 		Postgres:    inputs.Postgres,
 		Deploy:      inputs.Deploy,
@@ -52,10 +52,9 @@ func (*AzurePostgres) Construct(ctx *pulumi.Context, name, typ string, inputs Az
 	}
 
 	infra := &azure.SharedInfra{ResourceGroup: rg}
-	recipe := azure.LoadRecipe(ctx)
-	configProvider := azure.NewConfigProvider(*inputs.ProjectName)
+	configProvider := azure.NewConfigProvider(inputs.ProjectName)
 
-	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, recipe, childOpt)
+	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure PostgreSQL: %w", err)
 	}

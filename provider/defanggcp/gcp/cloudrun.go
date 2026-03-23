@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -52,9 +52,8 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 func CreateCloudRunService(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	location string,
-	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
 	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
@@ -66,8 +65,6 @@ func CreateCloudRunService(
 		return nil, fmt.Errorf("creating service account: %w", err)
 	}
 
-	image := svc.GetImage()
-
 	// Build environment variables
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
 		&cloudrunv2.ServiceTemplateContainerEnvArgs{
@@ -76,12 +73,10 @@ func CreateCloudRunService(
 		},
 	}
 	for k, v := range svc.Environment {
-		if v != nil {
-			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
-				Name:  pulumi.String(k),
-				Value: pulumi.String(*v),
-			})
-		}
+		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String(k),
+			Value: pulumi.String(v),
+		})
 	}
 
 	// Build port config
@@ -93,18 +88,13 @@ func CreateCloudRunService(
 	}
 
 	// Build command/args
-	var commands, cmdArgs pulumi.StringArray
-	for _, cmd := range svc.Entrypoint {
-		commands = append(commands, pulumi.String(cmd))
-	}
-	for _, cmd := range svc.Command {
-		cmdArgs = append(cmdArgs, pulumi.String(cmd))
-	}
+	commands := compose.ToPulumiStringArray(svc.Entrypoint)
+	cmdArgs := compose.ToPulumiStringArray(svc.Command)
 
 	// Cloud Run config from recipe
 	maxInstances := svc.GetReplicas()
-	if recipe.MaxReplicas > 0 {
-		maxInstances = recipe.MaxReplicas
+	if MaxReplicas.Get(ctx) > 0 {
+		maxInstances = MaxReplicas.Get(ctx)
 	}
 
 	cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
@@ -132,14 +122,14 @@ func CreateCloudRunService(
 	// Create Cloud Run service
 	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
 		Location:           pulumi.String(location),
-		Ingress:            pulumi.String(recipe.Ingress),
-		LaunchStage:        pulumi.String(recipe.LaunchStage),
+		Ingress:            pulumi.String(Ingress.Get(ctx)),
+		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
 		InvokerIamDisabled: pulumi.Bool(true),
-		DeletionProtection: pulumi.Bool(recipe.DeletionProtection),
+		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
 		Template: &cloudrunv2.ServiceTemplateArgs{
 			Containers: cloudrunv2.ServiceTemplateContainerArray{
 				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image:    pulumi.String(image),
+					Image:    pulumi.String(*svc.Image),
 					Commands: commands,
 					Args:     cmdArgs,
 					Ports:    ports,

@@ -59,7 +59,7 @@ ensure:
 GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
-test_provider:
+test_provider: provider
 	cd tests && ${GO_TEST} -short ./...
 
 .PHONY: test_unit

@@ -20,11 +20,12 @@ func Provider() p.Provider {
 	return infer.Provider(infer.Options{
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
-			infer.Component[*AzureContainerApp, AzureContainerAppInputs, *AzureContainerAppOutputs](&AzureContainerApp{}),
-			infer.Component[*AzurePostgres, AzurePostgresInputs, *AzurePostgresOutputs](&AzurePostgres{}),
+			infer.Component[*Service, AzureContainerAppInputs, *AzureContainerAppOutputs](&Service{}),
+			infer.Component[*Postgres, AzurePostgresInputs, *AzurePostgresOutputs](&Postgres{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
-			"provider": "index",
+			"provider":    "index",
+			"defangazure": "index",
 		},
 
 		Metadata: schema.Metadata{

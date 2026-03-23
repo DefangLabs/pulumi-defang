@@ -1,12 +1,12 @@
 package main
 
 import (
-	defangaws "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/defangaws"
-	awsShared "github.com/DefangLabs/pulumi-defang/sdk/go/defang-aws/shared"
-	defangazure "github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure/defangazure"
-	azureShared "github.com/DefangLabs/pulumi-defang/sdk/go/defang-azure/shared"
-	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/go/defang-gcp/defanggcp"
-	gcpShared "github.com/DefangLabs/pulumi-defang/sdk/go/defang-gcp/shared"
+	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/defangaws"
+	awsShared "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/shared"
+	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/defangazure"
+	azureShared "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/shared"
+	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/defanggcp"
+	gcpShared "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/shared"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	pulumiazurenative "github.com/pulumi/pulumi-azure-native-sdk/v2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
