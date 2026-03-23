@@ -37,7 +37,7 @@ jobs:
       uses: golangci/golangci-lint-action@v9
       with:
         version: v2.11.4
-        args: --timeout=5m --config=.golangci.yaml provider
+        args: --timeout=5m --config=.golangci.yaml ./provider/...
 
   build_sdks:
     name: Build SDKs
