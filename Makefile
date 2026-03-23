@@ -93,9 +93,6 @@ install-git-hooks: node_modules
 	printf "#!/bin/sh\nmake -j3 pre-push" > .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 
-.PHONY: pre-commit
-pre-commit: provider test lint
-
 node_modules: package.json
 	npm install
 
