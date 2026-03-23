@@ -95,7 +95,10 @@ func sha1hash(inputs ...string) string {
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
 func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	// Must also hash buildArgs, in case tarball is the same; stably serialize to a string
-	argsStr, _ := json.Marshal(removeEphemeralBuildArgs(build.Args))
+	argsStr, err := json.Marshal(removeEphemeralBuildArgs(build.Args))
+	if err != nil {
+		return pulumi.StringOutput{}
+	}
 	var dockerfile, target string
 	if build.Dockerfile != nil {
 		dockerfile = *build.Dockerfile
