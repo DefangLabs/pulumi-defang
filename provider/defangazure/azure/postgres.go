@@ -54,7 +54,7 @@ func CreatePostgresFlexible(
 			BackupRetentionDays: pulumi.Int(backupRetention),
 			GeoRedundantBackup:  pulumi.String(string(geoBackup)),
 		},
-		AdministratorLogin:         pg.Username,
+		AdministratorLogin:         username,
 		AdministratorLoginPassword: pg.Password,
 	}
 	if HighAvailability.Get(ctx) {
