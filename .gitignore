@@ -11,4 +11,5 @@ schema-defang.json
 pulumi-resource-defang-aws
 pulumi-resource-defang-azure
 pulumi-resource-defang-gcp
-.sdk.tmp/
+.sdk.tmp.*/
+.sdk.*.stamp
