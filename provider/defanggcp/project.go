@@ -46,7 +46,7 @@ func (*Project) Construct(
 	// Create Artifact Registry repository for container images
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
 		RepositoryId: pulumi.String(strings.ToLower(name)),
-		Description:  pulumi.String(fmt.Sprintf("Container images for %s", name)),
+		Description:  pulumi.String("Container images for " + name),
 		Format:       pulumi.String("DOCKER"),
 	}, childOpts...)
 	if err != nil {

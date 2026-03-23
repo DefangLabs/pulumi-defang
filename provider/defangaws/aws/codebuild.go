@@ -73,7 +73,7 @@ func getBuildSpec(build compose.BuildConfig, destination string) string {
 
 	var targetArg string
 	if target := build.GetTarget(); target != "" {
-		targetArg = fmt.Sprintf("--target %s", target)
+		targetArg = "--target " + target
 	}
 
 	preBuildCommands := []string{

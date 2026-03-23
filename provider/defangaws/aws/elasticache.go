@@ -239,7 +239,7 @@ func CreateElasticache(
 	// Create security group allowing ingress only from the service SG.
 	cacheSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
-		Description: pulumi.String(fmt.Sprintf("ElastiCache security group for %s", serviceName)),
+		Description: pulumi.String("ElastiCache security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
 				Protocol:       pulumi.String("tcp"),

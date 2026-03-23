@@ -82,7 +82,7 @@ func (*Service) Construct(
 
 	comp.Endpoint = caResult.App.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
 		if fqdn != "" {
-			return fmt.Sprintf("https://%s", fqdn)
+			return "https://" + fqdn
 		}
 		return ""
 	}).(pulumi.StringOutput)

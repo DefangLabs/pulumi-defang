@@ -196,7 +196,7 @@ func CreateRDS(
 	// Create security group for RDS
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
-		Description: pulumi.String(fmt.Sprintf("RDS security group for %s", serviceName)),
+		Description: pulumi.String("RDS security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
 				Protocol:       pulumi.String("tcp"),

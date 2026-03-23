@@ -97,7 +97,7 @@ func (*Project) Construct(
 			}
 			endpoints[svcName] = caResult.App.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
 				if fqdn != "" {
-					return fmt.Sprintf("https://%s", fqdn)
+					return "https://" + fqdn
 				}
 				return ""
 			}).(pulumi.StringOutput)

@@ -59,7 +59,7 @@ func CreateCloudRunService(
 	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
 	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
-		DisplayName: pulumi.String(fmt.Sprintf("Service account for %s", serviceName)),
+		DisplayName: pulumi.String("Service account for " + serviceName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating service account: %w", err)
