@@ -70,7 +70,7 @@ func (*CodeBuildImageBuild) Create(
 
 	var buildID string
 	var err error
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		buildID, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, maxWait)
 		if err == nil {
 			break
