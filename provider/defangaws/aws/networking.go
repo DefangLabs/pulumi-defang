@@ -19,7 +19,7 @@ type NetworkingResult struct {
 
 // ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
 func ResolveNetworking(
-	ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption
+	ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption,
 ) (*NetworkingResult, error) {
 	if cfg != nil && cfg.VpcID != "" {
 		// Use provided VPC and subnet IDs
