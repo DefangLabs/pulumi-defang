@@ -90,7 +90,7 @@ release: clean build
 install-git-hooks: node_modules
 	printf "#!/bin/sh\nmake pre-commit" > .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
-	printf "#!/bin/sh\nmake pre-push" > .git/hooks/pre-push
+	printf "#!/bin/sh\nmake -j3 pre-push" > .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 
 .PHONY: pre-commit
