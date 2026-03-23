@@ -550,7 +550,7 @@ func BuildSharedInfra(
 
 	var imgInfra *ImageInfra
 	if svc.NeedsBuild() {
-		imgInfra, err = CreateImageInfra(ctx, logGroup, region.Name, opts...)
+		imgInfra, err = CreateImageInfra(ctx, logGroup, region.Region, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 		}
@@ -579,7 +579,7 @@ func BuildSharedInfra(
 		Sg:               sg,
 		HttpListener:     httpListener,
 		Alb:              svcALB,
-		Region:           region.Name,
+		Region:           region.Region,
 		ImageInfra:       imgInfra,
 	}, nil
 }
@@ -634,7 +634,7 @@ func BuildProjectInfra(
 	var imgInfra *ImageInfra
 	for _, svc := range services {
 		if svc.NeedsBuild() {
-			imgInfra, err = CreateImageInfra(ctx, logGroup, region.Name, opts...)
+			imgInfra, err = CreateImageInfra(ctx, logGroup, region.Region, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 			}
@@ -665,7 +665,7 @@ func BuildProjectInfra(
 		Sg:               sg,
 		HttpListener:     httpListener,
 		Alb:              alb,
-		Region:           region.Name,
+		Region:           region.Region,
 		ImageInfra:       imgInfra,
 	}, nil
 }
