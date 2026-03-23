@@ -39,19 +39,30 @@ jobs:
         version: v2.7.2
         args: --timeout=5m --config=.golangci.yaml ./provider/...
 
+  setup_sdk_matrix:
+    name: Set SDK Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      languages: ${{ steps.matrix.outputs.languages }}
+    steps:
+    - id: matrix
+      run: |
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          echo 'languages=["go"]' >> $GITHUB_OUTPUT
+        else
+          echo 'languages=["nodejs","python","dotnet","go"]' >> $GITHUB_OUTPUT
+        fi
+
   build_sdks:
     name: Build SDKs
+    needs: setup_sdk_matrix
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        language:
-        - nodejs
-        - python
-        - dotnet
-        - go
+        language: ${{ fromJson(needs.setup_sdk_matrix.outputs.languages) }}
         provider:
         - aws
         - gcp

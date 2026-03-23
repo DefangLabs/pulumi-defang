@@ -90,7 +90,7 @@ release: clean build
 install-git-hooks: node_modules
 	printf "#!/bin/sh\nmake pre-commit" > .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
-	printf "#!/bin/sh\nmake -j3 pre-push" > .git/hooks/pre-push
+	printf "#!/bin/sh\nmake -j4 pre-push" > .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 
 node_modules: package.json
@@ -104,7 +104,7 @@ pre-commit: node_modules
 
 # Full build + test run before push (or for CI).
 .PHONY: pre-push
-pre-push: sdks
+pre-push: provider test go_sdk
 
 # Generate language examples from YAML sources
 # Requires providers to be built first: make install
