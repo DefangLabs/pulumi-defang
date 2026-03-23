@@ -449,7 +449,7 @@ func CreateECSService(
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
-			Subnets:        pulumi.StringArrayInput(infra.PublicSubnetIDs),
+			Subnets:        infra.PublicSubnetIDs,
 			SecurityGroups: pulumi.StringArray{infra.Sg.ID()},
 			AssignPublicIp: pulumi.Bool(true),
 		},
@@ -516,7 +516,7 @@ func BuildSharedInfra(
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.VpcID),
+		VpcId:       net.VpcID,
 		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -599,7 +599,7 @@ func BuildProjectInfra(
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.VpcID),
+		VpcId:       net.VpcID,
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
