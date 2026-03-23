@@ -117,7 +117,7 @@ func fixupFargateMemory(cpu, memoryMiB int) int {
 
 // fargateResources returns valid Fargate CPU (units) and memory (MiB) as strings.
 // Matches TS fixupFargateConfig: tries increasing CPU tiers until memory fits.
-func fargateResources(cpus float64, memoryMiB int) (cpu string, memory string) {
+func fargateResources(cpus float64, memoryMiB int) (string, string) {
 	cpuUnits := fixupFargateCPU(cpus)
 	mem := fixupFargateMemory(cpuUnits, memoryMiB)
 	// If memory exceeds this CPU tier's max, bump to next CPU tier

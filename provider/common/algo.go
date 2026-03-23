@@ -15,10 +15,11 @@ var healthcheckURLRegex = regexp.MustCompile(
 
 // ParseHealthCheckPathPort parses the health check path and port from a CMD/CMD-SHELL test command.
 // Returns path (default "/") and port (0 if not specified).
-func ParseHealthCheckPathPort(test []string) (path string, port int) {
-	path = "/"
+func ParseHealthCheckPathPort(test []string) (string, int) {
+	path := "/"
+	port := 0
 	if len(test) < 1 || (test[0] != "CMD" && test[0] != "CMD-SHELL") {
-		return
+		return path, port
 	}
 	for _, arg := range test[1:] {
 		if match := healthcheckURLRegex.FindStringSubmatch(arg); match != nil {
@@ -30,10 +31,10 @@ func ParseHealthCheckPathPort(test []string) (path string, port int) {
 			if match[2] != "" {
 				path = match[2]
 			}
-			return
+			return path, port
 		}
 	}
-	return
+	return path, port
 }
 
 // NeedIngress returns true if any non-managed service in the map has ingress ports.
