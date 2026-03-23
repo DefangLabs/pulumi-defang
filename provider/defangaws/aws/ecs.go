@@ -353,7 +353,7 @@ func CreateECSService(
 				Port:                       pulumi.Int(port.Target),
 				Protocol:                   pulumi.String("HTTP"),
 				TargetType:                 pulumi.String("ip"),
-				VpcId:                      pulumi.StringInput(infra.VpcID),
+				VpcId:                      infra.VpcID,
 				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
 				DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{

@@ -59,7 +59,7 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	configProvider := provideraws.NewConfigProvider(string(inputs.ProjectName))
+	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 	infra, err := provideraws.BuildSharedInfra(ctx, name, svc, inputs.AWS, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)
