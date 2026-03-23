@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(gh pr diff:*)",
       "Bash(gh pr view:*)",
       "Bash(gh run view:*)",
       "Bash(go build:*)",
