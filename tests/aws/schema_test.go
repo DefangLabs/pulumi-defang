@@ -1,4 +1,4 @@
-package tests
+package aws
 
 import (
 	"testing"
@@ -6,10 +6,12 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestProjectSchemaRegistered(t *testing.T) {
-	server := makeTestServer()
+	server := testutil.MakeTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
@@ -19,7 +21,7 @@ func TestProjectSchemaRegistered(t *testing.T) {
 }
 
 func TestServiceSchemaRegistered(t *testing.T) {
-	server := makeTestServer()
+	server := testutil.MakeTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)

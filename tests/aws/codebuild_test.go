@@ -1,4 +1,4 @@
-package tests
+package aws
 
 // CodeBuildImageBuild is a custom resource (not a component) that triggers an AWS
 // CodeBuild build and waits for completion. These tests exercise the Check path,
@@ -11,13 +11,15 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestCheckCodeBuildImageBuildMinimal(t *testing.T) {
-	server := makeTestServer()
+	server := testutil.MakeTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
-		Urn: awsURN("CodeBuildImageBuild"),
+		Urn: testutil.AwsURN("CodeBuildImageBuild"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"projectName": property.New("my-codebuild-project"),
 		}),
@@ -28,10 +30,10 @@ func TestCheckCodeBuildImageBuildMinimal(t *testing.T) {
 }
 
 func TestCheckCodeBuildImageBuildComplete(t *testing.T) {
-	server := makeTestServer()
+	server := testutil.MakeTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
-		Urn: awsURN("CodeBuildImageBuild"),
+		Urn: testutil.AwsURN("CodeBuildImageBuild"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"projectName": property.New("my-codebuild-project"),
 			"region":      property.New("us-east-1"),
@@ -49,10 +51,10 @@ func TestCheckCodeBuildImageBuildComplete(t *testing.T) {
 }
 
 func TestCheckCodeBuildImageBuildMissingProjectName(t *testing.T) {
-	server := makeTestServer()
+	server := testutil.MakeTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
-		Urn:    awsURN("CodeBuildImageBuild"),
+		Urn:    testutil.AwsURN("CodeBuildImageBuild"),
 		Inputs: property.NewMap(map[string]property.Value{}),
 	})
 

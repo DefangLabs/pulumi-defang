@@ -1,4 +1,4 @@
-package tests
+package gcp
 
 import (
 	"testing"
@@ -6,10 +6,12 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestGcpProjectSchemaRegistered(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
@@ -19,7 +21,7 @@ func TestGcpProjectSchemaRegistered(t *testing.T) {
 }
 
 func TestGcpServiceSchemaRegistered(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
@@ -29,7 +31,7 @@ func TestGcpServiceSchemaRegistered(t *testing.T) {
 }
 
 func TestGcpPostgresSchemaRegistered(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)

@@ -1,4 +1,4 @@
-package tests
+package azure
 
 import (
 	"testing"
@@ -6,10 +6,12 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestAzureProjectSchemaRegistered(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
@@ -19,7 +21,7 @@ func TestAzureProjectSchemaRegistered(t *testing.T) {
 }
 
 func TestAzureServiceSchemaRegistered(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
@@ -29,7 +31,7 @@ func TestAzureServiceSchemaRegistered(t *testing.T) {
 }
 
 func TestAzurePostgresSchemaRegistered(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)

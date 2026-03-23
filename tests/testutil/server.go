@@ -1,4 +1,4 @@
-package tests
+package testutil
 
 import (
 	"context"
@@ -11,19 +11,19 @@ import (
 	"github.com/pulumi/pulumi-go-provider/integration"
 )
 
-func makeTestServer() integration.Server {
-	return mustNewServer(defangaws.Name, defangaws.Provider())
+func MakeTestServer() integration.Server {
+	return MustNewServer(defangaws.Name, defangaws.Provider())
 }
 
-func makeAzureTestServer() integration.Server {
-	return mustNewServer(defangazure.Name, defangazure.Provider())
+func MakeAzureTestServer() integration.Server {
+	return MustNewServer(defangazure.Name, defangazure.Provider())
 }
 
-func makeGcpTestServer() integration.Server {
-	return mustNewServer(defanggcp.Name, defanggcp.Provider())
+func MakeGcpTestServer() integration.Server {
+	return MustNewServer(defanggcp.Name, defanggcp.Provider())
 }
 
-func mustNewServer(name string, provider p.Provider) integration.Server {
+func MustNewServer(name string, provider p.Provider) integration.Server {
 	server, err := integration.NewServer(context.Background(), name, semver.MustParse("1.0.0"),
 		integration.WithProvider(provider),
 	)

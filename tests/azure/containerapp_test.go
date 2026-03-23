@@ -1,4 +1,4 @@
-package tests
+package azure
 
 // AzureContainerApp is the standalone Container App component for Azure. These tests
 // verify that the AzureContainerApp component correctly handles a variety of input
@@ -10,13 +10,15 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestConstructAzureContainerAppWithImage(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("nginx:latest"),
 		}),
@@ -26,14 +28,14 @@ func TestConstructAzureContainerAppWithImage(t *testing.T) {
 }
 
 func TestConstructAzureContainerAppWithIngressPort(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
-				ingressPort(8080),
+				testutil.IngressPort(8080),
 			})),
 		}),
 	})
@@ -43,10 +45,10 @@ func TestConstructAzureContainerAppWithIngressPort(t *testing.T) {
 
 func TestConstructAzureContainerAppWithBuild(t *testing.T) {
 	t.Skip("build support for Azure standalone Service not yet implemented")
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"build": property.New(property.NewMap(map[string]property.Value{
 				"context": property.New("./app"),
@@ -58,14 +60,14 @@ func TestConstructAzureContainerAppWithBuild(t *testing.T) {
 }
 
 func TestConstructAzureContainerAppWithHealthCheck(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
-				ingressPort(8080),
+				testutil.IngressPort(8080),
 			})),
 			"healthCheck": property.New(property.NewMap(map[string]property.Value{
 				"test": property.New(property.NewArray([]property.Value{
@@ -85,10 +87,10 @@ func TestConstructAzureContainerAppWithHealthCheck(t *testing.T) {
 }
 
 func TestConstructAzureContainerAppWithEnvironment(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -102,10 +104,10 @@ func TestConstructAzureContainerAppWithEnvironment(t *testing.T) {
 }
 
 func TestConstructAzureContainerAppWithDeploy(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"deploy": property.New(property.NewMap(map[string]property.Value{
@@ -124,10 +126,10 @@ func TestConstructAzureContainerAppWithDeploy(t *testing.T) {
 }
 
 func TestConstructAzureContainerAppWithDomainName(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Service"),
+		Urn: testutil.AzureURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image":      property.New("myapp:latest"),
 			"domainName": property.New("api.example.com"),

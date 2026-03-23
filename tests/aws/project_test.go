@@ -1,4 +1,4 @@
-package tests
+package aws
 
 // Project is the top-level orchestration component for AWS. These tests verify
 // that the Project component correctly wires up a set of services using the
@@ -16,16 +16,18 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestConstructAwsProject(t *testing.T) {
-	server := makeTestServer()
+	server := testutil.MakeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("Project"),
-		Inputs: servicesMap(map[string]property.Value{
-			"app":    serviceWithPorts("nginx:latest", ingressPort(8080)),
-			"worker": serviceWithImage("myapp:worker"),
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app":    testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+			"worker": testutil.ServiceWithImage("myapp:worker"),
 		}),
 	})
 
