@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -14,6 +15,11 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
+)
+
+var (
+	ErrBuildConfigNil       = errors.New("build config is nil")
+	ErrNoImageOrBuildConfig = errors.New("no image or build config")
 )
 
 // ImageInfra holds shared infrastructure for building container images.
@@ -123,7 +129,7 @@ func buildServiceImage(
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
-		return nil, fmt.Errorf("build config is nil for service %s", serviceName)
+		return nil, fmt.Errorf("service %s: %w", serviceName, ErrBuildConfigNil)
 	}
 
 	platform := svc.GetPlatform()
@@ -185,7 +191,7 @@ func GetServiceImage(
 	}
 
 	if svc.Image == nil {
-		return pulumi.StringOutput{}, fmt.Errorf("service %s has no image or build config", serviceName)
+		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, ErrNoImageOrBuildConfig)
 	}
 
 	// Use pre-built image (either service.image or default)

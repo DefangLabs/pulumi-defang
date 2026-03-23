@@ -13,6 +13,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+var ErrPostgresConfigNil = errors.New("postgres config is nil")
+
 type RDSResult struct {
 	Instance *rds.Instance
 }
@@ -174,7 +176,7 @@ func CreateRDS(
 ) (*RDSResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, errors.New("postgres config is nil")
+		return nil, ErrPostgresConfigNil
 	}
 
 	port := defaultPostgresPort

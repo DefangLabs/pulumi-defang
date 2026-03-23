@@ -9,6 +9,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+var ErrPostgresConfigNil = errors.New("postgres config is nil")
+
 type CloudSQLResult struct {
 	Instance *sql.DatabaseInstance
 }
@@ -72,7 +74,7 @@ func CreateCloudSQL(
 ) (*CloudSQLResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, errors.New("postgres config is nil")
+		return nil, ErrPostgresConfigNil
 	}
 
 	tier := cloudSQLTier(svc.GetCPUs(), svc.GetMemoryMiB())

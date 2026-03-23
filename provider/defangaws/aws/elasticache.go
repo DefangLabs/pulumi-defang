@@ -14,6 +14,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
+var ErrRedisConfigNil = errors.New("redis config is nil")
+
 type ElasticacheResult struct {
 	Address pulumix.Output[string] // primary or configuration endpoint address
 }
@@ -192,7 +194,7 @@ func CreateElasticache(
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
 	if svc.Redis == nil {
-		return nil, errors.New("redis config is nil")
+		return nil, ErrRedisConfigNil
 	}
 
 	// Detect engine (redis vs valkey) from image name.

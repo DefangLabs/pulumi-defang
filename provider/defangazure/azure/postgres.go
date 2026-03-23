@@ -9,6 +9,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+var ErrPostgresConfigNil = errors.New("postgres config is nil")
+
 type postgresResult struct {
 	Server *dbforpostgresql.Server
 }
@@ -24,7 +26,7 @@ func CreatePostgresFlexible(
 ) (*postgresResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, errors.New("postgres config is nil")
+		return nil, ErrPostgresConfigNil
 	}
 
 	// Backup config

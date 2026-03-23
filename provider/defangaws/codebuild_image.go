@@ -13,6 +13,15 @@ import (
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
+var (
+	ErrNoBuildID        = errors.New("failed to start build: no build ID returned")
+	ErrBuildTimedOut    = errors.New("build timed out")
+	ErrBuildNotFound    = errors.New("build not found")
+	ErrBuildFailed      = errors.New("build failed")
+	ErrBuildStopped     = errors.New("build was stopped (ABORTED)")
+	ErrCodeBuildTimeout = errors.New("build timed out on CodeBuild side")
+)
+
 // CodeBuildImageBuild is a custom resource that triggers a CodeBuild build and waits for completion.
 type CodeBuildImageBuild struct{}
 
@@ -123,7 +132,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 		return "", fmt.Errorf("starting build: %w", err)
 	}
 	if startOut.Build == nil || startOut.Build.Id == nil {
-		return "", errors.New("failed to start build: no build ID returned")
+		return "", ErrNoBuildID
 	}
 	buildID := *startOut.Build.Id
 
@@ -132,7 +141,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 
 	for {
 		if time.Now().After(deadline) {
-			return buildID, fmt.Errorf("build %s timed out after %ds", buildID, maxWaitSeconds)
+			return buildID, fmt.Errorf("build %s timed out after %ds: %w", buildID, maxWaitSeconds, ErrBuildTimedOut)
 		}
 
 		time.Sleep(pollInterval)
@@ -147,7 +156,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 			return buildID, fmt.Errorf("polling build status: %w", err)
 		}
 		if len(batchOut.Builds) == 0 {
-			return buildID, fmt.Errorf("build %s not found", buildID)
+			return buildID, fmt.Errorf("build %s: %w", buildID, ErrBuildNotFound)
 		}
 
 		build := batchOut.Builds[0]
@@ -169,11 +178,11 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 					}
 				}
 			}
-			return buildID, fmt.Errorf("%s: %s", build.BuildStatus, msg)
+			return buildID, fmt.Errorf("%s: %s: %w", build.BuildStatus, msg, ErrBuildFailed)
 		case cbtypes.StatusTypeStopped:
-			return buildID, errors.New("build was stopped (ABORTED)")
+			return buildID, ErrBuildStopped
 		case cbtypes.StatusTypeTimedOut:
-			return buildID, errors.New("build timed out on CodeBuild side")
+			return buildID, ErrCodeBuildTimeout
 		default:
 			continue
 		}
