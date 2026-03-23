@@ -503,7 +503,11 @@ func CreateECSService(
 // BuildSharedInfra creates all shared AWS infrastructure for a standalone ECS service.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
 func BuildSharedInfra(
-	ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	awsCfg *common.AWSConfig,
+	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
 	region, err := aws.GetRegion(ctx, nil)
 	if err != nil {
@@ -586,7 +590,11 @@ func BuildSharedInfra(
 
 // BuildProjectInfra creates shared AWS infrastructure for a multi-service project.
 func BuildProjectInfra(
-	ctx *pulumi.Context, projectName string, services map[string]compose.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context,
+	projectName string,
+	services map[string]compose.ServiceConfig,
+	awsCfg *common.AWSConfig,
+	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
 	region, err := aws.GetRegion(ctx, nil)
 	if err != nil {
