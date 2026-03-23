@@ -9,6 +9,7 @@ func NormalizeDNS(name string) string {
 }
 
 func SafeLabel(name string) string {
-	// Technically DNS names can have underscores, but these are reserved for SRV records and some systems have issues with them.
+	// Technically DNS names can have underscores, but these are reserved for SRV
+	// records and some systems have issues with them.
 	return strings.ReplaceAll(strings.ToLower(name), ".", "-")
 }

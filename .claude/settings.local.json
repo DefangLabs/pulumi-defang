@@ -1,8 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(go test:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh run view:*)",
       "Bash(go build:*)",
+      "Bash(go list:*)",
+      "Bash(go test:*)",
+      "Bash(golangci-lint:*)",
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(tail:*)"

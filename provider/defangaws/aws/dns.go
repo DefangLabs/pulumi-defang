@@ -29,10 +29,12 @@ func NormalizeDNS(name string) string {
 	return strings.ToLower(strings.TrimRight(name, "."))
 }
 
-func CreateRecord(ctx *pulumi.Context, name string, typ RecordType, args route53.RecordArgs, opts ...pulumi.ResourceOption) (*route53.Record, error) {
-	if args.ZoneId == nil {
-		// TODO: look up the zone by name
-	}
+func CreateRecord(
+	ctx *pulumi.Context, name string, typ RecordType, args route53.RecordArgs, opts ...pulumi.ResourceOption,
+) (*route53.Record, error) {
+	// TODO: look up the zone by name
+	// if args.ZoneId == nil {
+	// }
 	// Route 53 treats www.example.com (without a trailing dot) and www.example.com. (with a trailing dot) as identical.
 	normalized := NormalizeDNS(name)
 	args.Name = pulumi.String(normalized)
@@ -64,7 +66,9 @@ type IZone interface {
 	PrimaryNameServer() pulumi.StringOutput
 }
 
-func CreateSoaRecord(ctx *pulumi.Context, name string, zone IZone, args SoaRecordArgs, opts ...pulumi.ResourceOption) (*route53.Record, error) {
+func CreateSoaRecord(
+	ctx *pulumi.Context, name string, zone IZone, args SoaRecordArgs, opts ...pulumi.ResourceOption,
+) (*route53.Record, error) {
 	if args.Expire == nil {
 		args.Expire = pulumi.Int(1209600)
 	}

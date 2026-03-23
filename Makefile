@@ -87,18 +87,24 @@ clean: $(foreach p,$(PACKS),clean_$(p))
 release: clean build
 
 .PHONY: install-git-hooks
-install-git-hooks:
+install-git-hooks: node_modules
 	printf "#!/bin/sh\nmake pre-commit" > .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
-	printf "#!/bin/sh\nmake pre-push" > .git/hooks/pre-push
+	printf "#!/bin/sh\nmake -j3 pre-push" > .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 
-.PHONY: pre-commit
-pre-commit: provider test lint sdks examples
+node_modules: package.json
+	npm install
 
+# Fast pre-commit: lint-staged runs golangci-lint + go test only for changed providers.
+# Shared packages (provider/compose, provider/common) trigger all providers.
+.PHONY: pre-commit
+pre-commit: node_modules
+	npx --no lint-staged
+
+# Full build + test run before push (or for CI).
 .PHONY: pre-push
-pre-push:
-	#target intentionally blank
+pre-push: sdks
 
 # Generate language examples from YAML sources
 # Requires providers to be built first: make install

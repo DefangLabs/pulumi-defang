@@ -16,7 +16,7 @@ type Project struct{}
 // ProjectInputs defines the top-level inputs for the GCP Project component.
 type ProjectInputs struct {
 	// Services map: name -> service config
-	Services map[string]compose.ServiceConfig       `pulumi:"services" yaml:"services"`
+	Services map[string]compose.ServiceConfig      `pulumi:"services"          yaml:"services"`
 	Networks map[string]compose.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
 }
 
@@ -32,7 +32,9 @@ type ProjectOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Project.
-func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption) (*ProjectOutputs, error) {
+func (*Project) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
+) (*ProjectOutputs, error) {
 	comp := &ProjectOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -44,7 +46,7 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 	// Create Artifact Registry repository for container images
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
 		RepositoryId: pulumi.String(strings.ToLower(name)),
-		Description:  pulumi.String(fmt.Sprintf("Container images for %s", name)),
+		Description:  pulumi.String("Container images for " + name),
 		Format:       pulumi.String("DOCKER"),
 	}, childOpts...)
 	if err != nil {

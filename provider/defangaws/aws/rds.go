@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -11,6 +12,8 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/rds"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var ErrPostgresConfigNil = errors.New("postgres config is nil")
 
 type RDSResult struct {
 	Instance *rds.Instance
@@ -158,6 +161,8 @@ func cheapestMatch(catalog map[string]nodeInfo, minCPUs float64, minGiB float64)
 const defaultPostgresPort = 5432
 
 // CreateRDS creates a managed RDS Postgres instance for a service.
+//
+//nolint:funlen
 func CreateRDS(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -171,7 +176,7 @@ func CreateRDS(
 ) (*RDSResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, fmt.Errorf("postgres config is nil")
+		return nil, ErrPostgresConfigNil
 	}
 
 	port := defaultPostgresPort
@@ -196,7 +201,7 @@ func CreateRDS(
 	// Create security group for RDS
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
-		Description: pulumi.String(fmt.Sprintf("RDS security group for %s", serviceName)),
+		Description: pulumi.String("RDS security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
 				Protocol:       pulumi.String("tcp"),
@@ -260,7 +265,7 @@ func CreateRDS(
 		rdsArgs.SnapshotIdentifier = pulumi.String(pg.FromSnapshot)
 	}
 
-	rdsOpts := append(opts, pulumi.IgnoreChanges([]string{"storageEncrypted"}))
+	rdsOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{"storageEncrypted"}))
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
 	}

@@ -10,7 +10,7 @@ import (
 
 // CreateExecutionRole creates the shared ECS task execution role.
 func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*iam.Role, error) {
-	assumeRolePolicy, _ := json.Marshal(map[string]interface{}{
+	assumeRolePolicyBytes, err := json.Marshal(map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
 			{
@@ -22,9 +22,12 @@ func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*i
 			},
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling assume role policy: %w", err)
+	}
 
 	execRole, err := iam.NewRole(ctx, "exec-role", &iam.RoleArgs{
-		AssumeRolePolicy: pulumi.String(string(assumeRolePolicy)),
+		AssumeRolePolicy: pulumi.String(string(assumeRolePolicyBytes)),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
@@ -44,7 +47,7 @@ func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*i
 
 // createTaskRole creates a per-service ECS task role.
 func createTaskRole(ctx *pulumi.Context, serviceName string, opts ...pulumi.ResourceOption) (*iam.Role, error) {
-	assumeRolePolicy, _ := json.Marshal(map[string]interface{}{
+	assumeRolePolicyBytes, err := json.Marshal(map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
 			{
@@ -56,9 +59,13 @@ func createTaskRole(ctx *pulumi.Context, serviceName string, opts ...pulumi.Reso
 			},
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling assume role policy: %w", err)
+	}
+	assumeRolePolicy := string(assumeRolePolicyBytes)
 
 	taskRole, err := iam.NewRole(ctx, serviceName, &iam.RoleArgs{
-		AssumeRolePolicy: pulumi.String(string(assumeRolePolicy)),
+		AssumeRolePolicy: pulumi.String(assumeRolePolicy),
 	}, opts...)
 	if err != nil {
 		return nil, err

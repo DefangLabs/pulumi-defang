@@ -37,7 +37,9 @@ type ServiceOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Service.
-func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption) (*ServiceOutputs, error) {
+func (*Service) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption,
+) (*ServiceOutputs, error) {
 	comp := &ServiceOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -57,7 +59,7 @@ func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceI
 		DomainName:  inputs.DomainName,
 	}
 
-	configProvider := provideraws.NewConfigProvider(string(inputs.ProjectName))
+	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 	infra, err := provideraws.BuildSharedInfra(ctx, name, svc, inputs.AWS, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)

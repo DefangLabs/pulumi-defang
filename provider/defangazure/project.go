@@ -16,7 +16,7 @@ type Project struct{}
 // ProjectInputs defines the top-level inputs for the Azure Project component.
 type ProjectInputs struct {
 	// Services map: name -> service config
-	Services map[string]compose.ServiceConfig       `pulumi:"services" yaml:"services"`
+	Services map[string]compose.ServiceConfig      `pulumi:"services"          yaml:"services"`
 	Networks map[string]compose.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
 }
 
@@ -32,7 +32,9 @@ type ProjectOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Project.
-func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption) (*ProjectOutputs, error) {
+func (*Project) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
+) (*ProjectOutputs, error) {
 	comp := &ProjectOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -82,7 +84,9 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 		} else {
-			if err := ctx.RegisterComponentResource("defang-azure:index:AzureContainerApp", svcName, comp, childOpts...); err != nil {
+			if err := ctx.RegisterComponentResource(
+				"defang-azure:index:AzureContainerApp", svcName, comp, childOpts...,
+			); err != nil {
 				return nil, fmt.Errorf("registering Container App component %s: %w", svcName, err)
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
@@ -93,7 +97,7 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 			}
 			endpoints[svcName] = caResult.App.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
 				if fqdn != "" {
-					return fmt.Sprintf("https://%s", fqdn)
+					return "https://" + fqdn
 				}
 				return ""
 			}).(pulumi.StringOutput)

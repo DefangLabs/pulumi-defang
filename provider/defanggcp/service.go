@@ -32,7 +32,9 @@ type GcpCloudRunServiceOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Service.
-func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs GcpCloudRunServiceInputs, opts pulumi.ResourceOption) (*GcpCloudRunServiceOutputs, error) {
+func (*Service) Construct(
+	ctx *pulumi.Context, name, typ string, inputs GcpCloudRunServiceInputs, opts pulumi.ResourceOption,
+) (*GcpCloudRunServiceOutputs, error) {
 	comp := &GcpCloudRunServiceOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err

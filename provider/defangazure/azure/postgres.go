@@ -1,12 +1,15 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var ErrPostgresConfigNil = errors.New("postgres config is nil")
 
 type postgresResult struct {
 	Server *dbforpostgresql.Server
@@ -23,7 +26,7 @@ func CreatePostgresFlexible(
 ) (*postgresResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, fmt.Errorf("postgres config is nil")
+		return nil, ErrPostgresConfigNil
 	}
 
 	// Backup config
@@ -53,7 +56,7 @@ func CreatePostgresFlexible(
 			BackupRetentionDays: pulumi.Int(backupRetention),
 			GeoRedundantBackup:  pulumi.String(string(geoBackup)),
 		},
-		AdministratorLogin:         pg.Username,
+		AdministratorLogin:         username,
 		AdministratorLoginPassword: pg.Password,
 	}
 	if HighAvailability.Get(ctx) {

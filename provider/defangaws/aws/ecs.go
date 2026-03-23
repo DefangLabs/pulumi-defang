@@ -47,29 +47,29 @@ type EcsServiceResult struct {
 	HasIngress bool
 }
 
-// clampInt clamps v to [min, max]. Returns fallback if v is nil.
-func clampInt(v *int, min, max, fallback int) int {
+// clampInt clamps v to [minimum, maximum]. Returns fallback if v is nil.
+func clampInt(v *int, minimum, maximum, fallback int) int {
 	if v == nil {
 		return fallback
 	}
 	val := *v
-	if val < min {
-		return min
+	if val < minimum {
+		return minimum
 	}
-	if val > max {
-		return max
+	if val > maximum {
+		return maximum
 	}
 	return val
 }
 
-// makeMinMaxCeil rounds value up to the nearest step within [min, max].
+// makeMinMaxCeil rounds value up to the nearest step within [minimum, maximum].
 // Matches TS makeMinMaxCeil(value, min, max, step).
-func makeMinMaxCeil(value, min, max, step int) int {
-	if value <= min {
-		return min
+func makeMinMaxCeil(value, minimum, maximum, step int) int {
+	if value <= minimum {
+		return minimum
 	}
-	if value >= max {
-		return max
+	if value >= maximum {
+		return maximum
 	}
 	return ((value + step - 1) / step) * step
 }
@@ -117,7 +117,7 @@ func fixupFargateMemory(cpu, memoryMiB int) int {
 
 // fargateResources returns valid Fargate CPU (units) and memory (MiB) as strings.
 // Matches TS fixupFargateConfig: tries increasing CPU tiers until memory fits.
-func fargateResources(cpus float64, memoryMiB int) (cpu string, memory string) {
+func fargateResources(cpus float64, memoryMiB int) (string, string) {
 	cpuUnits := fixupFargateCPU(cpus)
 	mem := fixupFargateMemory(cpuUnits, memoryMiB)
 	// If memory exceeds this CPU tier's max, bump to next CPU tier
@@ -138,7 +138,11 @@ func portProtocol(p compose.ServicePortConfig) ContainerPortProtocol {
 	return "tcp"
 }
 
+const grpcProto = "grpc"
+
 // CreateECSService creates an ECS Fargate service for a container service.
+//
+//nolint:funlen,maintidx
 func CreateECSService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -148,7 +152,6 @@ func CreateECSService(
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*EcsServiceResult, error) {
-
 	// Create task role
 	taskRole, err := createTaskRole(ctx, serviceName, opts...)
 	if err != nil {
@@ -160,7 +163,7 @@ func CreateECSService(
 	memMiB := svc.GetMemoryMiB()
 
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
-	var portMappings []ContainerPortMapping
+	portMappings := make([]ContainerPortMapping, 0, len(svc.Ports))
 	for _, p := range svc.Ports {
 		portMappings = append(portMappings, ContainerPortMapping{
 			ContainerPort: p.Target,
@@ -273,9 +276,9 @@ func CreateECSService(
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
-	cpuArch := "X86_64"
-	if platformToArch(svc.GetPlatform()) == "arm64" {
-		cpuArch = "ARM64"
+	cpuArch := X86_64
+	if platformToArch(svc.GetPlatform()) == Arm64 {
+		cpuArch = Arm64
 	}
 
 	// Create task definition
@@ -344,7 +347,7 @@ func CreateECSService(
 			// Determine matcher based on protocol (matches TS createTargetGroup)
 			// With default path "/": grpc -> "0", http/http2 -> "200-399"
 			matcher := "200-399"
-			if appProto == "grpc" {
+			if appProto == grpcProto {
 				matcher = "0"
 			}
 
@@ -352,7 +355,7 @@ func CreateECSService(
 				Port:                       pulumi.Int(port.Target),
 				Protocol:                   pulumi.String("HTTP"),
 				TargetType:                 pulumi.String("ip"),
-				VpcId:                      pulumi.StringInput(infra.VpcID),
+				VpcId:                      infra.VpcID,
 				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
 				DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
 				HealthCheck: &lb.TargetGroupHealthCheckArgs{
@@ -386,20 +389,21 @@ func CreateECSService(
 			conditions := lb.ListenerRuleConditionArray{}
 
 			// Host-based routing: use DomainName for first ingress port, ALB DNS as fallback
-			if firstIngress && svc.DomainName != nil {
+			switch {
+			case firstIngress && svc.DomainName != nil:
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
 						Values: pulumi.StringArray{pulumi.String(*svc.DomainName)},
 					},
 				})
-			} else if infra.Alb != nil {
+			case infra.Alb != nil:
 				// Fall back to ALB DNS name (matches TS fallback behavior)
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
 						Values: pulumi.StringArray{infra.Alb.DnsName},
 					},
 				})
-			} else {
+			default:
 				// Last resort: path-based routing
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					PathPattern: &lb.ListenerRuleConditionPathPatternArgs{
@@ -409,7 +413,7 @@ func CreateECSService(
 			}
 
 			// Add gRPC content-type header matching (matches TS createTgLrPair)
-			if appProto == "grpc" {
+			if appProto == grpcProto {
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HttpHeader: &lb.ListenerRuleConditionHttpHeaderArgs{
 						HttpHeaderName: pulumi.String("content-type"),
@@ -448,7 +452,7 @@ func CreateECSService(
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
-			Subnets:        pulumi.StringArrayInput(infra.PublicSubnetIDs),
+			Subnets:        infra.PublicSubnetIDs,
 			SecurityGroups: pulumi.StringArray{infra.Sg.ID()},
 			AssignPublicIp: pulumi.Bool(true),
 		},
@@ -478,7 +482,7 @@ func CreateECSService(
 		ecsServiceArgs.LaunchType = pulumi.String("FARGATE")
 	}
 
-	ecsServiceOpts := append(opts, pulumi.DependsOn(lbDependsOn))
+	ecsServiceOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.DependsOn(lbDependsOn))
 	if len(deps) > 0 {
 		ecsServiceOpts = append(ecsServiceOpts, pulumi.DependsOn(deps))
 	}
@@ -501,7 +505,13 @@ func CreateECSService(
 
 // BuildSharedInfra creates all shared AWS infrastructure for a standalone ECS service.
 // The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildSharedInfra(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*SharedInfra, error) {
+func BuildSharedInfra(
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	awsCfg *common.AWSConfig,
+	opts ...pulumi.ResourceOption,
+) (*SharedInfra, error) {
 	region, err := aws.GetRegion(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting AWS region: %w", err)
@@ -513,7 +523,7 @@ func BuildSharedInfra(ctx *pulumi.Context, serviceName string, svc compose.Servi
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.VpcID),
+		VpcId:       net.VpcID,
 		Description: pulumi.String("Security group for services"),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -547,7 +557,7 @@ func BuildSharedInfra(ctx *pulumi.Context, serviceName string, svc compose.Servi
 
 	var imgInfra *ImageInfra
 	if svc.NeedsBuild() {
-		imgInfra, err = CreateImageInfra(ctx, logGroup, region.Name, opts...)
+		imgInfra, err = CreateImageInfra(ctx, logGroup, region.Region, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 		}
@@ -576,13 +586,19 @@ func BuildSharedInfra(ctx *pulumi.Context, serviceName string, svc compose.Servi
 		Sg:               sg,
 		HttpListener:     httpListener,
 		Alb:              svcALB,
-		Region:           region.Name,
+		Region:           region.Region,
 		ImageInfra:       imgInfra,
 	}, nil
 }
 
 // BuildProjectInfra creates shared AWS infrastructure for a multi-service project.
-func BuildProjectInfra(ctx *pulumi.Context, projectName string, services map[string]compose.ServiceConfig, awsCfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*SharedInfra, error) {
+func BuildProjectInfra(
+	ctx *pulumi.Context,
+	projectName string,
+	services map[string]compose.ServiceConfig,
+	awsCfg *common.AWSConfig,
+	opts ...pulumi.ResourceOption,
+) (*SharedInfra, error) {
 	region, err := aws.GetRegion(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting AWS region: %w", err)
@@ -594,7 +610,7 @@ func BuildProjectInfra(ctx *pulumi.Context, projectName string, services map[str
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(net.VpcID),
+		VpcId:       net.VpcID,
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
@@ -629,7 +645,7 @@ func BuildProjectInfra(ctx *pulumi.Context, projectName string, services map[str
 	var imgInfra *ImageInfra
 	for _, svc := range services {
 		if svc.NeedsBuild() {
-			imgInfra, err = CreateImageInfra(ctx, logGroup, region.Name, opts...)
+			imgInfra, err = CreateImageInfra(ctx, logGroup, region.Region, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 			}
@@ -660,7 +676,7 @@ func BuildProjectInfra(ctx *pulumi.Context, projectName string, services map[str
 		Sg:               sg,
 		HttpListener:     httpListener,
 		Alb:              alb,
-		Region:           region.Name,
+		Region:           region.Region,
 		ImageInfra:       imgInfra,
 	}, nil
 }

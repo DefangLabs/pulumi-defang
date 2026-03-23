@@ -2,6 +2,7 @@ package defangaws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
 	"github.com/pulumi/pulumi-go-provider/infer"
+)
+
+var (
+	ErrNoBuildID        = errors.New("failed to start build: no build ID returned")
+	ErrBuildTimedOut    = errors.New("build timed out")
+	ErrBuildNotFound    = errors.New("build not found")
+	ErrBuildFailed      = errors.New("build failed")
+	ErrBuildStopped     = errors.New("build was stopped (ABORTED)")
+	ErrCodeBuildTimeout = errors.New("build timed out on CodeBuild side")
 )
 
 // CodeBuildImageBuild is a custom resource that triggers a CodeBuild build and waits for completion.
@@ -45,7 +55,9 @@ type CodeBuildImageBuildState struct {
 }
 
 // Create starts a CodeBuild build, waits for it to complete, and returns the image URL.
-func (*CodeBuildImageBuild) Create(ctx context.Context, req infer.CreateRequest[CodeBuildImageBuildInputs]) (infer.CreateResponse[CodeBuildImageBuildState], error) {
+func (*CodeBuildImageBuild) Create(
+	ctx context.Context, req infer.CreateRequest[CodeBuildImageBuildInputs],
+) (infer.CreateResponse[CodeBuildImageBuildState], error) {
 	inputs := req.Inputs
 
 	if req.DryRun {
@@ -67,7 +79,7 @@ func (*CodeBuildImageBuild) Create(ctx context.Context, req infer.CreateRequest[
 
 	var buildID string
 	var err error
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		buildID, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, maxWait)
 		if err == nil {
 			break
@@ -120,7 +132,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 		return "", fmt.Errorf("starting build: %w", err)
 	}
 	if startOut.Build == nil || startOut.Build.Id == nil {
-		return "", fmt.Errorf("failed to start build: no build ID returned")
+		return "", ErrNoBuildID
 	}
 	buildID := *startOut.Build.Id
 
@@ -129,7 +141,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 
 	for {
 		if time.Now().After(deadline) {
-			return buildID, fmt.Errorf("build %s timed out after %ds", buildID, maxWaitSeconds)
+			return buildID, fmt.Errorf("build %s timed out after %ds: %w", buildID, maxWaitSeconds, ErrBuildTimedOut)
 		}
 
 		time.Sleep(pollInterval)
@@ -144,7 +156,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 			return buildID, fmt.Errorf("polling build status: %w", err)
 		}
 		if len(batchOut.Builds) == 0 {
-			return buildID, fmt.Errorf("build %s not found", buildID)
+			return buildID, fmt.Errorf("build %s: %w", buildID, ErrBuildNotFound)
 		}
 
 		build := batchOut.Builds[0]
@@ -166,11 +178,11 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 					}
 				}
 			}
-			return buildID, fmt.Errorf("%s: %s", build.BuildStatus, msg)
+			return buildID, fmt.Errorf("%s: %s: %w", build.BuildStatus, msg, ErrBuildFailed)
 		case cbtypes.StatusTypeStopped:
-			return buildID, fmt.Errorf("build was stopped (ABORTED)")
+			return buildID, ErrBuildStopped
 		case cbtypes.StatusTypeTimedOut:
-			return buildID, fmt.Errorf("build timed out on CodeBuild side")
+			return buildID, ErrCodeBuildTimeout
 		default:
 			continue
 		}

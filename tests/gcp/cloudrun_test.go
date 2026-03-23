@@ -1,4 +1,4 @@
-package tests
+package gcp
 
 // Service is the standalone Cloud Run component for GCP. These tests verify
 // that the Service component correctly handles a variety of input
@@ -10,13 +10,15 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestConstructGcpCloudRunServiceWithImage(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("nginx:latest"),
 		}),
@@ -26,14 +28,14 @@ func TestConstructGcpCloudRunServiceWithImage(t *testing.T) {
 }
 
 func TestConstructGcpCloudRunServiceWithIngressPort(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
-				ingressPort(8080),
+				testutil.IngressPort(8080),
 			})),
 		}),
 	})
@@ -43,10 +45,10 @@ func TestConstructGcpCloudRunServiceWithIngressPort(t *testing.T) {
 
 func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
 	t.Skip("build support for GCP standalone Service not yet implemented")
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"build": property.New(property.NewMap(map[string]property.Value{
 				"context": property.New("./app"),
@@ -58,10 +60,10 @@ func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
 }
 
 func TestConstructGcpCloudRunServiceWithEnvironment(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -75,10 +77,10 @@ func TestConstructGcpCloudRunServiceWithEnvironment(t *testing.T) {
 }
 
 func TestConstructGcpCloudRunServiceWithDeploy(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"deploy": property.New(property.NewMap(map[string]property.Value{
@@ -97,14 +99,14 @@ func TestConstructGcpCloudRunServiceWithDeploy(t *testing.T) {
 }
 
 func TestConstructGcpCloudRunServiceWithHealthCheck(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image": property.New("myapp:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
-				ingressPort(8080),
+				testutil.IngressPort(8080),
 			})),
 			"healthCheck": property.New(property.NewMap(map[string]property.Value{
 				"test": property.New(property.NewArray([]property.Value{
@@ -124,10 +126,10 @@ func TestConstructGcpCloudRunServiceWithHealthCheck(t *testing.T) {
 }
 
 func TestConstructGcpCloudRunServiceWithDomainName(t *testing.T) {
-	server := makeGcpTestServer()
+	server := testutil.MakeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("Service"),
+		Urn: testutil.GcpURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"image":      property.New("myapp:latest"),
 			"domainName": property.New("api.example.com"),

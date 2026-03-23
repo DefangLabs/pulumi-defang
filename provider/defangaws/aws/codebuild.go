@@ -42,18 +42,21 @@ func codeBuildComputeType(shmSizeBytes int) string {
 	}
 }
 
+const Arm64 = "arm64"
+const X86_64 = "x86_64"
+
 // platformToArch extracts architecture from a platform string.
 // Matches TS platformToArch.
 func platformToArch(platform string) string {
 	if strings.Contains(platform, "arm64") {
-		return "arm64"
+		return Arm64
 	}
-	return "x86_64"
+	return X86_64
 }
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
 // Matches TS getBuildSpec: pre_build sets up buildx, build runs docker buildx build --push.
-func getBuildSpec(build compose.BuildConfig, destination string) string {
+func getBuildSpec(build compose.BuildConfig, destination string) (string, error) {
 	dockerfile := build.GetDockerfile()
 
 	// Build args in deterministic order (matches TS: Object.keys(buildArgs).sort())
@@ -73,11 +76,11 @@ func getBuildSpec(build compose.BuildConfig, destination string) string {
 
 	var targetArg string
 	if target := build.GetTarget(); target != "" {
-		targetArg = fmt.Sprintf("--target %s", target)
+		targetArg = "--target " + target
 	}
 
 	preBuildCommands := []string{
-		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com",
+		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com", // //nolint:lll
 		"aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws",
 		"docker buildx create --use --driver=docker-container --use",
 	}
@@ -100,8 +103,11 @@ func getBuildSpec(build compose.BuildConfig, destination string) string {
 		},
 	}
 
-	b, _ := json.Marshal(spec)
-	return string(b)
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("marshaling buildspec: %w", err)
+	}
+	return string(b), nil
 }
 
 // createCodeBuildProject creates an AWS CodeBuild project for building container images.
@@ -120,13 +126,13 @@ func createCodeBuildProject(
 	arch := platformToArch(platform)
 
 	envType := "LINUX_CONTAINER"
-	if arch == "arm64" {
+	if arch == Arm64 {
 		envType = "ARM_CONTAINER"
 	}
 
 	// Base image: Amazon Linux (matches TS AMAZON_LINUX_*_IMAGE)
 	baseImage := "aws/codebuild/amazonlinux-x86_64-standard:5.0"
-	if arch == "arm64" {
+	if arch == Arm64 {
 		baseImage = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
 	}
 
@@ -138,7 +144,7 @@ func createCodeBuildProject(
 	})
 
 	// The buildspec needs the destination at apply time
-	buildspecOutput := pulumix.Apply(destination, func(dest string) string {
+	buildspecOutput := pulumix.ApplyErr(destination, func(dest string) (string, error) {
 		return getBuildSpec(build, dest)
 	})
 
@@ -212,7 +218,7 @@ func createCodeBuildRole(
 	ecrRepo *ecr.Repository,
 	opts ...pulumi.ResourceOption,
 ) (*iam.Role, error) {
-	assumeRolePolicy, _ := json.Marshal(map[string]interface{}{
+	assumeRolePolicyBytes, err := json.Marshal(map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
 			{
@@ -224,9 +230,13 @@ func createCodeBuildRole(
 			},
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling assume role policy: %w", err)
+	}
+	assumeRolePolicy := string(assumeRolePolicyBytes)
 
 	role, err := iam.NewRole(ctx, name, &iam.RoleArgs{
-		AssumeRolePolicy: pulumi.String(string(assumeRolePolicy)),
+		AssumeRolePolicy: pulumi.String(assumeRolePolicy),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild role: %w", err)

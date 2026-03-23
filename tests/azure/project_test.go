@@ -1,4 +1,4 @@
-package tests
+package azure
 
 // Project is the top-level orchestration component for Azure. These tests verify
 // that the Project component correctly wires up a set of services using the
@@ -11,16 +11,18 @@ import (
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
 func TestConstructAzureProject(t *testing.T) {
-	server := makeAzureTestServer()
+	server := testutil.MakeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("Project"),
-		Inputs: servicesMap(map[string]property.Value{
-			"app":    serviceWithPorts("nginx:latest", ingressPort(8080)),
-			"worker": serviceWithImage("myapp:worker"),
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app":    testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+			"worker": testutil.ServiceWithImage("myapp:worker"),
 		}),
 	})
 

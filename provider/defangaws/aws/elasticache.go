@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
+
+var ErrRedisConfigNil = errors.New("redis config is nil")
 
 type ElasticacheResult struct {
 	Address pulumix.Output[string] // primary or configuration endpoint address
@@ -177,6 +180,8 @@ func transitEncryptionSupported(engine, engineVersion string) bool {
 }
 
 // CreateElasticache creates a managed ElastiCache Redis/Valkey replication group for a service.
+//
+//nolint:funlen
 func CreateElasticache(
 	ctx *pulumi.Context,
 	_ compose.ConfigProvider,
@@ -189,7 +194,7 @@ func CreateElasticache(
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
 	if svc.Redis == nil {
-		return nil, fmt.Errorf("redis config is nil")
+		return nil, ErrRedisConfigNil
 	}
 
 	// Detect engine (redis vs valkey) from image name.
@@ -239,7 +244,7 @@ func CreateElasticache(
 	// Create security group allowing ingress only from the service SG.
 	cacheSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
-		Description: pulumi.String(fmt.Sprintf("ElastiCache security group for %s", serviceName)),
+		Description: pulumi.String("ElastiCache security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
 				Protocol:       pulumi.String("tcp"),
@@ -306,7 +311,7 @@ func CreateElasticache(
 		rgArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
-	clusterOpts := append(opts, pulumi.IgnoreChanges([]string{
+	clusterOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{
 		"atRestEncryptionEnabled",
 		"authToken",
 		"authTokenUpdateStrategy",

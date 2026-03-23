@@ -55,7 +55,7 @@ type NetworkConfigInput struct {
 
 type DependsOnConfig struct {
 	Condition *string `pulumi:"condition,optional" yaml:"condition,omitempty"`
-	Required  bool    `pulumi:"required,optional" yaml:"required,omitempty"`
+	Required  bool    `pulumi:"required,optional"  yaml:"required,omitempty"`
 }
 
 type ServiceNetworkConfig struct {
@@ -234,7 +234,10 @@ func (s ServiceConfig) GetReplicas() int {
 
 // GetCPUs returns the CPU reservation, defaulting to 0.25.
 func (s ServiceConfig) GetCPUs() float64 {
-	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.CPUs != nil {
+	if s.Deploy != nil &&
+		s.Deploy.Resources != nil &&
+		s.Deploy.Resources.Reservations != nil &&
+		s.Deploy.Resources.Reservations.CPUs != nil {
 		return *s.Deploy.Resources.Reservations.CPUs
 	}
 	return 0.25
@@ -242,7 +245,9 @@ func (s ServiceConfig) GetCPUs() float64 {
 
 // GetMemoryMiB returns the memory reservation in MiB, defaulting to 512.
 func (s ServiceConfig) GetMemoryMiB() int {
-	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.Memory != nil {
+	if s.Deploy != nil && s.Deploy.Resources != nil &&
+		s.Deploy.Resources.Reservations != nil &&
+		s.Deploy.Resources.Reservations.Memory != nil {
 		return ParseMemoryMiB(*s.Deploy.Resources.Reservations.Memory)
 	}
 	return 512

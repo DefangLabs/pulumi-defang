@@ -130,10 +130,11 @@ func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
 var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
 
 func ParseInterpolatedString(s string) []Match {
-	var result []Match
+	matches := interpolationRegex.FindAllStringSubmatchIndex(s, -1)
+	result := make([]Match, 0, len(matches))
 	lastIndex := 0
 
-	for _, match := range interpolationRegex.FindAllStringSubmatchIndex(s, -1) {
+	for _, match := range matches {
 		fullStart, fullEnd := match[0], match[1]
 		varStart, varEnd := match[2], match[3]
 
@@ -155,7 +156,9 @@ func ParseInterpolatedString(s string) []Match {
 	return result
 }
 
-func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceConfig, key string, defaultValue string) pulumi.StringOutput {
+func GetConfigOrEnvValue(
+	ctx *pulumi.Context, configProvider ConfigProvider, s ServiceConfig, key string, defaultValue string,
+) pulumi.StringOutput {
 	// Reading from a nil map in Go returns "" without panicking, so a
 	// nil Environment is equivalent to an empty one: missing keys fall through to
 	// the default value.
@@ -183,7 +186,9 @@ func ToPulumiStringArray(ss []string) pulumi.StringArray {
 	return arr
 }
 
-func InterpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
+func InterpolateEnvironmentVariable(
+	ctx *pulumi.Context, configProvider ConfigProvider, value string,
+) pulumi.StringOutput {
 	parsed := ParseInterpolatedString(value)
 
 	if len(parsed) == 0 {

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -14,6 +15,11 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
+)
+
+var (
+	ErrBuildConfigNil       = errors.New("build config is nil")
+	ErrNoImageOrBuildConfig = errors.New("no image or build config")
 )
 
 // ImageInfra holds shared infrastructure for building container images.
@@ -95,7 +101,10 @@ func sha1hash(inputs ...string) string {
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
 func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	// Must also hash buildArgs, in case tarball is the same; stably serialize to a string
-	argsStr, _ := json.Marshal(removeEphemeralBuildArgs(build.Args))
+	argsStr, err := json.Marshal(removeEphemeralBuildArgs(build.Args))
+	if err != nil {
+		return pulumi.StringOutput{}
+	}
 	var dockerfile, target string
 	if build.Dockerfile != nil {
 		dockerfile = *build.Dockerfile
@@ -103,10 +112,11 @@ func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	if build.Target != nil {
 		target = *build.Target
 	}
-	return pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
-		contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
-		return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
-	}))
+	return pulumi.StringOutput(pulumix.Apply(
+		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
+			contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
+			return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
+		}))
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.
@@ -119,7 +129,7 @@ func buildServiceImage(
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
-		return nil, fmt.Errorf("build config is nil for service %s", serviceName)
+		return nil, fmt.Errorf("service %s: %w", serviceName, ErrBuildConfigNil)
 	}
 
 	platform := svc.GetPlatform()
@@ -181,7 +191,7 @@ func GetServiceImage(
 	}
 
 	if svc.Image == nil {
-		return pulumi.StringOutput{}, fmt.Errorf("service %s has no image or build config", serviceName)
+		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, ErrNoImageOrBuildConfig)
 	}
 
 	// Use pre-built image (either service.image or default)
