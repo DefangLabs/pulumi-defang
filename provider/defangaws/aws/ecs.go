@@ -47,29 +47,29 @@ type EcsServiceResult struct {
 	HasIngress bool
 }
 
-// clampInt clamps v to [min, max]. Returns fallback if v is nil.
-func clampInt(v *int, min, max, fallback int) int {
+// clampInt clamps v to [minimum, maximum]. Returns fallback if v is nil.
+func clampInt(v *int, minimum, maximum, fallback int) int {
 	if v == nil {
 		return fallback
 	}
 	val := *v
-	if val < min {
-		return min
+	if val < minimum {
+		return minimum
 	}
-	if val > max {
-		return max
+	if val > maximum {
+		return maximum
 	}
 	return val
 }
 
-// makeMinMaxCeil rounds value up to the nearest step within [min, max].
+// makeMinMaxCeil rounds value up to the nearest step within [minimum, maximum].
 // Matches TS makeMinMaxCeil(value, min, max, step).
-func makeMinMaxCeil(value, min, max, step int) int {
-	if value <= min {
-		return min
+func makeMinMaxCeil(value, minimum, maximum, step int) int {
+	if value <= minimum {
+		return minimum
 	}
-	if value >= max {
-		return max
+	if value >= maximum {
+		return maximum
 	}
 	return ((value + step - 1) / step) * step
 }
