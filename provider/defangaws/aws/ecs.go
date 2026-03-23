@@ -387,20 +387,21 @@ func CreateECSService(
 			conditions := lb.ListenerRuleConditionArray{}
 
 			// Host-based routing: use DomainName for first ingress port, ALB DNS as fallback
-			if firstIngress && svc.DomainName != nil {
+			switch {
+			case firstIngress && svc.DomainName != nil:
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
 						Values: pulumi.StringArray{pulumi.String(*svc.DomainName)},
 					},
 				})
-			} else if infra.Alb != nil {
+			case infra.Alb != nil:
 				// Fall back to ALB DNS name (matches TS fallback behavior)
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
 						Values: pulumi.StringArray{infra.Alb.DnsName},
 					},
 				})
-			} else {
+			default:
 				// Last resort: path-based routing
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					PathPattern: &lb.ListenerRuleConditionPathPatternArgs{

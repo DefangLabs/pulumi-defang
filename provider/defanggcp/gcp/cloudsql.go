@@ -40,20 +40,22 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 
 	// Custom tier
 	cpu := int(cpus)
-	if cpu <= 1 {
+	switch {
+	case cpu <= 1:
 		cpu = 1
-	} else if cpu > 96 {
+	case cpu > 96:
 		cpu = 96
-	} else {
+	default:
 		cpu = (cpu + 1) / 2 * 2 // Even numbers only above 1
 	}
 
 	mem := memMiB
-	if mem < 3840 {
+	switch {
+	case mem < 3840:
 		mem = 3840
-	} else if mem > 98304 {
+	case mem > 98304:
 		mem = 98304
-	} else {
+	default:
 		mem = (mem + 255) / 256 * 256 // Round up to nearest 256 MiB
 	}
 
