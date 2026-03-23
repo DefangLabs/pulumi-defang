@@ -2,7 +2,7 @@ name: test
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
     paths-ignore:
       - docs
@@ -41,7 +41,6 @@ jobs:
 
   build_sdks:
     name: Build SDKs
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
