@@ -261,7 +261,7 @@ func CreateRDS(
 		rdsArgs.SnapshotIdentifier = pulumi.String(pg.FromSnapshot)
 	}
 
-	rdsOpts := append(opts, pulumi.IgnoreChanges([]string{"storageEncrypted"}))
+	rdsOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{"storageEncrypted"}))
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
 	}

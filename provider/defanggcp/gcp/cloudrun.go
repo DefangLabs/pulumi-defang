@@ -19,7 +19,7 @@ func sanitizeAccountId(name string) string {
 	id = nonLowerAlphaNumericOrDash.ReplaceAllLiteralString(id, "-")
 	id = strings.Trim(id, "-")
 	if len(id) < 6 {
-		id = id + "-svcacc"
+		id += "-svcacc"
 	}
 	if len(id) > 30 {
 		id = id[:30]

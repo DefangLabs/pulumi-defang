@@ -480,7 +480,7 @@ func CreateECSService(
 		ecsServiceArgs.LaunchType = pulumi.String("FARGATE")
 	}
 
-	ecsServiceOpts := append(opts, pulumi.DependsOn(lbDependsOn))
+	ecsServiceOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.DependsOn(lbDependsOn))
 	if len(deps) > 0 {
 		ecsServiceOpts = append(ecsServiceOpts, pulumi.DependsOn(deps))
 	}

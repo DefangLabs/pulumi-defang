@@ -307,7 +307,7 @@ func CreateElasticache(
 		rgArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
-	clusterOpts := append(opts, pulumi.IgnoreChanges([]string{
+	clusterOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{
 		"atRestEncryptionEnabled",
 		"authToken",
 		"authTokenUpdateStrategy",
