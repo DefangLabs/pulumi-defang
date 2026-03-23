@@ -56,7 +56,7 @@ func platformToArch(platform string) string {
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
 // Matches TS getBuildSpec: pre_build sets up buildx, build runs docker buildx build --push.
-func getBuildSpec(build compose.BuildConfig, destination string) string {
+func getBuildSpec(build compose.BuildConfig, destination string) (string, error) {
 	dockerfile := build.GetDockerfile()
 
 	// Build args in deterministic order (matches TS: Object.keys(buildArgs).sort())
@@ -103,8 +103,11 @@ func getBuildSpec(build compose.BuildConfig, destination string) string {
 		},
 	}
 
-	b, _ := json.Marshal(spec)
-	return string(b)
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("marshaling buildspec: %w", err)
+	}
+	return string(b), nil
 }
 
 // createCodeBuildProject creates an AWS CodeBuild project for building container images.
@@ -141,7 +144,7 @@ func createCodeBuildProject(
 	})
 
 	// The buildspec needs the destination at apply time
-	buildspecOutput := pulumix.Apply(destination, func(dest string) string {
+	buildspecOutput := pulumix.ApplyErr(destination, func(dest string) (string, error) {
 		return getBuildSpec(build, dest)
 	})
 
@@ -215,7 +218,7 @@ func createCodeBuildRole(
 	ecrRepo *ecr.Repository,
 	opts ...pulumi.ResourceOption,
 ) (*iam.Role, error) {
-	assumeRolePolicy, _ := json.Marshal(map[string]interface{}{
+	assumeRolePolicyBytes, err := json.Marshal(map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
 			{
@@ -227,9 +230,13 @@ func createCodeBuildRole(
 			},
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling assume role policy: %w", err)
+	}
+	assumeRolePolicy := string(assumeRolePolicyBytes)
 
 	role, err := iam.NewRole(ctx, name, &iam.RoleArgs{
-		AssumeRolePolicy: pulumi.String(string(assumeRolePolicy)),
+		AssumeRolePolicy: pulumi.String(assumeRolePolicy),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild role: %w", err)
