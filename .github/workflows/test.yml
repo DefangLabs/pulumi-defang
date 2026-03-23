@@ -36,7 +36,7 @@ jobs:
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v9
       with:
-        version: v2.11.4
+        version: v2.7.2
         args: --timeout=5m --config=.golangci.yaml ./provider/...
 
   build_sdks:
