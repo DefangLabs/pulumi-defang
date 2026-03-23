@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -189,7 +190,7 @@ func CreateElasticache(
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
 	if svc.Redis == nil {
-		return nil, fmt.Errorf("redis config is nil")
+		return nil, errors.New("redis config is nil")
 	}
 
 	// Detect engine (redis vs valkey) from image name.

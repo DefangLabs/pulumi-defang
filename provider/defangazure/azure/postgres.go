@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -23,7 +24,7 @@ func CreatePostgresFlexible(
 ) (*postgresResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, fmt.Errorf("postgres config is nil")
+		return nil, errors.New("postgres config is nil")
 	}
 
 	// Backup config

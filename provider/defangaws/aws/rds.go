@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -171,7 +172,7 @@ func CreateRDS(
 ) (*RDSResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, fmt.Errorf("postgres config is nil")
+		return nil, errors.New("postgres config is nil")
 	}
 
 	port := defaultPostgresPort

@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -69,7 +70,7 @@ func CreateCloudSQL(
 ) (*CloudSQLResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
 	if pg == nil {
-		return nil, fmt.Errorf("postgres config is nil")
+		return nil, errors.New("postgres config is nil")
 	}
 
 	tier := cloudSQLTier(svc.GetCPUs(), svc.GetMemoryMiB())

@@ -2,6 +2,7 @@ package defangaws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -122,7 +123,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 		return "", fmt.Errorf("starting build: %w", err)
 	}
 	if startOut.Build == nil || startOut.Build.Id == nil {
-		return "", fmt.Errorf("failed to start build: no build ID returned")
+		return "", errors.New("failed to start build: no build ID returned")
 	}
 	buildID := *startOut.Build.Id
 
@@ -170,9 +171,9 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 			}
 			return buildID, fmt.Errorf("%s: %s", build.BuildStatus, msg)
 		case cbtypes.StatusTypeStopped:
-			return buildID, fmt.Errorf("build was stopped (ABORTED)")
+			return buildID, errors.New("build was stopped (ABORTED)")
 		case cbtypes.StatusTypeTimedOut:
-			return buildID, fmt.Errorf("build timed out on CodeBuild side")
+			return buildID, errors.New("build timed out on CodeBuild side")
 		default:
 			continue
 		}
