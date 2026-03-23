@@ -1,13 +1,13 @@
-// Package shared contains Pulumi-tagged input/output types used across all defang plugins.
+// Package compose contains Pulumi-tagged input/output types used across all defang plugins.
 // Each plugin's schema will generate its own copy of these types with cloud-specific tokens.
-package shared
+package compose
 
 import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
-// ServiceInput defines the configuration for a single service.
-// YAML tags are aligned with Docker Compose service spec where possible.
-type ServiceInput struct {
-	// Build configuration (mutually exclusive with image for source of truth)
+// ServiceConfig defines the configuration for a single service.
+// YAML tags are aligned with Docker Compose spec where possible.
+type ServiceConfig struct {
+	// Build configuration
 	Build *BuildConfig `pulumi:"build,optional" yaml:"build,omitempty"`
 
 	// Container image to deploy (required if no build config)
@@ -23,7 +23,7 @@ type ServiceInput struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment map[string]string `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`
@@ -178,12 +178,12 @@ type ConfigProvider interface {
 // PostgresConfig holds resolved managed Postgres configuration.
 // Derived from PostgresInput + image tag + environment variables.
 type PostgresConfig struct {
-	Version       int                // Major version (derived from image tag, e.g. postgres:16 → 16)
-	DBName        pulumi.StringInput // From POSTGRES_DB env or default "postgres"
-	Username      pulumi.StringInput // From POSTGRES_USER env or default "postgres"
-	Password      pulumi.StringInput // From POSTGRES_PASSWORD env
-	AllowDowntime bool               // From x-defang-postgres "allow-downtime"
-	FromSnapshot  string             // From x-defang-postgres "from-snapshot"
+	Version       pulumi.StringPtrInput // Major version (derived from image tag, e.g. postgres:16 → 16)
+	DBName        pulumi.StringInput    // From POSTGRES_DB env or default "postgres"
+	Username      pulumi.StringInput    // From POSTGRES_USER env or default "postgres"
+	Password      pulumi.StringInput    // From POSTGRES_PASSWORD env
+	AllowDowntime bool                  // From x-defang-postgres "allow-downtime"
+	FromSnapshot  string                // From x-defang-postgres "from-snapshot"
 }
 
 // see https://hub.docker.com/_/postgres for default values
@@ -191,14 +191,14 @@ const DEFAULT_POSTGRES_USER = "postgres"
 const DEFAULT_POSTGRES_DB = "postgres"
 
 // ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
-func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfig {
+func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfig {
 	if s.Postgres == nil {
 		return nil
 	}
 
-	version := 0
+	var version pulumi.StringPtrInput
 	if s.Image != nil {
-		version = GetPostgresVersion(ParseImageTag(*s.Image))
+		version = pulumi.StringPtr(ParseImageTag(*s.Image))
 	}
 
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
@@ -224,16 +224,8 @@ func (s ServiceInput) ResolvePostgres(ctx *pulumi.Context, configProvider Config
 	}
 }
 
-// GetImage returns the container image, defaulting to "nginx:latest".
-func (s ServiceInput) GetImage() string {
-	if s.Image != nil {
-		return *s.Image
-	}
-	return "nginx:latest"
-}
-
 // GetReplicas returns the replica count, defaulting to 1.
-func (s ServiceInput) GetReplicas() int {
+func (s ServiceConfig) GetReplicas() int {
 	if s.Deploy != nil && s.Deploy.Replicas != nil && *s.Deploy.Replicas > 0 {
 		return *s.Deploy.Replicas
 	}
@@ -241,7 +233,7 @@ func (s ServiceInput) GetReplicas() int {
 }
 
 // GetCPUs returns the CPU reservation, defaulting to 0.25.
-func (s ServiceInput) GetCPUs() float64 {
+func (s ServiceConfig) GetCPUs() float64 {
 	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.CPUs != nil {
 		return *s.Deploy.Resources.Reservations.CPUs
 	}
@@ -249,7 +241,7 @@ func (s ServiceInput) GetCPUs() float64 {
 }
 
 // GetMemoryMiB returns the memory reservation in MiB, defaulting to 512.
-func (s ServiceInput) GetMemoryMiB() int {
+func (s ServiceConfig) GetMemoryMiB() int {
 	if s.Deploy != nil && s.Deploy.Resources != nil && s.Deploy.Resources.Reservations != nil && s.Deploy.Resources.Reservations.Memory != nil {
 		return ParseMemoryMiB(*s.Deploy.Resources.Reservations.Memory)
 	}
@@ -257,12 +249,12 @@ func (s ServiceInput) GetMemoryMiB() int {
 }
 
 // NeedsBuild returns true if the service has a build config.
-func (s ServiceInput) NeedsBuild() bool {
+func (s ServiceConfig) NeedsBuild() bool {
 	return s.Build != nil
 }
 
 // GetPlatform returns the platform, defaulting to "linux/amd64".
-func (s ServiceInput) GetPlatform() string {
+func (s ServiceConfig) GetPlatform() string {
 	if s.Platform != nil {
 		return *s.Platform
 	}
@@ -270,7 +262,7 @@ func (s ServiceInput) GetPlatform() string {
 }
 
 // HasIngressPorts returns true if any port has mode "ingress".
-func (s ServiceInput) HasIngressPorts() bool {
+func (s ServiceConfig) HasIngressPorts() bool {
 	for _, p := range s.Ports {
 		if p.Mode == "ingress" {
 			return true

@@ -1,7 +1,7 @@
 package tests
 
 // Postgres component tests across all three providers. These tests verify that
-// AwsPostgres, GcpCloudSql, and AzurePostgres each construct correctly under a
+// Postgres, Postgres, and Postgres each construct correctly under a
 // variety of configurations (minimal, with image/version, with snapshot, with
 // allowDowntime).
 
@@ -19,11 +19,14 @@ func TestConstructAwsPostgres(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsPostgres"),
+		Urn: awsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcId": property.New("vpc-12345"),
+			})),
 		}),
 	})
 
@@ -34,12 +37,15 @@ func TestConstructAwsPostgresWithAllowDowntime(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsPostgres"),
+		Urn: awsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:15"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
+			})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcId": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -51,12 +57,15 @@ func TestConstructAwsPostgresWithSnapshot(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsPostgres"),
+		Urn: awsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"fromSnapshot": property.New("rds:myproject-db-2024-01-01"),
+			})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcId": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -68,7 +77,7 @@ func TestConstructAwsPostgresWithEnvironment(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsPostgres"),
+		Urn: awsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
@@ -77,6 +86,9 @@ func TestConstructAwsPostgresWithEnvironment(t *testing.T) {
 				"POSTGRES_DB":       property.New("mydb"),
 				"POSTGRES_USER":     property.New("admin"),
 				"POSTGRES_PASSWORD": property.New("secret"),
+			})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcId": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -90,7 +102,7 @@ func TestConstructGcpCloudSql(t *testing.T) {
 	server := makeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("GcpCloudSql"),
+		Urn: gcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:15"),
@@ -105,7 +117,7 @@ func TestConstructGcpCloudSqlWithAllowDowntime(t *testing.T) {
 	server := makeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("GcpCloudSql"),
+		Urn: gcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
@@ -122,7 +134,7 @@ func TestConstructGcpCloudSqlWithEnvironment(t *testing.T) {
 	server := makeGcpTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: gcpURN("GcpCloudSql"),
+		Urn: gcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
@@ -143,7 +155,7 @@ func TestConstructAzurePostgres(t *testing.T) {
 	server := makeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("AzurePostgres"),
+		Urn: azureURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
@@ -158,12 +170,15 @@ func TestConstructAzurePostgresWithAllowDowntime(t *testing.T) {
 	server := makeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("AzurePostgres"),
+		Urn: azureURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:15"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
+			})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcId": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -175,7 +190,7 @@ func TestConstructAzurePostgresWithEnvironment(t *testing.T) {
 	server := makeAzureTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: azureURN("AzurePostgres"),
+		Urn: azureURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
@@ -183,6 +198,9 @@ func TestConstructAzurePostgresWithEnvironment(t *testing.T) {
 			"environment": property.New(property.NewMap(map[string]property.Value{
 				"POSTGRES_DB":       property.New("mydb"),
 				"POSTGRES_PASSWORD": property.New("secret"),
+			})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcId": property.New("vpc-12345"),
 			})),
 		}),
 	})

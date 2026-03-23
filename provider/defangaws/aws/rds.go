@@ -6,16 +6,14 @@ import (
 	"sort"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/rds"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 type RDSResult struct {
 	Instance *rds.Instance
-	Record   *route53.Record // CNAME record in private hosted zone
 }
 
 // nodeInfo describes an RDS instance type's resources and cost.
@@ -157,36 +155,17 @@ func cheapestMatch(catalog map[string]nodeInfo, minCPUs float64, minGiB float64)
 	return matches[0].name
 }
 
-// postgresEngineVersion maps a major version to an RDS engine version string.
-func postgresEngineVersion(version int) string {
-	switch version {
-	case 14:
-		return "14"
-	case 15:
-		return "15"
-	case 16:
-		return "16"
-	case 17:
-		return "17"
-	default:
-		return "17"
-	}
-}
-
 const defaultPostgresPort = 5432
 
 // CreateRDS creates a managed RDS Postgres instance for a service.
 func CreateRDS(
 	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
+	configProvider compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	serviceSG *ec2.SecurityGroup,
-	privateZoneId pulumi.IDInput,
-	privateFqdn string,
-	recipe Recipe,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
@@ -240,23 +219,23 @@ func CreateRDS(
 		return nil, fmt.Errorf("creating RDS security group: %w", err)
 	}
 
-	instanceClass := rdsInstanceClass(svc.GetCPUs(), svc.GetMemoryMiB(), recipe.RDSNodeType)
-
-	// Resolve version: 0 means latest
-	engineVersion := postgresEngineVersion(pg.Version)
+	instanceClass := rdsInstanceClass(svc.GetCPUs(), svc.GetMemoryMiB(), RDSNodeType.Get(ctx))
 
 	// Final snapshot: create one when deletion protection is on (production)
-	skipFinalSnapshot := !recipe.DeletionProtection
+	deletionProtection := DeletionProtection.Get(ctx)
+	skipFinalSnapshot := !deletionProtection
 	var finalSnapshotIdentifier pulumi.StringPtrInput
 	if !skipFinalSnapshot {
 		finalSnapshotIdentifier = pulumi.String(fmt.Sprintf("%s-%s-%s-final", ctx.Project(), ctx.Stack(), serviceName))
 	}
 
+	backupRetentionDays := BackupRetentionDays.Get(ctx)
+
 	rdsArgs := &rds.InstanceArgs{
 		AllocatedStorage:         pulumi.Int(20),
 		MaxAllocatedStorage:      pulumi.Int(500),
 		Engine:                   pulumi.String("postgres"),
-		EngineVersion:            pulumi.String(engineVersion),
+		EngineVersion:            pg.Version,
 		InstanceClass:            pulumi.String(instanceClass),
 		DbName:                   pg.DBName,
 		Username:                 pg.Username,
@@ -268,14 +247,14 @@ func CreateRDS(
 		SkipFinalSnapshot:        pulumi.Bool(skipFinalSnapshot),
 		FinalSnapshotIdentifier:  finalSnapshotIdentifier,
 		PubliclyAccessible:       pulumi.Bool(false),
-		DeletionProtection:       pulumi.Bool(recipe.DeletionProtection),
-		StorageEncrypted:         pulumi.Bool(recipe.StorageEncrypted),
+		DeletionProtection:       pulumi.Bool(deletionProtection),
+		StorageEncrypted:         pulumi.Bool(StorageEncrypted.Get(ctx)),
 		AutoMinorVersionUpgrade:  pulumi.Bool(true),
-		BackupRetentionPeriod:    pulumi.Int(recipe.BackupRetentionDays),
+		BackupRetentionPeriod:    pulumi.Int(backupRetentionDays),
 		Tags:                     tags,
 	}
-	if recipe.BackupRetentionDays > 0 {
-		rdsArgs.BackupWindow = pulumi.String(recipe.BackupWindow)
+	if backupRetentionDays > 0 {
+		rdsArgs.BackupWindow = pulumi.String(BackupWindow.Get(ctx))
 	}
 	if pg.FromSnapshot != "" {
 		rdsArgs.SnapshotIdentifier = pulumi.String(pg.FromSnapshot)
@@ -292,21 +271,6 @@ func CreateRDS(
 
 	result := &RDSResult{
 		Instance: instance,
-	}
-
-	// Create CNAME record in private hosted zone
-	if privateFqdn != "" {
-		record, err := route53.NewRecord(ctx, privateFqdn, &route53.RecordArgs{
-			ZoneId:  privateZoneId.ToIDOutput().ToStringOutput(),
-			Name:    pulumi.String(privateFqdn),
-			Type:    pulumi.String("CNAME"),
-			Ttl:     pulumi.Int(300),
-			Records: pulumi.StringArray{instance.Address},
-		}, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating CNAME record for %s: %w", serviceName, err)
-		}
-		result.Record = record
 	}
 
 	return result, nil

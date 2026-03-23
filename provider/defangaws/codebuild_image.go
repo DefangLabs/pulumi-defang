@@ -105,6 +105,7 @@ func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitS
 	if region != "" {
 		opts = append(opts, config.WithRegion(region))
 	}
+
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return "", fmt.Errorf("loading AWS config: %w", err)

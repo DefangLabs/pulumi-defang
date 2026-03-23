@@ -13,17 +13,17 @@ func TestAzureProjectSchemaRegistered(t *testing.T) {
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-azure:defangazure:Project")
+	assert.Contains(t, schema.Schema, "defang-azure:index:Project")
 	assert.Contains(t, schema.Schema, "endpoints")
 	assert.Contains(t, schema.Schema, "services")
 }
 
-func TestAzureContainerAppSchemaRegistered(t *testing.T) {
+func TestAzureServiceSchemaRegistered(t *testing.T) {
 	server := makeAzureTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-azure:defangazure:AzureContainerApp")
+	assert.Contains(t, schema.Schema, "defang-azure:index:Service")
 	assert.Contains(t, schema.Schema, "endpoint")
 	assert.Contains(t, schema.Schema, "image")
 }
@@ -33,6 +33,6 @@ func TestAzurePostgresSchemaRegistered(t *testing.T) {
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
-	assert.Contains(t, schema.Schema, "defang-azure:defangazure:AzurePostgres")
+	assert.Contains(t, schema.Schema, "defang-azure:index:Postgres")
 	assert.Contains(t, schema.Schema, "endpoint")
 }

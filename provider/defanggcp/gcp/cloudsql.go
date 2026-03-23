@@ -3,7 +3,7 @@ package gcp
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -62,10 +62,9 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 // CreateCloudSQL creates a managed Cloud SQL Postgres instance.
 func CreateCloudSQL(
 	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
+	configProvider compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
-	recipe Recipe,
+	svc compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudSQLResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
@@ -76,16 +75,16 @@ func CreateCloudSQL(
 	tier := cloudSQLTier(svc.GetCPUs(), svc.GetMemoryMiB())
 
 	// Enforce burstable restriction from recipe
-	if !recipe.AllowBurstable && (tier == "db-f1-micro" || tier == "db-g1-small") {
+	if !AllowBurstable.Get(ctx) && (tier == "db-f1-micro" || tier == "db-g1-small") {
 		tier = "db-custom-1-3840"
 	}
 
 	// Configure backups from recipe
 	var backupConf *sql.DatabaseInstanceSettingsBackupConfigurationArgs
-	if recipe.BackupEnabled {
+	if BackupEnabled.Get(ctx) {
 		backupConf = &sql.DatabaseInstanceSettingsBackupConfigurationArgs{
 			Enabled:                    pulumi.Bool(true),
-			PointInTimeRecoveryEnabled: pulumi.Bool(recipe.PointInTimeRecovery),
+			PointInTimeRecoveryEnabled: pulumi.Bool(PointInTimeRecovery.Get(ctx)),
 			BackupRetentionSettings: &sql.DatabaseInstanceSettingsBackupConfigurationBackupRetentionSettingsArgs{
 				RetainedBackups: pulumi.Int(30),
 			},
@@ -94,19 +93,27 @@ func CreateCloudSQL(
 		}
 	}
 
+	databaseVersion := pg.Version.ToStringPtrOutput().ApplyT(func(version *string) string {
+		if version == nil {
+			return gcpPostgresVersion(0) // default to latest
+		}
+		v := compose.GetPostgresVersion(*version)
+		return gcpPostgresVersion(v)
+	}).(pulumi.StringOutput)
+
 	instance, err := sql.NewDatabaseInstance(ctx, serviceName, &sql.DatabaseInstanceArgs{
-		DatabaseVersion: pulumi.String(gcpPostgresVersion(pg.Version)),
+		DatabaseVersion: databaseVersion,
 		Settings: &sql.DatabaseInstanceSettingsArgs{
 			Tier:                pulumi.String(tier),
 			Edition:             pulumi.String("ENTERPRISE"),
-			AvailabilityType:    pulumi.String(recipe.AvailabilityType),
+			AvailabilityType:    pulumi.String(AvailabilityType.Get(ctx)),
 			BackupConfiguration: backupConf,
 			IpConfiguration: &sql.DatabaseInstanceSettingsIpConfigurationArgs{
 				Ipv4Enabled: pulumi.Bool(true),
-				SslMode:     pulumi.StringPtr(recipe.SslMode),
+				SslMode:     pulumi.StringPtr(SslMode.Get(ctx)),
 			},
 		},
-		DeletionProtection: pulumi.Bool(recipe.DeletionProtection),
+		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud SQL instance: %w", err)

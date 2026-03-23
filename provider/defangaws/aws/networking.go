@@ -18,7 +18,7 @@ type NetworkingResult struct {
 }
 
 // ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
-func ResolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, recipe Recipe, opts ...pulumi.ResourceOption) (*NetworkingResult, error) {
+func ResolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption) (*NetworkingResult, error) {
 	if cfg != nil && cfg.VpcID != "" {
 		// Use provided VPC and subnet IDs
 		subnetIDs := make(pulumi.StringArray, len(cfg.PublicSubnetIDs))
@@ -42,11 +42,20 @@ func ResolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, recipe Recipe
 	// Create a new VPC with public and private subnets.
 	// Use a descriptive logical name so awsx prefixes all children (subnets, etc.) with it.
 	vpcName := autonamePrefix(ctx, "shared-vpc")
-	vpc, err := ec2.NewVpc(ctx, vpcName, &ec2.VpcArgs{
+	vpc, err := ec2.NewVpc(ctx, "shared-vpc", &ec2.VpcArgs{
 		EnableDnsHostnames: pulumi.Bool(true),
-		EnableDnsSupport:   pulumi.Bool(true),
+		// EnableDnsSupport:   pulumi.Bool(true),
 		NatGateways: &ec2.NatGatewayConfigurationArgs{
 			Strategy: ec2.NatGatewayStrategySingle, // FIXME: from recipe
+		},
+		// VpcEndpointSpecs: []ec2.VpcEndpointSpecArgs{
+		// 	{
+		// 		ServiceName:     fmt.Sprintf("com.amazonaws.%s.s3", cfg.Region),
+		// 		VpcEndpointType: pulumi.String("Gateway"), // Gateway is free
+		// 	},
+		// },
+		Tags: pulumi.StringMap{
+			"Name": pulumi.String(vpcName),
 		},
 	}, opts...)
 	if err != nil {
@@ -59,7 +68,7 @@ func ResolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, recipe Recipe
 	privateZone, err := route53.NewZone(ctx, privateDomain, &route53.ZoneArgs{
 		Comment:      pulumi.String(common.DefangComment),
 		Name:         pulumi.String(privateDomain),
-		ForceDestroy: pulumi.Bool(recipe.ForceDestroyHostedzone),
+		ForceDestroy: pulumi.Bool(ForceDestroyHostedzone.Get(ctx)),
 		Vpcs: route53.ZoneVpcArray{
 			route53.ZoneVpcArgs{VpcId: vpc.VpcId},
 		},
@@ -72,7 +81,7 @@ func ResolveNetworking(ctx *pulumi.Context, cfg *common.AWSConfig, recipe Recipe
 	_, err = CreateSoaRecord(ctx, privateDomain, privateZone.ToZoneOutput(), SoaRecordArgs{
 		Serial:  pulumi.Int(2023022101),
 		Minimum: pulumi.Int(15),
-	}, recipe, opts...)
+	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating SOA record: %w", err)
 	}

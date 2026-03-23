@@ -1,8 +1,8 @@
 package common
 
-import "github.com/DefangLabs/pulumi-defang/provider/shared"
+import "github.com/DefangLabs/pulumi-defang/provider/compose"
 
-func TopologicalSort(nodes map[string]shared.ServiceInput) []string {
+func TopologicalSort(nodes map[string]compose.ServiceConfig) []string {
 	sorted := make([]string, 0, len(nodes))
 	visited := make(map[string]struct{}, len(nodes))
 

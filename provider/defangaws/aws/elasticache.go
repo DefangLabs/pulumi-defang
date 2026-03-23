@@ -5,18 +5,16 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/blang/semver"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	awselasticache "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/elasticache"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 type ElasticacheResult struct {
 	Address pulumix.Output[string] // primary or configuration endpoint address
-	Record  *route53.Record        // CNAME record in private hosted zone
 }
 
 // ElastiCache node type catalogs.
@@ -181,15 +179,12 @@ func transitEncryptionSupported(engine, engineVersion string) bool {
 // CreateElasticache creates a managed ElastiCache Redis/Valkey replication group for a service.
 func CreateElasticache(
 	ctx *pulumi.Context,
-	_ shared.ConfigProvider,
+	_ compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	serviceSG *ec2.SecurityGroup,
-	privateZoneId pulumi.IDInput,
-	privateFqdn string,
-	recipe Recipe,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -198,16 +193,22 @@ func CreateElasticache(
 	}
 
 	// Detect engine (redis vs valkey) from image name.
-	image := svc.GetImage()
-	engine := "redis"
-	if strings.Contains(strings.ToLower(image), "valkey") {
-		engine = "valkey"
+	var engine string
+	if svc.Image != nil {
+		if strings.Contains(strings.ToLower(*svc.Image), "valkey") {
+			engine = "valkey"
+		} else {
+			engine = "redis"
+		}
 	}
 
 	// Parse version from image tag (e.g. "7.2" from "redis:7.2").
-	engineVersion := ""
+	var engineVersion string
 	if svc.Image != nil {
-		engineVersion = shared.ParseImageTag(*svc.Image)
+		parts := strings.Split(*svc.Image, ":")
+		if len(parts) == 2 {
+			engineVersion = parts[1]
+		}
 	}
 
 	allowDowntime := false
@@ -261,13 +262,14 @@ func CreateElasticache(
 		return nil, fmt.Errorf("creating ElastiCache security group: %w", err)
 	}
 
-	nodeType := cacheNodeType(svc.GetCPUs(), svc.GetMemoryMiB(), recipe.RDSNodeType)
+	nodeType := cacheNodeType(svc.GetCPUs(), svc.GetMemoryMiB(), RDSNodeType.Get(ctx))
 	replicas := svc.GetReplicas()
 	transitEncryption := transitEncryptionSupported(engine, engineVersion)
+	deletionProtection := DeletionProtection.Get(ctx)
 
 	// Final snapshot: create one when deletion protection is on (production)
 	var finalSnapshotIdentifier pulumi.StringPtrInput
-	if recipe.DeletionProtection {
+	if deletionProtection {
 		finalSnapshotIdentifier = pulumi.String(fmt.Sprintf("%s-%s-%s-final", ctx.Project(), ctx.Stack(), serviceName))
 	}
 
@@ -278,6 +280,7 @@ func CreateElasticache(
 		AutoMinorVersionUpgrade:  pulumi.Bool(true),
 		Description:              pulumi.String(common.DefangComment),
 		Engine:                   pulumi.String(engine),
+		EngineVersion:            pulumi.String(engineVersion),
 		FinalSnapshotIdentifier:  finalSnapshotIdentifier,
 		MultiAzEnabled:           pulumi.Bool(replicas > 1),
 		NodeType:                 pulumi.String(nodeType),
@@ -288,10 +291,7 @@ func CreateElasticache(
 		Tags:                     tags,
 		TransitEncryptionEnabled: pulumi.Bool(transitEncryption),
 	}
-	if engineVersion != "" {
-		rgArgs.EngineVersion = pulumi.String(engineVersion)
-	}
-	if replicas > 1 && recipe.DeletionProtection {
+	if replicas > 1 && deletionProtection {
 		rgArgs.ClusterMode = pulumi.String("compatible")
 	}
 	if transitEncryption {
@@ -300,8 +300,9 @@ func CreateElasticache(
 	if svc.Redis.FromSnapshot != nil && *svc.Redis.FromSnapshot != "" {
 		rgArgs.SnapshotName = pulumi.String(*svc.Redis.FromSnapshot)
 	}
-	if recipe.BackupRetentionDays > 0 {
-		rgArgs.SnapshotRetentionLimit = pulumi.Int(recipe.BackupRetentionDays)
+	backupRetentionDays := BackupRetentionDays.Get(ctx)
+	if backupRetentionDays > 0 {
+		rgArgs.SnapshotRetentionLimit = pulumi.Int(backupRetentionDays)
 		rgArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
@@ -333,22 +334,5 @@ func CreateElasticache(
 		},
 	)
 
-	result := &ElasticacheResult{Address: address}
-
-	// Create CNAME record in private hosted zone
-	if privateFqdn != "" {
-		record, err := route53.NewRecord(ctx, privateFqdn, &route53.RecordArgs{
-			ZoneId:  privateZoneId.ToIDOutput().ToStringOutput(),
-			Name:    pulumi.String(privateFqdn),
-			Type:    pulumi.String("CNAME"),
-			Ttl:     pulumi.Int(300),
-			Records: pulumi.StringArray{pulumi.StringOutput(address)},
-		}, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating CNAME record for %s: %w", serviceName, err)
-		}
-		result.Record = record
-	}
-
-	return result, nil
+	return &ElasticacheResult{Address: address}, nil
 }

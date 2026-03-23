@@ -3,52 +3,48 @@ package defangaws
 import (
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	awssdk "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-// AwsPostgres is the controller struct for the defang-aws:index:AwsPostgres component.
-type AwsPostgres struct{}
+// Postgres is the controller struct for the defang-aws:index:Postgres component.
+type Postgres struct{}
 
-// AwsPostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
-type AwsPostgresInputs struct {
-	ProjectName *string                `pulumi:"project_name"`
-	Postgres    *shared.PostgresInput  `pulumi:"postgres,optional"`
-	Image       *string                `pulumi:"image,optional"`
-	Deploy      *shared.DeployConfig   `pulumi:"deploy,optional"`
-	Environment map[string]*string     `pulumi:"environment,optional"`
-	AWS         *shared.AWSConfigInput `pulumi:"aws,optional"`
+// PostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
+type PostgresInputs struct {
+	ProjectName string                  `pulumi:"project_name"`
+	Postgres    *compose.PostgresInput  `pulumi:"postgres,optional"`
+	Image       *string                 `pulumi:"image,optional"`
+	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`
+	Environment map[string]string       `pulumi:"environment,optional"`
+	AWS         *compose.AWSConfigInput `pulumi:"aws,optional"`
 }
 
-// AwsPostgresOutputs holds the outputs of an AwsPostgres component.
-type AwsPostgresOutputs struct {
+// PostgresOutputs holds the outputs of an AWS Postgres component.
+type PostgresOutputs struct {
 	pulumi.ResourceState
-	Endpoint   pulumix.Output[string] `pulumi:"endpoint"`
-	Dependency pulumi.Resource        // typically CNAME record, for dependees
+	Endpoint pulumix.Output[string] `pulumi:"endpoint"`
 }
 
-// Construct implements the ComponentResource interface for AwsPostgres.
-func (*AwsPostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AwsPostgresInputs, opts pulumi.ResourceOption) (*AwsPostgresOutputs, error) {
-	comp := &AwsPostgresOutputs{}
+// Construct implements the ComponentResource interface for Postgres.
+func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs PostgresInputs, opts pulumi.ResourceOption) (*PostgresOutputs, error) {
+	comp := &PostgresOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := shared.ServiceInput{
+	svc := compose.ServiceConfig{
 		Postgres:    inputs.Postgres,
 		Image:       inputs.Image,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 	}
 
-	configProvider := aws.NewConfigProvider(*inputs.ProjectName)
-	recipe := aws.LoadRecipe(ctx)
+	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 
 	sg, err := awssdk.NewSecurityGroup(ctx, name, &awssdk.SecurityGroupArgs{
 		VpcId:       pulumi.String(inputs.AWS.VpcID),
@@ -70,19 +66,17 @@ func (*AwsPostgres) Construct(ctx *pulumi.Context, name, typ string, inputs AwsP
 	for i, id := range inputs.AWS.PrivateSubnetIDs {
 		privateSubnetIDs[i] = pulumi.String(id)
 	}
-	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, pulumi.ID(inputs.AWS.PrivateZoneID), "", recipe, nil, childOpt)
+	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS: %w", err)
 	}
 
-	comp.Dependency = rdsResult.Record
 	comp.Endpoint = pulumix.Apply(pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, 5432)
 	})
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"dependency": rdsResult.Record,
-		"endpoint":   comp.Endpoint,
+		"endpoint": comp.Endpoint,
 	}); err != nil {
 		return nil, err
 	}
@@ -99,25 +93,20 @@ type PostgresResult struct {
 // creates its RDS children, registers outputs, and returns the host:port endpoint.
 func newPostgresComponent(
 	ctx *pulumi.Context,
-	configProvider shared.ConfigProvider,
+	configProvider compose.ConfigProvider,
 	serviceName string,
-	svc shared.ServiceInput,
-	vpcID pulumi.StringInput,
-	privateSubnetIDs pulumi.StringArrayInput,
-	sg *ec2.SecurityGroup,
-	privateZoneId pulumi.IDInput,
-	privateFqdn string,
-	recipe provideraws.Recipe,
+	svc compose.ServiceConfig,
+	infra *provideraws.SharedInfra,
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOption,
 ) (*PostgresResult, error) {
 	comp := &serviceComponent{}
-	if err := ctx.RegisterComponentResource("defang-aws:index:AwsPostgres", serviceName, comp, parentOpt); err != nil {
+	if err := ctx.RegisterComponentResource("defang-aws:index:Postgres", serviceName, comp, parentOpt); err != nil {
 		return nil, fmt.Errorf("registering postgres component %s: %w", serviceName, err)
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, serviceName, svc, vpcID, privateSubnetIDs, sg, privateZoneId, privateFqdn, recipe, deps, opts...)
+	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS for %s: %w", serviceName, err)
 	}
@@ -131,6 +120,6 @@ func newPostgresComponent(
 	}
 	return &PostgresResult{
 		Endpoint:   endpoint,
-		Dependency: rdsResult.Record,
+		Dependency: rdsResult.Instance,
 	}, nil
 }

@@ -1,7 +1,7 @@
 package tests
 
-// AwsEcsService is the standalone ECS service component for AWS. These tests verify
-// that the AwsEcsService component correctly handles a variety of input configurations.
+// Service is the standalone ECS service component for AWS. These tests verify
+// that the Service component correctly handles a variety of input configurations.
 // Tests cover: ports, deploy config, build config, VPC, health check, environment vars.
 
 import (
@@ -16,7 +16,7 @@ func TestConstructAwsEcsServiceWithImage(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("nginx:latest"),
@@ -30,7 +30,7 @@ func TestConstructAwsEcsServiceWithIngressPort(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("nginx:latest"),
@@ -47,7 +47,7 @@ func TestConstructAwsEcsServiceWithMultiplePorts(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("myapp:latest"),
@@ -69,7 +69,7 @@ func TestConstructAwsEcsServiceWithBuild(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"build": property.New(property.NewMap(map[string]property.Value{
@@ -85,7 +85,7 @@ func TestConstructAwsEcsServiceWithBuildAndDockerfile(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"build": property.New(property.NewMap(map[string]property.Value{
@@ -103,7 +103,7 @@ func TestConstructAwsEcsServiceWithVPC(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("nginx:latest"),
@@ -128,7 +128,7 @@ func TestConstructAwsEcsServiceWithHealthCheck(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("nginx:latest"),
@@ -153,18 +153,10 @@ func TestConstructAwsEcsServiceWithHealthCheck(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithEnvironment(t *testing.T) {
-	// ECS services embed environment variables inside the task-definition
-	// containerDefinitions JSON blob. When StringOutputs are included in that
-	// blob the mock resource monitor cannot JSON-serialize them, so Construct
-	// fails with "Outputs can not be marshaled to JSON".
-	// This is a known integration-server limitation documented in check_aws_test.go.
-	// Full coverage of env-var interpolation lives in provider/shared/helpers_test.go.
-	t.Skip("ECS env vars trigger StringOutput-in-JSON limitation of the mock monitor")
-
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("myapp:latest"),
@@ -182,7 +174,7 @@ func TestConstructAwsEcsServiceWithDeploy(t *testing.T) {
 	server := makeTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: awsURN("AwsEcsService"),
+		Urn: awsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
 			"image":        property.New("myapp:latest"),

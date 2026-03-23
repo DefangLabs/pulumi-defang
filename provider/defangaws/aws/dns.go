@@ -29,7 +29,7 @@ func NormalizeDNS(name string) string {
 	return strings.ToLower(strings.TrimRight(name, "."))
 }
 
-func CreateRecord(ctx *pulumi.Context, name string, typ RecordType, args route53.RecordArgs, recipe Recipe, opts ...pulumi.ResourceOption) (*route53.Record, error) {
+func CreateRecord(ctx *pulumi.Context, name string, typ RecordType, args route53.RecordArgs, opts ...pulumi.ResourceOption) (*route53.Record, error) {
 	if args.ZoneId == nil {
 		// TODO: look up the zone by name
 	}
@@ -38,11 +38,11 @@ func CreateRecord(ctx *pulumi.Context, name string, typ RecordType, args route53
 	args.Name = pulumi.String(normalized)
 	args.Type = pulumi.String(string(typ))
 	if args.AllowOverwrite == nil {
-		args.AllowOverwrite = pulumi.BoolPtr(recipe.AllowOverwriteRecords) // allow overwrite existing records for ZDT
+		args.AllowOverwrite = pulumi.BoolPtr(AllowOverwriteRecords.Get(ctx)) // allow overwrite existing records for ZDT
 	}
 	opts = append([]pulumi.ResourceOption{
 		pulumi.DeleteBeforeReplace(true), // delete first, or we risk deleting the record that was just recreated
-		pulumi.RetainOnDelete(recipe.RetainDnsOnDelete),
+		pulumi.RetainOnDelete(RetainDnsOnDelete.Get(ctx)),
 	}, opts...)
 	return route53.NewRecord(ctx, normalized+"_"+string(typ), &args, opts...)
 }
@@ -64,7 +64,7 @@ type IZone interface {
 	PrimaryNameServer() pulumi.StringOutput
 }
 
-func CreateSoaRecord(ctx *pulumi.Context, name string, zone IZone, args SoaRecordArgs, recipe Recipe, opts ...pulumi.ResourceOption) (*route53.Record, error) {
+func CreateSoaRecord(ctx *pulumi.Context, name string, zone IZone, args SoaRecordArgs, opts ...pulumi.ResourceOption) (*route53.Record, error) {
 	if args.Expire == nil {
 		args.Expire = pulumi.Int(1209600)
 	}
@@ -93,5 +93,5 @@ func CreateSoaRecord(ctx *pulumi.Context, name string, zone IZone, args SoaRecor
 		Records:        pulumi.StringArray{record},
 		Ttl:            args.Ttl,
 		ZoneId:         zone.ZoneId(),
-	}, recipe, append([]pulumi.ResourceOption{pulumi.RetainOnDelete(true)}, opts...)...)
+	}, append([]pulumi.ResourceOption{pulumi.RetainOnDelete(true)}, opts...)...)
 }

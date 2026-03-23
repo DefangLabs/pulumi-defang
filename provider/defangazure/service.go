@@ -3,28 +3,28 @@ package defangazure
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	azureapp "github.com/pulumi/pulumi-azure-native-sdk/app/v2"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// AzureContainerApp is the controller struct for the defang-azure:index:AzureContainerApp component.
-type AzureContainerApp struct{}
+// Service is the controller struct for the defang-azure:index:Service component.
+type Service struct{}
 
 // AzureContainerAppInputs defines the inputs for a standalone Azure Container App.
 type AzureContainerAppInputs struct {
-	Build       *shared.BuildConfig        `pulumi:"build,optional"`
-	Image       *string                   `pulumi:"image,optional"`
-	Platform    *string                   `pulumi:"platform,optional"`
-	Ports       []shared.ServicePortConfig       `pulumi:"ports,optional"`
-	Deploy      *shared.DeployConfig      `pulumi:"deploy,optional"`
-	Environment map[string]*string        `pulumi:"environment,optional"`
-	Command     []string                  `pulumi:"command,optional"`
-	Entrypoint  []string                  `pulumi:"entrypoint,optional"`
-	HealthCheck *shared.HealthCheckConfig `pulumi:"healthCheck,optional"`
-	DomainName  *string                   `pulumi:"domainName,optional"`
+	Build       *compose.BuildConfig        `pulumi:"build,optional"`
+	Image       *string                     `pulumi:"image,optional"`
+	Platform    *string                     `pulumi:"platform,optional"`
+	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
+	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
+	Environment map[string]string           `pulumi:"environment,optional"`
+	Command     []string                    `pulumi:"command,optional"`
+	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
+	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
+	DomainName  *string                     `pulumi:"domainName,optional"`
 }
 
 // AzureContainerAppOutputs holds the outputs of an AzureContainerApp component.
@@ -34,17 +34,17 @@ type AzureContainerAppOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for AzureContainerApp.
-func (*AzureContainerApp) Construct(ctx *pulumi.Context, name, typ string, inputs AzureContainerAppInputs, opts pulumi.ResourceOption) (*AzureContainerAppOutputs, error) {
+func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs AzureContainerAppInputs, opts pulumi.ResourceOption) (*AzureContainerAppOutputs, error) {
 	comp := &AzureContainerAppOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
 
 	childOpt := pulumi.Parent(comp)
-	svc := shared.ServiceInput{
+	svc := compose.ServiceConfig{
 		Build:       inputs.Build,
 		Image:       inputs.Image,
-		Platform:    inputs.Platform,
+		Platform:    (inputs.Platform),
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
@@ -72,9 +72,8 @@ func (*AzureContainerApp) Construct(ctx *pulumi.Context, name, typ string, input
 	}
 
 	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
-	recipe := azure.LoadRecipe(ctx)
 
-	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, recipe, childOpt)
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}

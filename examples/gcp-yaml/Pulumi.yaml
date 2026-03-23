@@ -9,7 +9,7 @@ plugins:
 
 resources:
   gcp-yaml:
-    type: defang-gcp:defanggcp:Project
+    type: defang-gcp:index:Project
     properties:
       services:
         app:

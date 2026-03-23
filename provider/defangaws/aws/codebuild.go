@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/codebuild"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
@@ -53,7 +53,7 @@ func platformToArch(platform string) string {
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
 // Matches TS getBuildSpec: pre_build sets up buildx, build runs docker buildx build --push.
-func getBuildSpec(build shared.BuildConfig, destination string) string {
+func getBuildSpec(build compose.BuildConfig, destination string) string {
 	dockerfile := build.GetDockerfile()
 
 	// Build args in deterministic order (matches TS: Object.keys(buildArgs).sort())
@@ -109,7 +109,7 @@ func getBuildSpec(build shared.BuildConfig, destination string) string {
 func createCodeBuildProject(
 	ctx *pulumi.Context,
 	name string,
-	build shared.BuildConfig,
+	build compose.BuildConfig,
 	platform string,
 	codeBuildRole *iam.Role,
 	logGroup *cloudwatch.LogGroup,

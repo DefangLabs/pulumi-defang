@@ -19,7 +19,6 @@ func CreateALB(
 	vpcID pulumi.StringInput,
 	subnetIDs pulumi.StringArrayInput,
 	serviceSG *ec2.SecurityGroup,
-	recipe Recipe,
 	opts ...pulumi.ResourceOption,
 ) (*AlbResult, error) {
 	// Create ALB security group allowing HTTP/HTTPS ingress
@@ -72,7 +71,7 @@ func CreateALB(
 		LoadBalancerType:         pulumi.String("application"),
 		SecurityGroups:           pulumi.StringArray{albSG.ID()},
 		Subnets:                  subnetIDs,
-		EnableDeletionProtection: pulumi.Bool(recipe.DeletionProtection),
+		EnableDeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB: %w", err)

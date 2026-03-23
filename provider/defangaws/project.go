@@ -4,13 +4,9 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -21,11 +17,11 @@ type Project struct{}
 // ProjectInputs defines the top-level inputs for the AWS Project component.
 type ProjectInputs struct {
 	// Services map: name -> service config
-	Services map[string]shared.ServiceInput       `pulumi:"services" yaml:"services"`
-	Networks map[string]shared.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	Services map[string]compose.ServiceConfig       `pulumi:"services" yaml:"services"`
+	Networks map[string]compose.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
 	// AWS-specific infrastructure configuration (VPC, subnets)
-	AWS *shared.AWSConfigInput `pulumi:"aws,optional"`
+	AWS *compose.AWSConfigInput `pulumi:"aws,optional"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -74,90 +70,16 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCfg *common.AWSConfig, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
 	opts := []pulumi.ResourceOption{parentOpt}
 
-	// Look up current AWS region from the inherited provider
-	region, err := aws.GetRegion(ctx, nil)
+	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, awsCfg, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("getting AWS region: %w", err)
+		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
 
-	// Create ECS cluster
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ECS cluster: %w", err)
-	}
-
-	recipe := provideraws.LoadRecipe(ctx)
-
-	// Create CloudWatch log group
-	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(recipe.LogRetentionDays),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating log group: %w", err)
-	}
-
-	// Create execution role (shared by all task definitions)
-	execRole, err := provideraws.CreateExecutionRole(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating execution role: %w", err)
-	}
-
-	// Create or use existing VPC and subnets
-	net, err := provideraws.ResolveNetworking(ctx, awsCfg, recipe, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving networking: %w", err)
-	}
-	vpcID := net.VpcID
-	subnetIDs := net.PublicSubnetIDs
-	privateSubnetIDs := net.PrivateSubnetIDs
-	privateZoneID := net.PrivateZoneID
-	privateDomain := net.PrivateDomain
-
-	// Create security group for services
-	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
-		VpcId:       pulumi.StringOutput(vpcID),
-		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
-		Egress: ec2.SecurityGroupEgressArray{
-			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
-	// Create ALB if any service has ingress ports
 	var albDNS pulumi.StringPtrOutput
-	var httpListener *lb.Listener
-	needsALB := common.NeedIngress(args.Services)
-
-	var alb *lb.LoadBalancer
-	if needsALB {
-		albResult, err := provideraws.CreateALB(ctx, vpcID, subnetIDs, sg, recipe, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating ALB: %w", err)
-		}
-		httpListener = albResult.HttpListener
-		alb = albResult.Alb
-		albDNS = alb.DnsName.ToStringPtrOutput()
+	if infra.Alb != nil {
+		albDNS = infra.Alb.DnsName.ToStringPtrOutput()
 	} else {
 		albDNS = pulumi.StringPtr("").ToStringPtrOutput()
-	}
-
-	// Create shared image build infrastructure if any service needs a build
-	var imgInfra *provideraws.ImageInfra
-	for _, svc := range args.Services {
-		if svc.NeedsBuild() {
-			imgInfra, err = provideraws.CreateImageInfra(ctx, logGroup, region.Name, opts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
-			}
-			break
-		}
 	}
 
 	// Deploy each service, wrapped in a component resource for tree organization
@@ -182,16 +104,11 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 		var endpoint pulumi.StringOutput
 		var err error
 
-		var privateFqdn string
-		if privateDomain != "" {
-			privateFqdn = svcName + "." + privateDomain
-		}
-
 		switch {
 		case svc.Postgres != nil:
 			// Managed Postgres → RDS
 			var pgResult *PostgresResult
-			pgResult, err = newPostgresComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, privateZoneID, privateFqdn, recipe, deps, opts[0])
+			pgResult, err = newPostgresComponent(ctx, configProvider, svcName, svc, infra, deps, opts[0])
 			if pgResult != nil {
 				dependency = pgResult.Dependency
 				endpoint = pgResult.Endpoint
@@ -199,30 +116,26 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 		case svc.Redis != nil:
 			// Managed Redis → ElastiCache
 			var redisResult *RedisResult
-			redisResult, err = newRedisComponent(ctx, configProvider, svcName, svc, vpcID, privateSubnetIDs, sg, privateZoneID, privateFqdn, recipe, deps, opts[0])
+			redisResult, err = newRedisComponent(ctx, configProvider, svcName, svc, infra, deps, opts[0])
 			if redisResult != nil {
 				dependency = redisResult.Dependency
 				endpoint = redisResult.Endpoint
 			}
 		default:
+			// TODO: detect sidecar services (network_mode: "service:<name>", volumes_from)
+			// and add them as additional containers in the parent's task definition
+			// instead of creating a separate ECS service.
+
 			// Container service → ECS
-			imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, imgInfra, opts[0])
+			imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.ImageInfra, opts[0])
 			if imgErr != nil {
 				return nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 			}
 			var ecsResult *ECSResult
 			ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
-				Cluster:         cluster,
-				ExecRole:        execRole,
-				LogGroup:        logGroup,
-				VpcID:           vpcID,
-				PublicSubnetIDs: subnetIDs,
-				Sg:              sg,
-				Listener:        httpListener,
-				Alb:             alb,
-				Region:          region.Name,
-				ImageURI:        imageURI,
-			}, recipe, deps, opts[0])
+				Infra:    infra,
+				ImageURI: imageURI,
+			}, deps, opts[0])
 			if ecsResult != nil {
 				dependency = ecsResult.Dependency
 				endpoint = ecsResult.Endpoint
@@ -231,6 +144,21 @@ func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCf
 		if err != nil {
 			return nil, err
 		}
+
+		// Create private DNS CNAME for managed services (Postgres, Redis)
+		if dependency != nil && infra.PrivateDomain != "" {
+			privateFqdn := svcName + "." + infra.PrivateDomain
+			record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{
+				ZoneId:  infra.PrivateZoneID.ToIDOutput().ToStringOutput(),
+				Records: pulumi.StringArray{endpoint},
+				Ttl:     pulumi.Int(300),
+			}, pulumi.DependsOn([]pulumi.Resource{dependency}), opts[0])
+			if cnameErr != nil {
+				return nil, fmt.Errorf("creating CNAME for %s: %w", svcName, cnameErr)
+			}
+			dependency = record
+		}
+
 		endpoints[svcName] = endpoint
 		if dependency != nil {
 			dependencies[svcName] = dependency

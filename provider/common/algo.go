@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
 // Based on https://www.ietf.org/rfc/rfc3986.txt, using the pattern for query
@@ -35,7 +35,7 @@ func ParseHealthCheckPathPort(test []string) (path string, port int) {
 }
 
 // NeedIngress returns true if any non-managed service in the map has ingress ports.
-func NeedIngress(services map[string]shared.ServiceInput) bool {
+func NeedIngress(services map[string]compose.ServiceConfig) bool {
 	for _, svc := range services {
 		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil {
 			return true

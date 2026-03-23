@@ -9,7 +9,7 @@ plugins:
 
 resources:
   azure-yaml:
-    type: defang-azure:defangazure:Project
+    type: defang-azure:index:Project
     properties:
       services:
         app:

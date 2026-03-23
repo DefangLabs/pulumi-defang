@@ -13,12 +13,12 @@ func awsURN(typ string) resource.URN {
 
 // azureURN builds a URN for an Azure provider component type.
 func azureURN(typ string) resource.URN {
-	return resource.NewURN("stack", "proj", "", tokens.Type("defang-azure:defangazure:"+typ), "name")
+	return resource.NewURN("stack", "proj", "", tokens.Type("defang-azure:index:"+typ), "name")
 }
 
 // gcpURN builds a URN for a GCP provider component type.
 func gcpURN(typ string) resource.URN {
-	return resource.NewURN("stack", "proj", "", tokens.Type("defang-gcp:defanggcp:"+typ), "name")
+	return resource.NewURN("stack", "proj", "", tokens.Type("defang-gcp:index:"+typ), "name")
 }
 
 // servicesMap wraps a service map as the top-level Inputs for a Project Construct call.

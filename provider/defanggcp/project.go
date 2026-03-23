@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -15,8 +15,8 @@ type Project struct{}
 // ProjectInputs defines the top-level inputs for the GCP Project component.
 type ProjectInputs struct {
 	// Services map: name -> service config
-	Services map[string]shared.ServiceInput       `pulumi:"services" yaml:"services"`
-	Networks map[string]shared.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	Services map[string]compose.ServiceConfig       `pulumi:"services" yaml:"services"`
+	Networks map[string]compose.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.

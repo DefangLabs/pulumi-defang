@@ -8,7 +8,7 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/shared"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
@@ -93,7 +93,7 @@ func sha1hash(inputs ...string) string {
 }
 
 // buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build *shared.BuildConfig) pulumi.StringOutput {
+func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	// Must also hash buildArgs, in case tarball is the same; stably serialize to a string
 	argsStr, _ := json.Marshal(removeEphemeralBuildArgs(build.Args))
 	var dockerfile, target string
@@ -114,7 +114,7 @@ func buildTriggerHash(build *shared.BuildConfig) pulumi.StringOutput {
 func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	infra *ImageInfra,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
@@ -168,7 +168,7 @@ func buildServiceImage(
 func GetServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
-	svc shared.ServiceInput,
+	svc compose.ServiceConfig,
 	infra *ImageInfra,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -180,6 +180,10 @@ func GetServiceImage(
 		return result.imageURI, nil
 	}
 
+	if svc.Image == nil {
+		return pulumi.StringOutput{}, fmt.Errorf("service %s has no image or build config", serviceName)
+	}
+
 	// Use pre-built image (either service.image or default)
-	return pulumi.String(svc.GetImage()).ToStringOutput(), nil
+	return pulumi.String(*svc.Image).ToStringOutput(), nil
 }
