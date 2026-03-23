@@ -104,7 +104,7 @@ pre-commit: node_modules
 
 # Full build + test run before push (or for CI).
 .PHONY: pre-push
-pre-push: sdks
+pre-push: go_sdk
 
 # Generate language examples from YAML sources
 # Requires providers to be built first: make install
