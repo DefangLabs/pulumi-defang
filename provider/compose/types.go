@@ -55,7 +55,7 @@ type NetworkConfigInput struct {
 
 type DependsOnConfig struct {
 	Condition *string `pulumi:"condition,optional" yaml:"condition,omitempty"`
-	Required  bool    `pulumi:"required,optional" yaml:"required,omitempty"`
+	Required  bool    `pulumi:"required,optional"  yaml:"required,omitempty"`
 }
 
 type ServiceNetworkConfig struct {

@@ -17,7 +17,7 @@ type Project struct{}
 // ProjectInputs defines the top-level inputs for the AWS Project component.
 type ProjectInputs struct {
 	// Services map: name -> service config
-	Services map[string]compose.ServiceConfig       `pulumi:"services" yaml:"services"`
+	Services map[string]compose.ServiceConfig      `pulumi:"services"          yaml:"services"`
 	Networks map[string]compose.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
 	// AWS-specific infrastructure configuration (VPC, subnets)

@@ -148,7 +148,6 @@ func CreateECSService(
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*EcsServiceResult, error) {
-
 	// Create task role
 	taskRole, err := createTaskRole(ctx, serviceName, opts...)
 	if err != nil {
