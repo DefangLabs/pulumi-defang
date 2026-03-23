@@ -42,13 +42,16 @@ func codeBuildComputeType(shmSizeBytes int) string {
 	}
 }
 
+const Arm64 = "arm64"
+const X86_64 = "x86_64"
+
 // platformToArch extracts architecture from a platform string.
 // Matches TS platformToArch.
 func platformToArch(platform string) string {
 	if strings.Contains(platform, "arm64") {
-		return "arm64"
+		return Arm64
 	}
-	return "x86_64"
+	return X86_64
 }
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
@@ -120,13 +123,13 @@ func createCodeBuildProject(
 	arch := platformToArch(platform)
 
 	envType := "LINUX_CONTAINER"
-	if arch == "arm64" {
+	if arch == Arm64 {
 		envType = "ARM_CONTAINER"
 	}
 
 	// Base image: Amazon Linux (matches TS AMAZON_LINUX_*_IMAGE)
 	baseImage := "aws/codebuild/amazonlinux-x86_64-standard:5.0"
-	if arch == "arm64" {
+	if arch == Arm64 {
 		baseImage = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
 	}
 

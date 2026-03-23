@@ -138,6 +138,8 @@ func portProtocol(p compose.ServicePortConfig) ContainerPortProtocol {
 	return "tcp"
 }
 
+const grpcProto = "grpc"
+
 // CreateECSService creates an ECS Fargate service for a container service.
 func CreateECSService(
 	ctx *pulumi.Context,
@@ -272,9 +274,9 @@ func CreateECSService(
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
-	cpuArch := "X86_64"
-	if platformToArch(svc.GetPlatform()) == "arm64" {
-		cpuArch = "ARM64"
+	cpuArch := X86_64
+	if platformToArch(svc.GetPlatform()) == Arm64 {
+		cpuArch = Arm64
 	}
 
 	// Create task definition
@@ -343,7 +345,7 @@ func CreateECSService(
 			// Determine matcher based on protocol (matches TS createTargetGroup)
 			// With default path "/": grpc -> "0", http/http2 -> "200-399"
 			matcher := "200-399"
-			if appProto == "grpc" {
+			if appProto == grpcProto {
 				matcher = "0"
 			}
 
@@ -408,7 +410,7 @@ func CreateECSService(
 			}
 
 			// Add gRPC content-type header matching (matches TS createTgLrPair)
-			if appProto == "grpc" {
+			if appProto == grpcProto {
 				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 					HttpHeader: &lb.ListenerRuleConditionHttpHeaderArgs{
 						HttpHeaderName: pulumi.String("content-type"),
