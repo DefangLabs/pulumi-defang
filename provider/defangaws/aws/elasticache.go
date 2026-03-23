@@ -178,6 +178,8 @@ func transitEncryptionSupported(engine, engineVersion string) bool {
 }
 
 // CreateElasticache creates a managed ElastiCache Redis/Valkey replication group for a service.
+//
+//nolint:funlen
 func CreateElasticache(
 	ctx *pulumi.Context,
 	_ compose.ConfigProvider,

@@ -159,6 +159,8 @@ func cheapestMatch(catalog map[string]nodeInfo, minCPUs float64, minGiB float64)
 const defaultPostgresPort = 5432
 
 // CreateRDS creates a managed RDS Postgres instance for a service.
+//
+//nolint:funlen
 func CreateRDS(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,

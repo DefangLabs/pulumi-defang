@@ -141,6 +141,8 @@ func portProtocol(p compose.ServicePortConfig) ContainerPortProtocol {
 const grpcProto = "grpc"
 
 // CreateECSService creates an ECS Fargate service for a container service.
+//
+//nolint:funlen,maintidx
 func CreateECSService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,

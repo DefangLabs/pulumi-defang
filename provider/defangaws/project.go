@@ -111,46 +111,9 @@ func Build(
 		var dependency pulumi.Resource
 		var endpoint pulumi.StringOutput
 		var err error
-
-		switch {
-		case svc.Postgres != nil:
-			// Managed Postgres → RDS
-			var pgResult *PostgresResult
-			pgResult, err = newPostgresComponent(ctx, configProvider, svcName, svc, infra, deps, opts[0])
-			if pgResult != nil {
-				dependency = pgResult.Dependency
-				endpoint = pgResult.Endpoint
-			}
-		case svc.Redis != nil:
-			// Managed Redis → ElastiCache
-			var redisResult *RedisResult
-			redisResult, err = newRedisComponent(ctx, configProvider, svcName, svc, infra, deps, opts[0])
-			if redisResult != nil {
-				dependency = redisResult.Dependency
-				endpoint = redisResult.Endpoint
-			}
-		default:
-			// TODO: detect sidecar services (network_mode: "service:<name>", volumes_from)
-			// and add them as additional containers in the parent's task definition
-			// instead of creating a separate ECS service.
-
-			// Container service → ECS
-			imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.ImageInfra, opts[0])
-			if imgErr != nil {
-				return nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
-			}
-			var ecsResult *ECSResult
-			ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
-				Infra:    infra,
-				ImageURI: imageURI,
-			}, deps, opts[0])
-			if ecsResult != nil {
-				dependency = ecsResult.Dependency
-				endpoint = ecsResult.Endpoint
-			}
-		}
+		endpoint, dependency, err = buildService(ctx, configProvider, svcName, svc, infra, deps, opts[0])
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
 
 		// Create private DNS CNAME for managed services (Postgres, Redis)
@@ -177,4 +140,59 @@ func Build(
 		Endpoints:       endpoints.ToStringMapOutput(),
 		LoadBalancerDNS: albDNS,
 	}, nil
+}
+
+func buildService(
+	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
+	svcName string,
+	svc compose.ServiceConfig,
+	infra *provideraws.SharedInfra,
+	deps []pulumi.Resource,
+	parentOpt pulumi.ResourceOption,
+) (pulumi.StringOutput, pulumi.Resource, error) {
+	var endpoint pulumi.StringOutput
+	var dependency pulumi.Resource
+	var err error
+	switch {
+	case svc.Postgres != nil:
+		// Managed Postgres → RDS
+		var pgResult *PostgresResult
+		pgResult, err = newPostgresComponent(ctx, configProvider, svcName, svc, infra, deps, parentOpt)
+		if pgResult != nil {
+			dependency = pgResult.Dependency
+			endpoint = pgResult.Endpoint
+		}
+	case svc.Redis != nil:
+		// Managed Redis → ElastiCache
+		var redisResult *RedisResult
+		redisResult, err = newRedisComponent(ctx, configProvider, svcName, svc, infra, deps, parentOpt)
+		if redisResult != nil {
+			dependency = redisResult.Dependency
+			endpoint = redisResult.Endpoint
+		}
+	default:
+		// TODO: detect sidecar services (network_mode: "service:<name>", volumes_from)
+		// and add them as additional containers in the parent's task definition
+		// instead of creating a separate ECS service.
+
+		// Container service → ECS
+		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.ImageInfra, parentOpt)
+		if imgErr != nil {
+			return pulumi.StringOutput{}, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
+		}
+		var ecsResult *ECSResult
+		ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
+			Infra:    infra,
+			ImageURI: imageURI,
+		}, deps, parentOpt)
+		if ecsResult != nil {
+			dependency = ecsResult.Dependency
+			endpoint = ecsResult.Endpoint
+		}
+	}
+	if err != nil {
+		return pulumi.StringOutput{}, nil, err
+	}
+	return endpoint, dependency, nil
 }
