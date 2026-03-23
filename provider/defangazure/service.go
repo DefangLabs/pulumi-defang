@@ -34,7 +34,9 @@ type AzureContainerAppOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for AzureContainerApp.
-func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs AzureContainerAppInputs, opts pulumi.ResourceOption) (*AzureContainerAppOutputs, error) {
+func (*Service) Construct(
+	ctx *pulumi.Context, name, typ string, inputs AzureContainerAppInputs, opts pulumi.ResourceOption,
+) (*AzureContainerAppOutputs, error) {
 	comp := &AzureContainerAppOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err

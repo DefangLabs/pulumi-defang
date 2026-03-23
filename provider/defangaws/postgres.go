@@ -30,7 +30,9 @@ type PostgresOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Postgres.
-func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs PostgresInputs, opts pulumi.ResourceOption) (*PostgresOutputs, error) {
+func (*Postgres) Construct(
+	ctx *pulumi.Context, name, typ string, inputs PostgresInputs, opts pulumi.ResourceOption,
+) (*PostgresOutputs, error) {
 	comp := &PostgresOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -66,7 +68,9 @@ func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs Postgre
 	for i, id := range inputs.AWS.PrivateSubnetIDs {
 		privateSubnetIDs[i] = pulumi.String(id)
 	}
-	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt)
+	rdsResult, err := provideraws.CreateRDS(
+		ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS: %w", err)
 	}
@@ -106,12 +110,15 @@ func newPostgresComponent(
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	rdsResult, err := provideraws.CreateRDS(ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...)
+	rdsResult, err := provideraws.CreateRDS(
+		ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS for %s: %w", serviceName, err)
 	}
 
-	endpoint := pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
+	endpoint := pulumi.StringOutput(pulumix.Apply(
+		pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, 5432)
 	}))
 

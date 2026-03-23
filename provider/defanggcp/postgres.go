@@ -27,7 +27,9 @@ type GcpCloudSqlOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Postgres.
-func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs GcpCloudSqlInputs, opts pulumi.ResourceOption) (*GcpCloudSqlOutputs, error) {
+func (*Postgres) Construct(
+	ctx *pulumi.Context, name, typ string, inputs GcpCloudSqlInputs, opts pulumi.ResourceOption,
+) (*GcpCloudSqlOutputs, error) {
 	comp := &GcpCloudSqlOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err

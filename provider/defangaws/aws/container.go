@@ -25,7 +25,8 @@ type ContainerEnvironment struct {
 
 // ContainerHealthCheck defines health check parameters for a container.
 type ContainerHealthCheck struct {
-	Command     pulumi.StringArrayInput `json:"command"`               // eg. ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+	// eg. ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+	Command     pulumi.StringArrayInput `json:"command"`
 	Interval    int                     `json:"interval,omitempty"`    // 5-300, default 30s
 	Timeout     int                     `json:"timeout,omitempty"`     // 2-300, default 5s
 	Retries     int                     `json:"retries,omitempty"`     // 1-10, default 3
@@ -125,8 +126,9 @@ const (
 
 type ContainerFirelensConfigurationOptions struct {
 	EnableEcsLogMetadata BoolString                          `json:"enable-ecs-log-metadata"`
-	ConfigFileType       FirelensConfigurationConfigFileType `json:"config-file-type"`  // Fargate only supports `file` configuration file type
-	ConfigFileValue      pulumi.StringInput                  `json:"config-file-value"` // path to config file
+	// Fargate only supports `file` configuration file type
+	ConfigFileType  FirelensConfigurationConfigFileType `json:"config-file-type"`
+	ConfigFileValue pulumi.StringInput                  `json:"config-file-value"` // path to config file
 }
 
 type ContainerUlimitName string
@@ -202,7 +204,7 @@ type ContainerDependency struct {
 type ContainerDefinition struct {
 	Name                   string                          `json:"name"`
 	Image                  pulumi.StringInput              `json:"image"`
-	Memory                 int                             `json:"memory,omitempty"`            // MiB; optional for Fargate
+	Memory                 int                             `json:"memory,omitempty"`   // MiB; optional for Fargate
 	MemoryReservation      int                             `json:"memoryReservation,omitempty"` // MiB
 	Essential              *bool                           `json:"essential,omitempty"`         // default true
 	PortMappings           []ContainerPortMapping          `json:"portMappings,omitempty"`

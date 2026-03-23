@@ -9,7 +9,9 @@ import (
 
 // Based on https://www.ietf.org/rfc/rfc3986.txt, using the pattern for query
 // (which is a superset of path's `pchar`) but removing the single quote.
-var healthcheckURLRegex = regexp.MustCompile(`(?i)(?:http://)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`)
+var healthcheckURLRegex = regexp.MustCompile(
+	`(?i)(?:http://)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`,
+)
 
 // ParseHealthCheckPathPort parses the health check path and port from a CMD/CMD-SHELL test command.
 // Returns path (default "/") and port (0 if not specified).

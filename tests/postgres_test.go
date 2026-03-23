@@ -1,7 +1,7 @@
 package tests
 
 // Postgres component tests across all three providers. These tests verify that
-// Postgres, Postgres, and Postgres each construct correctly under a
+// Postgres, and Postgres each construct correctly under
 // variety of configurations (minimal, with image/version, with snapshot, with
 // allowDowntime).
 

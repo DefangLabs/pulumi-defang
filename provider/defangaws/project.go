@@ -36,7 +36,9 @@ type ProjectOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Project.
-func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption) (*ProjectOutputs, error) {
+func (*Project) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
+) (*ProjectOutputs, error) {
 	comp := &ProjectOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -67,7 +69,13 @@ func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectI
 
 // Build creates all AWS resources for the project.
 // The AWS provider must be passed via the parent chain (pulumi.Providers on the parent component).
-func Build(ctx *pulumi.Context, projectName string, args common.BuildArgs, awsCfg *common.AWSConfig, parentOpt pulumi.ResourceOption) (*common.BuildResult, error) {
+func Build(
+	ctx *pulumi.Context,
+	projectName string,
+	args common.BuildArgs,
+	awsCfg *common.AWSConfig,
+	parentOpt pulumi.ResourceOption,
+) (*common.BuildResult, error) {
 	opts := []pulumi.ResourceOption{parentOpt}
 
 	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, awsCfg, opts...)

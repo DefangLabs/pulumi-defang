@@ -155,7 +155,9 @@ func ParseInterpolatedString(s string) []Match {
 	return result
 }
 
-func GetConfigOrEnvValue(ctx *pulumi.Context, configProvider ConfigProvider, s ServiceConfig, key string, defaultValue string) pulumi.StringOutput {
+func GetConfigOrEnvValue(
+	ctx *pulumi.Context, configProvider ConfigProvider, s ServiceConfig, key string, defaultValue string,
+) pulumi.StringOutput {
 	// Reading from a nil map in Go returns "" without panicking, so a
 	// nil Environment is equivalent to an empty one: missing keys fall through to
 	// the default value.
@@ -183,7 +185,9 @@ func ToPulumiStringArray(ss []string) pulumi.StringArray {
 	return arr
 }
 
-func InterpolateEnvironmentVariable(ctx *pulumi.Context, configProvider ConfigProvider, value string) pulumi.StringOutput {
+func InterpolateEnvironmentVariable(
+	ctx *pulumi.Context, configProvider ConfigProvider, value string,
+) pulumi.StringOutput {
 	parsed := ParseInterpolatedString(value)
 
 	if len(parsed) == 0 {

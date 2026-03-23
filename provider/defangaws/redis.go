@@ -31,7 +31,9 @@ type RedisOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Redis.
-func (*Redis) Construct(ctx *pulumi.Context, name, typ string, inputs RedisInputs, opts pulumi.ResourceOption) (*RedisOutputs, error) {
+func (*Redis) Construct(
+	ctx *pulumi.Context, name, typ string, inputs RedisInputs, opts pulumi.ResourceOption,
+) (*RedisOutputs, error) {
 	comp := &RedisOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -74,7 +76,9 @@ func (*Redis) Construct(ctx *pulumi.Context, name, typ string, inputs RedisInput
 	for i, id := range inputs.AWS.PrivateSubnetIDs {
 		privateSubnetIDs[i] = pulumi.String(id)
 	}
-	redisResult, err := provideraws.CreateElasticache(ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt)
+	redisResult, err := provideraws.CreateElasticache(
+		ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache: %w", err)
 	}
@@ -120,7 +124,9 @@ func newRedisComponent(
 	}
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-	redisResult, err := provideraws.CreateElasticache(ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...)
+	redisResult, err := provideraws.CreateElasticache(
+		ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}

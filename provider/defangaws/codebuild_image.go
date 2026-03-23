@@ -45,7 +45,9 @@ type CodeBuildImageBuildState struct {
 }
 
 // Create starts a CodeBuild build, waits for it to complete, and returns the image URL.
-func (*CodeBuildImageBuild) Create(ctx context.Context, req infer.CreateRequest[CodeBuildImageBuildInputs]) (infer.CreateResponse[CodeBuildImageBuildState], error) {
+func (*CodeBuildImageBuild) Create(
+	ctx context.Context, req infer.CreateRequest[CodeBuildImageBuildInputs],
+) (infer.CreateResponse[CodeBuildImageBuildState], error) {
 	inputs := req.Inputs
 
 	if req.DryRun {

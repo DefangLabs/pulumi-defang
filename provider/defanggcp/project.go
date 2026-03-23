@@ -32,7 +32,9 @@ type ProjectOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Project.
-func (*Project) Construct(ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption) (*ProjectOutputs, error) {
+func (*Project) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
+) (*ProjectOutputs, error) {
 	comp := &ProjectOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err

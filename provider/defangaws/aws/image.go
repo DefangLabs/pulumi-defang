@@ -103,7 +103,8 @@ func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	if build.Target != nil {
 		target = *build.Target
 	}
-	return pulumi.StringOutput(pulumix.Apply(pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
+	return pulumi.StringOutput(pulumix.Apply(
+		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
 		contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
 		return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
 	}))

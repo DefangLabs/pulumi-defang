@@ -37,7 +37,9 @@ type ServiceOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Service.
-func (*Service) Construct(ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption) (*ServiceOutputs, error) {
+func (*Service) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption,
+) (*ServiceOutputs, error) {
 	comp := &ServiceOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err

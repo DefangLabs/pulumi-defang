@@ -28,7 +28,9 @@ type AzurePostgresOutputs struct {
 }
 
 // Construct implements the ComponentResource interface for Postgres.
-func (*Postgres) Construct(ctx *pulumi.Context, name, typ string, inputs AzurePostgresInputs, opts pulumi.ResourceOption) (*AzurePostgresOutputs, error) {
+func (*Postgres) Construct(
+	ctx *pulumi.Context, name, typ string, inputs AzurePostgresInputs, opts pulumi.ResourceOption,
+) (*AzurePostgresOutputs, error) {
 	comp := &AzurePostgresOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
