@@ -108,9 +108,9 @@ func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	}
 	return pulumi.StringOutput(pulumix.Apply(
 		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
-		contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
-		return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
-	}))
+			contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
+			return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
+		}))
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.
