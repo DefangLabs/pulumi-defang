@@ -11,8 +11,8 @@ import (
 // Postgres is the controller struct for the defang-gcp:index:Postgres component.
 type Postgres struct{}
 
-// GcpCloudSqlInputs defines the inputs for a standalone GCP Cloud SQL Postgres instance.
-type GcpCloudSqlInputs struct {
+// PostgresInputs defines the inputs for a standalone GCP Cloud SQL Postgres instance.
+type PostgresInputs struct {
 	ProjectName string                 `pulumi:"project_name"`
 	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
 	Image       *string                `pulumi:"image,optional"`
@@ -20,17 +20,17 @@ type GcpCloudSqlInputs struct {
 	Environment map[string]string      `pulumi:"environment,optional"`
 }
 
-// GcpCloudSqlOutputs holds the outputs of a Postgres component.
-type GcpCloudSqlOutputs struct {
+// PostgresOutputs holds the outputs of a Postgres component.
+type PostgresOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // Construct implements the ComponentResource interface for Postgres.
 func (*Postgres) Construct(
-	ctx *pulumi.Context, name, typ string, inputs GcpCloudSqlInputs, opts pulumi.ResourceOption,
-) (*GcpCloudSqlOutputs, error) {
-	comp := &GcpCloudSqlOutputs{}
+	ctx *pulumi.Context, name, typ string, inputs PostgresInputs, opts pulumi.ResourceOption,
+) (*PostgresOutputs, error) {
+	comp := &PostgresOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
