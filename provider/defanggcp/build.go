@@ -22,19 +22,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type CloudBuild struct{}
+type Build struct{}
 
-type CloudBuildArgs struct {
+type BuildArgs struct {
 	// Required fields
-	ProjectId string `pulumi:"projectId" provider:"replaceOnChanges"`
-	Location  string `pulumi:"location" provider:"replaceOnChanges"`
-	Source    string `pulumi:"source" provider:"replaceOnChanges"`
-	Steps     string `pulumi:"steps" provider:"replaceOnChanges"`
+	ProjectId string `provider:"replaceOnChanges" pulumi:"projectId"`
+	Location  string `provider:"replaceOnChanges" pulumi:"location"`
+	Source    string `provider:"replaceOnChanges" pulumi:"source"`
+	Steps     string `provider:"replaceOnChanges" pulumi:"steps"`
 
 	// TODO: We should be able to use ETAG from object metadata as ditest in Diff func to determine a new build is necessary
-	SourceDigest   *string           `pulumi:"sourceDigest,optional" provider:"replaceOnChanges"`
-	Images         []string          `pulumi:"images,optional" provider:"replaceOnChanges"`
-	ServiceAccount *string           `pulumi:"serviceAccount,optional" provider:"replaceOnChanges"`
+	SourceDigest   *string           `provider:"replaceOnChanges"     pulumi:"sourceDigest,optional"`
+	Images         []string          `provider:"replaceOnChanges"     pulumi:"images,optional"`
+	ServiceAccount *string           `provider:"replaceOnChanges"     pulumi:"serviceAccount,optional"`
 	Tags           []string          `pulumi:"tags,optional"`
 	MachineType    *string           `pulumi:"machineType,optional"`
 	DiskSizeGb     *int64            `pulumi:"diskSizeGb,optional"`
@@ -57,31 +57,31 @@ const (
 	E2_MEDIUM     MachineType = cloudbuildpb.BuildOptions_E2_MEDIUM
 )
 
-type CloudBuildState struct {
-	CloudBuildArgs
+type BuildState struct {
+	BuildArgs
 	BuildId     string `pulumi:"buildId"`
 	ImageDigest string `pulumi:"imageDigest"`
 }
 
-// All resources must implement Create at a minumum.
-func (*CloudBuild) Create(
+// All resources must implement Create at a minimum.
+func (*Build) Create(
 	ctx context.Context,
-	req infer.CreateRequest[CloudBuildArgs],
-) (infer.CreateResponse[CloudBuildState], error) {
-	state := CloudBuildState{CloudBuildArgs: req.Inputs}
+	req infer.CreateRequest[BuildArgs],
+) (infer.CreateResponse[BuildState], error) {
+	state := BuildState{BuildArgs: req.Inputs}
 	if req.DryRun {
-		return infer.CreateResponse[CloudBuildState]{ID: req.Name, Output: state}, nil
+		return infer.CreateResponse[BuildState]{ID: req.Name, Output: state}, nil
 	}
 	buildId, imageDigest, err := runCloudBuild(ctx, req.Inputs)
 	if err != nil {
-		return infer.CreateResponse[CloudBuildState]{ID: req.Name, Output: state}, err
+		return infer.CreateResponse[BuildState]{ID: req.Name, Output: state}, err
 	}
 	state.BuildId = buildId
 	state.ImageDigest = imageDigest
-	return infer.CreateResponse[CloudBuildState]{ID: req.Name, Output: state}, nil
+	return infer.CreateResponse[BuildState]{ID: req.Name, Output: state}, nil
 }
 
-func runCloudBuild(ctx context.Context, args CloudBuildArgs) (string, string, error) {
+func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) {
 	client, err := cloudbuild.NewClient(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create Cloud Build client: %w", err)
@@ -156,16 +156,16 @@ func runCloudBuild(ctx context.Context, args CloudBuildArgs) (string, string, er
 	if err != nil {
 		return "", "", fmt.Errorf("failed to wait for build to complete: %w", err)
 	}
-	if build.Status != cloudbuildpb.Build_SUCCESS {
-		return "", "", fmt.Errorf("build failed: %v: %v", build.Status.String(), build.StatusDetail)
+	if build.GetStatus() != cloudbuildpb.Build_SUCCESS {
+		return "", "", fmt.Errorf("build failed: %v: %v", build.GetStatus().String(), build.GetStatusDetail())
 	}
-	if build.Results == nil {
+	if build.GetResults() == nil {
 		return "", "", errors.New("build results are missing")
 	}
-	if len(build.Results.Images) == 0 {
+	if len(build.GetResults().GetImages()) == 0 {
 		return "", "", errors.New("build results are missing images")
 	}
-	return build.Id, build.Results.Images[0].Digest, nil
+	return build.GetId(), build.GetResults().GetImages()[0].GetDigest(), nil
 }
 
 type CloudBuildOperation struct {
@@ -173,7 +173,6 @@ type CloudBuildOperation struct {
 }
 
 func NewCloudBuildOperation(ctx context.Context, op *longrunningpb.Operation) (*CloudBuildOperation, error) {
-
 	clientOptions := []option.ClientOption{
 		option.WithEndpoint("cloudbuild.googleapis.com:443"),
 		option.WithScopes("https://www.googleapis.com/auth/cloud-platform"),
