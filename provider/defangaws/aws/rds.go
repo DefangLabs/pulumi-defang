@@ -158,7 +158,7 @@ func cheapestMatch(catalog map[string]nodeInfo, minCPUs float64, minGiB float64)
 	return matches[0].name
 }
 
-const defaultPostgresPort = 5432
+const defaultPostgresPort int32 = 5432
 
 // CreateRDS creates a managed RDS Postgres instance for a service.
 //

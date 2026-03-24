@@ -16,7 +16,7 @@ type Postgres struct{}
 type AzurePostgresInputs struct {
 	ProjectName string                 `pulumi:"project_name"`
 	Image       *string                `pulumi:"image,optional"`
-	Postgres    *compose.PostgresInput `pulumi:"postgres,optional"`
+	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
 	Deploy      *compose.DeployConfig  `pulumi:"deploy,optional"`
 	Environment map[string]string      `pulumi:"environment,optional"`
 }

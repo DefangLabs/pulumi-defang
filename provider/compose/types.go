@@ -2,7 +2,28 @@
 // Each plugin's schema will generate its own copy of these types with cloud-specific tokens.
 package compose
 
-import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+import (
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+type NetworkID = string
+
+type Services = map[string]ServiceConfig
+
+type Networks = map[NetworkID]NetworkConfig
+
+const DefaultNetwork NetworkID = "default"
+
+// Project defines the top-level project configuration, including services and networks.
+// This is a subset of the full types.Project from compose-go, from
+// https://github.com/compose-spec/compose-go/blob/main/types/project.go
+type Project struct {
+	// Services map: name -> service config
+	Services Services `pulumi:"services" yaml:"services"`
+
+	// Networks map: name -> network config (only needed if using custom networks in Compose)
+	Networks Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+}
 
 // ServiceConfig defines the configuration for a single service.
 // YAML tags are aligned with Docker Compose spec where possible.
@@ -32,10 +53,10 @@ type ServiceConfig struct {
 	Entrypoint []string `pulumi:"entrypoint,optional" yaml:"entrypoint,omitempty"`
 
 	// Managed Postgres: presence enables managed postgres. Matches x-defang-postgres extension.
-	Postgres *PostgresInput `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
+	Postgres *PostgresConfig `pulumi:"postgres,optional" yaml:"x-defang-postgres,omitempty"`
 
 	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
-	Redis *RedisInput `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
+	Redis *RedisConfig `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
 
 	// Health check configuration
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional" yaml:"healthcheck,omitempty"`
@@ -43,19 +64,21 @@ type ServiceConfig struct {
 	// Custom domain name
 	DomainName *string `pulumi:"domainName,optional" yaml:"domainname,omitempty"`
 
-	Networks map[string]*ServiceNetworkConfig `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	Networks map[NetworkID]*ServiceNetworkConfig `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
-	DependsOn map[string]*DependsOnConfig `pulumi:"dependsOn,optional" yaml:"depends_on,omitempty"`
+	DependsOn DependsOnConfig `pulumi:"dependsOn,optional" yaml:"depends_on,omitempty"`
 }
 
-type NetworkConfigInput struct {
+type DependsOnConfig = map[string]ServiceDependency
+
+type NetworkConfig struct {
 	Internal bool `pulumi:"internal,optional" yaml:"internal,omitempty"`
 	//   IPAM *IPAMConfigInput `pulumi:"ipam,optional" yaml:"ipam,omitempty"`
 }
 
-type DependsOnConfig struct {
-	Condition *string `pulumi:"condition,optional" yaml:"condition,omitempty"`
-	Required  bool    `pulumi:"required,optional"  yaml:"required,omitempty"`
+type ServiceDependency struct {
+	Condition string `pulumi:"condition,optional" yaml:"condition,omitempty"`
+	Required  bool   `pulumi:"required,optional"  yaml:"required,omitempty"`
 }
 
 type ServiceNetworkConfig struct {
@@ -65,9 +88,9 @@ type ServiceNetworkConfig struct {
 // ServicePortConfig defines a port mapping for a service.
 type ServicePortConfig struct {
 	// Container port
-	Target int `pulumi:"target" yaml:"target"`
+	Target int32 `pulumi:"target" yaml:"target"`
 
-	// Port mode: "host" or "ingress" (default: "host")
+	// Port mode: "host" or "ingress" (default: "ingress")
 	Mode string `pulumi:"mode,optional" yaml:"mode,omitempty"`
 
 	// Transport protocol: "tcp" or "udp" (default: "tcp")
@@ -126,9 +149,9 @@ type BuildConfig struct {
 	Target *string `pulumi:"target,optional" yaml:"target,omitempty"`
 }
 
-// PostgresInput matches the x-defang-postgres Compose extension.
+// PostgresConfig matches the x-defang-postgres Compose extension.
 // Version is derived from image tag; DBName/Username/Password from env vars.
-type PostgresInput struct {
+type PostgresConfig struct {
 	// Allow applying changes that cause downtime (default: recipe-controlled)
 	AllowDowntime *bool `pulumi:"allowDowntime,optional" yaml:"allow-downtime,omitempty"`
 
@@ -136,9 +159,9 @@ type PostgresInput struct {
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
 }
 
-// RedisInput matches the x-defang-redis Compose extension.
+// RedisConfig matches the x-defang-redis Compose extension.
 // Version is derived from image tag; FromSnapshot allows restoring from a backup.
-type RedisInput struct {
+type RedisConfig struct {
 	AllowDowntime *bool `pulumi:"allowDowntime,optional" yaml:"allow-downtime,omitempty"`
 
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
@@ -150,25 +173,17 @@ type HealthCheckConfig struct {
 	// Health check command
 	Test []string `pulumi:"test,optional" yaml:"test,omitempty"`
 
-	// Check interval in seconds (default: 30)
-	IntervalSeconds *int `pulumi:"intervalSeconds,optional" yaml:"interval,omitempty"`
+	// Check interval in seconds (default: 30s)
+	IntervalSeconds *int32 `pulumi:"intervalSeconds,optional" yaml:"interval,omitempty"`
 
-	// Check timeout in seconds (default: 5)
-	TimeoutSeconds *int `pulumi:"timeoutSeconds,optional" yaml:"timeout,omitempty"`
+	// Check timeout in seconds (default: 5s)
+	TimeoutSeconds *int32 `pulumi:"timeoutSeconds,optional" yaml:"timeout,omitempty"`
 
 	// Number of retries before marking unhealthy (default: 3)
-	Retries *int `pulumi:"retries,optional" yaml:"retries,omitempty"`
+	Retries *int32 `pulumi:"retries,optional" yaml:"retries,omitempty"`
 
-	// Grace period before health checks start in seconds (default: 0)
-	StartPeriodSeconds *int `pulumi:"startPeriodSeconds,optional" yaml:"start_period,omitempty"`
-}
-
-// AWSConfigInput defines optional AWS-specific infrastructure configuration (not auth/region).
-type AWSConfigInput struct {
-	PrivateSubnetIDs []string `pulumi:"privateSubnetIds,optional"`
-	PublicSubnetIDs  []string `pulumi:"subnetIds,optional"`
-	PrivateZoneID    string   `pulumi:"privateZoneId,optional"`
-	VpcID            string   `pulumi:"vpcId,optional"`
+	// Grace period before health checks start in seconds (default: 0s)
+	StartPeriodSeconds *int32 `pulumi:"startPeriodSeconds,optional" yaml:"start_period,omitempty"`
 }
 
 type ConfigProvider interface {
@@ -176,8 +191,9 @@ type ConfigProvider interface {
 }
 
 // PostgresConfig holds resolved managed Postgres configuration.
-// Derived from PostgresInput + image tag + environment variables.
-type PostgresConfig struct {
+// Derived from PostgresConfig + image tag + environment variables.
+// Deprecated: only used internally
+type PostgresConfigArgs struct {
 	Version       pulumi.StringPtrInput // Major version (derived from image tag, e.g. postgres:16 → 16)
 	DBName        pulumi.StringInput    // From POSTGRES_DB env or default "postgres"
 	Username      pulumi.StringInput    // From POSTGRES_USER env or default "postgres"
@@ -191,7 +207,7 @@ const DEFAULT_POSTGRES_USER = "postgres"
 const DEFAULT_POSTGRES_DB = "postgres"
 
 // ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
-func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfig {
+func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfigArgs {
 	if s.Postgres == nil {
 		return nil
 	}
@@ -214,7 +230,7 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 		fromSnapshot = *s.Postgres.FromSnapshot
 	}
 
-	return &PostgresConfig{
+	return &PostgresConfigArgs{
 		Version:       version,
 		DBName:        dbName,
 		Username:      username,
@@ -269,7 +285,17 @@ func (s ServiceConfig) GetPlatform() string {
 // HasIngressPorts returns true if any port has mode "ingress".
 func (s ServiceConfig) HasIngressPorts() bool {
 	for _, p := range s.Ports {
-		if p.Mode == "ingress" {
+		if p.Mode == "ingress" || p.Mode == "" { // default to "ingress" if mode is not set
+			return true
+		}
+	}
+	return false
+}
+
+// HasHostPorts returns true if any port has mode "host".
+func (s ServiceConfig) HasHostPorts() bool {
+	for _, p := range s.Ports {
+		if p.Mode == "host" {
 			return true
 		}
 	}

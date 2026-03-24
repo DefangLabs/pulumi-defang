@@ -14,7 +14,7 @@ type Postgres struct{}
 // GcpCloudSqlInputs defines the inputs for a standalone GCP Cloud SQL Postgres instance.
 type GcpCloudSqlInputs struct {
 	ProjectName string                 `pulumi:"project_name"`
-	Postgres    *compose.PostgresInput `pulumi:"postgres,optional"`
+	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
 	Image       *string                `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig  `pulumi:"deploy,optional"`
 	Environment map[string]string      `pulumi:"environment,optional"`

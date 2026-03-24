@@ -2,7 +2,7 @@ package common
 
 import "github.com/DefangLabs/pulumi-defang/provider/compose"
 
-func TopologicalSort(nodes map[string]compose.ServiceConfig) []string {
+func TopologicalSort(nodes compose.Services) []string {
 	sorted := make([]string, 0, len(nodes))
 	visited := make(map[string]struct{}, len(nodes))
 

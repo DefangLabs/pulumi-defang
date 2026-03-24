@@ -14,13 +14,16 @@ type NetworkingResult struct {
 	PublicSubnetIDs  pulumi.StringArrayOutput
 	PrivateSubnetIDs pulumi.StringArrayOutput
 	PrivateDomain    string
-	PrivateZoneID    pulumi.IDOutput // optional Route53 private hosted zone ID for the VPC
+	PrivateZoneID    pulumi.IDPtrOutput // optional Route53 private hosted zone ID for the VPC
+	UseNatGW         bool
 }
 
 // ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
 func ResolveNetworking(
-	ctx *pulumi.Context, cfg *common.AWSConfig, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context, cfg *AWSConfig, opts ...pulumi.ResourceOption,
 ) (*NetworkingResult, error) {
+	strategy := ec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: no type checking
+
 	if cfg != nil && cfg.VpcID != "" {
 		// Use provided VPC and subnet IDs
 		subnetIDs := make(pulumi.StringArray, len(cfg.PublicSubnetIDs))
@@ -34,10 +37,13 @@ func ResolveNetworking(
 		if len(privateSubnetIDs) == 0 {
 			privateSubnetIDs = subnetIDs
 		}
+
 		return &NetworkingResult{
 			VpcID:            pulumi.String(cfg.VpcID).ToStringOutput(),
 			PublicSubnetIDs:  subnetIDs.ToStringArrayOutput(),
 			PrivateSubnetIDs: privateSubnetIDs.ToStringArrayOutput(),
+			UseNatGW:         strategy != ec2.NatGatewayStrategyNone,
+			// PrivateZoneID:    pulumi.IDPtrOutput{},  no private hosted zone since we didn't create the VPC
 		}, nil
 	}
 
@@ -48,7 +54,7 @@ func ResolveNetworking(
 		EnableDnsHostnames: pulumi.Bool(true),
 		// EnableDnsSupport:   pulumi.Bool(true),
 		NatGateways: &ec2.NatGatewayConfigurationArgs{
-			Strategy: ec2.NatGatewayStrategySingle, // FIXME: from recipe
+			Strategy: strategy,
 		},
 		// VpcEndpointSpecs: []ec2.VpcEndpointSpecArgs{
 		// 	{
@@ -93,6 +99,7 @@ func ResolveNetworking(
 		PublicSubnetIDs:  vpc.PublicSubnetIds,
 		PrivateSubnetIDs: vpc.PrivateSubnetIds,
 		PrivateDomain:    privateDomain,
-		PrivateZoneID:    privateZone.ID(),
+		PrivateZoneID:    privateZone.ID().ToIDPtrOutput(),
+		UseNatGW:         strategy != ec2.NatGatewayStrategyNone,
 	}, nil
 }

@@ -27,7 +27,7 @@ type ServiceInputs struct {
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
 	DomainName  *string                     `pulumi:"domainName,optional"`
-	AWS         *compose.AWSConfigInput     `pulumi:"aws,optional"`
+	AWS         *provideraws.AWSConfig      `pulumi:"aws,optional"`
 }
 
 // ServiceOutputs holds the outputs of a Service component.

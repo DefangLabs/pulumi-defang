@@ -11,13 +11,12 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	awselasticache "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/elasticache"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 var ErrRedisConfigNil = errors.New("redis config is nil")
 
 type ElasticacheResult struct {
-	Address pulumix.Output[string] // primary or configuration endpoint address
+	Address pulumi.StringOutput // primary or configuration endpoint address
 }
 
 // ElastiCache node type catalogs.
@@ -224,7 +223,7 @@ func CreateElasticache(
 	// Redis port: use first declared port or default 6379.
 	port := 6379
 	if len(svc.Ports) > 0 {
-		port = svc.Ports[0].Target
+		port = int(svc.Ports[0].Target)
 	}
 
 	tags := pulumi.StringMap{
@@ -330,14 +329,14 @@ func CreateElasticache(
 	}
 
 	// Use configuration endpoint (cluster mode enabled) if available, else primary endpoint.
-	address := pulumix.Apply2(rg.ConfigurationEndpointAddress, rg.PrimaryEndpointAddress,
-		func(cfg, primary string) string {
-			if cfg != "" {
-				return cfg
-			}
-			return primary
-		},
-	)
+	address := pulumi.All(rg.ConfigurationEndpointAddress, rg.PrimaryEndpointAddress).ApplyT(func(endpoints []interface{}) string {
+		cfg := endpoints[0].(string)
+		primary := endpoints[1].(string)
+		if cfg != "" {
+			return cfg
+		}
+		return primary
+	}).(pulumi.StringOutput)
 
 	return &ElasticacheResult{Address: address}, nil
 }

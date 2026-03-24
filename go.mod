@@ -7,6 +7,8 @@ replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.11
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.74.0
+	github.com/aws/smithy-go v1.24.2
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0
@@ -44,7 +46,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.8 // indirect
-	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/bubbles v1.0.0 // indirect
 	github.com/charmbracelet/bubbletea v1.3.10 // indirect

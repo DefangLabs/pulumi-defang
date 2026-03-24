@@ -6,6 +6,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	awssdk "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -16,11 +17,11 @@ type Postgres struct{}
 // PostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
 type PostgresInputs struct {
 	ProjectName string                  `pulumi:"project_name"`
-	Postgres    *compose.PostgresInput  `pulumi:"postgres,optional"`
+	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
 	Image       *string                 `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`
 	Environment map[string]string       `pulumi:"environment,optional"`
-	AWS         *compose.AWSConfigInput `pulumi:"aws,optional"`
+	AWS         *provideraws.AWSConfig  `pulumi:"aws,optional"`
 }
 
 // PostgresOutputs holds the outputs of an AWS Postgres component.
@@ -117,16 +118,30 @@ func newPostgresComponent(
 		return nil, fmt.Errorf("creating RDS for %s: %w", serviceName, err)
 	}
 
+	var dependency pulumi.Resource = rdsResult.Instance
+	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
+		privateFqdn := serviceName + "." + infra.PrivateDomain
+		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{
+			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
+			Records: pulumi.StringArray{rdsResult.Instance.Address},
+			Ttl:     pulumi.Int(300),
+		}, opts...)
+		if cnameErr != nil {
+			return nil, fmt.Errorf("creating CNAME for %s: %w", serviceName, cnameErr)
+		}
+		dependency = record
+	}
+
 	endpoint := pulumi.StringOutput(pulumix.Apply(
 		pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
-		return fmt.Sprintf("%s:%d", addr, 5432)
-	}))
+			return fmt.Sprintf("%s:%d", addr, 5432)
+		}))
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
 		return nil, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
 	return &PostgresResult{
 		Endpoint:   endpoint,
-		Dependency: rdsResult.Instance,
+		Dependency: dependency,
 	}, nil
 }
