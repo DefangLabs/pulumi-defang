@@ -57,6 +57,36 @@ func CreateCloudRunService(
 	location string,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
+	template, err := buildTemplate(ctx, configProvider, serviceName, svc, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("building Cloud Run template: %w", err)
+	}
+
+	// Create Cloud Run service
+	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
+		Location:           pulumi.String(location),
+		Ingress:            pulumi.String(Ingress.Get(ctx)),
+		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
+		InvokerIamDisabled: pulumi.Bool(true),
+		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
+		Template:           template,
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
+	}
+
+	return &CloudRunResult{
+		Service: crService,
+	}, nil
+}
+
+func buildTemplate(
+	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
+	serviceName string,
+	svc compose.ServiceConfig,
+	opts ...pulumi.ResourceOption,
+) (*cloudrunv2.ServiceTemplateArgs, error) {
 	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
 	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
@@ -120,42 +150,26 @@ func CreateCloudRunService(
 			startupProbe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
 	}
-
-	// Create Cloud Run service
-	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
-		Location:           pulumi.String(location),
-		Ingress:            pulumi.String(Ingress.Get(ctx)),
-		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
-		InvokerIamDisabled: pulumi.Bool(true),
-		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-		Template: &cloudrunv2.ServiceTemplateArgs{
-			Containers: cloudrunv2.ServiceTemplateContainerArray{
-				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image:    pulumi.String(*svc.Image),
-					Commands: commands,
-					Args:     cmdArgs,
-					Ports:    ports,
-					Envs:     envs,
-					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-						Limits: pulumi.StringMap{
-							"cpu":    pulumi.String(cpuLimit),
-							"memory": pulumi.String(memLimit),
-						},
+	return &cloudrunv2.ServiceTemplateArgs{
+		Containers: cloudrunv2.ServiceTemplateContainerArray{
+			&cloudrunv2.ServiceTemplateContainerArgs{
+				Image:    pulumi.String(*svc.Image),
+				Commands: commands,
+				Args:     cmdArgs,
+				Ports:    ports,
+				Envs:     envs,
+				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+					Limits: pulumi.StringMap{
+						"cpu":    pulumi.String(cpuLimit),
+						"memory": pulumi.String(memLimit),
 					},
-					StartupProbe: startupProbe,
 				},
-			},
-			ServiceAccount: sa.Email,
-			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
-				MaxInstanceCount: pulumi.Int(maxInstances),
+				StartupProbe: startupProbe,
 			},
 		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
-	}
-
-	return &CloudRunResult{
-		Service: crService,
+		ServiceAccount: sa.Email,
+		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
+			MaxInstanceCount: pulumi.Int(maxInstances),
+		},
 	}, nil
 }
