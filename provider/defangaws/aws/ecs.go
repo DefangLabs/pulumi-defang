@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -292,7 +293,7 @@ func CreateECSService(
 		TaskRoleArn:             taskRole.Arn,
 		ContainerDefinitions:    containerDefsJSON,
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
-			CpuArchitecture:       pulumi.String(cpuArch),
+			CpuArchitecture:       pulumi.String(strings.ToUpper(cpuArch)),
 			OperatingSystemFamily: pulumi.String("LINUX"),
 		},
 		Tags: pulumi.StringMap{
