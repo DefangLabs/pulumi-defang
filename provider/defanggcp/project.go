@@ -113,7 +113,8 @@ func buildService(
 		svcChildOpts = append(svcChildOpts, pulumi.DependsOn(deps))
 	}
 
-	if svc.Postgres != nil {
+	switch {
+	case svc.Postgres != nil:
 		// Managed Postgres → Cloud SQL
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Postgres", svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
@@ -125,7 +126,7 @@ func buildService(
 			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
 		endpoint = pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
-	} else {
+	default:
 		// Container service → Cloud Run
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
