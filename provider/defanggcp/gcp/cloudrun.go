@@ -51,6 +51,7 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 // CreateCloudRunService creates a Cloud Run service.
 func CreateCloudRunService(
 	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
 	location string,
@@ -73,9 +74,10 @@ func CreateCloudRunService(
 		},
 	}
 	for k, v := range svc.Environment {
+		value := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, v)
 		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String(k),
-			Value: pulumi.String(v),
+			Value: value,
 		})
 	}
 

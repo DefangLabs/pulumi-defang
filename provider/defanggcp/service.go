@@ -16,6 +16,7 @@ type ServiceInputs struct {
 	Build       *compose.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Platform    *string                     `pulumi:"platform,optional"`
+	ProjectName string                      `pulumi:"project_name"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
 	Environment map[string]string           `pulumi:"environment,optional"`
@@ -55,7 +56,8 @@ func (*Service) Construct(
 	}
 
 	region := providergcp.GcpRegion(ctx)
-	crResult, err := providergcp.CreateCloudRunService(ctx, name, svc, region, childOpt)
+	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
+	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, svc, region, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
 	}
