@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
@@ -58,7 +59,8 @@ func (*Project) Construct(
 	endpoints := pulumi.StringMap{}
 	configProvider := providergcp.NewConfigProvider(name)
 
-	for svcName, svc := range inputs.Services {
+	for _, svcName := range common.TopologicalSort(inputs.Services) {
+		svc := inputs.Services[svcName]
 		endpoint, err := buildService(ctx, configProvider, svcName, svc, region, childOpts)
 		if err != nil {
 			return nil, err
