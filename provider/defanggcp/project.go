@@ -57,15 +57,26 @@ func (*Project) Construct(
 
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
+	dependencies := map[string]pulumi.Resource{} // service name → component resource for dependees
 	configProvider := providergcp.NewConfigProvider(name)
 
 	for _, svcName := range common.TopologicalSort(inputs.Services) {
 		svc := inputs.Services[svcName]
-		endpoint, err := buildService(ctx, configProvider, svcName, svc, region, childOpts)
+
+		// Collect dependency resources from services this one depends on
+		var deps []pulumi.Resource
+		for dep := range svc.DependsOn {
+			if r, ok := dependencies[dep]; ok {
+				deps = append(deps, r)
+			}
+		}
+
+		endpoint, svcComp, err := buildService(ctx, configProvider, svcName, svc, region, deps, childOpts)
 		if err != nil {
 			return nil, err
 		}
 		endpoints[svcName] = endpoint
+		dependencies[svcName] = svcComp
 	}
 
 	endpointsOutput := endpoints.ToStringMapOutput()
@@ -90,34 +101,40 @@ func buildService(
 	svcName string,
 	svc compose.ServiceConfig,
 	region string,
+	deps []pulumi.Resource,
 	childOpts []pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
+) (pulumi.StringOutput, pulumi.Resource, error) {
 	svcComp := &struct{ pulumi.ResourceState }{}
 
 	var endpoint pulumi.StringOutput
 
+	svcChildOpts := childOpts
+	if len(deps) > 0 {
+		svcChildOpts = append(svcChildOpts, pulumi.DependsOn(deps))
+	}
+
 	if svc.Postgres != nil {
 		// Managed Postgres → Cloud SQL
-		if err := ctx.RegisterComponentResource("defang-gcp:index:Postgres", svcName, svcComp, childOpts...); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
+		if err := ctx.RegisterComponentResource("defang-gcp:index:Postgres", svcName, svcComp, svcChildOpts...); err != nil {
+			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
 		}
 		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
 
 		sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, svcName, svc, svcOpts...)
 		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
+			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
 		endpoint = pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
 	} else {
 		// Container service → Cloud Run
-		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, childOpts...); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
+		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
+			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
 		}
 		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
 
 		crResult, err := providergcp.CreateCloudRunService(ctx, svcName, svc, region, svcOpts...)
 		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
+			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 		}
 		endpoint = crResult.Service.Uri
 	}
@@ -125,8 +142,8 @@ func buildService(
 	if err := ctx.RegisterResourceOutputs(svcComp, pulumi.Map{
 		"endpoint": endpoint,
 	}); err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("registering outputs for %s: %w", svcName, err)
+		return pulumi.StringOutput{}, nil, fmt.Errorf("registering outputs for %s: %w", svcName, err)
 	}
 
-	return endpoint, nil
+	return endpoint, svcComp, nil
 }
