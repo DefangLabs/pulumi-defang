@@ -7,9 +7,10 @@ Tools for comparing `pulumi preview --json` output across two stacks.
 Input files can be generated with `make`:
 
 ```
-make cd.txt    # generate from defang estimate
-make oss.txt   # generate from pulumi preview
-make compare   # generate both (if missing) and compare
+make cd.txt          # generate from defang estimate
+make oss.txt         # generate from pulumi preview
+make compare         # generate both (if missing) and run summary comparison
+make compare-type type=aws:lb/listener:Listener  # property-level diff for a specific type
 ```
 
 ## compare.py
