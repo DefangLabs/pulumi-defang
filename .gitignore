@@ -13,3 +13,7 @@ pulumi-resource-defang-azure
 pulumi-resource-defang-gcp
 .sdk.tmp.*/
 .sdk.*.stamp
+coverage.out
+coverage_provider.out
+coverage_tests.out
+coverage.html

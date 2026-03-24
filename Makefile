@@ -60,14 +60,20 @@ GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
 test_provider: provider
-	cd tests && ${GO_TEST} -short ./...
+	cd tests && ${GO_TEST} -coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/... -short ./...
 
 .PHONY: test_unit
 test_unit:
-	${GO_TEST} ./provider/...
+	${GO_TEST} -coverprofile=coverage_provider.out ./provider/...
 
 .PHONY: test
 test: test_unit test_provider
+
+.PHONY: coverage
+coverage: test
+	cat coverage_provider.out <(tail -n +2 coverage_tests.out) > coverage.out
+	go tool cover -html=coverage.out -o coverage.html
+	open coverage.html
 
 .PHONY: version
 version:
