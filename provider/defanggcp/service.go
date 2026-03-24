@@ -11,8 +11,8 @@ import (
 // Service is the controller struct for the defang-gcp:index:Service component.
 type Service struct{}
 
-// GcpCloudRunServiceInputs defines the inputs for a standalone GCP Cloud Run service.
-type GcpCloudRunServiceInputs struct {
+// ServiceInputs defines the inputs for a standalone GCP Cloud Run service.
+type ServiceInputs struct {
 	Build       *compose.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Platform    *string                     `pulumi:"platform,optional"`
@@ -25,17 +25,17 @@ type GcpCloudRunServiceInputs struct {
 	DomainName  *string                     `pulumi:"domainName,optional"`
 }
 
-// GcpCloudRunServiceOutputs holds the outputs of a Service component.
-type GcpCloudRunServiceOutputs struct {
+// ServiceOutputs holds the outputs of a Service component.
+type ServiceOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // Construct implements the ComponentResource interface for Service.
 func (*Service) Construct(
-	ctx *pulumi.Context, name, typ string, inputs GcpCloudRunServiceInputs, opts pulumi.ResourceOption,
-) (*GcpCloudRunServiceOutputs, error) {
-	comp := &GcpCloudRunServiceOutputs{}
+	ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption,
+) (*ServiceOutputs, error) {
+	comp := &ServiceOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
