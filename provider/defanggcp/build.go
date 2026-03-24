@@ -24,6 +24,14 @@ import (
 
 type Build struct{}
 
+var (
+	errBuildFailed               = errors.New("build failed")
+	errBuildResultsMissing       = errors.New("build results are missing")
+	errBuildResultsMissingImages = errors.New("build results are missing images")
+	errInvalidGCSURIPrefix       = errors.New("URI must start with 'gs://' prefix")
+	errInvalidGCSURIFormat       = errors.New("URI must contain a bucket and an object path")
+)
+
 type BuildArgs struct {
 	// Required fields
 	ProjectId string `provider:"replaceOnChanges" pulumi:"projectId"`
@@ -31,7 +39,8 @@ type BuildArgs struct {
 	Source    string `provider:"replaceOnChanges" pulumi:"source"`
 	Steps     string `provider:"replaceOnChanges" pulumi:"steps"`
 
-	// TODO: We should be able to use ETAG from object metadata as ditest in Diff func to determine a new build is necessary
+	// TODO: We should be able to use ETAG from object metadata as digest in Diff func
+	// to determine a new build is necessary
 	SourceDigest   *string           `provider:"replaceOnChanges"     pulumi:"sourceDigest,optional"`
 	Images         []string          `provider:"replaceOnChanges"     pulumi:"images,optional"`
 	ServiceAccount *string           `provider:"replaceOnChanges"     pulumi:"serviceAccount,optional"`
@@ -63,7 +72,7 @@ type BuildState struct {
 	ImageDigest string `pulumi:"imageDigest"`
 }
 
-// All resources must implement Create at a minimum.
+// Create runs a Cloud Build job and returns the build ID and image digest.
 func (*Build) Create(
 	ctx context.Context,
 	req infer.CreateRequest[BuildArgs],
@@ -86,12 +95,12 @@ func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) 
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create Cloud Build client: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// steps := createSteps(args)
 	var steps []*cloudbuildpb.BuildStep
 	if err := yaml.Unmarshal([]byte(args.Steps), &steps); err != nil {
-		return "", "", fmt.Errorf("failed to parse cloudbuild steps: %w, steps are:\n%v\n", err, args.Steps)
+		return "", "", fmt.Errorf("failed to parse cloudbuild steps: %w, steps are:\n%v", err, args.Steps)
 	}
 
 	// Extract bucket and object from the source
@@ -157,13 +166,13 @@ func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) 
 		return "", "", fmt.Errorf("failed to wait for build to complete: %w", err)
 	}
 	if build.GetStatus() != cloudbuildpb.Build_SUCCESS {
-		return "", "", fmt.Errorf("build failed: %v: %v", build.GetStatus().String(), build.GetStatusDetail())
+		return "", "", fmt.Errorf("%w: %v: %v", errBuildFailed, build.GetStatus().String(), build.GetStatusDetail())
 	}
 	if build.GetResults() == nil {
-		return "", "", errors.New("build results are missing")
+		return "", "", errBuildResultsMissing
 	}
 	if len(build.GetResults().GetImages()) == 0 {
-		return "", "", errors.New("build results are missing images")
+		return "", "", errBuildResultsMissingImages
 	}
 	return build.GetId(), build.GetResults().GetImages()[0].GetDigest(), nil
 }
@@ -221,14 +230,14 @@ func GetDiskSize(diskSizeGb *int64) int64 {
 	return *diskSizeGb
 }
 
-func parseGCSURI(uri string) (bucket string, object string, err error) {
+func parseGCSURI(uri string) (string, string, error) {
 	if !strings.HasPrefix(uri, "gs://") {
-		return "", "", errors.New("URI must start with 'gs://' prefix")
+		return "", "", errInvalidGCSURIPrefix
 	}
 
 	parts := strings.SplitN(uri[5:], "/", 2)
 	if len(parts) < 2 {
-		return "", "", errors.New("URI must contain a bucket and an object path")
+		return "", "", errInvalidGCSURIFormat
 	}
 	obj, err := url.QueryUnescape(parts[1]) // Because the base 64 encoding may contain '='
 	if err != nil {
