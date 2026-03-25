@@ -5,6 +5,7 @@ package gcp
 // configurations: image, ports, build config, environment vars, deploy config.
 
 import (
+	"strings"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
@@ -72,7 +73,9 @@ func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotEqual(t, 0, capturedBuild.Len(), "expected defang-gcp:defanggcp:Build to be registered")
-	assert.Equal(t, "./app", capturedBuild.Get("source").AsString())
+	// Local context paths are uploaded to GCS; source should be a gs:// URI
+	assert.True(t, strings.HasPrefix(capturedBuild.Get("source").AsString(), "gs://"),
+		"source should be a GCS URI, got: %s", capturedBuild.Get("source").AsString())
 	assert.NotEmpty(t, capturedBuild.Get("sourceDigest").AsString(), "sourceDigest should be set")
 	assert.NotEmpty(t, capturedBuild.Get("machineType").AsString(), "machineType should be set")
 	assert.NotEqual(t, float64(0), capturedBuild.Get("diskSizeGb").AsNumber(), "diskSizeGb should be set")
