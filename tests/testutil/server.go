@@ -19,14 +19,13 @@ func MakeAzureTestServer() integration.Server {
 	return MustNewServer(defangazure.Name, defangazure.Provider())
 }
 
-func MakeGcpTestServer() integration.Server {
-	return MustNewServer(defanggcp.Name, defanggcp.Provider())
+func MakeGcpTestServer(opts ...integration.ServerOption) integration.Server {
+	return MustNewServer(defanggcp.Name, defanggcp.Provider(), opts...)
 }
 
-func MustNewServer(name string, provider p.Provider) integration.Server {
-	server, err := integration.NewServer(context.Background(), name, semver.MustParse("1.0.0"),
-		integration.WithProvider(provider),
-	)
+func MustNewServer(name string, provider p.Provider, opts ...integration.ServerOption) integration.Server {
+	opts = append([]integration.ServerOption{integration.WithProvider(provider)}, opts...)
+	server, err := integration.NewServer(context.Background(), name, semver.MustParse("1.0.0"), opts...)
 	if err != nil {
 		panic(err)
 	}
