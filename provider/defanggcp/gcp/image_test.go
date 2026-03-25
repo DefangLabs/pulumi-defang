@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -235,6 +236,8 @@ func TestGetServiceImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var gotImage string
+			var wg sync.WaitGroup
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.infra)
 				if tt.wantErr {
@@ -242,13 +245,19 @@ func TestGetServiceImage(t *testing.T) {
 					return nil
 				}
 				require.NoError(t, err)
+				wg.Add(1)
 				got.ToStringOutput().ApplyT(func(s string) string {
-					assert.Equal(t, tt.wantImage, s)
+					defer wg.Done()
+					gotImage = s
 					return s
 				})
 				return nil
 			}, pulumi.WithMocks("proj", "stack", testMocks{}))
 			require.NoError(t, err)
+			wg.Wait()
+			if !tt.wantErr {
+				assert.Equal(t, tt.wantImage, gotImage)
+			}
 		})
 	}
 }
@@ -256,31 +265,35 @@ func TestGetServiceImage(t *testing.T) {
 func TestGenerateBuildSteps(t *testing.T) {
 	const dest = "us-central1-docker.pkg.dev/my-project/my-repo/app:latest"
 
+	var steps []buildStep
+	var unmarshalErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		out := generateBuildSteps(pulumi.String(dest).ToStringOutput())
 		out.ApplyT(func(stepsYAML string) string {
-			var steps []buildStep
-			require.NoError(t, yaml.Unmarshal([]byte(stepsYAML), &steps))
-
-			require.Len(t, steps, 2, "expected exactly 2 build steps")
-
-			// Step 0: buildx create with docker-container driver
-			assert.Equal(t, "gcr.io/cloud-builders/docker", steps[0].Name)
-			assert.Contains(t, steps[0].Args, "create")
-			assert.Contains(t, steps[0].Args, "docker-container")
-
-			// Step 1: buildx build with --load (not --push)
-			assert.Equal(t, "gcr.io/cloud-builders/docker", steps[1].Name)
-			assert.Contains(t, steps[1].Args, "build")
-			assert.Contains(t, steps[1].Args, "--load")
-			assert.NotContains(t, steps[1].Args, "--push")
-			assert.Contains(t, steps[1].Args, dest)
-
+			defer wg.Done()
+			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
 			return stepsYAML
 		})
 		return nil
 	}, pulumi.WithMocks("proj", "stack", testMocks{}))
 	require.NoError(t, err)
+	wg.Wait()
+	require.NoError(t, unmarshalErr)
+	require.Len(t, steps, 2, "expected exactly 2 build steps")
+
+	// Step 0: buildx create with docker-container driver
+	assert.Equal(t, "gcr.io/cloud-builders/docker", steps[0].Name)
+	assert.Contains(t, steps[0].Args, "create")
+	assert.Contains(t, steps[0].Args, "docker-container")
+
+	// Step 1: buildx build with --load (not --push)
+	assert.Equal(t, "gcr.io/cloud-builders/docker", steps[1].Name)
+	assert.Contains(t, steps[1].Args, "build")
+	assert.Contains(t, steps[1].Args, "--load")
+	assert.NotContains(t, steps[1].Args, "--push")
+	assert.Contains(t, steps[1].Args, dest)
 }
 
 func TestBuildSourceDigest(t *testing.T) {
@@ -338,26 +351,38 @@ func TestBuildSourceDigest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var d1, d2 string
+			var wg sync.WaitGroup
+			wg.Add(2)
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				digest := buildSourceDigest(&tt.build)
-
+				buildSourceDigest(&tt.build).ApplyT(func(s string) string {
+					defer wg.Done()
+					d1 = s
+					return s
+				})
 				if tt.wantChanged != nil {
-					other := buildSourceDigest(tt.wantChanged)
-					pulumi.All(digest, other).ApplyT(func(vals []any) any {
-						assert.NotEqual(t, vals[0], vals[1], "expected digests to differ")
-						return nil
+					buildSourceDigest(tt.wantChanged).ApplyT(func(s string) string {
+						defer wg.Done()
+						d2 = s
+						return s
 					})
 				} else {
 					// Idempotency: same config called twice yields same digest.
-					again := buildSourceDigest(&tt.build)
-					pulumi.All(digest, again).ApplyT(func(vals []any) any {
-						assert.Equal(t, vals[0], vals[1], "expected identical digests")
-						return nil
+					buildSourceDigest(&tt.build).ApplyT(func(s string) string {
+						defer wg.Done()
+						d2 = s
+						return s
 					})
 				}
 				return nil
 			}, pulumi.WithMocks("proj", "stack", testMocks{}))
 			require.NoError(t, err)
+			wg.Wait()
+			if tt.wantChanged != nil {
+				assert.NotEqual(t, d1, d2, "expected digests to differ")
+			} else {
+				assert.Equal(t, d1, d2, "expected identical digests")
+			}
 		})
 	}
 }
