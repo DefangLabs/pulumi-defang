@@ -96,6 +96,39 @@ func TestConstructProject(t *testing.T) {
 	assert.Equal(t, 2, countType(*records, "gcp:compute/globalForwardingRule:GlobalForwardingRule"))
 }
 
+func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// SSH firewall rule
+	ssh := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
+		allows := m.Get("allows").AsArray()
+		return allows.Len() == 1 && allows.Get(0).AsMap().Get("protocol").AsString() == "tcp"
+	})
+	require.NotNil(t, ssh, "expected an SSH firewall rule")
+	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
+	sshPorts := ssh.inputs.Get("allows").AsArray().Get(0).AsMap().Get("ports").AsArray()
+	assert.Equal(t, 1, sshPorts.Len())
+	assert.Equal(t, "22", sshPorts.Get(0).AsString())
+
+	// ICMP firewall rule
+	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
+		allows := m.Get("allows").AsArray()
+		return allows.Len() == 1 && allows.Get(0).AsMap().Get("protocol").AsString() == "icmp"
+	})
+	require.NotNil(t, icmp, "expected an ICMP firewall rule")
+	assert.Equal(t, "INGRESS", icmp.inputs.Get("direction").AsString())
+}
+
 func TestConstructProjectAlwaysCreatesPrivateDNSZone(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))

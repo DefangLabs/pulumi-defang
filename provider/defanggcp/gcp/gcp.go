@@ -61,6 +61,35 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
+	// Allow SSH ingress to all instances in the VPC (required for GCP Console SSH).
+	if _, err := compute.NewFirewall(ctx, projectName+"-allow-ssh", &compute.FirewallArgs{
+		Network:      vpc.ID(),
+		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+		Allows: compute.FirewallAllowArray{
+			&compute.FirewallAllowArgs{
+				Protocol: pulumi.String("tcp"),
+				Ports:    pulumi.StringArray{pulumi.String("22")},
+			},
+		},
+		Direction: pulumi.String("INGRESS"),
+	}, opts...); err != nil {
+		return nil, err
+	}
+
+	// Allow ICMP ping to all instances in the VPC.
+	if _, err := compute.NewFirewall(ctx, projectName+"-allow-icmp", &compute.FirewallArgs{
+		Network:      vpc.ID(),
+		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+		Allows: compute.FirewallAllowArray{
+			&compute.FirewallAllowArgs{
+				Protocol: pulumi.String("icmp"),
+			},
+		},
+		Direction: pulumi.String("INGRESS"),
+	}, opts...); err != nil {
+		return nil, err
+	}
+
 	_, err = dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
 		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
 		DnsName:     pulumi.String("google.internal."),
