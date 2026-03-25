@@ -4,13 +4,18 @@ import (
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
 	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		gcpDemo, err := defanggcp.NewProject(ctx, "gcp-demo", &defanggcp.ProjectArgs{
-			Services: compose.ServiceConfigMap{
-				"app": &compose.ServiceConfigArgs{
+		cfg := config.New(ctx, "")
+		domain := cfg.Get("domain")
+
+		project, err := defanggcp.NewProject(ctx, "gcp-go", &defanggcp.ProjectArgs{
+			Domain: pulumi.StringInput(pulumi.String(domain)),
+			Services: shared.ServiceInputMap{
+				"app": &shared.ServiceInputArgs{
 					Image: pulumi.String("nginx"),
 					Ports: compose.ServicePortConfigArray{
 						&compose.ServicePortConfigArgs{
@@ -25,7 +30,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		ctx.Export("endpoints", gcpDemo.Endpoints)
+		ctx.Export("endpoints", project.Endpoints)
 		return nil
 	})
 }
