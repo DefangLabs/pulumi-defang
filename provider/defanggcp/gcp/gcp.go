@@ -12,6 +12,7 @@ type GlobalConfig struct {
 	Region   string
 	VpcId    pulumi.StringOutput
 	SubnetId pulumi.StringOutput
+	PublicIP *compute.GlobalAddress
 }
 
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
@@ -39,10 +40,18 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
+	publicIP, err := compute.NewGlobalAddress(ctx, projectName+"-lb-ipaddress", &compute.GlobalAddressArgs{
+		AddressType: pulumi.String("EXTERNAL"),
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+
 	return &GlobalConfig{
 		Region:   region,
 		VpcId:    vpc.ID().ToStringOutput(),
 		SubnetId: subnet.ID().ToStringOutput(),
+		PublicIP: publicIP,
 	}, nil
 }
 
