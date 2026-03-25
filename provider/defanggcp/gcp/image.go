@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
 )
@@ -124,6 +126,33 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 	}).(pulumi.StringOutput)
 }
 
+// resolveSourceURI ensures the build context is available at a GCS URI.
+// If the context is already a gs:// URI it is returned as-is. If it is a local
+// path (expressed as a pulumi.String literal), the directory is archived and
+// uploaded to the project's build-artifacts bucket via a BucketObject.
+func resolveSourceURI(
+	ctx *pulumi.Context,
+	serviceName string,
+	build *compose.BuildConfig,
+	infra *BuildInfra,
+	opts ...pulumi.ResourceOption,
+) (pulumi.StringInput, error) {
+	ps, ok := build.Context.(pulumi.String)
+	if ok && !strings.HasPrefix(string(ps), "gs://") {
+		obj, err := storage.NewBucketObject(ctx, serviceName+"-context", &storage.BucketObjectArgs{
+			Bucket: infra.BuildBucket.Name,
+			Name:   pulumi.Sprintf("%s-context.zip", serviceName),
+			Source: pulumi.NewFileArchive(string(ps)),
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
+		}
+		return pulumi.Sprintf("gs://%s/%s", infra.BuildBucket.Name, obj.Name), nil
+	}
+	// Already a GCS URI (or an unresolved output) — use as-is.
+	return build.Context, nil
+}
+
 // buildServiceImage creates a defang-gcp:defanggcp:Build custom resource that
 // runs Cloud Build and returns the resulting image URI (repo@digest).
 func buildServiceImage(
@@ -135,8 +164,12 @@ func buildServiceImage(
 ) (pulumi.StringInput, error) {
 	dest := pulumi.Sprintf("%s/%s:latest", infra.RepositoryURL, serviceName)
 	steps := generateBuildSteps(dest)
-
 	shmBytes := svc.Build.GetShmSizeBytes()
+
+	sourceURI, err := resolveSourceURI(ctx, serviceName, svc.Build, infra, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	var buildRes gcpBuildResource
 	if err := ctx.RegisterResource(
@@ -145,7 +178,7 @@ func buildServiceImage(
 		pulumi.Map{
 			"projectId":      pulumi.String(infra.GcpProject),
 			"location":       pulumi.String(infra.Region),
-			"source":         svc.Build.Context,
+			"source":         sourceURI,
 			"sourceDigest":   buildSourceDigest(svc.Build),
 			"steps":          steps,
 			"images":         pulumi.StringArray{dest},

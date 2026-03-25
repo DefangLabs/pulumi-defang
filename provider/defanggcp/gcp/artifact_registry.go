@@ -7,6 +7,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
@@ -16,6 +17,7 @@ import (
 type BuildInfra struct {
 	Repository     *artifactregistry.Repository
 	ServiceAccount *serviceaccount.Account
+	BuildBucket    *storage.Bucket // GCS bucket for uploading local build contexts
 	RepositoryURL  pulumi.StringOutput // e.g. "us-central1-docker.pkg.dev/project/repo"
 	Region         string
 	GcpProject     string
@@ -38,7 +40,8 @@ func gcpProjectId(ctx *pulumi.Context) string {
 }
 
 // createBuildInfra creates the shared GCP infrastructure required to build container images:
-// an Artifact Registry repository, a build service account, and the associated IAM bindings.
+// an Artifact Registry repository, a GCS bucket for build artifacts, a build service account,
+// and the associated IAM bindings.
 func createBuildInfra(
 	ctx *pulumi.Context,
 	projectName string,
@@ -65,11 +68,22 @@ func createBuildInfra(
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)
 	}
 
+	bucket, err := storage.NewBucket(ctx, projectName+"-build-artifacts", &storage.BucketArgs{
+		Location:                 pulumi.String(region),
+		ForceDestroy:             pulumi.Bool(true),
+		UniformBucketLevelAccess: pulumi.Bool(true),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating build artifacts bucket: %w", err)
+	}
+
 	saOpts := make([]pulumi.ResourceOption, 0, len(opts)+2)
 	saOpts = append(saOpts, opts...)
 	saOpts = append(saOpts, pulumi.DeletedWith(bsa), pulumi.DeleteBeforeReplace(true))
 
 	repoIAMArgs := &artifactregistry.RepositoryIamBindingArgs{
+		Location:   pulumi.String(region),
+		Project:    pulumi.String(gcpProject),
 		Repository: ar.Name,
 		Role:       pulumi.String("roles/artifactregistry.admin"),
 		Members:    pulumi.StringArray{pulumi.Sprintf("serviceAccount:%v", bsa.Email)},
@@ -79,6 +93,15 @@ func createBuildInfra(
 	); err != nil {
 		return nil, fmt.Errorf("binding artifact registry admin role: %w", err)
 	}
+
+	if _, err := storage.NewBucketIAMMember(ctx, projectName+"-build-bucket-viewer", &storage.BucketIAMMemberArgs{
+		Bucket: bucket.Name,
+		Role:   pulumi.String("roles/storage.objectViewer"),
+		Member: pulumi.Sprintf("serviceAccount:%v", bsa.Email),
+	}, saOpts...); err != nil {
+		return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
+	}
+
 	if _, err := projects.NewIAMMember(ctx, projectName+"-build-log-writer", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.logWriter"),
@@ -100,6 +123,7 @@ func createBuildInfra(
 	return &BuildInfra{
 		Repository:     ar,
 		ServiceAccount: bsa,
+		BuildBucket:    bucket,
 		RepositoryURL:  repoURL,
 		Region:         region,
 		GcpProject:     gcpProject,
