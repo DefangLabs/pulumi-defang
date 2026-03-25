@@ -3,14 +3,16 @@
 package compose
 
 import (
+	"regexp"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-type NetworkID = string
+type NetworkID string
 
 type Services = map[string]ServiceConfig
 
-type Networks = map[NetworkID]NetworkConfig
+type Networks map[NetworkID]NetworkConfig
 
 const DefaultNetwork NetworkID = "default"
 
@@ -67,9 +69,17 @@ type ServiceConfig struct {
 	Networks map[NetworkID]*ServiceNetworkConfig `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
 	DependsOn DependsOnConfig `pulumi:"dependsOn,optional" yaml:"depends_on,omitempty"`
+
+	LLM *LlmConfig `pulumi:"llm,optional" yaml:"x-defang-llm,omitempty"`
+
+	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
 }
 
-type DependsOnConfig = map[string]ServiceDependency
+type LlmConfig struct{}
+
+// type ServiceModelConfig struct {}
+
+type DependsOnConfig map[string]ServiceDependency
 
 type NetworkConfig struct {
 	Internal bool `pulumi:"internal,optional" yaml:"internal,omitempty"`
@@ -104,7 +114,7 @@ type ServicePortConfig struct {
 // YAML tags match Docker Compose deploy spec.
 type DeployConfig struct {
 	// Number of replicas (default: 1)
-	Replicas *int `pulumi:"replicas,optional" yaml:"replicas,omitempty"`
+	Replicas *int32 `pulumi:"replicas,optional" yaml:"replicas,omitempty"`
 
 	// Resource reservations and limits
 	Resources *Resources `pulumi:"resources,optional" yaml:"resources,omitempty"`
@@ -174,26 +184,26 @@ type HealthCheckConfig struct {
 	Test []string `pulumi:"test,optional" yaml:"test,omitempty"`
 
 	// Check interval in seconds (default: 30s)
-	IntervalSeconds *int32 `pulumi:"intervalSeconds,optional" yaml:"interval,omitempty"`
+	IntervalSeconds int32 `pulumi:"intervalSeconds,optional" yaml:"interval,omitempty"`
 
 	// Check timeout in seconds (default: 5s)
-	TimeoutSeconds *int32 `pulumi:"timeoutSeconds,optional" yaml:"timeout,omitempty"`
+	TimeoutSeconds int32 `pulumi:"timeoutSeconds,optional" yaml:"timeout,omitempty"`
 
 	// Number of retries before marking unhealthy (default: 3)
-	Retries *int32 `pulumi:"retries,optional" yaml:"retries,omitempty"`
+	Retries int32 `pulumi:"retries,optional" yaml:"retries,omitempty"`
 
 	// Grace period before health checks start in seconds (default: 0s)
-	StartPeriodSeconds *int32 `pulumi:"startPeriodSeconds,optional" yaml:"start_period,omitempty"`
+	StartPeriodSeconds int32 `pulumi:"startPeriodSeconds,optional" yaml:"start_period,omitempty"`
 }
 
 type ConfigProvider interface {
 	GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput
 }
 
-// PostgresConfigArgs holds resolved managed Postgres configuration.
+// PostgresConfigArgsArgs holds resolved managed Postgres configuration.
 // Derived from PostgresConfig + image tag + environment variables.
 //
-// Deprecated: only used internally
+// Deprecated: only used internally.
 type PostgresConfigArgs struct {
 	Version       pulumi.StringPtrInput // Major version (derived from image tag, e.g. postgres:16 → 16)
 	DBName        pulumi.StringInput    // From POSTGRES_DB env or default "postgres"
@@ -207,6 +217,17 @@ type PostgresConfigArgs struct {
 const DEFAULT_POSTGRES_USER = "postgres"
 const DEFAULT_POSTGRES_DB = "postgres"
 
+var rePostgresVersion = regexp.MustCompile(`^(?:[\d.-]*pg)?([\d.]+(?:-rds\.\d+)?)`)
+
+func getPostgresVersion(tag string) string {
+	// If the tag starts with a pgvector version, cut if off
+	matches := rePostgresVersion.FindStringSubmatch(tag)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return ""
+}
+
 // ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
 func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfigArgs {
 	if s.Postgres == nil {
@@ -215,7 +236,7 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 
 	var version pulumi.StringPtrInput
 	if s.Image != nil {
-		version = pulumi.StringPtr(ParseImageTag(*s.Image))
+		version = pulumi.StringPtr(getPostgresVersion(*s.Image))
 	}
 
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
@@ -242,7 +263,7 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 }
 
 // GetReplicas returns the replica count, defaulting to 1.
-func (s ServiceConfig) GetReplicas() int {
+func (s ServiceConfig) GetReplicas() int32 {
 	if s.Deploy != nil && s.Deploy.Replicas != nil && *s.Deploy.Replicas > 0 {
 		return *s.Deploy.Replicas
 	}

@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/smithy-go/ptr"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
@@ -20,6 +18,12 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
+
+type Policies struct {
+	bedrockPolicy *iam.Policy
+	// codeBuildPolicy      *iam.RolePoliciesExclusive
+	route53SidecarPolicy *iam.Policy
+}
 
 // SharedInfra holds project-level AWS resources shared across all services.
 type SharedInfra struct {
@@ -38,13 +42,14 @@ type SharedInfra struct {
 	Region           string
 	ImageInfra       *ImageInfra // nil if no builds needed
 	SkipNatGW        bool
+	Policies
 }
 
 // ECSServiceArgs holds per-service arguments for CreateECSService.
 type ECSServiceArgs struct {
 	Infra    *SharedInfra
 	ImageURI pulumi.StringInput // container image URI (built or pre-built)
-	Networks compose.Networks
+	Networks compose.Networks   // from project
 }
 
 type EcsServiceResult struct {
@@ -53,19 +58,12 @@ type EcsServiceResult struct {
 	HasIngress bool
 }
 
-// clampInt clamps v to [minimum, maximum]. Returns fallback if v is nil.
-func clampInt(v *int32, minimum, maximum, fallback int32) int32 {
-	if v == nil {
+// clampInt clamps v to [minimum, maximum]. Returns fallback if v is 0.
+func clampInt[T int | int32 | int64](val T, minimum, maximum, fallback T) T {
+	if val == 0 {
 		return fallback
 	}
-	val := *v
-	if val < minimum {
-		return minimum
-	}
-	if val > maximum {
-		return maximum
-	}
-	return val
+	return min(max(val, minimum), maximum)
 }
 
 // makeMinMaxCeil rounds value up to the nearest step within [minimum, maximum].
@@ -266,9 +264,9 @@ func CreateECSService(
 
 	fargateCPU, fargateMemory := fargateResources(cpus, memMiB)
 
-	cpuArch := X86_64
+	cpuArch := awsecs.CPUArchitectureX8664
 	if platformToArch(svc.GetPlatform()) == Arm64 {
-		cpuArch = Arm64
+		cpuArch = awsecs.CPUArchitectureArm64
 	}
 
 	// Create task definition
@@ -282,7 +280,7 @@ func CreateECSService(
 		TaskRoleArn:             taskRole.Arn,
 		ContainerDefinitions:    containerDefsJSON,
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
-			CpuArchitecture:       pulumi.String(strings.ToUpper(cpuArch)),
+			CpuArchitecture:       pulumi.String(string(cpuArch)),
 			OperatingSystemFamily: pulumi.String("LINUX"),
 		},
 		Tags: pulumi.StringMap{
@@ -316,22 +314,22 @@ func CreateECSService(
 			tgName := targetGroupName(serviceName, int(port.Target), appProto)
 
 			// Target group health check (matches TS createTargetGroup in lb.ts)
-			defaultInterval := int32(HealthCheckInterval.Get(ctx)) //nolint:gosec // value is a small config constant
+			defaultInterval := HealthCheckInterval.Get(ctx) //nolint:gosec // value is a small config constant
 			interval := defaultInterval
 			if svc.HealthCheck != nil {
-				interval = clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, defaultInterval)
+				interval = clampInt(int(svc.HealthCheck.IntervalSeconds), 5, 300, defaultInterval)
 			}
 			maxTimeout := interval - 1
 			if maxTimeout > 120 {
 				maxTimeout = 120
 			}
-			timeout := int32(6)
+			timeout := (6)
 			if svc.HealthCheck != nil {
-				timeout = clampInt(svc.HealthCheck.TimeoutSeconds, 2, maxTimeout, 6)
+				timeout = clampInt(int(svc.HealthCheck.TimeoutSeconds), 2, maxTimeout, 6)
 			}
-			unhealthyThreshold := int32(3)
+			unhealthyThreshold := (3)
 			if svc.HealthCheck != nil {
-				unhealthyThreshold = clampInt(svc.HealthCheck.Retries, 2, 10, 3)
+				unhealthyThreshold = clampInt(int(svc.HealthCheck.Retries), 2, 10, 3)
 			}
 
 			// Determine matcher based on protocol (matches TS createTargetGroup)
@@ -499,194 +497,5 @@ func CreateECSService(
 		Service:    ecsService,
 		Endpoint:   endpointOutput,
 		HasIngress: hasIngress,
-	}, nil
-}
-
-// AWSConfig defines optional AWS-specific infrastructure configuration (not auth/region).
-type AWSConfig struct {
-	PrivateSubnetIDs []string `pulumi:"privateSubnetIds,optional"`
-	PublicSubnetIDs  []string `pulumi:"subnetIds,optional"`
-	PrivateZoneID    string   `pulumi:"privateZoneId,optional"`
-	VpcID            string   `pulumi:"vpcId,optional"`
-	SkipNatGW        bool     `pulumi:"skipNatGW,optional"`
-}
-
-// BuildSharedInfra creates all shared AWS infrastructure for a standalone ECS service.
-// The AWS provider must be passed via opts (pulumi.Providers on the parent component).
-func BuildSharedInfra(
-	ctx *pulumi.Context,
-	serviceName string,
-	svc compose.ServiceConfig,
-	awsCfg *AWSConfig,
-	opts ...pulumi.ResourceOption,
-) (*SharedInfra, error) {
-	region, err := aws.GetRegion(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting AWS region: %w", err)
-	}
-
-	net, err := ResolveNetworking(ctx, awsCfg, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving networking: %w", err)
-	}
-
-	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
-		VpcId:       net.VpcID,
-		Description: pulumi.String("Security group for services"),
-		Egress: ec2.SecurityGroupEgressArray{
-			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ECS cluster: %w", err)
-	}
-
-	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating log group: %w", err)
-	}
-
-	execRole, err := CreateExecutionRole(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating execution role: %w", err)
-	}
-
-	var imgInfra *ImageInfra
-	if svc.NeedsBuild() {
-		imgInfra, err = CreateImageInfra(ctx, logGroup, region.Region, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
-		}
-	}
-
-	var httpListener *lb.Listener
-	var svcALB *lb.LoadBalancer
-	if svc.HasIngressPorts() {
-		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating ALB: %w", err)
-		}
-		httpListener = albRes.HttpListener
-		svcALB = albRes.Alb
-	}
-
-	return &SharedInfra{
-		Cluster:          cluster,
-		ExecRole:         execRole,
-		LogGroup:         logGroup,
-		VpcID:            net.VpcID,
-		PublicSubnetIDs:  net.PublicSubnetIDs,
-		PrivateSubnetIDs: net.PrivateSubnetIDs,
-		PrivateZoneID:    net.PrivateZoneID,
-		PrivateDomain:    net.PrivateDomain,
-		SkipNatGW:        !net.UseNatGW,
-		Sg:               sg,
-		HttpListener:     httpListener,
-		HttpsListener:    nil, // TODO: support HTTPS listener
-		Alb:              svcALB,
-		Region:           region.Region,
-		ImageInfra:       imgInfra,
-	}, nil
-}
-
-// BuildProjectInfra creates shared AWS infrastructure for a multi-service project.
-func BuildProjectInfra(
-	ctx *pulumi.Context,
-	projectName string,
-	services compose.Services,
-	awsCfg *AWSConfig,
-	opts ...pulumi.ResourceOption,
-) (*SharedInfra, error) {
-	region, err := aws.GetRegion(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting AWS region: %w", err)
-	}
-
-	net, err := ResolveNetworking(ctx, awsCfg, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving networking: %w", err)
-	}
-
-	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
-		VpcId:       net.VpcID,
-		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
-		Egress: ec2.SecurityGroupEgressArray{
-			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ECS cluster: %w", err)
-	}
-
-	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating log group: %w", err)
-	}
-
-	execRole, err := CreateExecutionRole(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating execution role: %w", err)
-	}
-
-	var imgInfra *ImageInfra
-	for _, svc := range services {
-		if svc.NeedsBuild() {
-			imgInfra, err = CreateImageInfra(ctx, logGroup, region.Region, opts...)
-			if err != nil {
-				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
-			}
-			break
-		}
-	}
-
-	var httpListener *lb.Listener
-	var alb *lb.LoadBalancer
-	if common.NeedIngress(services) {
-		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating ALB: %w", err)
-		}
-		httpListener = albRes.HttpListener
-		alb = albRes.Alb
-	}
-
-	return &SharedInfra{
-		Cluster:          cluster,
-		ExecRole:         execRole,
-		LogGroup:         logGroup,
-		VpcID:            net.VpcID,
-		PublicSubnetIDs:  net.PublicSubnetIDs,
-		PrivateSubnetIDs: net.PrivateSubnetIDs,
-		PrivateZoneID:    net.PrivateZoneID,
-		PrivateDomain:    net.PrivateDomain,
-		Sg:               sg,
-		HttpListener:     httpListener,
-		Alb:              alb,
-		Region:           region.Region,
-		ImageInfra:       imgInfra,
 	}, nil
 }

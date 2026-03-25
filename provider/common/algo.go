@@ -50,8 +50,8 @@ func NeedIngress(services compose.Services) bool {
 func AcceptPublicTraffic(networks compose.Networks, service compose.ServiceConfig) bool {
 	// A service accepts traffic from the public internet if it's in the "default" network
 	// and the default network is not internal and has a "host" port.
-	// Services will have been added to the "default" network if they didn't have a "networks" section.
 	_, inDefaultNetwork := service.Networks[compose.DefaultNetwork]
+	// Services will have been added to the "default" network if they didn't have a "networks" section.
 	inDefaultNetwork = inDefaultNetwork || len(service.Networks) == 0
 	return inDefaultNetwork && !IsNetworkInternal(networks, compose.DefaultNetwork) && service.HasHostPorts()
 }
@@ -68,4 +68,13 @@ func AllowEgress(networks compose.Networks, service compose.ServiceConfig) bool 
 		}
 	}
 	return len(service.Networks) == 0 // if no networks specified, assume default non-internal network
+}
+
+func IsProjectUsingLLM(services compose.Services) bool {
+	for _, svc := range services {
+		if svc.LLM != nil {
+			return true
+		}
+	}
+	return false
 }

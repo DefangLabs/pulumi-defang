@@ -22,16 +22,19 @@ var (
 	ErrCodeBuildTimeout = errors.New("build timed out on CodeBuild side")
 )
 
-// CodeBuildImageBuild is a custom resource that triggers a CodeBuild build and waits for completion.
-type CodeBuildImageBuild struct{}
+// Build is a custom resource that triggers a CodeBuild build and waits for completion.
+type Build struct{}
 
-// CodeBuildImageBuildInputs are the inputs for the CodeBuild build resource.
-type CodeBuildImageBuildInputs struct {
+// BuildInputs are the inputs for the CodeBuild build resource.
+type BuildInputs struct {
 	// CodeBuild project name
 	ProjectName string `pulumi:"projectName"`
 
 	// AWS region
 	Region string `pulumi:"region,optional"`
+
+	// AWS profile
+	Profile string `pulumi:"profile,optional"`
 
 	// Destination image URL (e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com/repo:tag")
 	Destination string `pulumi:"destination,optional"`
@@ -43,9 +46,9 @@ type CodeBuildImageBuildInputs struct {
 	Triggers []string `pulumi:"triggers,optional"`
 }
 
-// CodeBuildImageBuildState is the output state of the CodeBuild build resource.
-type CodeBuildImageBuildState struct {
-	CodeBuildImageBuildInputs
+// BuildState is the output state of the CodeBuild build resource.
+type BuildState struct {
+	BuildInputs
 
 	// The CodeBuild build ID
 	BuildID string `pulumi:"buildId"`
@@ -55,16 +58,16 @@ type CodeBuildImageBuildState struct {
 }
 
 // Create starts a CodeBuild build, waits for it to complete, and returns the image URL.
-func (*CodeBuildImageBuild) Create(
-	ctx context.Context, req infer.CreateRequest[CodeBuildImageBuildInputs],
-) (infer.CreateResponse[CodeBuildImageBuildState], error) {
+func (*Build) Create(
+	ctx context.Context, req infer.CreateRequest[BuildInputs],
+) (infer.CreateResponse[BuildState], error) {
 	inputs := req.Inputs
 
 	if req.DryRun {
-		return infer.CreateResponse[CodeBuildImageBuildState]{
+		return infer.CreateResponse[BuildState]{
 			ID: inputs.ProjectName,
-			Output: CodeBuildImageBuildState{
-				CodeBuildImageBuildInputs: inputs,
+			Output: BuildState{
+				BuildInputs: inputs,
 			},
 		}, nil
 	}
@@ -80,22 +83,22 @@ func (*CodeBuildImageBuild) Create(
 	var buildID string
 	var err error
 	for attempt := range 2 {
-		buildID, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, maxWait)
+		buildID, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, inputs.Profile, maxWait)
 		if err == nil {
 			break
 		}
 		if attempt == 1 || !isRetryable(err) {
-			return infer.CreateResponse[CodeBuildImageBuildState]{}, fmt.Errorf("CodeBuild build failed: %w", err)
+			return infer.CreateResponse[BuildState]{}, fmt.Errorf("CodeBuild build failed: %w", err)
 		}
 		time.Sleep(5 * time.Second)
 	}
 
 	image := inputs.Destination
 
-	return infer.CreateResponse[CodeBuildImageBuildState]{
+	return infer.CreateResponse[BuildState]{
 		ID: inputs.ProjectName,
-		Output: CodeBuildImageBuildState{
-			CodeBuildImageBuildInputs: inputs,
+		Output: BuildState{
+			BuildInputs: inputs,
 			BuildID:                   buildID,
 			Image:                     image,
 		},
@@ -112,10 +115,13 @@ func isRetryable(err error) bool {
 	return true
 }
 
-func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitSeconds int) (string, error) {
+func runCodeBuildBuild(ctx context.Context, projectName, region, profile string, maxWaitSeconds int) (string, error) {
 	opts := []func(*config.LoadOptions) error{}
 	if region != "" {
 		opts = append(opts, config.WithRegion(region))
+	}
+	if profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(profile))
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)

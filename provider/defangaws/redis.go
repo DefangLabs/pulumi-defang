@@ -22,7 +22,7 @@ type RedisInputs struct {
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
 	Environment map[string]string           `pulumi:"environment,optional"`
-	AWS         *provideraws.AWSConfig      `pulumi:"aws,optional"`
+	AWS         *provideraws.SharedInfra    `pulumi:"aws,optional"`
 }
 
 // RedisOutputs holds the outputs of an AWS Redis component.
@@ -58,7 +58,7 @@ func (*Redis) Construct(
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 
 	sg, err := awsec2.NewSecurityGroup(ctx, name, &awsec2.SecurityGroupArgs{
-		VpcId:       pulumi.String(inputs.AWS.VpcID),
+		VpcId:       inputs.AWS.VpcID,
 		Description: pulumi.String("Security group for Redis"),
 		Egress: awsec2.SecurityGroupEgressArray{
 			&awsec2.SecurityGroupEgressArgs{
@@ -73,12 +73,8 @@ func (*Redis) Construct(
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
-	privateSubnetIDs := make(pulumi.StringArray, len(inputs.AWS.PrivateSubnetIDs))
-	for i, id := range inputs.AWS.PrivateSubnetIDs {
-		privateSubnetIDs[i] = pulumi.String(id)
-	}
 	redisResult, err := provideraws.CreateElasticache(
-		ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt,
+		ctx, configProvider, name, svc, inputs.AWS.VpcID, inputs.AWS.PrivateSubnetIDs, sg, nil, childOpt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache: %w", err)
@@ -135,7 +131,7 @@ func newRedisComponent(
 	var dependency pulumi.Resource // = redisResult.Address
 	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
-		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{
+		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
 			Records: pulumi.StringArray{redisResult.Address},
 			Ttl:     pulumi.Int(300),

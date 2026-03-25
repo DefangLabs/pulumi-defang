@@ -21,7 +21,8 @@ type PostgresInputs struct {
 	Image       *string                 `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`
 	Environment map[string]string       `pulumi:"environment,optional"`
-	AWS         *provideraws.AWSConfig  `pulumi:"aws,optional"`
+
+	Infra *provideraws.SharedInfra `pulumi:"aws,optional"`
 }
 
 // PostgresOutputs holds the outputs of an AWS Postgres component.
@@ -50,7 +51,7 @@ func (*Postgres) Construct(
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 
 	sg, err := awssdk.NewSecurityGroup(ctx, name, &awssdk.SecurityGroupArgs{
-		VpcId:       pulumi.String(inputs.AWS.VpcID),
+		VpcId:       inputs.Infra.VpcID,
 		Description: pulumi.String("Security group for Postgres"),
 		Egress: awssdk.SecurityGroupEgressArray{
 			&awssdk.SecurityGroupEgressArgs{
@@ -65,12 +66,8 @@ func (*Postgres) Construct(
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
-	privateSubnetIDs := make(pulumi.StringArray, len(inputs.AWS.PrivateSubnetIDs))
-	for i, id := range inputs.AWS.PrivateSubnetIDs {
-		privateSubnetIDs[i] = pulumi.String(id)
-	}
 	rdsResult, err := provideraws.CreateRDS(
-		ctx, configProvider, name, svc, pulumi.String(inputs.AWS.VpcID), privateSubnetIDs, sg, nil, childOpt,
+		ctx, configProvider, name, svc, inputs.Infra.VpcID, inputs.Infra.PrivateSubnetIDs, sg, nil, childOpt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS: %w", err)
@@ -121,7 +118,7 @@ func newPostgresComponent(
 	var dependency pulumi.Resource = rdsResult.Instance
 	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
-		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{
+		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
 			Records: pulumi.StringArray{rdsResult.Instance.Address},
 			Ttl:     pulumi.Int(300),

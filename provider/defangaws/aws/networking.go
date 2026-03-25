@@ -4,8 +4,10 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
-	"github.com/pulumi/pulumi-awsx/sdk/v3/go/awsx/ec2"
+	awsxec2 "github.com/pulumi/pulumi-awsx/sdk/v3/go/awsx/ec2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -14,54 +16,62 @@ type NetworkingResult struct {
 	PublicSubnetIDs  pulumi.StringArrayOutput
 	PrivateSubnetIDs pulumi.StringArrayOutput
 	PrivateDomain    string
-	PrivateZoneID    pulumi.IDPtrOutput // optional Route53 private hosted zone ID for the VPC
-	UseNatGW         bool
+	PrivateZone      *route53.Zone            // optional Route53 private hosted zone ID for the VPC
+	PublicNatIPs     pulumi.StringArrayOutput // only populated if UseNatGW is true and strategy is OnePerAz
+	UseNatGW         bool                     // whether to use NAT Gateways (vs. public subnets for outbound)
 }
 
 // ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
 func ResolveNetworking(
-	ctx *pulumi.Context, cfg *AWSConfig, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context, opts ...pulumi.ResourceOption,
 ) (*NetworkingResult, error) {
-	strategy := ec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: no type checking
+	strategy := awsxec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: missing type checking
 
-	if cfg != nil && cfg.VpcID != "" {
-		// Use provided VPC and subnet IDs
-		subnetIDs := make(pulumi.StringArray, len(cfg.PublicSubnetIDs))
-		for i, id := range cfg.PublicSubnetIDs {
-			subnetIDs[i] = pulumi.String(id)
-		}
-		privateSubnetIDs := make(pulumi.StringArray, len(cfg.PrivateSubnetIDs))
-		for i, id := range cfg.PrivateSubnetIDs {
-			privateSubnetIDs[i] = pulumi.String(id)
-		}
-		if len(privateSubnetIDs) == 0 {
-			privateSubnetIDs = subnetIDs
-		}
+	// if cfg != nil && cfg.VpcID != "" {
+	// 	// Use provided VPC and subnet IDs
+	// 	subnetIDs := make(pulumi.StringArray, len(cfg.PublicSubnetIDs))
+	// 	for i, id := range cfg.PublicSubnetIDs {
+	// 		subnetIDs[i] = pulumi.String(id)
+	// 	}
+	// 	privateSubnetIDs := make(pulumi.StringArray, len(cfg.PrivateSubnetIDs))
+	// 	for i, id := range cfg.PrivateSubnetIDs {
+	// 		privateSubnetIDs[i] = pulumi.String(id)
+	// 	}
+	// 	if len(privateSubnetIDs) == 0 {
+	// 		privateSubnetIDs = subnetIDs
+	// 	}
+	// 	return &NetworkingResult{
+	// 		VpcID:            pulumi.String(cfg.VpcID).ToStringOutput(),
+	// 		PublicSubnetIDs:  subnetIDs.ToStringArrayOutput(),
+	// 		PrivateSubnetIDs: privateSubnetIDs.ToStringArrayOutput(),
+	// 		UseNatGW:         strategy != awsxec2.NatGatewayStrategyNone,
+	// 		// PrivateZoneID:    pulumi.IDPtrOutput{},  no private hosted zone since we didn't create the VPC
+	// 	}, nil
+	// }
 
-		return &NetworkingResult{
-			VpcID:            pulumi.String(cfg.VpcID).ToStringOutput(),
-			PublicSubnetIDs:  subnetIDs.ToStringArrayOutput(),
-			PrivateSubnetIDs: privateSubnetIDs.ToStringArrayOutput(),
-			UseNatGW:         strategy != ec2.NatGatewayStrategyNone,
-			// PrivateZoneID:    pulumi.IDPtrOutput{},  no private hosted zone since we didn't create the VPC
-		}, nil
+	region, err := aws.GetRegion(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
 	// Create a new VPC with public and private subnets.
-	// Use a descriptive logical name so awsx prefixes all children (subnets, etc.) with it.
 	vpcName := autonamePrefix(ctx, "shared-vpc")
-	vpc, err := ec2.NewVpc(ctx, "shared-vpc", &ec2.VpcArgs{
+
+	vpc, err := awsxec2.NewVpc(ctx, "shared-vpc", &awsxec2.VpcArgs{
 		EnableDnsHostnames: pulumi.Bool(true),
 		// EnableDnsSupport:   pulumi.Bool(true),
-		NatGateways: &ec2.NatGatewayConfigurationArgs{
+		NatGateways: &awsxec2.NatGatewayConfigurationArgs{
 			Strategy: strategy,
 		},
-		// VpcEndpointSpecs: []ec2.VpcEndpointSpecArgs{
-		// 	{
-		// 		ServiceName:     fmt.Sprintf("com.amazonaws.%s.s3", cfg.Region),
-		// 		VpcEndpointType: pulumi.String("Gateway"), // Gateway is free
-		// 	},
-		// },
+		VpcEndpointSpecs: []awsxec2.VpcEndpointSpecArgs{
+			{
+				ServiceName:     fmt.Sprintf("com.amazonaws.%s.s3", region.Region),
+				VpcEndpointType: pulumi.String("Gateway"), // Gateway is free
+				// Tags: pulumi.StringMap{
+				// 	"Name": pulumi.String(fmt.Sprintf("%s-s3-endpoint", vpcName)),
+				// },
+			},
+		},
 		Tags: pulumi.StringMap{
 			"Name": pulumi.String(vpcName),
 		},
@@ -86,7 +96,7 @@ func ResolveNetworking(
 	}
 
 	// Lower the negative caching TTL to 15 seconds
-	_, err = CreateSoaRecord(ctx, privateDomain, privateZone.ToZoneOutput(), SoaRecordArgs{
+	_, err = createSoaRecord(ctx, privateDomain, privateZone.ToZoneOutput(), SoaRecordArgs{
 		Serial:  pulumi.Int(2023022101),
 		Minimum: pulumi.Int(15),
 	}, opts...)
@@ -94,12 +104,37 @@ func ResolveNetworking(
 		return nil, fmt.Errorf("creating SOA record: %w", err)
 	}
 
+	options, err := ec2.NewVpcDhcpOptions(ctx, "dhcp-options", &ec2.VpcDhcpOptionsArgs{
+		DomainName:        pulumi.String(privateDomain),
+		DomainNameServers: pulumi.StringArray{pulumi.String("AmazonProvidedDNS")},
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating VPC DHCP options: %w", err)
+	}
+
+	_, err = ec2.NewVpcDhcpOptionsAssociation(ctx, "dhcp-options-association", &ec2.VpcDhcpOptionsAssociationArgs{
+		DhcpOptionsId: options.ID(),
+		VpcId:         vpc.VpcId,
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating VPC DHCP options association: %w", err)
+	}
+
+	publicNatIps := vpc.NatGateways.ApplyT(func(ngws []*ec2.NatGateway) (pulumi.StringArray, error) {
+		ips := make(pulumi.StringArray, len(ngws))
+		for i, ngw := range ngws {
+			ips[i] = ngw.PublicIp
+		}
+		return ips, nil
+	}).(pulumi.StringArrayOutput)
+
 	return &NetworkingResult{
 		VpcID:            vpc.VpcId,
 		PublicSubnetIDs:  vpc.PublicSubnetIds,
 		PrivateSubnetIDs: vpc.PrivateSubnetIds,
 		PrivateDomain:    privateDomain,
-		PrivateZoneID:    privateZone.ID().ToIDPtrOutput(),
-		UseNatGW:         strategy != ec2.NatGatewayStrategyNone,
+		PrivateZone:      privateZone,
+		PublicNatIPs:     publicNatIps,
+		UseNatGW:         strategy != awsxec2.NatGatewayStrategyNone,
 	}, nil
 }

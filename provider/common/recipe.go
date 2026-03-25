@@ -67,4 +67,5 @@ func (v StringValue) Get(ctx *pulumi.Context) string {
 // Cloud-agnostic config values shared across all providers.
 var (
 	DeletionProtection = Bool("deletion-protection", false)
+	LogRetentionDays   = Int("log-retention-days", 1)
 )

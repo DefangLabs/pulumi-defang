@@ -27,7 +27,8 @@ type ServiceInputs struct {
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
 	DomainName  *string                     `pulumi:"domainName,optional"`
-	AWS         *provideraws.AWSConfig      `pulumi:"aws,optional"`
+
+	AWS *provideraws.SharedInfra `pulumi:"aws,optional"`
 }
 
 // ServiceOutputs holds the outputs of a Service component.
@@ -60,10 +61,11 @@ func (*Service) Construct(
 	}
 
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
-	infra, err := provideraws.BuildSharedInfra(ctx, name, svc, inputs.AWS, childOpt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)
-	}
+	infra := inputs.AWS
+	// infra, err := provideraws.BuildSharedInfra(ctx, name, svc, inputs.AWS, childOpt)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)
+	// }
 
 	imageURI, err := provideraws.GetServiceImage(ctx, name, svc, infra.ImageInfra, childOpt)
 	if err != nil {

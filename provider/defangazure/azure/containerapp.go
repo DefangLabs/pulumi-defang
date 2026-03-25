@@ -64,8 +64,8 @@ func CreateContainerApp(
 	// Scale config
 	minReplicas := svc.GetReplicas()
 	maxReplicas := minReplicas
-	if MaxReplicas.Get(ctx) > 0 {
-		maxReplicas = MaxReplicas.Get(ctx)
+	if mr := int32(MaxReplicas.Get(ctx)); mr > 0 { //nolint:gosec // config value is bounded
+		maxReplicas = mr
 	}
 
 	// Ingress config
@@ -94,17 +94,17 @@ func CreateContainerApp(
 				Path: pulumi.String("/"),
 			},
 		}
-		if svc.HealthCheck.IntervalSeconds != nil {
-			probe.PeriodSeconds = pulumi.Int(*svc.HealthCheck.IntervalSeconds)
+		if svc.HealthCheck.IntervalSeconds != 0 {
+			probe.PeriodSeconds = pulumi.Int(svc.HealthCheck.IntervalSeconds)
 		}
-		if svc.HealthCheck.TimeoutSeconds != nil {
-			probe.TimeoutSeconds = pulumi.Int(*svc.HealthCheck.TimeoutSeconds)
+		if svc.HealthCheck.TimeoutSeconds != 0 {
+			probe.TimeoutSeconds = pulumi.Int(svc.HealthCheck.TimeoutSeconds)
 		}
-		if svc.HealthCheck.Retries != nil {
-			probe.FailureThreshold = pulumi.Int(*svc.HealthCheck.Retries)
+		if svc.HealthCheck.Retries != 0 {
+			probe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
-		if svc.HealthCheck.StartPeriodSeconds != nil {
-			probe.InitialDelaySeconds = pulumi.Int(*svc.HealthCheck.StartPeriodSeconds)
+		if svc.HealthCheck.StartPeriodSeconds != 0 {
+			probe.InitialDelaySeconds = pulumi.Int(svc.HealthCheck.StartPeriodSeconds)
 		}
 		probes = append(probes, probe)
 	}

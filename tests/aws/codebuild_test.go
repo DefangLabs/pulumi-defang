@@ -1,6 +1,6 @@
 package aws
 
-// CodeBuildImageBuild is a custom resource (not a component) that triggers an AWS
+// Build is a custom resource (not a component) that triggers an AWS
 // CodeBuild build and waits for completion. These tests exercise the Check path,
 // which validates inputs without performing any real AWS API calls.
 
@@ -15,11 +15,11 @@ import (
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
-func TestCheckCodeBuildImageBuildMinimal(t *testing.T) {
+func TestCheckBuildMinimal(t *testing.T) {
 	server := testutil.MakeTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
-		Urn: testutil.AwsURN("CodeBuildImageBuild"),
+		Urn: testutil.AwsURN("Build"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"projectName": property.New("my-codebuild-project"),
 		}),
@@ -29,11 +29,11 @@ func TestCheckCodeBuildImageBuildMinimal(t *testing.T) {
 	assert.Empty(t, resp.Failures)
 }
 
-func TestCheckCodeBuildImageBuildComplete(t *testing.T) {
+func TestCheckBuildComplete(t *testing.T) {
 	server := testutil.MakeTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
-		Urn: testutil.AwsURN("CodeBuildImageBuild"),
+		Urn: testutil.AwsURN("Build"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"projectName": property.New("my-codebuild-project"),
 			"region":      property.New("us-east-1"),
@@ -50,11 +50,11 @@ func TestCheckCodeBuildImageBuildComplete(t *testing.T) {
 	assert.Empty(t, resp.Failures)
 }
 
-func TestCheckCodeBuildImageBuildMissingProjectName(t *testing.T) {
+func TestCheckBuildMissingProjectName(t *testing.T) {
 	server := testutil.MakeTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
-		Urn:    testutil.AwsURN("CodeBuildImageBuild"),
+		Urn:    testutil.AwsURN("Build"),
 		Inputs: property.NewMap(map[string]property.Value{}),
 	})
 

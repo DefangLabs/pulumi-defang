@@ -191,7 +191,7 @@ func CreateRDS(
 	// Create DB subnet group
 	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
 		Description: pulumi.String(common.DefangComment),
-		SubnetIds:   privateSubnetIDs.ToStringArrayOutput(),
+		SubnetIds:   privateSubnetIDs,
 		Tags:        tags,
 	}, opts...)
 	if err != nil {

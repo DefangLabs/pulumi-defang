@@ -93,8 +93,8 @@ func CreateCloudRunService(
 
 	// Cloud Run config from recipe
 	maxInstances := svc.GetReplicas()
-	if MaxReplicas.Get(ctx) > 0 {
-		maxInstances = MaxReplicas.Get(ctx)
+	if mr := int32(MaxReplicas.Get(ctx)); mr > 0 { //nolint:gosec // config value is bounded
+		maxInstances = mr
 	}
 
 	cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
@@ -108,14 +108,14 @@ func CreateCloudRunService(
 				Port: pulumi.Int(svc.Ports[0].Target),
 			},
 		}
-		if svc.HealthCheck.IntervalSeconds != nil {
-			startupProbe.PeriodSeconds = pulumi.Int(*svc.HealthCheck.IntervalSeconds)
+		if svc.HealthCheck.IntervalSeconds != 0 {
+			startupProbe.PeriodSeconds = pulumi.Int(svc.HealthCheck.IntervalSeconds)
 		}
-		if svc.HealthCheck.TimeoutSeconds != nil {
-			startupProbe.TimeoutSeconds = pulumi.Int(*svc.HealthCheck.TimeoutSeconds)
+		if svc.HealthCheck.TimeoutSeconds != 0 {
+			startupProbe.TimeoutSeconds = pulumi.Int(svc.HealthCheck.TimeoutSeconds)
 		}
-		if svc.HealthCheck.Retries != nil {
-			startupProbe.FailureThreshold = pulumi.Int(*svc.HealthCheck.Retries)
+		if svc.HealthCheck.Retries != 0 {
+			startupProbe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
 	}
 

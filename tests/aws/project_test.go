@@ -3,7 +3,7 @@ package aws
 // Project is the top-level orchestration component for AWS. These tests verify
 // that the Project component correctly wires up a set of services using the
 // mock resource monitor. Detailed behaviour of each sub-component (ECS service,
-// Postgres, CodeBuildImageBuild, etc.) lives in their own dedicated test files.
+// Postgres, Build, etc.) lives in their own dedicated test files.
 //
 // Note: services that embed environment variables inside ECS container-
 // definition JSON hit a mock-monitor limitation (StringOutputs cannot be

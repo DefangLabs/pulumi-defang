@@ -25,10 +25,11 @@ var (
 // ImageInfra holds shared infrastructure for building container images.
 // Created once per project, shared across all services that need builds.
 type ImageInfra struct {
+	codeBuildRole *iam.Role
 	ecrRepo       *ecr.Repository
 	ecrRepoURL    pulumix.Output[string]
-	codeBuildRole *iam.Role
 	logGroup      *cloudwatch.LogGroup
+	profile       string
 	region        string
 }
 
@@ -37,7 +38,7 @@ type ImageInfra struct {
 func CreateImageInfra(
 	ctx *pulumi.Context,
 	logGroup *cloudwatch.LogGroup,
-	region string,
+	profile, region string,
 	opts ...pulumi.ResourceOption,
 ) (*ImageInfra, error) {
 	ecrResult, err := createECRRepo(ctx, "builds", opts...)
@@ -55,6 +56,7 @@ func CreateImageInfra(
 		ecrRepoURL:    ecrResult.repoURL,
 		codeBuildRole: cbRole,
 		logGroup:      logGroup,
+		profile:       profile,
 		region:        region,
 	}, nil
 }
@@ -67,7 +69,7 @@ type imageBuildResult struct {
 	imageURI pulumi.StringOutput
 }
 
-// codeBuildImageBuildResource is a Pulumi resource state for the CodeBuildImageBuild custom resource.
+// codeBuildImageBuildResource is a Pulumi resource state for the Build custom resource.
 // Used with ctx.RegisterResource to create the resource from within the component.
 type codeBuildImageBuildResource struct {
 	pulumi.CustomResourceState
@@ -120,7 +122,7 @@ func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 }
 
 // buildServiceImage builds a container image via CodeBuild for a service.
-// Creates a CodeBuild project and a CodeBuildImageBuild custom resource that triggers the build.
+// Creates a CodeBuild project and a Build custom resource that triggers the build.
 func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -149,14 +151,21 @@ func buildServiceImage(
 		return nil, fmt.Errorf("creating CodeBuild project for %s: %w", serviceName, err)
 	}
 
-	// Create the CodeBuildImageBuild custom resource to trigger the actual build.
+	// Create the Build custom resource to trigger the actual build.
 	// This resource calls the AWS SDK to start the build, polls until done, and returns the image URL.
 	// If Create fails, the resource is not in state → next `pulumi up` retries automatically.
 	triggerHash := buildTriggerHash(svc.Build)
 
+	// region, err := aws.GetRegion(ctx, &aws.GetRegionArgs{}, opts...)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("getting AWS region: %w", err)
+	// }
+	// region.Region
+
 	var buildResource codeBuildImageBuildResource
-	err = ctx.RegisterResource("defang-aws:defangaws:CodeBuildImageBuild", serviceName+"-build", pulumi.Map{
+	err = ctx.RegisterResource("defang-aws:index:Build", serviceName+"-build", pulumi.Map{
 		"projectName": cbResult.project.Name,
+		"profile":     pulumi.String(infra.profile),
 		"region":      pulumi.String(infra.region),
 		"destination": cbResult.destination,
 		"triggers":    pulumi.StringArray{triggerHash},

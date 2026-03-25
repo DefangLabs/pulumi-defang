@@ -233,7 +233,7 @@ func CreateElasticache(
 	// Create ElastiCache subnet group (always private).
 	subnetGroup, err := awselasticache.NewSubnetGroup(ctx, serviceName, &awselasticache.SubnetGroupArgs{
 		Description: pulumi.String(common.DefangComment),
-		SubnetIds:   privateSubnetIDs.ToStringArrayOutput(),
+		SubnetIds:   privateSubnetIDs,
 		Tags:        tags,
 	}, opts...)
 	if err != nil {
@@ -330,14 +330,15 @@ func CreateElasticache(
 
 	// Use configuration endpoint (cluster mode enabled) if available, else primary endpoint.
 	address := pulumi.All(rg.ConfigurationEndpointAddress, rg.PrimaryEndpointAddress).
-		ApplyT(func(endpoints []interface{}) string {
-		cfg := endpoints[0].(string)
-		primary := endpoints[1].(string)
-		if cfg != "" {
-			return cfg
-		}
-		return primary
-	}).(pulumi.StringOutput)
+		ApplyT(
+			func(endpoints []any) string {
+				cfg := endpoints[0].(string)
+				primary := endpoints[1].(string)
+				if cfg != "" {
+					return cfg
+				}
+				return primary
+			}).(pulumi.StringOutput)
 
 	return &ElasticacheResult{Address: address}, nil
 }

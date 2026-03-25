@@ -1,6 +1,7 @@
 package defangaws
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -10,15 +11,16 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
+var errDependencyNotFound = errors.New("not found in dependencies map")
+
 // Project is the controller struct for the defang-aws:index:Project component.
 type Project struct{}
 
 // ProjectInputs defines the top-level inputs for the AWS Project component.
 type ProjectInputs struct {
-	compose.Project
-
-	// AWS-specific infrastructure configuration (VPC, subnets)
-	AWS *provideraws.AWSConfig `pulumi:"aws,optional"`
+	// compose.Project
+	Services compose.Services `pulumi:"services"          yaml:"services"`
+	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -42,7 +44,7 @@ func (*Project) Construct(
 	}
 
 	childOpt := pulumi.Parent(comp)
-	result, err := Build(ctx, name, inputs, childOpt)
+	result, err := Buildx(ctx, name, inputs, childOpt)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
@@ -61,9 +63,9 @@ func (*Project) Construct(
 	return comp, nil
 }
 
-// Build creates all AWS resources for the project.
+// Buildx creates all AWS resources for the project.
 // The AWS provider must be passed via the parent chain (pulumi.Providers on the parent component).
-func Build(
+func Buildx(
 	ctx *pulumi.Context,
 	projectName string,
 	args ProjectInputs,
@@ -71,7 +73,7 @@ func Build(
 ) (*common.BuildResult, error) {
 	opts := []pulumi.ResourceOption{parentOpt}
 
-	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, args.AWS, opts...)
+	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
@@ -89,15 +91,17 @@ func Build(
 
 	configProvider := provideraws.NewConfigProvider(projectName)
 
-	services := common.TopologicalSort(args.Services)
-	for _, svcName := range services {
+	serviceNames := common.TopologicalSort(args.Services)
+	for _, svcName := range serviceNames {
 		svc := args.Services[svcName]
 
 		// Collect dependency resources from services this one depends on
 		var deps []pulumi.Resource
-		for dep := range svc.DependsOn {
+		for dep, val := range svc.DependsOn {
 			if r, ok := dependencies[dep]; ok {
 				deps = append(deps, r)
+			} else if val.Required {
+				return nil, fmt.Errorf("service %s requires %s: %w", svcName, dep, errDependencyNotFound)
 			}
 		}
 

@@ -17,3 +17,8 @@ type BuildResult struct {
 	Endpoints       pulumi.StringMapOutput
 	LoadBalancerDNS pulumi.StringPtrOutput
 }
+
+// MergeOptions is like TypeScripts `pulumi.mergeOptions`
+func MergeOptions(opts []pulumi.ResourceOption, overrides ...pulumi.ResourceOption) []pulumi.ResourceOption {
+	return append(append([]pulumi.ResourceOption{}, opts...), overrides...)
+}

@@ -42,16 +42,18 @@ func codeBuildComputeType(shmSizeBytes int) string {
 	}
 }
 
-const Arm64 = "arm64"
-const X86_64 = "x86_64"
+type ArchType string
+
+const Arm64 ArchType = "arm64"
+const X86_64 ArchType = "x86_64"
 
 // platformToArch extracts architecture from a platform string.
 // Matches TS platformToArch.
-func platformToArch(platform string) string {
-	if strings.Contains(platform, "arm64") {
+func platformToArch(platform string) ArchType {
+	if strings.Contains(strings.ToLower(platform), "arm") {
 		return Arm64
 	}
-	return X86_64
+	return X86_64 // default to x86_64; TODO: revisit this default
 }
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
