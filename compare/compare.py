@@ -232,7 +232,15 @@ def compare(path_a: str, path_b: str, all_types_flag: bool = False):
     types_b = Counter(rtype for rtype, _ in keys_b)
     all_types = sorted(set(types_a) | set(types_b))
 
+    _IGNORE_PREFIXES = (
+        'defang-gcp:', 'defang-aws:', 'defang-azure:',
+        'pulumi:providers:gcp', 'pulumi:providers:aws', 'pulumi:providers:azure',
+        'pulumi:pulumi:Stack',
+    )
+
     for rtype in all_types:
+        if not all_types_flag and rtype.startswith(_IGNORE_PREFIXES):
+            continue
         a_count = types_a.get(rtype, 0)
         b_count = types_b.get(rtype, 0)
         if not all_types_flag and a_count == b_count:
