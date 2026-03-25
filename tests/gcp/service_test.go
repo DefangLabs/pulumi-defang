@@ -47,9 +47,19 @@ func TestConstructGcpCloudRunServiceWithIngressPort(t *testing.T) {
 	require.NoError(t, err)
 }
 
+const gcpBuildType = "defang-gcp:defanggcp:Build"
+
 func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
-	t.Skip("build support for GCP standalone Service not yet implemented")
-	server := testutil.MakeGcpTestServer()
+	var capturedBuild property.Map
+	mocks := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == gcpBuildType {
+				capturedBuild = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Service"),
@@ -61,6 +71,11 @@ func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedBuild.Len(), "expected defang-gcp:defanggcp:Build to be registered")
+	assert.Equal(t, "./app", capturedBuild.Get("source").AsString())
+	assert.NotEmpty(t, capturedBuild.Get("sourceDigest").AsString(), "sourceDigest should be set")
+	assert.NotEmpty(t, capturedBuild.Get("machineType").AsString(), "machineType should be set")
+	assert.NotEqual(t, float64(0), capturedBuild.Get("diskSizeGb").AsNumber(), "diskSizeGb should be set")
 }
 
 func TestConstructGcpCloudRunServiceWithEnvironment(t *testing.T) {

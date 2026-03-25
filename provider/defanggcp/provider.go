@@ -18,6 +18,9 @@ const Name string = "defang-gcp"
 
 func Provider() p.Provider {
 	return infer.Provider(infer.Options{
+		Resources: []infer.InferredResource{
+			infer.Resource[*Build, BuildArgs, BuildState](&Build{}),
+		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
 			infer.Component[*Service, ServiceInputs, *ServiceOutputs](&Service{}),
