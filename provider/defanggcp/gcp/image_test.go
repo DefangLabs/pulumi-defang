@@ -7,6 +7,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
@@ -250,6 +251,36 @@ func TestGetServiceImage(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestGenerateBuildSteps(t *testing.T) {
+	const dest = "us-central1-docker.pkg.dev/my-project/my-repo/app:latest"
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		out := generateBuildSteps(pulumi.String(dest).ToStringOutput())
+		out.ApplyT(func(stepsYAML string) string {
+			var steps []buildStep
+			require.NoError(t, yaml.Unmarshal([]byte(stepsYAML), &steps))
+
+			require.Len(t, steps, 2, "expected exactly 2 build steps")
+
+			// Step 0: buildx create with docker-container driver
+			assert.Equal(t, "gcr.io/cloud-builders/docker", steps[0].Name)
+			assert.Contains(t, steps[0].Args, "create")
+			assert.Contains(t, steps[0].Args, "docker-container")
+
+			// Step 1: buildx build with --load (not --push)
+			assert.Equal(t, "gcr.io/cloud-builders/docker", steps[1].Name)
+			assert.Contains(t, steps[1].Args, "build")
+			assert.Contains(t, steps[1].Args, "--load")
+			assert.NotContains(t, steps[1].Args, "--push")
+			assert.Contains(t, steps[1].Args, dest)
+
+			return stepsYAML
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", testMocks{}))
+	require.NoError(t, err)
 }
 
 func TestBuildSourceDigest(t *testing.T) {

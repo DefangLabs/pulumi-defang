@@ -94,7 +94,9 @@ type buildStep struct {
 }
 
 // generateBuildSteps returns a YAML-encoded Cloud Build step list that builds
-// and pushes a Docker image to dest using buildx.
+// a Docker image and loads it into the local Docker daemon. Cloud Build then
+// pushes the image to the registry via the images: field so that build results
+// contain the image digest.
 func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
 	return dest.ApplyT(func(d string) (string, error) {
 		steps := []buildStep{
@@ -109,7 +111,7 @@ func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
 				Name: "gcr.io/cloud-builders/docker",
 				Args: []string{
 					"buildx", "build", "--platform", "linux/amd64",
-					"-t", d, "--push", ".",
+					"-t", d, "--load", ".",
 				},
 			},
 		}
