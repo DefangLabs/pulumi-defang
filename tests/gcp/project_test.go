@@ -96,6 +96,97 @@ func TestConstructProject(t *testing.T) {
 	assert.Equal(t, 2, countType(*records, "gcp:compute/globalForwardingRule:GlobalForwardingRule"))
 }
 
+func TestConstructProjectAlwaysCreatesPrivateDNSZone(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
+		return m.Get("visibility").AsString() == "private"
+	})
+	require.NotNil(t, zone, "expected a private ManagedZone")
+	assert.Equal(t, "google.internal.", zone.inputs.Get("dnsName").AsString())
+}
+
+func TestConstructProjectWithDomainCreatesPublicDNSZone(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"worker": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("myapp:worker"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
+		return m.Get("dnsName").AsString() == "example.com."
+	})
+	require.NotNil(t, zone, "expected a public ManagedZone for example.com")
+	assert.Equal(t, "example.com.", zone.inputs.Get("dnsName").AsString())
+}
+
+func TestConstructProjectWithDomainCreatesCAARecord(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"worker": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("myapp:worker"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	caa := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("type").AsString() == "CAA"
+	})
+	require.NotNil(t, caa, "expected a CAA RecordSet")
+	assert.Equal(t, "example.com.", caa.inputs.Get("name").AsString())
+	rrdatas := caa.inputs.Get("rrdatas").AsArray()
+	assert.Equal(t, 2, rrdatas.Len())
+}
+
+func TestConstructProjectWithoutDomainSkipsCAARecord(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	caa := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("type").AsString() == "CAA"
+	})
+	assert.Nil(t, caa, "expected no CAA RecordSet without a domain")
+}
+
 func TestConstructProjectWithoutIngressSkipsLoadBalancer(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
@@ -163,8 +254,8 @@ func TestConstructProjectWithDomainCreatesWildcardCert(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// DNS zone for the domain
-	assert.Equal(t, 1, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	// Private zone always created; public zone when domain is set → 2 total
+	assert.Equal(t, 2, countType(*records, "gcp:dns/managedZone:ManagedZone"))
 	// DNS authorization for the wildcard cert challenge
 	assert.Equal(t, 1, countType(*records, "gcp:certificatemanager/dnsAuthorization:DnsAuthorization"))
 	// Wildcard certificate
@@ -186,7 +277,8 @@ func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
 
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	// Private zone is always created even without a domain
+	assert.Equal(t, 1, countType(*records, "gcp:dns/managedZone:ManagedZone"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/dnsAuthorization:DnsAuthorization"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
