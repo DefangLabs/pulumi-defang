@@ -167,7 +167,8 @@ func buildTemplate(
 				StartupProbe: startupProbe,
 			},
 		},
-		ServiceAccount: sa.Email,
+		MaxInstanceRequestConcurrency: pulumi.Int(80),
+		ServiceAccount:                sa.Email,
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(maxInstances),
 		},

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
+	"github.com/pulumi/pulumi-go-provider/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
@@ -137,4 +139,29 @@ func TestConstructGcpCloudRunServiceWithDomainName(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+}
+
+func TestConstructGcpCloudRunServiceSetsMaxInstanceRequestConcurrency(t *testing.T) {
+	var capturedTemplate property.Map
+	mocks := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == "gcp:cloudrunv2/service:Service" {
+				capturedTemplate = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Service"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"image": property.New("myapp:latest"),
+		}),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
+	template := capturedTemplate.Get("template").AsMap()
+	assert.InDelta(t, float64(80), template.Get("maxInstanceRequestConcurrency").AsNumber(), 0)
 }
