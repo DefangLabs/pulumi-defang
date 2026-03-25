@@ -61,6 +61,22 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
+	_, err = dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
+		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
+		DnsName:     pulumi.String("google.internal."),
+		Visibility:  pulumi.String("private"),
+		PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
+			Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
+				&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
+					NetworkUrl: vpc.ID(),
+				},
+			},
+		},
+	}, append(opts, pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &GlobalConfig{
 		Region:   region,
 		VpcId:    vpc.ID().ToStringOutput(),
@@ -97,6 +113,20 @@ func createWildcardCert(
 		return err
 	}
 	cfg.PublicZoneId = zone.Name
+
+	// CAA record authorizes pki.goog (GCP Certificate Manager) and letsencrypt.org as valid CAs.
+	if _, err := dns.NewRecordSet(ctx, fqdn+".-CAA-dns", &dns.RecordSetArgs{
+		ManagedZone: zone.Name,
+		Name:        pulumi.String(fqdn + "."),
+		Type:        pulumi.String("CAA"),
+		Ttl:         pulumi.Int(3600),
+		Rrdatas: pulumi.StringArray{
+			pulumi.String(`0 issue "pki.goog"`),
+			pulumi.String(`0 issue "letsencrypt.org"`),
+		},
+	}, opts...); err != nil {
+		return err
+	}
 
 	authzArgs := &certificatemanager.DnsAuthorizationArgs{
 		Description: pulumi.StringPtr("Wildcard DNS authorization for " + fqdn),
