@@ -10,7 +10,7 @@ import (
 // AWS ELB Account IDs.
 // See https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
 //
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
+
 var elbAccountIds = map[aws.Region]string{
 	"us-east-1":      "127311923021", // US East (N. Virginia)
 	"us-east-2":      "033677994240", // US East (Ohio)
@@ -40,12 +40,12 @@ var elbAccountIds = map[aws.Region]string{
 	"cn-northwest-1": "037604701340", // China (Ningxia); requires a separate account
 }
 
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
+
 func getElbAccountId(region aws.Region) string {
 	return elbAccountIds[region]
 }
 
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
+
 func getElbAccountArn(region aws.Region) string {
 	accountId := getElbAccountId(region)
 	if accountId == "" {
@@ -54,7 +54,7 @@ func getElbAccountArn(region aws.Region) string {
 	return `arn:aws:iam::` + accountId + `:root`
 }
 
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
+
 func getElbPrincipal(region aws.Region) any {
 	arn := getElbAccountArn(region)
 	if arn == "" {
@@ -65,7 +65,7 @@ func getElbPrincipal(region aws.Region) any {
 	}
 }
 
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
+
 func getNlbPrincipal() iam.ServicePrincipal {
 	return iam.ServicePrincipal{
 		Service: pulumi.String("delivery.logs.amazonaws.com"),

@@ -11,6 +11,7 @@ import (
 
 type AlbResult struct {
 	Alb           *lb.LoadBalancer
+	AlbSG         *ec2.SecurityGroup
 	HttpListener  *lb.Listener
 	HttpsListener *lb.Listener
 }
@@ -22,7 +23,6 @@ func CreateALB(
 	ctx *pulumi.Context,
 	vpcID pulumi.StringInput,
 	subnetIDs pulumi.StringArrayInput,
-	serviceSG *ec2.SecurityGroup,
 	certificateArn pulumi.StringPtrInput,
 	opts ...pulumi.ResourceOption,
 ) (*AlbResult, error) {
@@ -46,33 +46,23 @@ func CreateALB(
 		},
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				Description: pulumi.String("Allow all outbound traffic"),
+				Protocol:    pulumi.String("-1"),
+				FromPort:    pulumi.Int(0),
+				ToPort:      pulumi.Int(0),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-	}, opts...)
+	}, common.MergeOptions(opts,
+		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB security group: %w", err)
 	}
 
-	// Allow traffic from ALB to service security group
-	_, err = ec2.NewSecurityGroupRule(ctx, "alb-to-svc", &ec2.SecurityGroupRuleArgs{
-		Type:                  pulumi.String("ingress"),
-		FromPort:              pulumi.Int(0),
-		ToPort:                pulumi.Int(65535),
-		Protocol:              pulumi.String("tcp"),
-		SecurityGroupId:       serviceSG.ID(),
-		SourceSecurityGroupId: albSG.ID(),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ALB-to-service SG rule: %w", err)
-	}
-
 	// Create ALB
-	alb, err := lb.NewLoadBalancer(ctx, "alb", &lb.LoadBalancerArgs{
-		// AccessLogs: TODO,
+	const name = "alb"
+	albArgs := &lb.LoadBalancerArgs{
 		Internal:                 pulumi.Bool(false),
 		LoadBalancerType:         pulumi.String("application"),
 		SecurityGroups:           pulumi.StringArray{albSG.ID()},
@@ -81,7 +71,20 @@ func CreateALB(
 		Tags: pulumi.StringMap{
 			"defang:scope": pulumi.String("pub"),
 		},
-	}, opts...)
+	}
+
+	if AlbAccessLogs.Get(ctx) {
+		logsBucket, logErr := createLbLogsBucket(ctx, name+"-logs", ApplicationLoadBalancer)
+		if logErr != nil {
+			return nil, fmt.Errorf("creating ALB logs bucket: %w", logErr)
+		}
+		albArgs.AccessLogs = &lb.LoadBalancerAccessLogsArgs{
+			Bucket:  logsBucket.ID(),
+			Enabled: pulumi.Bool(true),
+		}
+	}
+
+	alb, err := lb.NewLoadBalancer(ctx, name, albArgs, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB: %w", err)
 	}
@@ -104,7 +107,7 @@ func CreateALB(
 	var httpsListener *lb.Listener
 	if certificateArn != nil {
 		// Create HTTPS listener with default 404 response
-		httpsListener, err = lb.NewListener(ctx, "http-listener", &lb.ListenerArgs{
+		httpsListener, err = lb.NewListener(ctx, name+"-https", &lb.ListenerArgs{
 			CertificateArn:  certificateArn,
 			LoadBalancerArn: alb.Arn,
 			Port:            pulumi.Int(443),
@@ -129,7 +132,7 @@ func CreateALB(
 	}
 
 	// Create HTTP listener with default 404 response
-	httpListener, err := lb.NewListener(ctx, "http-listener", &lb.ListenerArgs{
+	httpListener, err := lb.NewListener(ctx, name+"-http", &lb.ListenerArgs{
 		LoadBalancerArn: alb.Arn,
 		Port:            pulumi.Int(80),
 		Protocol:        pulumi.String("HTTP"),
@@ -141,6 +144,7 @@ func CreateALB(
 
 	return &AlbResult{
 		Alb:           alb,
+		AlbSG:         albSG,
 		HttpListener:  httpListener,
 		HttpsListener: httpsListener,
 	}, nil

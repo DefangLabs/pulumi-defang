@@ -35,10 +35,12 @@ type SharedInfra struct {
 	PrivateSubnetIDs pulumi.StringArrayInput
 	PrivateZoneID    pulumi.IDPtrOutput
 	PrivateDomain    string
-	Sg               *ec2.SecurityGroup
-	HttpListener     *lb.Listener     // nil if no ALB
-	HttpsListener    *lb.Listener     // nil if no ALB
-	Alb              *lb.LoadBalancer // nil if no ALB
+	PublicDomain     string
+	Sg               *ec2.SecurityGroup // shared "privateSG" — attached to all services, no ingress rules
+	AlbSG            *ec2.SecurityGroup // nil if no ALB
+	HttpListener     *lb.Listener       // nil if no ALB
+	HttpsListener    *lb.Listener       // nil if no ALB
+	Alb              *lb.LoadBalancer   // nil if no ALB
 	Region           string
 	BuildInfra       *BuildInfra // nil if no builds needed
 	SkipNatGW        bool
@@ -47,9 +49,10 @@ type SharedInfra struct {
 
 // ECSServiceArgs holds per-service arguments for CreateECSService.
 type ECSServiceArgs struct {
-	Infra    *SharedInfra
-	ImageURI pulumi.StringInput // container image URI (built or pre-built)
-	Networks compose.Networks   // from project
+	Infra              *SharedInfra
+	ImageURI           pulumi.StringInput // container image URI (built or pre-built)
+	Networks           compose.Networks   // from project
+	WaitForSteadyState bool               // true if another service depends on this one with condition: service_healthy
 }
 
 type EcsServiceResult struct {
@@ -135,14 +138,111 @@ func fargateResources(cpus float64, memoryMiB int) (string, string) {
 // portProtocol normalizes the transport protocol for ECS container port mappings.
 // Only "tcp" and "udp" are valid; matches TS: ep.protocol === "udp" ? "udp" : "tcp"
 func portProtocol(p compose.ServicePortConfig) awsecs.TransportProtocol {
-	proto := compose.GetPortProtocol(p)
-	if proto == "udp" {
+	if p.GetProtocol() == udpProto {
 		return awsecs.TransportProtocolUdp
 	}
 	return awsecs.TransportProtocolTcp
 }
 
-const grpcProto = "grpc"
+const (
+	grpcProto = "grpc"
+	udpProto  = "udp"
+	tcpProto  = "tcp"
+)
+
+func roleArn(r *iam.Role) pulumi.StringOutput {
+	if r == nil {
+		return pulumi.StringOutput{}
+	}
+	return r.Arn
+}
+
+// createServiceSG creates a per-service security group with port-specific ingress rules.
+// Matches TS createServiceSG → createInstanceSG pattern:
+//   - LB-backed (ingress) ports: allow from ALB SG (or VPC CIDR if no ALB SG)
+//   - Public non-LB ports: allow from 0.0.0.0/0
+//   - Private non-LB ports: allow from privateSG (infra.Sg) as source SG
+//   - ICMP PMTUD rule when there are endpoints
+func createServiceSG(
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	infra *SharedInfra,
+	isPrivate bool,
+	opts ...pulumi.ResourceOption,
+) (*ec2.SecurityGroup, error) {
+	var ingress ec2.SecurityGroupIngressArray
+
+	for _, port := range svc.Ports {
+		proto := tcpProto
+		if port.GetProtocol() == udpProto {
+			proto = udpProto
+		}
+
+		rule := &ec2.SecurityGroupIngressArgs{
+			Description: pulumi.String(fmt.Sprintf("port %d/%s", port.Target, proto)),
+			FromPort:    pulumi.Int(port.Target),
+			ToPort:      pulumi.Int(port.Target),
+			Protocol:    pulumi.String(proto),
+		}
+
+		switch {
+		case port.IsIngress() && infra.AlbSG != nil:
+			// LB-backed port: allow from ALB SG (matches TS: VPC CIDR for ingress ports)
+			rule.SecurityGroups = pulumi.StringArray{infra.AlbSG.ID()}
+		case isPrivate && infra.Sg != nil:
+			// Private port: allow from privateSG as source SG
+			rule.SecurityGroups = pulumi.StringArray{infra.Sg.ID()}
+		default:
+			// Public port: allow from anywhere
+			rule.CidrBlocks = pulumi.StringArray{pulumi.String("0.0.0.0/0")}
+		}
+
+		ingress = append(ingress, rule)
+	}
+
+	// ICMP Path MTU Discovery (RFC 1191) — matches TS createInstanceSG
+	if len(svc.Ports) > 0 {
+		icmpRule := &ec2.SecurityGroupIngressArgs{
+			Description: pulumi.String("Allow ICMP Path MTU Discovery"),
+			FromPort:    pulumi.Int(-1),
+			ToPort:      pulumi.Int(-1),
+			Protocol:    pulumi.String("icmp"),
+		}
+		if isPrivate && infra.Sg != nil {
+			icmpRule.SecurityGroups = pulumi.StringArray{infra.Sg.ID()}
+		} else {
+			icmpRule.CidrBlocks = pulumi.StringArray{pulumi.String("0.0.0.0/0")}
+		}
+		ingress = append(ingress, icmpRule)
+	}
+
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName+"-sg", &ec2.SecurityGroupArgs{
+		VpcId:       infra.VpcID,
+		Description: pulumi.String("Security group for " + serviceName),
+		Ingress:     ingress,
+		Egress: ec2.SecurityGroupEgressArray{
+			&ec2.SecurityGroupEgressArgs{
+				Description: pulumi.String("Allow all outbound traffic"),
+				Protocol:    pulumi.String("-1"),
+				FromPort:    pulumi.Int(0),
+				ToPort:      pulumi.Int(0),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			},
+		},
+		Tags: pulumi.StringMap{
+			"defang:service": pulumi.String(serviceName),
+			"defang:scope":   pulumi.String(map[bool]string{true: "priv", false: "pub"}[isPrivate]),
+		},
+	}, common.MergeOptions(opts,
+		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+	)...)
+	if err != nil {
+		return nil, fmt.Errorf("creating service security group: %w", err)
+	}
+
+	return sg, nil
+}
 
 // CreateECSService creates an ECS Fargate service for a container service.
 //
@@ -156,10 +256,37 @@ func CreateECSService(
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*EcsServiceResult, error) {
+	infra := args.Infra
+	if infra == nil {
+		infra = &SharedInfra{} // allow standalone usage without shared infra
+	}
+
 	// Create task role
 	taskRole, err := createTaskRole(ctx, serviceName, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating task role: %w", err)
+	}
+
+	// Attach route53 sidecar policy if service has host ports (private DNS)
+	if svc.HasHostPorts() && infra.route53SidecarPolicy != nil {
+		_, err = iam.NewRolePolicyAttachment(ctx, serviceName+"-AllowRoute53Sidecar", &iam.RolePolicyAttachmentArgs{
+			Role:      taskRole.Name,
+			PolicyArn: infra.route53SidecarPolicy.Arn,
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("attaching route53 sidecar policy: %w", err)
+		}
+	}
+
+	// Attach bedrock policy if service uses LLM (x-defang-llm)
+	if svc.LLM != nil && infra.bedrockPolicy != nil {
+		_, err = iam.NewRolePolicyAttachment(ctx, serviceName+"-BedrockPolicy", &iam.RolePolicyAttachmentArgs{
+			Role:      taskRole.Name,
+			PolicyArn: infra.bedrockPolicy.Arn,
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("attaching bedrock policy: %w", err)
+		}
 	}
 
 	// Build container definition
@@ -191,14 +318,12 @@ func CreateECSService(
 		}
 	}
 
-	infra := args.Infra
-
 	// Build environment variables (plain strings, resolved before JSON marshaling)
 	envVars := []awsecs.KeyValuePair{
 		{Name: ptr.String("DEFANG_SERVICE"), Value: ptr.String(serviceName)},
 	}
-	if svc.DomainName != nil {
-		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(*svc.DomainName)})
+	if svc.DomainName != "" {
+		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(svc.DomainName)})
 	}
 	for k, v := range svc.Environment {
 		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String(k), Value: ptr.String(v)})
@@ -208,6 +333,7 @@ func CreateECSService(
 	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
 	// so all values must be concrete before marshaling.
 	containerName := serviceName
+
 
 	allInputs := []interface{}{args.ImageURI}
 	hasLogGroup := infra != nil && infra.LogGroup != nil
@@ -235,6 +361,9 @@ func CreateECSService(
 			}
 		}
 
+		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
+		// Instead, we rewrite environment variables to use FQDNs at the provider level.
+
 		containerDefs := []awsecs.ContainerDefinition{{
 			Name:             &containerName,
 			Essential:        ptr.Bool(true),
@@ -250,7 +379,7 @@ func CreateECSService(
 		if svc.HasHostPorts() && hasPrivateZone {
 			privateZoneID := all[2].(*pulumi.ID)
 			privateFqdn := fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain)
-			containerDefs = append(containerDefs, awsecs.ContainerDefinition{
+			sidecarDef := awsecs.ContainerDefinition{
 				Name:      ptr.String("route53-sidecar"),
 				Image:     ptr.String("public.ecr.aws/defang-io/route53-sidecar:65e431c"),
 				Essential: ptr.Bool(false),
@@ -265,7 +394,18 @@ func CreateECSService(
 					ContainerName: &containerName,
 					Condition:     awsecs.ContainerConditionStart,
 				}},
-			})
+			}
+			if Route53SidecarLogs.Get(ctx) && logConfiguration != nil {
+				sidecarDef.LogConfiguration = &awsecs.LogConfiguration{
+					LogDriver: awsecs.LogDriverAwslogs,
+					Options: map[string]string{
+						"awslogs-group":         logConfiguration.Options["awslogs-group"],
+						"awslogs-region":        infra.Region,
+						"awslogs-stream-prefix": "route53-sidecar",
+					},
+				}
+			}
+			containerDefs = append(containerDefs, sidecarDef)
 		}
 		bytes, err := json.Marshal(containerDefs)
 		return string(bytes), err
@@ -285,7 +425,7 @@ func CreateECSService(
 		RequiresCompatibilities: pulumi.StringArray{pulumi.String("FARGATE")},
 		Cpu:                     pulumi.String(fargateCPU),
 		Memory:                  pulumi.String(fargateMemory),
-		ExecutionRoleArn:        infra.ExecRole.Arn,
+		ExecutionRoleArn:        roleArn(infra.ExecRole),
 		TaskRoleArn:             taskRole.Arn,
 		ContainerDefinitions:    containerDefsJSON,
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
@@ -307,130 +447,38 @@ func CreateECSService(
 	var lbDependsOn []pulumi.Resource
 	var endpointOutput pulumix.Output[string]
 
-	if svc.HasIngressPorts() && infra.HttpListener != nil {
+	listener := infra.HttpListener
+	if infra.HttpsListener != nil {
+		// If HTTPS listener exists, use it instead of HTTP (matches TS createTgLrPair)
+		listener = infra.HttpsListener
+	}
+
+	if svc.HasIngressPorts() && listener != nil {
+		serviceLabel := common.SafeLabel(serviceName)
+		publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.PublicDomain)
+
 		firstIngress := true
 		for _, port := range svc.Ports {
-			if port.Mode != "ingress" {
+			endpoint := fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.PublicDomain)
+
+			endpoints := []string{endpoint}
+			if port.IsIngress() && firstIngress {
+				if svc.DomainName != "" {
+					endpoints = append(endpoints, svc.DomainName)
+				} else {
+					// FIXME: which service should listen on the project domain?
+					endpoints = append(endpoints, publicFqdn, infra.PublicDomain)
+				}
+				endpoints = append(endpoints, svc.Networks[compose.DefaultNetwork].Aliases...)
+				firstIngress = false
+			}
+
+			tg, lr, err := createTgLrPair(ctx, serviceName, infra.VpcID, listener, port, svc.HealthCheck, endpoints, opts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
+			}
+			if tg == nil || lr == nil {
 				continue
-			}
-
-			// Only create TG/LR for http, http2, grpc (matches TS createTgLrPair)
-			appProto := compose.GetAppProtocol(port)
-			if appProto != "http" && appProto != "http2" && appProto != "grpc" {
-				continue
-			}
-
-			tgName := targetGroupName(serviceName, int(port.Target), appProto)
-
-			// Target group health check (matches TS createTargetGroup in lb.ts)
-			defaultInterval := HealthCheckInterval.Get(ctx)
-			interval := defaultInterval
-			if svc.HealthCheck != nil {
-				interval = clampInt(int(svc.HealthCheck.IntervalSeconds), 5, 300, defaultInterval)
-			}
-			maxTimeout := interval - 1
-			if maxTimeout > 120 {
-				maxTimeout = 120
-			}
-			timeout := (6)
-			if svc.HealthCheck != nil {
-				timeout = clampInt(int(svc.HealthCheck.TimeoutSeconds), 2, maxTimeout, 6)
-			}
-			unhealthyThreshold := (3)
-			if svc.HealthCheck != nil {
-				unhealthyThreshold = clampInt(int(svc.HealthCheck.Retries), 2, 10, 3)
-			}
-
-			// Determine matcher based on protocol (matches TS createTargetGroup)
-			// With default path "/": grpc -> "0", http/http2 -> "200-399"
-			matcher := "200-399"
-			if appProto == grpcProto {
-				matcher = "0"
-			}
-
-			tgArgs := &lb.TargetGroupArgs{
-				Port:                       pulumi.Int(port.Target),
-				Protocol:                   pulumi.String("HTTP"),
-				TargetType:                 pulumi.String("ip"),
-				VpcId:                      infra.VpcID,
-				LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
-				DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
-				HealthCheck: &lb.TargetGroupHealthCheckArgs{
-					// Port:               pulumi.String("traffic-port"),
-					Path:               pulumi.String("/"),
-					HealthyThreshold:   pulumi.Int(HealthCheckThreshold.Get(ctx)),
-					UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
-					Interval:           pulumi.Int(interval),
-					Timeout:            pulumi.Int(timeout),
-					Matcher:            pulumi.String(matcher),
-				},
-				Tags: pulumi.StringMap{
-					"defang:service": pulumi.String(serviceName),
-				},
-			}
-
-			// Set protocol version for http2/grpc (matches TS createTargetGroup)
-			switch appProto {
-			case "http2":
-				tgArgs.ProtocolVersion = pulumi.String("HTTP2")
-			case "grpc":
-				tgArgs.ProtocolVersion = pulumi.String("GRPC")
-			}
-
-			tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opts...)
-			if tgErr != nil {
-				return nil, fmt.Errorf("creating target group: %w", tgErr)
-			}
-
-			// Build listener rule conditions (matches TS createTgLrPair)
-			conditions := lb.ListenerRuleConditionArray{}
-
-			// Host-based routing: use DomainName for first ingress port, ALB DNS as fallback
-			switch {
-			case firstIngress && svc.DomainName != nil:
-				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
-					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
-						Values: pulumi.StringArray{pulumi.String(*svc.DomainName)},
-					},
-				})
-			case infra.Alb != nil:
-				// Fall back to ALB DNS name (matches TS fallback behavior)
-				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
-					HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
-						Values: pulumi.StringArray{infra.Alb.DnsName},
-					},
-				})
-			default:
-				// Last resort: path-based routing
-				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
-					PathPattern: &lb.ListenerRuleConditionPathPatternArgs{
-						Values: pulumi.StringArray{pulumi.String("/*")},
-					},
-				})
-			}
-
-			// Add gRPC content-type header matching (matches TS createTgLrPair)
-			if appProto == grpcProto {
-				conditions = append(conditions, &lb.ListenerRuleConditionArgs{
-					HttpHeader: &lb.ListenerRuleConditionHttpHeaderArgs{
-						HttpHeaderName: pulumi.String("content-type"),
-						Values:         pulumi.StringArray{pulumi.String("application/grpc*")},
-					},
-				})
-			}
-
-			lr, lrErr := lb.NewListenerRule(ctx, tgName+"-rule", &lb.ListenerRuleArgs{
-				ListenerArn: infra.HttpListener.Arn,
-				Actions: lb.ListenerRuleActionArray{
-					&lb.ListenerRuleActionArgs{
-						Type:           pulumi.String("forward"),
-						TargetGroupArn: tg.Arn,
-					},
-				},
-				Conditions: conditions,
-			}, append(opts, pulumi.DeleteBeforeReplace(true))...)
-			if lrErr != nil {
-				return nil, fmt.Errorf("creating listener rule: %w", lrErr)
 			}
 
 			loadBalancers = append(loadBalancers, &ecs.ServiceLoadBalancerArgs{
@@ -439,7 +487,6 @@ func CreateECSService(
 				TargetGroupArn: tg.Arn,
 			})
 			lbDependsOn = append(lbDependsOn, lr)
-			firstIngress = false
 		}
 	}
 
@@ -452,14 +499,29 @@ func CreateECSService(
 		subnetIds = infra.PublicSubnetIDs
 	}
 
+	// Create per-service SG with port-specific ingress (matches TS createServiceSG)
+	serviceSG, err := createServiceSG(ctx, serviceName, svc, infra, isPrivate, opts...)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)
+	var clusterArn pulumi.StringInput
+	if infra.Cluster != nil {
+		clusterArn = infra.Cluster.Arn
+	}
+	// Attach both per-service SG and shared privateSG (matches TS: [serviceSG, privateSG])
+	securityGroups := pulumi.StringArray{serviceSG.ID()}
+	if infra.Sg != nil {
+		securityGroups = append(securityGroups, infra.Sg.ID())
+	}
 	ecsServiceArgs := &ecs.ServiceArgs{
-		Cluster:        infra.Cluster.Arn,
+		Cluster:        clusterArn,
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
 			Subnets:        subnetIds,
-			SecurityGroups: pulumi.StringArray{infra.Sg.ID()},
+			SecurityGroups: securityGroups,
 			AssignPublicIp: pulumi.Bool(assignPublicIp),
 		},
 		LoadBalancers: loadBalancers,
@@ -486,6 +548,10 @@ func CreateECSService(
 		}
 	} else {
 		ecsServiceArgs.LaunchType = pulumi.String("FARGATE")
+	}
+
+	if args.WaitForSteadyState {
+		ecsServiceArgs.WaitForSteadyState = pulumi.Bool(true)
 	}
 
 	ecsServiceOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.DependsOn(lbDependsOn))

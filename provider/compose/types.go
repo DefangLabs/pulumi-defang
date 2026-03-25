@@ -64,9 +64,9 @@ type ServiceConfig struct {
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional" yaml:"healthcheck,omitempty"`
 
 	// Custom domain name
-	DomainName *string `pulumi:"domainName,optional" yaml:"domainname,omitempty"`
+	DomainName string `pulumi:"domainName,optional" yaml:"domainname,omitempty"`
 
-	Networks map[NetworkID]*ServiceNetworkConfig `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	Networks map[NetworkID]ServiceNetworkConfig `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
 	DependsOn DependsOnConfig `pulumi:"dependsOn,optional" yaml:"depends_on,omitempty"`
 
@@ -87,12 +87,13 @@ type NetworkConfig struct {
 }
 
 type ServiceDependency struct {
+	// Condition is one of "service_healthy" | "service_started" (default) | "service_completed_successfully"
 	Condition string `pulumi:"condition,optional" yaml:"condition,omitempty"`
 	Required  bool   `pulumi:"required,optional"  yaml:"required,omitempty"`
 }
 
 type ServiceNetworkConfig struct {
-	// Aliases []string `pulumi:"aliases,optional" yaml:"aliases,omitempty"`
+	Aliases []string `pulumi:"aliases,optional" yaml:"aliases,omitempty"`
 }
 
 // ServicePortConfig defines a port mapping for a service.

@@ -5,7 +5,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
 func createBucket(
 	ctx *pulumi.Context,
 	name string,
@@ -39,7 +38,6 @@ func createBucket(
 	return bucket, err
 }
 
-//nolint:unused // ported from TypeScript, will be used when log buckets are enabled
 func createPrivateBucket(
 	ctx *pulumi.Context,
 	name string,

@@ -26,7 +26,7 @@ type ServiceInputs struct {
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
-	DomainName  *string                     `pulumi:"domainName,optional"`
+	DomainName  string                      `pulumi:"domainName,optional"`
 
 	AWS *provideraws.SharedInfra `pulumi:"aws,optional"`
 }

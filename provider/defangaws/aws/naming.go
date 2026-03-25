@@ -35,15 +35,14 @@ var randomNamingPattern = regexp.MustCompile(`\$\{((hex|alphanum|string|num)\((\
 // resolves it for use as a resource name prefix (stripping random suffixes).
 // Falls back to the provided name if no pattern is configured.
 func autonamePrefix(ctx *pulumi.Context, name string) string {
-	var autonamingCfg struct {
+	var autonaming struct {
 		Pattern string `json:"pattern"`
 	}
-	cfg := config.New(ctx, "pulumi")
-	if err := cfg.TryObject("autonaming", &autonamingCfg); err != nil || autonamingCfg.Pattern == "" {
+	if err := config.New(ctx, "pulumi").TryObject("autonaming", &autonaming); err != nil || autonaming.Pattern == "" {
 		return name
 	}
 
-	pattern := autonamingCfg.Pattern
+	pattern := autonaming.Pattern
 
 	// Substitute known variables
 	pattern = strings.ReplaceAll(pattern, "${organization}", ctx.Organization())

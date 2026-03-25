@@ -8,8 +8,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// GetPortProtocol returns the protocol, defaulting to "tcp".
-func GetPortProtocol(p ServicePortConfig) string {
+// IsIngress returns true if the port mode is "ingress", defaulting to true.
+func (p ServicePortConfig) IsIngress() bool {
+	return p.Mode == "ingress" || p.Mode == "" // default to ingress
+}
+
+// GetProtocol returns the protocol, defaulting to "tcp".
+func (p ServicePortConfig) GetProtocol() string {
 	if p.Protocol != "" {
 		return p.Protocol
 	}
@@ -17,7 +22,7 @@ func GetPortProtocol(p ServicePortConfig) string {
 }
 
 // GetAppProtocol returns the application protocol, defaulting to "http".
-func GetAppProtocol(p ServicePortConfig) string {
+func (p ServicePortConfig) GetAppProtocol() string {
 	if p.AppProtocol != "" {
 		return p.AppProtocol
 	}
@@ -167,14 +172,6 @@ func GetConfigOrEnvValue(
 		v = defaultValue
 	}
 	return pulumi.String(v).ToStringOutput()
-}
-
-// StringPtrToInput converts a plain *string to a pulumi.StringPtrInput.
-func StringPtrToInput(s *string) pulumi.StringPtrInput {
-	if s == nil {
-		return nil
-	}
-	return pulumi.String(*s)
 }
 
 // ToPulumiStringArray converts a plain []string to a pulumi.StringArray.

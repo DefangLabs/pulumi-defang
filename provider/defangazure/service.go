@@ -24,7 +24,7 @@ type AzureContainerAppInputs struct {
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
-	DomainName  *string                     `pulumi:"domainName,optional"`
+	DomainName  string                      `pulumi:"domainName,optional"`
 }
 
 // AzureContainerAppOutputs holds the outputs of an AzureContainerApp component.

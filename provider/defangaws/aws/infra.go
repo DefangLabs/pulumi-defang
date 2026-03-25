@@ -10,7 +10,6 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -32,7 +31,7 @@ func BuildSharedInfra(
 	}
 	profile := config.New(ctx, "aws").Get("profile")
 
-	net, err := ResolveNetworking(ctx, opts...)
+	net, err := ResolveNetworking(ctx, serviceName, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -70,9 +69,9 @@ func BuildSharedInfra(
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
 
-	var imgInfra *ImageInfra
+	var imgInfra *BuildInfra
 	if svc.NeedsBuild() {
-		imgInfra, err = CreateImageInfra(ctx, logGroup, profile, region.Region, opts...)
+		imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 		}
@@ -81,7 +80,7 @@ func BuildSharedInfra(
 	var httpListener *lb.Listener
 	var svcALB *lb.LoadBalancer
 	if svc.HasIngressPorts() {
-		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, opts...)
+		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, nil, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
@@ -96,7 +95,7 @@ func BuildSharedInfra(
 		VpcID:            net.VpcID,
 		PublicSubnetIDs:  net.PublicSubnetIDs,
 		PrivateSubnetIDs: net.PrivateSubnetIDs,
-		PrivateZoneID:    net.PrivateZoneID,
+		PrivateZoneID:    net.PrivateZone.ID().ToIDPtrOutput(),
 		PrivateDomain:    net.PrivateDomain,
 		SkipNatGW:        !net.UseNatGW,
 		Sg:               sg,
@@ -104,7 +103,7 @@ func BuildSharedInfra(
 		HttpsListener:    nil, // TODO: support HTTPS listener
 		Alb:              svcALB,
 		Region:           region.Region,
-		ImageInfra:       imgInfra,
+		BuildInfra:       imgInfra,
 	}, nil
 }
 */
@@ -133,13 +132,16 @@ func CreateProjectInfra(
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				Description: pulumi.String("Allow all outbound traffic"),
+				Protocol:    pulumi.String("-1"),
+				FromPort:    pulumi.Int(0),
+				ToPort:      pulumi.Int(0),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-	}, opts...)
+	}, common.MergeOptions(opts,
+		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}), // lowered, to fail quickly when SG is in use
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
@@ -174,18 +176,18 @@ func CreateProjectInfra(
 		}
 	}
 
-	var httpListener *lb.Listener
-	var alb *lb.LoadBalancer
+	var albRes *AlbResult
+	var publicDomain string
 	if common.NeedIngress(services) {
-		domain := "defangio.click" // zone in lab account
+		publicDomain = "defangio.click" // zone in lab account
 
 		delegationSetId := ""
-		publicZone, err := getOrCreatePublicZone(ctx, domain, delegationSetId, opts...)
+		publicZone, err := getOrCreatePublicZone(ctx, publicDomain, delegationSetId, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("looking up Route53 zone: %w", err)
 		}
 
-		wildcardDomain := "*." + domain
+		wildcardDomain := "*." + publicDomain
 
 		// Create a wildcard and/or apex domain certificate for all the ALBs
 		// TODO: should we use a separate cert for each ALB?
@@ -193,7 +195,7 @@ func CreateProjectInfra(
 
 		const createApexDnsRecord = true
 		if createApexDnsRecord {
-			domains = append(domains, domain)
+			domains = append(domains, publicDomain)
 		}
 
 		// Create a wildcard and/or apex domain certificate for all the ALBs
@@ -211,19 +213,17 @@ func CreateProjectInfra(
 			return nil, fmt.Errorf("creating certificate: %w", err)
 		}
 
-		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, certArn, opts...)
+		albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
-		httpListener = albRes.HttpListener
-		alb = albRes.Alb
 
 		// Create ALIAS DNS records for the ALB
 		aliases := route53.RecordAliasArray{
 			&route53.RecordAliasArgs{
 				EvaluateTargetHealth: pulumi.Bool(true),
-				Name:                 alb.DnsName,
-				ZoneId:               alb.ZoneId,
+				Name:                 albRes.Alb.DnsName,
+				ZoneId:               albRes.Alb.ZoneId,
 			},
 		}
 		for _, hostname := range domains {
@@ -250,7 +250,7 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("creating Route53 sidecar policy: %w", err)
 	}
 
-	return &SharedInfra{
+	result := &SharedInfra{
 		Policies: Policies{
 			bedrockPolicy:        bedrockPolicy,
 			route53SidecarPolicy: route53SidecarePolicy,
@@ -263,10 +263,19 @@ func CreateProjectInfra(
 		PrivateSubnetIDs: net.PrivateSubnetIDs,
 		PrivateZoneID:    net.PrivateZone.ID().ToIDPtrOutput(),
 		PrivateDomain:    net.PrivateDomain,
+		PublicDomain:     publicDomain,
 		Sg:               sg,
-		HttpListener:     httpListener,
-		Alb:              alb,
+		SkipNatGW:        !net.UseNatGW,
 		Region:           region.Region,
 		BuildInfra:       imgInfra,
-	}, nil
+	}
+
+	if albRes != nil {
+		result.AlbSG = albRes.AlbSG
+		result.HttpListener = albRes.HttpListener
+		result.HttpsListener = albRes.HttpsListener
+		result.Alb = albRes.Alb
+	}
+
+	return result, nil
 }

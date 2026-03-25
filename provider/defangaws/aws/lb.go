@@ -2,9 +2,12 @@
 package aws
 
 import (
+	"fmt"
+
+	"encoding/json"
+
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/aws/smithy-go/ptr"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -17,8 +20,7 @@ const (
 	NetworkLoadBalancer     LoadBalancerType = "network"
 )
 
-//nolint:unused // ported from TypeScript, will be used when access logging is enabled
-func createLogsBucket(
+func createLbLogsBucket(
 	ctx *pulumi.Context,
 	name string,
 	typ LoadBalancerType,
@@ -40,14 +42,7 @@ func createLogsBucket(
 		lbPrincipal = getElbPrincipal(lbRegion)
 	}
 
-	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{
-		ServerSideEncryptionConfiguration: s3.BucketServerSideEncryptionConfigurationTypeArgs{
-			Rule: s3.BucketServerSideEncryptionConfigurationRuleArgs{
-				//   applyServerSideEncryptionByDefault: { sseAlgorithm: "AES256" }, this is the default
-				BucketKeyEnabled: pulumi.Bool(true), // frequently accessed objects will use bucket keys
-			},
-		},
-	},
+	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{},
 	// opts...,
 	)
 	if err != nil {
@@ -59,6 +54,7 @@ func createLogsBucket(
 		Bucket: bucket.ID(),
 		Rules: s3.BucketLifecycleConfigurationRuleArray{
 			s3.BucketLifecycleConfigurationRuleArgs{
+				Id:     pulumi.String("expire-logs"),
 				Status: pulumi.String("Enabled"),
 				Expiration: &s3.BucketLifecycleConfigurationRuleExpirationArgs{
 					Days: pulumi.Int(common.LogRetentionDays.Get(ctx)),
@@ -75,20 +71,19 @@ func createLogsBucket(
 	// From AWS docs on access logging bucket requirements for NLB and ALB:
 	// https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-access-logs.html
 	// https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html
-	policyJson := bucket.ID().ApplyT(func(bucketId string) pulumi.StringOutput {
-		policy := iam.PolicyDocument{
+	policyJson := bucket.ID().ApplyT(func(bucketId string) (string, error) {
+		policy := PolicyDocument{
 			Version: "2012-10-17",
-			Statement: []iam.PolicyStatement{
+			Statement: []PolicyStatement{
 				{
-					Sid:       ptr.String("AWSLogDeliveryWrite"),
+					Sid:       "AWSLogDeliveryWrite",
 					Effect:    "Allow",
 					Principal: lbPrincipal,
 					Action:    "s3:PutObject",
-					// Value derived from an output https://www.pulumi.com/docs/intro/concepts/inputs-outputs/
-					Resource: `arn:aws:s3:::` + bucketId + `/AWSLogs/` + lbAccountId + `/*`,
+					Resource:  `arn:aws:s3:::` + bucketId + `/AWSLogs/` + lbAccountId + `/*`,
 				},
 				{
-					Sid:       ptr.String("AWSLogDeliveryAclCheck"),
+					Sid:       "AWSLogDeliveryAclCheck",
 					Effect:    "Allow",
 					Principal: lbPrincipal,
 					Action:    "s3:GetBucketAcl",
@@ -96,8 +91,9 @@ func createLogsBucket(
 				},
 			},
 		}
-		return pulumi.JSONMarshal(policy)
-	})
+		b, err := json.Marshal(policy)
+		return string(b), err
+	}).(pulumi.StringOutput)
 
 	_, err = s3.NewBucketPolicy(
 		ctx,
@@ -167,4 +163,134 @@ func createListener(
 			pulumi.ReplaceOnChanges([]string{"certificateArn"}),
 		)...,
 	)
+}
+
+//nolint:funlen // sequential TG+LR setup is clearer as one function
+func createTgLrPair(
+	ctx *pulumi.Context,
+	serviceName string,
+	vpcId pulumi.StringInput,
+	listener *lb.Listener,
+	port compose.ServicePortConfig,
+	healthCheck *compose.HealthCheckConfig,
+	endpoints []string,
+	opts ...pulumi.ResourceOption,
+) (*lb.TargetGroup, *lb.ListenerRule, error) {
+	if !port.IsIngress() {
+		return nil, nil, nil // skip
+	}
+
+	// Only create TG/LR for http, http2, grpc (matches TS createTgLrPair)
+	appProto := port.GetAppProtocol()
+	if appProto != "http" && appProto != "http2" && appProto != "grpc" {
+		return nil, nil, nil // skip
+	}
+
+	tgName := targetGroupName(serviceName, int(port.Target), appProto)
+
+	// Target group health check (matches TS createTargetGroup in lb.ts)
+	defaultInterval := HealthCheckInterval.Get(ctx)
+	interval := defaultInterval
+	if healthCheck != nil {
+		interval = clampInt(int(healthCheck.IntervalSeconds), 5, 300, defaultInterval)
+	}
+	maxTimeout := interval - 1
+	if maxTimeout > 120 {
+		maxTimeout = 120
+	}
+	timeout := (6)
+	if healthCheck != nil {
+		timeout = clampInt(int(healthCheck.TimeoutSeconds), 2, maxTimeout, 6)
+	}
+	unhealthyThreshold := (3)
+	if healthCheck != nil {
+		unhealthyThreshold = clampInt(int(healthCheck.Retries), 2, 10, 3)
+	}
+
+	// Determine matcher based on protocol (matches TS createTargetGroup)
+	// With default path "/": grpc -> "0", http/http2 -> "200-399"
+	matcher := "200-399"
+	if appProto == grpcProto {
+		matcher = "0"
+	}
+
+	tgArgs := &lb.TargetGroupArgs{
+		Port:                       pulumi.Int(port.Target),
+		Protocol:                   pulumi.String("HTTP"),
+		TargetType:                 pulumi.String("ip"),
+		VpcId:                      vpcId,
+		LoadBalancingAlgorithmType: pulumi.String("least_outstanding_requests"),
+		DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
+		HealthCheck: &lb.TargetGroupHealthCheckArgs{
+			// Port:               pulumi.String("traffic-port"),
+			Path:               pulumi.String("/"),
+			HealthyThreshold:   pulumi.Int(HealthCheckThreshold.Get(ctx)),
+			UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
+			Interval:           pulumi.Int(interval),
+			Timeout:            pulumi.Int(timeout),
+			Matcher:            pulumi.String(matcher),
+		},
+		Tags: pulumi.StringMap{
+			"defang:service": pulumi.String(serviceName),
+		},
+	}
+
+	// Set protocol version for http2/grpc (matches TS createTargetGroup)
+	switch appProto {
+	case "http2":
+		tgArgs.ProtocolVersion = pulumi.String("HTTP2")
+	case "grpc":
+		tgArgs.ProtocolVersion = pulumi.String("GRPC")
+	}
+
+	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opts...)
+	if tgErr != nil {
+		return nil, nil, fmt.Errorf("creating target group: %w", tgErr)
+	}
+
+	// Build listener rule conditions (matches TS createTgLrPair)
+	conditions := lb.ListenerRuleConditionArray{}
+
+	// Host-based routing: use DomainName for first ingress port, ALB DNS as fallback
+	if len(endpoints) > 0 {
+		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
+			HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
+				Values: compose.ToPulumiStringArray(endpoints),
+			},
+		})
+	}
+
+	// TODO: path-based routing
+	// path := splitHostPortPath(endpoint[])
+	// conditions = append(conditions, &lb.ListenerRuleConditionArgs{
+	// 	PathPattern: &lb.ListenerRuleConditionPathPatternArgs{
+	// 		Values: pulumi.StringArray{pulumi.String(path)},
+	// 	},
+	// })
+
+	// Add gRPC content-type header matching (matches TS createTgLrPair)
+	if appProto == grpcProto {
+		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
+			HttpHeader: &lb.ListenerRuleConditionHttpHeaderArgs{
+				HttpHeaderName: pulumi.String("content-type"),
+				Values:         pulumi.StringArray{pulumi.String("application/grpc*")},
+			},
+		})
+	}
+
+	lr, lrErr := lb.NewListenerRule(ctx, tgName+"-rule", &lb.ListenerRuleArgs{
+		ListenerArn: listener.Arn,
+		Actions: lb.ListenerRuleActionArray{
+			&lb.ListenerRuleActionArgs{
+				Type:           pulumi.String("forward"),
+				TargetGroupArn: tg.Arn,
+			},
+		},
+		Conditions: conditions,
+	}, common.MergeOptions(opts, pulumi.DeleteBeforeReplace(true))...)
+	if lrErr != nil {
+		return nil, nil, fmt.Errorf("creating listener rule: %w", lrErr)
+	}
+
+	return tg, lr, nil
 }

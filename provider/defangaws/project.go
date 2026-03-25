@@ -91,6 +91,17 @@ func buildProject(
 
 	configProvider := provideraws.NewConfigProvider(projectName)
 
+	// Pre-compute which services need waitForSteadyState: true if any other
+	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)
+	waitForSteady := map[string]bool{}
+	for _, other := range args.Services {
+		for dep, val := range other.DependsOn {
+			if val.Condition == "service_healthy" {
+				waitForSteady[dep] = true
+			}
+		}
+	}
+
 	serviceNames := common.TopologicalSort(args.Services)
 	for _, svcName := range serviceNames {
 		svc := args.Services[svcName]
@@ -105,7 +116,9 @@ func buildProject(
 			}
 		}
 
-		endpoint, dependency, err := buildService(ctx, configProvider, svcName, svc, args.Networks, infra, deps, opts[0])
+		waitForHealthy := waitForSteady[svcName]
+		endpoint, dependency, err := buildService(
+			ctx, configProvider, svcName, svc, args.Networks, infra, waitForHealthy, deps, opts[0])
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
@@ -129,6 +142,7 @@ func buildService(
 	svc compose.ServiceConfig,
 	networks compose.Networks,
 	infra *provideraws.SharedInfra,
+	waitForSteadyState bool,
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOption,
 ) (pulumi.StringOutput, pulumi.Resource, error) {
@@ -164,9 +178,10 @@ func buildService(
 		}
 		var ecsResult *ECSResult
 		ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
-			Infra:    infra,
-			ImageURI: imageURI,
-			Networks: networks,
+			Infra:              infra,
+			ImageURI:           imageURI,
+			Networks:           networks,
+			WaitForSteadyState: waitForSteadyState,
 		}, deps, parentOpt)
 		if ecsResult != nil {
 			dependency = ecsResult.Dependency

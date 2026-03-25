@@ -246,6 +246,7 @@ func CreateElasticache(
 		Description: pulumi.String("ElastiCache security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
+				Description:    pulumi.String("Redis"),
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
@@ -254,14 +255,17 @@ func CreateElasticache(
 		},
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				Description: pulumi.String("Allow all outbound traffic"),
+				Protocol:    pulumi.String("-1"),
+				FromPort:    pulumi.Int(0),
+				ToPort:      pulumi.Int(0),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
 		Tags: tags,
-	}, opts...)
+	}, common.MergeOptions(opts,
+		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache security group: %w", err)
 	}
@@ -312,7 +316,7 @@ func CreateElasticache(
 
 	clusterOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{
 		"atRestEncryptionEnabled",
-		"authToken",
+		"authToken", // TODO: allow user to set authToken via config
 		"authTokenUpdateStrategy",
 		"clusterMode",
 		"finalSnapshotIdentifier",

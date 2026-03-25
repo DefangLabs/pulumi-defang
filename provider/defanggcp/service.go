@@ -22,7 +22,7 @@ type GcpCloudRunServiceInputs struct {
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
-	DomainName  *string                     `pulumi:"domainName,optional"`
+	DomainName  string                      `pulumi:"domainName,optional"`
 }
 
 // GcpCloudRunServiceOutputs holds the outputs of a Service component.

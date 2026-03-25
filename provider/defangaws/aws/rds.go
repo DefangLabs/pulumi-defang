@@ -219,7 +219,9 @@ func CreateRDS(
 			},
 		},
 		Tags: tags,
-	}, opts...)
+	}, common.MergeOptions(opts,
+		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS security group: %w", err)
 	}
