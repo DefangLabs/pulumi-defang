@@ -6,7 +6,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
-	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -16,12 +15,10 @@ type Project struct{}
 
 // ProjectInputs defines the top-level inputs for the AWS Project component.
 type ProjectInputs struct {
-	// Services map: name -> service config
-	Services map[string]compose.ServiceConfig      `pulumi:"services"          yaml:"services"`
-	Networks map[string]compose.NetworkConfigInput `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	compose.Project
 
 	// AWS-specific infrastructure configuration (VPC, subnets)
-	AWS *compose.AWSConfigInput `pulumi:"aws,optional"`
+	AWS *provideraws.AWSConfig `pulumi:"aws,optional"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -45,11 +42,8 @@ func (*Project) Construct(
 	}
 
 	childOpt := pulumi.Parent(comp)
-	args := common.BuildArgs{
-		Services: inputs.Services,
-	}
+	result, err := Build(ctx, name, inputs, childOpt)
 
-	result, err := Build(ctx, name, args, inputs.AWS, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
 	}
@@ -72,13 +66,12 @@ func (*Project) Construct(
 func Build(
 	ctx *pulumi.Context,
 	projectName string,
-	args common.BuildArgs,
-	awsCfg *common.AWSConfig,
+	args ProjectInputs,
 	parentOpt pulumi.ResourceOption,
 ) (*common.BuildResult, error) {
 	opts := []pulumi.ResourceOption{parentOpt}
 
-	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, awsCfg, opts...)
+	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, args.AWS, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
@@ -108,26 +101,9 @@ func Build(
 			}
 		}
 
-		var dependency pulumi.Resource
-		var endpoint pulumi.StringOutput
-		var err error
-		endpoint, dependency, err = buildService(ctx, configProvider, svcName, svc, infra, deps, opts[0])
+		endpoint, dependency, err := buildService(ctx, configProvider, svcName, svc, args.Networks, infra, deps, opts[0])
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
-		}
-
-		// Create private DNS CNAME for managed services (Postgres, Redis)
-		if dependency != nil && infra.PrivateDomain != "" {
-			privateFqdn := svcName + "." + infra.PrivateDomain
-			record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{
-				ZoneId:  infra.PrivateZoneID.ToIDOutput().ToStringOutput(),
-				Records: pulumi.StringArray{endpoint},
-				Ttl:     pulumi.Int(300),
-			}, pulumi.DependsOn([]pulumi.Resource{dependency}), opts[0])
-			if cnameErr != nil {
-				return nil, fmt.Errorf("creating CNAME for %s: %w", svcName, cnameErr)
-			}
-			dependency = record
 		}
 
 		endpoints[svcName] = endpoint
@@ -147,6 +123,7 @@ func buildService(
 	configProvider compose.ConfigProvider,
 	svcName string,
 	svc compose.ServiceConfig,
+	networks compose.Networks,
 	infra *provideraws.SharedInfra,
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOption,
@@ -185,6 +162,7 @@ func buildService(
 		ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
 			Infra:    infra,
 			ImageURI: imageURI,
+			Networks: networks,
 		}, deps, parentOpt)
 		if ecsResult != nil {
 			dependency = ecsResult.Dependency

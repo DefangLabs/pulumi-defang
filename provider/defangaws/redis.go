@@ -6,6 +6,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	awsec2 "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -16,12 +17,12 @@ type Redis struct{}
 // RedisInputs defines the inputs for a standalone AWS ElastiCache Redis instance.
 type RedisInputs struct {
 	ProjectName string                      `pulumi:"project_name"`
-	Redis       *compose.RedisInput         `pulumi:"redis,optional"`
+	Redis       *compose.RedisConfig        `pulumi:"redis,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
 	Environment map[string]string           `pulumi:"environment,optional"`
-	AWS         *compose.AWSConfigInput     `pulumi:"aws,optional"`
+	AWS         *provideraws.AWSConfig      `pulumi:"aws,optional"`
 }
 
 // RedisOutputs holds the outputs of an AWS Redis component.
@@ -43,7 +44,7 @@ func (*Redis) Construct(
 
 	redis := inputs.Redis
 	if redis == nil {
-		redis = &compose.RedisInput{}
+		redis = &compose.RedisConfig{}
 	}
 
 	svc := compose.ServiceConfig{
@@ -83,7 +84,7 @@ func (*Redis) Construct(
 		return nil, fmt.Errorf("creating ElastiCache: %w", err)
 	}
 
-	port := 6379
+	port := int32(6379)
 	if len(svc.Ports) > 0 {
 		port = svc.Ports[0].Target
 	}
@@ -131,7 +132,21 @@ func newRedisComponent(
 		return nil, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}
 
-	port := 6379
+	var dependency pulumi.Resource // = redisResult.Address
+	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
+		privateFqdn := serviceName + "." + infra.PrivateDomain
+		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{
+			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
+			Records: pulumi.StringArray{redisResult.Address},
+			Ttl:     pulumi.Int(300),
+		}, opts...)
+		if cnameErr != nil {
+			return nil, fmt.Errorf("creating CNAME for %s: %w", serviceName, cnameErr)
+		}
+		dependency = record
+	}
+
+	port := int32(6379)
 	if len(svc.Ports) > 0 {
 		port = svc.Ports[0].Target
 	}
@@ -143,6 +158,7 @@ func newRedisComponent(
 		return nil, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
 	return &RedisResult{
-		Endpoint: endpoint,
+		Endpoint:   endpoint,
+		Dependency: dependency,
 	}, nil
 }

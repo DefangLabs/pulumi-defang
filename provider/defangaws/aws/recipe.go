@@ -16,6 +16,7 @@ var (
 	HealthCheckThreshold    = common.Int("health-check-threshold", 2)
 	LogRetentionDays        = common.Int("log-retention-days", 1)
 	MinHealthyPercent       = common.Int("min-healthy-percent", 0)
+	NatGatewayStrategy      = common.String("nat-gateway-strategy", "Single")
 	RDSNodeType             = common.String("rds-node-type", "burstable")
 	RetainDnsOnDelete       = common.Bool("retain-dns-on-delete", false)
 	StorageEncrypted        = common.Bool("storage-encrypted", false)

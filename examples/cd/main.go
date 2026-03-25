@@ -5,33 +5,28 @@ import (
 	"os"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
-	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 	"go.yaml.in/yaml/v3"
 )
 
-// composeFile is the subset of a Docker Compose file we care about.
-type composeFile struct {
-	Services map[string]compose.ServiceConfig `yaml:"services"`
-}
-
-func parseCompose(path string) (map[string]compose.ServiceConfig, error) {
+func parseCompose(path string) (*compose.Project, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading compose file: %w", err)
 	}
-	var cf composeFile
+	var cf compose.Project
 	if err := yaml.Unmarshal(data, &cf); err != nil {
 		return nil, fmt.Errorf("parsing compose file: %w", err)
 	}
 	if len(cf.Services) == 0 {
 		return nil, fmt.Errorf("no services found in compose file")
 	}
-	return cf.Services, nil
+	return &compose.Project{Services: cf.Services}, nil
 }
 
 func main() {
@@ -41,13 +36,13 @@ func main() {
 		composePath := cfg.Require("compose")
 		provider := cfg.Require("provider") // "aws", "gcp", or "azure"
 
-		services, err := parseCompose(composePath)
+		project, err := parseCompose(composePath)
 		if err != nil {
 			return err
 		}
 
-		args := common.BuildArgs{
-			Services: services,
+		args := defangaws.ProjectInputs{
+			Project: *project,
 		}
 
 		var result *common.BuildResult
