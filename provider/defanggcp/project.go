@@ -73,7 +73,11 @@ func build(
 	parentOpt pulumi.ResourceOption,
 ) (*common.BuildResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
-	region := providergcp.GcpRegion(ctx)
+
+	infra, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Services, childOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
+	}
 
 	// Create Artifact Registry repository for container images
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
@@ -102,7 +106,7 @@ func build(
 			}
 		}
 
-		endpoint, svcComp, err := buildService(ctx, configProvider, svcName, svc, region, deps, childOpts)
+		endpoint, svcComp, err := buildService(ctx, configProvider, svcName, svc, infra, deps, childOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +125,7 @@ func buildService(
 	configProvider compose.ConfigProvider,
 	svcName string,
 	svc compose.ServiceConfig,
-	region string,
+	infra *providergcp.GlobalConfig,
 	deps []pulumi.Resource,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, pulumi.Resource, error) {
@@ -154,7 +158,7 @@ func buildService(
 		}
 		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
 
-		crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, svcName, svc, region, svcOpts...)
+		crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, svcName, svc, infra.Region, svcOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 		}
