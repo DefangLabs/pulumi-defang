@@ -208,6 +208,34 @@ func TestConstructGcpCloudRunServiceWithReservationsSetsLimits(t *testing.T) {
 	assert.Equal(t, "512Mi", limits.Get("memory").AsString())
 }
 
+func TestConstructGcpCloudRunServiceSetsVpcAccess(t *testing.T) {
+	var capturedTemplate property.Map
+	mocks := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == gcpCloudRunServiceType {
+				capturedTemplate = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Service"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"image": property.New("myapp:latest"),
+		}),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
+	template := capturedTemplate.Get("template").AsMap()
+	vpcAccess := template.Get("vpcAccess").AsMap()
+	assert.Equal(t, "PRIVATE_RANGES_ONLY", vpcAccess.Get("egress").AsString())
+	networkInterfaces := vpcAccess.Get("networkInterfaces").AsArray()
+	assert.Equal(t, 1, networkInterfaces.Len())
+}
+
 func TestConstructGcpCloudRunServiceSetsMaxInstanceRequestConcurrency(t *testing.T) {
 	var capturedTemplate property.Map
 	mocks := &integration.MockResourceMonitor{

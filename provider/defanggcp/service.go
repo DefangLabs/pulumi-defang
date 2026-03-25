@@ -55,9 +55,13 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	region := providergcp.GcpRegion(ctx)
 	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
-	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, svc, region, childOpt)
+	services := map[string]compose.ServiceConfig{name: svc}
+	infra, err := providergcp.BuildGlobalConfig(ctx, inputs.ProjectName, services, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
+	}
+	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, svc, infra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
 	}
