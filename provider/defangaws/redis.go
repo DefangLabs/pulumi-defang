@@ -3,6 +3,7 @@ package defangaws
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	awsec2 "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
@@ -131,7 +132,7 @@ func newRedisComponent(
 	var dependency pulumi.Resource // = redisResult.Address
 	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
-		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, &route53.RecordArgs{
+		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
 			Records: pulumi.StringArray{redisResult.Address},
 			Ttl:     pulumi.Int(300),

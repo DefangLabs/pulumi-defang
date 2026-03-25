@@ -22,9 +22,9 @@ var (
 	ErrNoImageOrBuildConfig = errors.New("no image or build config")
 )
 
-// ImageInfra holds shared infrastructure for building container images.
+// BuildInfra holds shared infrastructure for building container images.
 // Created once per project, shared across all services that need builds.
-type ImageInfra struct {
+type BuildInfra struct {
 	codeBuildRole *iam.Role
 	ecrRepo       *ecr.Repository
 	ecrRepoURL    pulumix.Output[string]
@@ -33,14 +33,14 @@ type ImageInfra struct {
 	region        string
 }
 
-// CreateImageInfra creates the shared infrastructure needed for image builds:
+// CreateBuildInfra creates the shared infrastructure needed for image builds:
 // ECR repository and CodeBuild IAM role.
-func CreateImageInfra(
+func CreateBuildInfra(
 	ctx *pulumi.Context,
 	logGroup *cloudwatch.LogGroup,
 	profile, region string,
 	opts ...pulumi.ResourceOption,
-) (*ImageInfra, error) {
+) (*BuildInfra, error) {
 	ecrResult, err := createECRRepo(ctx, "builds", opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECR repo for builds: %w", err)
@@ -51,7 +51,7 @@ func CreateImageInfra(
 		return nil, fmt.Errorf("creating CodeBuild role: %w", err)
 	}
 
-	return &ImageInfra{
+	return &BuildInfra{
 		ecrRepo:       ecrResult.repository,
 		ecrRepoURL:    ecrResult.repoURL,
 		codeBuildRole: cbRole,
@@ -127,7 +127,7 @@ func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
-	infra *ImageInfra,
+	infra *BuildInfra,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
@@ -188,7 +188,7 @@ func GetServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
-	infra *ImageInfra,
+	infra *BuildInfra,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {

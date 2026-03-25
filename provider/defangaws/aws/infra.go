@@ -109,10 +109,10 @@ func BuildSharedInfra(
 }
 */
 
-// BuildProjectInfra creates shared AWS infrastructure for a multi-service project.
+// CreateProjectInfra creates shared AWS infrastructure for a multi-service project.
 //
 //nolint:funlen // sequential infra setup is clearer as one function
-func BuildProjectInfra(
+func CreateProjectInfra(
 	ctx *pulumi.Context,
 	projectName string,
 	services compose.Services,
@@ -123,7 +123,7 @@ func BuildProjectInfra(
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	net, err := ResolveNetworking(ctx, opts...)
+	net, err := ResolveNetworking(ctx, projectName, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -163,10 +163,10 @@ func BuildProjectInfra(
 
 	profile := config.New(ctx, "aws").Get("profile")
 
-	var imgInfra *ImageInfra
+	var imgInfra *BuildInfra
 	for _, svc := range services {
 		if svc.NeedsBuild() {
-			imgInfra, err = CreateImageInfra(ctx, logGroup, profile, region.Region, opts...)
+			imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 			}
@@ -177,7 +177,7 @@ func BuildProjectInfra(
 	var httpListener *lb.Listener
 	var alb *lb.LoadBalancer
 	if common.NeedIngress(services) {
-		domain := "crew.defangio.click"
+		domain := "defangio.click" // zone in lab account
 
 		delegationSetId := ""
 		publicZone, err := getOrCreatePublicZone(ctx, domain, delegationSetId, opts...)
@@ -227,7 +227,7 @@ func BuildProjectInfra(
 			},
 		}
 		for _, hostname := range domains {
-			_, err := CreateRecord(ctx, hostname, RecordTypeA, &route53.RecordArgs{
+			_, err := CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
 				Aliases: aliases,
 				ZoneId:  publicZone.ZoneId(),
 			}, opts...) // TODO: route53Opts
@@ -267,6 +267,6 @@ func BuildProjectInfra(
 		HttpListener:     httpListener,
 		Alb:              alb,
 		Region:           region.Region,
-		ImageInfra:       imgInfra,
+		BuildInfra:       imgInfra,
 	}, nil
 }

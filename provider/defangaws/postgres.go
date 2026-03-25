@@ -3,6 +3,7 @@ package defangaws
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	awssdk "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
@@ -118,7 +119,7 @@ func newPostgresComponent(
 	var dependency pulumi.Resource = rdsResult.Instance
 	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
-		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, &route53.RecordArgs{
+		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
 			Records: pulumi.StringArray{rdsResult.Instance.Address},
 			Ttl:     pulumi.Int(300),

@@ -44,7 +44,7 @@ func (*Project) Construct(
 	}
 
 	childOpt := pulumi.Parent(comp)
-	result, err := Buildx(ctx, name, inputs, childOpt)
+	result, err := buildProject(ctx, name, inputs, childOpt)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
@@ -63,9 +63,9 @@ func (*Project) Construct(
 	return comp, nil
 }
 
-// Buildx creates all AWS resources for the project.
+// buildProject creates all AWS resources for the project.
 // The AWS provider must be passed via the parent chain (pulumi.Providers on the parent component).
-func Buildx(
+func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
 	args ProjectInputs,
@@ -73,7 +73,7 @@ func Buildx(
 ) (*common.BuildResult, error) {
 	opts := []pulumi.ResourceOption{parentOpt}
 
-	infra, err := provideraws.BuildProjectInfra(ctx, projectName, args.Services, opts...)
+	infra, err := provideraws.CreateProjectInfra(ctx, projectName, args.Services, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
@@ -158,7 +158,7 @@ func buildService(
 		// instead of creating a separate ECS service.
 
 		// Container service → ECS
-		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.ImageInfra, parentOpt)
+		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, parentOpt)
 		if imgErr != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}

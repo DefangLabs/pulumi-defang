@@ -71,42 +71,42 @@ func createCertificateDNS(
 
 	// Adapted from https://www.pulumi.com/registry/packages/aws/api-docs/acm/certificatevalidation/
 	validationRecordFqdns := certificate.DomainValidationOptions.ApplyT(
-		func(dvos []acm.CertificateDomainValidationOption) ([]pulumi.StringOutput, error) {
-		// Dedup validation records using CNAME to prevent deployment DNS collision
-		seen := map[string]bool{}
-		var deduped []acm.CertificateDomainValidationOption
-		for _, dvo := range dvos {
-			if !seen[*dvo.ResourceRecordName] {
-				seen[*dvo.ResourceRecordName] = true
-				deduped = append(deduped, dvo)
-			}
-		}
-		// Sort the deduped records by domain name to ensure consistent ordering of validationRecordFqdns
-		slices.SortFunc(deduped, func(a, b acm.CertificateDomainValidationOption) int {
-			return strings.Compare(*a.DomainName, *b.DomainName)
-		})
-		// HACK: multiple domains may result in conflicting validation records,
-		// so we use the original domainName as part of the Pulumi resource name
-		// and always allow overwriting existing validation records.
-		// See https://github.com/DefangLabs/defang-mvp/issues/1938
-		// (We still need the dedup above, or we'd risk adding the same FQDN twice.)
-		fqdns := make([]pulumi.StringOutput, len(deduped))
-		for i, dvo := range deduped {
-			if existing, ok := args.ValidationRecords[*dvo.ResourceRecordName]; ok {
-				fqdns[i] = existing
-			} else {
-				record, err := createValidationDnsRecord(ctx, dvo, args.Zone, opts...)
-				if err != nil {
-					return nil, err
+		func(dvos []acm.CertificateDomainValidationOption) (pulumi.StringArrayOutput, error) {
+			// Dedup validation records using CNAME to prevent deployment DNS collision
+			seen := map[string]bool{}
+			var deduped []acm.CertificateDomainValidationOption
+			for _, dvo := range dvos {
+				if !seen[*dvo.ResourceRecordName] {
+					seen[*dvo.ResourceRecordName] = true
+					deduped = append(deduped, dvo)
 				}
-				if args.ValidationRecords != nil {
-					args.ValidationRecords[*dvo.ResourceRecordName] = record.Fqdn
-				}
-				fqdns[i] = record.Fqdn
 			}
-		}
-		return fqdns, nil
-	}).(pulumi.StringArrayOutput)
+			// Sort the deduped records by domain name to ensure consistent ordering of validationRecordFqdns
+			slices.SortFunc(deduped, func(a, b acm.CertificateDomainValidationOption) int {
+				return strings.Compare(*a.DomainName, *b.DomainName)
+			})
+			// HACK: multiple domains may result in conflicting validation records,
+			// so we use the original domainName as part of the Pulumi resource name
+			// and always allow overwriting existing validation records.
+			// See https://github.com/DefangLabs/defang-mvp/issues/1938
+			// (We still need the dedup above, or we'd risk adding the same FQDN twice.)
+			fqdns := make(pulumi.StringArray, len(deduped))
+			for i, dvo := range deduped {
+				if existing, ok := args.ValidationRecords[*dvo.ResourceRecordName]; ok {
+					fqdns[i] = existing
+				} else {
+					record, err := createValidationDnsRecord(ctx, dvo, args.Zone, opts...)
+					if err != nil {
+						return pulumi.StringArrayOutput{}, err
+					}
+					if args.ValidationRecords != nil {
+						args.ValidationRecords[*dvo.ResourceRecordName] = record.Fqdn
+					}
+					fqdns[i] = record.Fqdn
+				}
+			}
+			return fqdns.ToStringArrayOutput(), nil
+		}).(pulumi.StringArrayOutput)
 
 	// NOTE: creation of the CertificateValidation resource will fail with CAA_ERROR
 	// if there's currently a CAA record that doesn't allow AWS

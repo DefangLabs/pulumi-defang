@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"encoding/json"
+
 	"github.com/aws/smithy-go/ptr"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
@@ -43,25 +45,26 @@ func createRoute53SidecarPolicy(
 	privateZone *route53.Zone,
 	opts ...pulumi.ResourceOption,
 ) (*iam.Policy, error) {
-	policyJson := privateZone.Arn.ApplyT(func(privateZoneArn string) pulumi.StringOutput {
-		policy := iam.PolicyDocument{
+	policyJson := privateZone.Arn.ApplyT(func(privateZoneArn string) (string, error) {
+		policy := PolicyDocument{
 			Version: "2012-10-17",
-			Statement: []iam.PolicyStatement{
+			Statement: []PolicyStatement{
 				{
-					Sid:      ptr.String("AllowRoute53SidecarWrite"),
-					Action:   []string{"route53:ChangeResourceRecordSets"},
+					Sid:      "AllowRoute53SidecarWrite",
 					Effect:   "Allow",
+					Action:   []string{"route53:ChangeResourceRecordSets"},
 					Resource: privateZoneArn,
 				},
 				{
-					Sid:      ptr.String("AllowRoute53Read"), // TODO: better name
+					Sid:      "AllowRoute53Read",
 					Effect:   "Allow",
 					Action:   []string{"route53:GetChange"}, // These actions do not support resource-level permissions
 					Resource: "*",
 				},
 			},
 		}
-		return pulumi.JSONMarshal(policy)
+		b, err := json.Marshal(policy)
+		return string(b), err
 	})
 	return iam.NewPolicy(ctx, name, &iam.PolicyArgs{Policy: policyJson}, opts...)
 }

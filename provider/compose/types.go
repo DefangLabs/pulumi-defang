@@ -200,7 +200,7 @@ type ConfigProvider interface {
 	GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput
 }
 
-// PostgresConfigArgsArgs holds resolved managed Postgres configuration.
+// PostgresConfigArgs holds resolved managed Postgres configuration.
 // Derived from PostgresConfig + image tag + environment variables.
 //
 // Deprecated: only used internally.

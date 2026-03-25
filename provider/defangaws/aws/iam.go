@@ -8,6 +8,43 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// PolicyDocument is like Pulumi's iam.PolicyDocument but with JSON tags.
+type PolicyDocument struct {
+	Id        string                    `json:"Id,omitempty"`
+	Statement []PolicyStatement         `json:"Statement"`
+	Version   iam.PolicyDocumentVersion `json:"Version"`
+}
+
+// PolicyStatement is like Pulumi's iam.PolicyStatement but with JSON tags.
+type PolicyStatement struct {
+	// Include a list of actions that the policy allows or denies. Required (either Action or NotAction)
+	Action interface{} `json:"Action,omitempty"`
+	// Specify the circumstances under which the policy grants permission.
+	Condition map[string]interface{} `json:"Condition,omitempty"`
+	// Indicate whether the policy allows or denies access.
+	Effect iam.PolicyStatementEffect `json:"Effect,omitempty"`
+	// Include a list of actions that are not covered by this policy. Required (either Action or NotAction)
+	NotAction interface{} `json:"NotAction,omitempty"`
+	// Indicate the account, user, role, or federated user to which this policy does not apply.
+	NotPrincipal interface{} `json:"NotPrincipal,omitempty"`
+	// A list of resources that are specifically excluded by this policy.
+	NotResource interface{} `json:"NotResource,omitempty"`
+	// Indicate the account, user, role, or federated user to which you would like to allow or deny access.
+	// If you are creating a policy to attach to a user or role, you cannot include this element. The principal is
+	// implied as that user or role.
+	Principal interface{} `json:"Principal,omitempty"`
+	// A list of resources to which the actions apply.
+	Resource interface{} `json:"Resource,omitempty"`
+	// An optional statement ID to differentiate between your statements.
+	Sid string `json:"Sid,omitempty"`
+}
+
+// type PolicyPrincipal struct {
+// 	AWS       interface{} `json:"AWS,omitempty"`
+// 	Federated interface{} `json:"Federated,omitempty"`
+// 	Service   interface{} `json:"Service,omitempty"`
+// }
+
 // CreateExecutionRole creates the shared ECS task execution role.
 func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*iam.Role, error) {
 	assumeRolePolicyBytes, err := json.Marshal(map[string]interface{}{

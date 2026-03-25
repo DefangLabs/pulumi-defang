@@ -10,27 +10,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-type RecordType string
-
-const (
-	RecordTypeA     RecordType = "A"
-	RecordTypeAAAA  RecordType = "AAAA"
-	RecordTypeCAA   RecordType = "CAA"
-	RecordTypeCNAME RecordType = "CNAME"
-	RecordTypeDS    RecordType = "DS"
-	RecordTypeMX    RecordType = "MX"
-	RecordTypeNAPTR RecordType = "NAPTR"
-	RecordTypeNS    RecordType = "NS"
-	RecordTypePTR   RecordType = "PTR"
-	RecordTypeSOA   RecordType = "SOA"
-	RecordTypeSPF   RecordType = "SPF"
-	RecordTypeSRV   RecordType = "SRV"
-	RecordTypeTXT   RecordType = "TXT"
-)
-
-func NormalizeDNS(name string) string {
-	return strings.ToLower(strings.TrimRight(name, "."))
-}
+type RecordType = common.RecordType
 
 func CreateRecord(
 	ctx *pulumi.Context, name string, typ RecordType, args *route53.RecordArgs, opts ...pulumi.ResourceOption,
@@ -42,7 +22,7 @@ func CreateRecord(
 	// if args.ZoneId == nil {
 	// }
 	// Route 53 treats www.example.com (without a trailing dot) and www.example.com. (with a trailing dot) as identical.
-	normalized := NormalizeDNS(name)
+	normalized := common.NormalizeDNS(name)
 	args.Name = pulumi.String(normalized)
 	args.Type = pulumi.String(string(typ))
 	if args.AllowOverwrite == nil {
@@ -98,7 +78,7 @@ func createSoaRecord(
 	}
 	record := pulumi.Sprintf("%s %s %d %d %d %d %d",
 		args.NameServer, args.Rname, args.Serial, args.Refresh, args.Retry, args.Expire, args.Minimum)
-	return CreateRecord(ctx, name, RecordTypeSOA, &route53.RecordArgs{
+	return CreateRecord(ctx, name, common.RecordTypeSOA, &route53.RecordArgs{
 		AllowOverwrite: pulumi.Bool(true),
 		Records:        pulumi.StringArray{record},
 		Ttl:            args.Ttl,
@@ -126,7 +106,7 @@ func createCaaDnsRecord(
 	for i, value := range issuer {
 		records[i] = pulumi.Sprintf("0 %s %q", issueType, value) // TODO: support iodef, etc.
 	}
-	return CreateRecord(ctx, hostname, RecordTypeCAA, &route53.RecordArgs{
+	return CreateRecord(ctx, hostname, common.RecordTypeCAA, &route53.RecordArgs{
 		Records: records,
 		Ttl:     pulumi.Int(3600), // 1 HOUR
 		ZoneId:  zone.ZoneId(),
@@ -136,7 +116,7 @@ func createCaaDnsRecord(
 }
 
 // https://www.rfc-editor.org/rfc/rfc6762#appendix-G and https://www.rfc-editor.org/rfc/rfc8375
-var PRIVATE_ZONE_REGEX = regexp.MustCompile(`\b(intranet|internal|private|corp|home|home\.arpa|lan|local)\.?$`)
+var PRIVATE_ZONE_REGEX = regexp.MustCompile(`(?i)\b(intranet|internal|private|corp|home|home\.arpa|lan|local)\.?$`)
 
 func isPrivateZone(domain string) bool {
 	return PRIVATE_ZONE_REGEX.MatchString(domain)

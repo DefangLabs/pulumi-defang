@@ -40,7 +40,7 @@ type SharedInfra struct {
 	HttpsListener    *lb.Listener     // nil if no ALB
 	Alb              *lb.LoadBalancer // nil if no ALB
 	Region           string
-	ImageInfra       *ImageInfra // nil if no builds needed
+	BuildInfra       *BuildInfra // nil if no builds needed
 	SkipNatGW        bool
 	Policies
 }
@@ -209,33 +209,42 @@ func CreateECSService(
 	// so all values must be concrete before marshaling.
 	containerName := serviceName
 
-	allInputs := []interface{}{args.ImageURI, infra.LogGroup.Name}
-	hasPrivateZone := infra.PrivateZoneID != (pulumi.IDPtrOutput{})
+	allInputs := []interface{}{args.ImageURI}
+	hasLogGroup := infra != nil && infra.LogGroup != nil
+	if hasLogGroup {
+		allInputs = append(allInputs, infra.LogGroup.Name)
+	}
+	hasPrivateZone := infra != nil && infra.PrivateZoneID != (pulumi.IDPtrOutput{})
 	if hasPrivateZone {
 		allInputs = append(allInputs, infra.PrivateZoneID)
 	}
 
-	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []interface{}) (string, error) {
+	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []any) (string, error) {
 		imageUri := all[0].(string)
-		logGroupName := all[1].(string)
 
-		containerDefs := []awsecs.ContainerDefinition{{
-			Name:         &containerName,
-			Essential:    ptr.Bool(true),
-			PortMappings: portMappings,
-			Environment:  envVars,
-			Command:      svc.Command,
-			EntryPoint:   svc.Entrypoint,
-			HealthCheck:  healthCheck,
-			Image:        &imageUri,
-			LogConfiguration: &awsecs.LogConfiguration{
+		var logConfiguration *awsecs.LogConfiguration
+		if hasLogGroup {
+			logGroupName := all[1].(string)
+			logConfiguration = &awsecs.LogConfiguration{
 				LogDriver: awsecs.LogDriverAwslogs,
 				Options: map[string]string{
 					"awslogs-group":         logGroupName,
 					"awslogs-region":        infra.Region,
 					"awslogs-stream-prefix": containerName,
 				},
-			},
+			}
+		}
+
+		containerDefs := []awsecs.ContainerDefinition{{
+			Name:             &containerName,
+			Essential:        ptr.Bool(true),
+			PortMappings:     portMappings,
+			Environment:      envVars,
+			Command:          svc.Command,
+			EntryPoint:       svc.Entrypoint,
+			HealthCheck:      healthCheck,
+			Image:            &imageUri,
+			LogConfiguration: logConfiguration,
 		}}
 
 		if svc.HasHostPorts() && hasPrivateZone {
@@ -314,7 +323,7 @@ func CreateECSService(
 			tgName := targetGroupName(serviceName, int(port.Target), appProto)
 
 			// Target group health check (matches TS createTargetGroup in lb.ts)
-			defaultInterval := HealthCheckInterval.Get(ctx) //nolint:gosec // value is a small config constant
+			defaultInterval := HealthCheckInterval.Get(ctx)
 			interval := defaultInterval
 			if svc.HealthCheck != nil {
 				interval = clampInt(int(svc.HealthCheck.IntervalSeconds), 5, 300, defaultInterval)

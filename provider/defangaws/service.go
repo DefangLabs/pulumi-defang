@@ -67,7 +67,11 @@ func (*Service) Construct(
 	// 	return nil, fmt.Errorf("failed to build AWS ECS infrastructure: %w", err)
 	// }
 
-	imageURI, err := provideraws.GetServiceImage(ctx, name, svc, infra.ImageInfra, childOpt)
+	var imageInfra *provideraws.BuildInfra
+	if infra != nil {
+		imageInfra = infra.BuildInfra
+	}
+	imageURI, err := provideraws.GetServiceImage(ctx, name, svc, imageInfra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
 	}

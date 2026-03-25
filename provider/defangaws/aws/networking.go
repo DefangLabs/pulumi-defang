@@ -23,8 +23,10 @@ type NetworkingResult struct {
 
 // ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
 func ResolveNetworking(
-	ctx *pulumi.Context, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context, projectName string, opts ...pulumi.ResourceOption,
 ) (*NetworkingResult, error) {
+	privateDomain := common.SafeLabel(projectName) + ".internal"
+
 	strategy := awsxec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: missing type checking
 
 	// if cfg != nil && cfg.VpcID != "" {
@@ -79,8 +81,6 @@ func ResolveNetworking(
 	if err != nil {
 		return nil, err
 	}
-
-	privateDomain := fmt.Sprintf("%s-%s.internal", ctx.Project(), ctx.Stack())
 
 	// TODO: make this optional, so we can save $$
 	privateZone, err := route53.NewZone(ctx, privateDomain, &route53.ZoneArgs{
