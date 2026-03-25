@@ -12,7 +12,7 @@ func main() {
 		cfg := config.New(ctx, "")
 		domain := cfg.Get("domain")
 
-		gcpYaml, err := defanggcp.NewProject(ctx, "gcp-yaml", &defanggcp.ProjectArgs{
+		project, err := defanggcp.NewProject(ctx, "gcp-go", &defanggcp.ProjectArgs{
 			Domain: pulumi.StringInput(pulumi.String(domain)),
 			Services: shared.ServiceInputMap{
 				"app": &shared.ServiceInputArgs{
@@ -30,7 +30,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		ctx.Export("endpoints", gcpYaml.Endpoints)
+		ctx.Export("endpoints", project.Endpoints)
 		return nil
 	})
 }

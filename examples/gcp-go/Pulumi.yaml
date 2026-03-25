@@ -1,6 +1,6 @@
-name: defang-gcp-yaml
+name: defang-gcp-go
 runtime: go
-description: Example using defang-gcp to deploy services to GCP (Pulumi YAML)
+description: Example using defang-gcp to deploy services to GCP (Pulumi Go)
 plugins:
   providers:
     - name: defang-gcp
