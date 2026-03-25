@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -15,6 +16,70 @@ import (
 )
 
 var errNoImageOrBuildConfig = errors.New("no image or build config")
+
+// imgRE parses a Docker image reference into registry, repo, tag, and digest parts.
+// Mirrors the regex used by DefangLabs/defang/src/pkg/dockerhub.
+//
+//nolint:lll
+var imgRE = regexp.MustCompile(`^((?:((?:[0-9a-z](?:[0-9a-z-]{0,61}[0-9a-z])?\.)+[a-z]{2,63})\/)?(.{1,127}?))(?::(\w[\w.-]{0,127}))?(?:@(sha256:[0-9a-f]{64}))?$`)
+
+type imageInfo struct {
+	registry string
+	repo     string
+	tag      string
+	digest   string
+}
+
+func parseImage(image string) imageInfo {
+	m := imgRE.FindStringSubmatch(image)
+	if m == nil {
+		return imageInfo{repo: image}
+	}
+	return imageInfo{registry: m[2], repo: m[3], tag: m[4], digest: m[5]}
+}
+
+func (i imageInfo) fullImage() string {
+	s := i.repo
+	if i.registry != "" {
+		s = i.registry + "/" + s
+	}
+	if i.tag != "" {
+		s += ":" + i.tag
+	}
+	if i.digest != "" {
+		s += "@" + i.digest
+	}
+	return s
+}
+
+// Based on Cloud Run error:
+// "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
+// [region.]gcr.io, [region-]docker.pkg.dev or docker.io"
+var gcrHostRE = regexp.MustCompile(`^(?:[a-z0-9-]+\.)*gcr\.io$`)
+var dockerPkgRE = regexp.MustCompile(`^(?:[a-z][a-z0-9-]*-)?docker\.pkg\.dev$`)
+
+// isCloudRunSupportedRegistry reports whether the given registry host is
+// natively supported by Cloud Run (GCR, Artifact Registry, or Docker Hub).
+func isCloudRunSupportedRegistry(registry string) bool {
+	if registry == "" || registry == "docker.io" {
+		return true
+	}
+	return gcrHostRE.MatchString(registry) || dockerPkgRE.MatchString(registry)
+}
+
+// sanitizeRepoName produces a valid Artifact Registry repository ID:
+// lowercase alphanumeric + hyphens, max 63 characters.
+var nonAlphaNumRE = regexp.MustCompile(`[^a-z0-9-]`)
+
+func sanitizeRepoName(name string) string {
+	name = strings.ToLower(name)
+	name = nonAlphaNumRE.ReplaceAllLiteralString(name, "-")
+	name = strings.Trim(name, "-")
+	if len(name) > 63 {
+		name = name[:63]
+	}
+	return strings.TrimRight(name, "-")
+}
 
 // gcpBuildResource is the Pulumi resource state for the defang-gcp:defanggcp:Build custom resource.
 type gcpBuildResource struct {
@@ -60,6 +125,13 @@ func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
 // When svc.Build is set and infra is provided, it registers a Cloud Build
 // custom resource to produce the image; otherwise it returns the pre-configured
 // image string.
+//
+// For pre-configured images whose registry is not natively supported by Cloud Run
+// (i.e. not GCR, Artifact Registry, or Docker Hub), the image reference is
+// rewritten to point at the project's Artifact Registry so that Cloud Run can
+// pull it. This mirrors the logic in getServiceImage in the CD implementation
+// and assumes a corresponding Artifact Registry remote repository has been
+// configured to proxy the original registry.
 func GetServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -73,7 +145,23 @@ func GetServiceImage(
 	if svc.Image == nil {
 		return nil, fmt.Errorf("service %s: %w", serviceName, errNoImageOrBuildConfig)
 	}
-	return pulumi.String(*svc.Image), nil
+
+	info := parseImage(*svc.Image)
+	if !isCloudRunSupportedRegistry(info.registry) {
+		gcpProject := gcpProjectId(ctx)
+		region := GcpRegion(ctx)
+		if infra != nil {
+			gcpProject = infra.GcpProject
+			region = infra.Region
+		}
+		originalRegistry := info.registry
+		info.registry = region + "-docker.pkg.dev"
+		info.repo = fmt.Sprintf("%s/%s/%s", gcpProject, sanitizeRepoName(originalRegistry), info.repo)
+		msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
+			serviceName, *svc.Image, info.fullImage())
+		_ = ctx.Log.Info(msg, nil)
+	}
+	return pulumi.String(info.fullImage()), nil
 }
 
 // cloudBuildMachineType returns the Cloud Build machine type string for a given
