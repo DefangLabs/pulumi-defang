@@ -16,6 +16,8 @@ import (
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
+const gcpCloudRunServiceType = "gcp:cloudrunv2/service:Service"
+
 func TestConstructGcpCloudRunServiceWithImage(t *testing.T) {
 	server := testutil.MakeGcpTestServer()
 
@@ -141,11 +143,76 @@ func TestConstructGcpCloudRunServiceWithDomainName(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestConstructGcpCloudRunServiceWithoutReservationsHasNoLimits(t *testing.T) {
+	var capturedTemplate property.Map
+	mocks := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == gcpCloudRunServiceType {
+				capturedTemplate = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Service"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"image": property.New("myapp:latest"),
+		}),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
+	template := capturedTemplate.Get("template").AsMap()
+	containers := template.Get("containers").AsArray()
+	require.Equal(t, 1, containers.Len())
+	limits := containers.Get(0).AsMap().Get("resources").AsMap().Get("limits").AsMap()
+	assert.Equal(t, 0, limits.Len(), "expected no resource limits when no reservations defined")
+}
+
+func TestConstructGcpCloudRunServiceWithReservationsSetsLimits(t *testing.T) {
+	var capturedTemplate property.Map
+	mocks := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == gcpCloudRunServiceType {
+				capturedTemplate = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Service"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"image": property.New("myapp:latest"),
+			"deploy": property.New(property.NewMap(map[string]property.Value{
+				"resources": property.New(property.NewMap(map[string]property.Value{
+					"reservations": property.New(property.NewMap(map[string]property.Value{
+						"cpus":   property.New(1.0),
+						"memory": property.New("512Mi"),
+					})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
+	template := capturedTemplate.Get("template").AsMap()
+	containers := template.Get("containers").AsArray()
+	require.Equal(t, 1, containers.Len())
+	limits := containers.Get(0).AsMap().Get("resources").AsMap().Get("limits").AsMap()
+	assert.Equal(t, "1", limits.Get("cpu").AsString())
+	assert.Equal(t, "512Mi", limits.Get("memory").AsString())
+}
+
 func TestConstructGcpCloudRunServiceSetsMaxInstanceRequestConcurrency(t *testing.T) {
 	var capturedTemplate property.Map
 	mocks := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
-			if args.TypeToken == "gcp:cloudrunv2/service:Service" {
+			if args.TypeToken == gcpCloudRunServiceType {
 				capturedTemplate = args.Inputs
 			}
 			return args.Name, args.Inputs, nil
