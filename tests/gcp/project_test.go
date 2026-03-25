@@ -22,8 +22,55 @@ import (
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
+type resourceRecord struct {
+	typ    string
+	name   string
+	inputs property.Map
+}
+
+// collectResources returns a mock and a pointer to the slice it populates.
+func collectResources() (*integration.MockResourceMonitor, *[]resourceRecord) {
+	var mu sync.Mutex
+	var records []resourceRecord
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
+			records = append(records, resourceRecord{
+				typ:    string(args.TypeToken),
+				name:   args.Name,
+				inputs: args.Inputs,
+			})
+			mu.Unlock()
+			return args.Name, args.Inputs, nil
+		},
+	}
+	return mock, &records
+}
+
+// countType returns how many records match the given type token.
+func countType(records []resourceRecord, typ string) int {
+	n := 0
+	for _, r := range records {
+		if r.typ == typ {
+			n++
+		}
+	}
+	return n
+}
+
+// findTypeWhere returns the first record matching the given type token and predicate, or nil.
+func findTypeWhere(records []resourceRecord, typ string, pred func(property.Map) bool) *resourceRecord {
+	for i := range records {
+		if records[i].typ == typ && pred(records[i].inputs) {
+			return &records[i]
+		}
+	}
+	return nil
+}
+
 func TestConstructProject(t *testing.T) {
-	server := testutil.MakeGcpTestServer()
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Project"),
@@ -34,6 +81,67 @@ func TestConstructProject(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+
+	// One Cloud Run service per container service
+	assert.Equal(t, 2, countType(*records, gcpCloudRunServiceType))
+
+	// Load balancer: one NEG and one backend service for the single ingress service
+	assert.Equal(t, 1, countType(*records, "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup"))
+	assert.Equal(t, 1, countType(*records, "gcp:compute/backendService:BackendService"))
+
+	// Two URL maps: one for HTTPS routing, one for HTTP→HTTPS redirect
+	assert.Equal(t, 2, countType(*records, "gcp:compute/uRLMap:URLMap"))
+
+	// Two forwarding rules: HTTPS (443) and HTTP (80)
+	assert.Equal(t, 2, countType(*records, "gcp:compute/globalForwardingRule:GlobalForwardingRule"))
+}
+
+func TestConstructProjectWithoutIngressSkipsLoadBalancer(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, countType(*records, "gcp:compute/uRLMap:URLMap"))
+	assert.Equal(t, 0, countType(*records, "gcp:compute/globalForwardingRule:GlobalForwardingRule"))
+	assert.Equal(t, 0, countType(*records, "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup"))
+}
+
+func TestConstructProjectWithDomainNameSetsHostRule(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image":      property.New("nginx:latest"),
+					"domainName": property.New("app.example.com"),
+					"ports":      property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Find the main URL map (has pathMatchers), not the HTTP-redirect one (has defaultUrlRedirect)
+	urlMap := findTypeWhere(*records, "gcp:compute/uRLMap:URLMap", func(m property.Map) bool {
+		return !m.Get("pathMatchers").IsNull()
+	})
+	require.NotNil(t, urlMap, "expected a URLMap to be registered")
+	hostRules := urlMap.inputs.Get("hostRules").AsArray()
+	require.Equal(t, 1, hostRules.Len(), "expected one host rule for the domain name")
+	hosts := hostRules.Get(0).AsMap().Get("hosts").AsArray()
+	require.Equal(t, 1, hosts.Len())
+	assert.Equal(t, "app.example.com", hosts.Get(0).AsString())
 }
 
 func TestConstructProjectDependencies(t *testing.T) {
