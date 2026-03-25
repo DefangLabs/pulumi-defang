@@ -13,6 +13,7 @@ type AWSConfig = compose.AWSConfigInput
 // BuildArgs are the inputs to a cloud provider's Build function.
 type BuildArgs struct {
 	Services map[string]compose.ServiceConfig
+	Domain   string
 }
 
 // BuildResult holds the outputs of a cloud build.
