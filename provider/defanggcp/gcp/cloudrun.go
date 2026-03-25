@@ -129,7 +129,12 @@ func buildTemplate(
 		maxInstances = mr
 	}
 
-	cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
+	resourceLimits := pulumi.StringMap{}
+	if svc.HasResourceReservations() {
+		cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
+		resourceLimits["cpu"] = pulumi.String(cpuLimit)
+		resourceLimits["memory"] = pulumi.String(memLimit)
+	}
 
 	// Build health check probes
 	var startupProbe *cloudrunv2.ServiceTemplateContainerStartupProbeArgs
@@ -159,10 +164,7 @@ func buildTemplate(
 				Ports:    ports,
 				Envs:     envs,
 				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-					Limits: pulumi.StringMap{
-						"cpu":    pulumi.String(cpuLimit),
-						"memory": pulumi.String(memLimit),
-					},
+					Limits: resourceLimits,
 				},
 				StartupProbe: startupProbe,
 			},

@@ -355,6 +355,13 @@ func (s ServiceConfig) GetReplicas() int32 {
 	return 1
 }
 
+// HasResourceReservations returns true if the service has explicit CPU or memory reservations.
+func (s ServiceConfig) HasResourceReservations() bool {
+	return s.Deploy != nil &&
+		s.Deploy.Resources != nil &&
+		s.Deploy.Resources.Reservations != nil
+}
+
 // GetCPUs returns the CPU reservation, defaulting to 0.25.
 func (s ServiceConfig) GetCPUs() float64 {
 	if s.Deploy != nil &&
