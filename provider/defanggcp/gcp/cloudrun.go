@@ -54,17 +54,17 @@ func CreateCloudRunService(
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
-	location string,
+	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
-	template, err := buildTemplate(ctx, configProvider, serviceName, svc, opts...)
+	template, err := buildTemplate(ctx, configProvider, serviceName, svc, gcpConfig, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("building Cloud Run template: %w", err)
 	}
 
 	// Create Cloud Run service
 	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
-		Location:           pulumi.String(location),
+		Location:           pulumi.String(gcpConfig.Region),
 		Ingress:            pulumi.String(Ingress.Get(ctx)),
 		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
 		InvokerIamDisabled: pulumi.Bool(true),
@@ -85,6 +85,7 @@ func buildTemplate(
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
+	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*cloudrunv2.ServiceTemplateArgs, error) {
 	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
@@ -155,7 +156,7 @@ func buildTemplate(
 			startupProbe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
 	}
-	return &cloudrunv2.ServiceTemplateArgs{
+	template := &cloudrunv2.ServiceTemplateArgs{
 		Containers: cloudrunv2.ServiceTemplateContainerArray{
 			&cloudrunv2.ServiceTemplateContainerArgs{
 				Image:    pulumi.String(*svc.Image),
@@ -174,5 +175,23 @@ func buildTemplate(
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(maxInstances),
 		},
-	}, nil
+	}
+
+	if gcpConfig != nil {
+		template.VpcAccess = buildVpcAccess(gcpConfig)
+	}
+
+	return template, nil
+}
+
+func buildVpcAccess(gcpConfig *GlobalConfig) *cloudrunv2.ServiceTemplateVpcAccessArgs {
+	return &cloudrunv2.ServiceTemplateVpcAccessArgs{
+		Egress: pulumi.String("PRIVATE_RANGES_ONLY"),
+		NetworkInterfaces: cloudrunv2.ServiceTemplateVpcAccessNetworkInterfaceArray{
+			&cloudrunv2.ServiceTemplateVpcAccessNetworkInterfaceArgs{
+				Network:    gcpConfig.VpcId,
+				Subnetwork: gcpConfig.SubnetId,
+			},
+		},
+	}
 }
