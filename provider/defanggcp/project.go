@@ -41,13 +41,44 @@ func (*Project) Construct(
 		return nil, err
 	}
 
-	childOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+	childOpt := pulumi.Parent(comp)
+	args := common.BuildArgs{
+		Services: inputs.Services,
+	}
+
+	result, err := build(ctx, name, args, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build GCP resources: %w", err)
+	}
+
+	comp.Endpoints = result.Endpoints
+	comp.LoadBalancerDNS = result.LoadBalancerDNS
+
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"endpoints":       result.Endpoints,
+		"loadBalancerDns": result.LoadBalancerDNS,
+	}); err != nil {
+		return nil, err
+	}
+
+	return comp, nil
+}
+
+// Build creates all GCP resources for the project.
+// The GCP provider must be passed via the parent chain (pulumi.Providers on the parent component).
+func build(
+	ctx *pulumi.Context,
+	projectName string,
+	args common.BuildArgs,
+	parentOpt pulumi.ResourceOption,
+) (*common.BuildResult, error) {
+	childOpts := []pulumi.ResourceOption{parentOpt}
 	region := providergcp.GcpRegion(ctx)
 
 	// Create Artifact Registry repository for container images
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
-		RepositoryId: pulumi.String(strings.ToLower(name)),
-		Description:  pulumi.String("Container images for " + name),
+		RepositoryId: pulumi.String(strings.ToLower(projectName)),
+		Description:  pulumi.String("Container images for " + projectName),
 		Format:       pulumi.String("DOCKER"),
 	}, childOpts...)
 	if err != nil {
@@ -58,10 +89,10 @@ func (*Project) Construct(
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → component resource for dependees
-	configProvider := providergcp.NewConfigProvider(name)
+	configProvider := providergcp.NewConfigProvider(projectName)
 
-	for _, svcName := range common.TopologicalSort(inputs.Services) {
-		svc := inputs.Services[svcName]
+	for _, svcName := range common.TopologicalSort(args.Services) {
+		svc := args.Services[svcName]
 
 		// Collect dependency resources from services this one depends on
 		var deps []pulumi.Resource
@@ -79,20 +110,10 @@ func (*Project) Construct(
 		dependencies[svcName] = svcComp
 	}
 
-	endpointsOutput := endpoints.ToStringMapOutput()
-	loadBalancerDNS := pulumi.StringPtr("").ToStringPtrOutput()
-
-	comp.Endpoints = endpointsOutput
-	comp.LoadBalancerDNS = loadBalancerDNS
-
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoints":       endpointsOutput,
-		"loadBalancerDns": loadBalancerDNS,
-	}); err != nil {
-		return nil, err
-	}
-
-	return comp, nil
+	return &common.BuildResult{
+		Endpoints:       endpoints.ToStringMapOutput(),
+		LoadBalancerDNS: pulumi.StringPtr("").ToStringPtrOutput(),
+	}, nil
 }
 
 func buildService(
