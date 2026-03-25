@@ -132,7 +132,7 @@ func newRedisComponent(
 		return nil, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}
 
-	var dependency pulumi.Resource //= redisResult.Address
+	var dependency pulumi.Resource // = redisResult.Address
 	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, provideraws.RecordTypeCNAME, route53.RecordArgs{

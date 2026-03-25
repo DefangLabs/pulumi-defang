@@ -316,7 +316,7 @@ func CreateECSService(
 			tgName := targetGroupName(serviceName, int(port.Target), appProto)
 
 			// Target group health check (matches TS createTargetGroup in lb.ts)
-			defaultInterval := int32(HealthCheckInterval.Get(ctx))
+			defaultInterval := int32(HealthCheckInterval.Get(ctx)) //nolint:gosec // value is a small config constant
 			interval := defaultInterval
 			if svc.HealthCheck != nil {
 				interval = clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, defaultInterval)

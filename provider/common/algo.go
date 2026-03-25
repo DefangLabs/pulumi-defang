@@ -48,7 +48,8 @@ func NeedIngress(services compose.Services) bool {
 }
 
 func AcceptPublicTraffic(networks compose.Networks, service compose.ServiceConfig) bool {
-	// A service accepts traffic from the public internet if it's in the "default" network and the default network is not internal and has a "host" port.
+	// A service accepts traffic from the public internet if it's in the "default" network
+	// and the default network is not internal and has a "host" port.
 	// Services will have been added to the "default" network if they didn't have a "networks" section.
 	_, inDefaultNetwork := service.Networks[compose.DefaultNetwork]
 	inDefaultNetwork = inDefaultNetwork || len(service.Networks) == 0

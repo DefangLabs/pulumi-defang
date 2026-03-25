@@ -329,7 +329,8 @@ func CreateElasticache(
 	}
 
 	// Use configuration endpoint (cluster mode enabled) if available, else primary endpoint.
-	address := pulumi.All(rg.ConfigurationEndpointAddress, rg.PrimaryEndpointAddress).ApplyT(func(endpoints []interface{}) string {
+	address := pulumi.All(rg.ConfigurationEndpointAddress, rg.PrimaryEndpointAddress).
+		ApplyT(func(endpoints []interface{}) string {
 		cfg := endpoints[0].(string)
 		primary := endpoints[1].(string)
 		if cfg != "" {
