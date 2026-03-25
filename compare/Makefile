@@ -6,4 +6,4 @@ oss.txt:
 
 .PHONY: compare
 compare: | cd.txt oss.txt
-	python3 compare.py cd.txt oss.txt
+	python3 compare.py cd.txt oss.txt $(if $(type),--type $(type))
