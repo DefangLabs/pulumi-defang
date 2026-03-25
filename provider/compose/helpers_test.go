@@ -32,6 +32,19 @@ func (testMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	return args.Args, nil
 }
 
+func TestToPulumiStringArray(t *testing.T) {
+	t.Run("nil input returns nil", func(t *testing.T) {
+		assert.Nil(t, ToPulumiStringArray(nil))
+	})
+	t.Run("empty slice returns nil", func(t *testing.T) {
+		assert.Nil(t, ToPulumiStringArray([]string{}))
+	})
+	t.Run("non-empty slice returns array of same length", func(t *testing.T) {
+		result := ToPulumiStringArray([]string{"a", "b", "c"})
+		assert.Len(t, result, 3)
+	})
+}
+
 func TestGetConfigOrEnvValue(t *testing.T) {
 	tests := []struct {
 		name         string
