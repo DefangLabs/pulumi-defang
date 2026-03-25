@@ -156,10 +156,15 @@ func buildTemplate(
 			startupProbe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
 	}
+	image, err := GetServiceImage(ctx, serviceName, svc, gcpConfig.BuildInfra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("getting service image: %w", err)
+	}
+
 	template := &cloudrunv2.ServiceTemplateArgs{
 		Containers: cloudrunv2.ServiceTemplateContainerArray{
 			&cloudrunv2.ServiceTemplateContainerArgs{
-				Image:    pulumi.String(*svc.Image),
+				Image:    image,
 				Commands: commands,
 				Args:     cmdArgs,
 				Ports:    ports,

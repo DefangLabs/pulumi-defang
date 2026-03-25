@@ -23,6 +23,7 @@ type GlobalConfig struct {
 	PublicIP       *compute.GlobalAddress
 	WildcardCertId pulumi.StringInput // non-nil when a domain is configured
 	PublicZoneId   pulumi.StringInput // managed zone name; non-nil when a domain is configured
+	BuildInfra     *BuildInfra        // non-nil when at least one service has a build config
 }
 
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
@@ -117,6 +118,14 @@ func BuildGlobalConfig(
 		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
 			return nil, err
 		}
+	}
+
+	if hasBuildConfig(services) {
+		buildInfra, err := createBuildInfra(ctx, projectName, opts...)
+		if err != nil {
+			return nil, err
+		}
+		cfg.BuildInfra = buildInfra
 	}
 
 	return cfg, nil

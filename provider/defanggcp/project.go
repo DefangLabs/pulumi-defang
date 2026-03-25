@@ -2,12 +2,10 @@ package defanggcp
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -82,17 +80,6 @@ func build(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
-
-	// Create Artifact Registry repository for container images
-	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
-		RepositoryId: pulumi.String(strings.ToLower(projectName)),
-		Description:  pulumi.String("Container images for " + projectName),
-		Format:       pulumi.String("DOCKER"),
-	}, childOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating artifact registry: %w", err)
-	}
-	_ = ar
 
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}

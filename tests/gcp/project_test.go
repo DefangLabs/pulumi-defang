@@ -317,6 +317,57 @@ func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
 }
 
+func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"build": property.New(property.NewMap(map[string]property.Value{
+					"context": property.New("./app"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Artifact Registry repository
+	assert.Equal(t, 1, countType(*records, "gcp:artifactregistry/repository:Repository"))
+	// Build service account
+	bsa := findTypeWhere(*records, "gcp:serviceaccount/account:Account", func(m property.Map) bool {
+		return strings.Contains(m.Get("displayName").AsString(), "build")
+	})
+	require.NotNil(t, bsa, "expected a build service account")
+	// Registry admin IAM binding for the build SA
+	assert.Equal(t, 1, countType(*records, "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding"))
+	// Logging IAM members (logWriter + bucketWriter)
+	assert.Equal(t, 2, countType(*records, "gcp:projects/iAMMember:IAMMember"))
+	// Build resource for the service
+	assert.Equal(t, 1, countType(*records, "defang-gcp:defanggcp:Build"))
+}
+
+func TestConstructProjectWithoutBuildSkipsBuildInfra(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, countType(*records, "gcp:artifactregistry/repository:Repository"))
+	assert.Equal(t, 0, countType(*records, "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding"))
+	assert.Equal(t, 0, countType(*records, "gcp:projects/iAMMember:IAMMember"))
+	assert.Equal(t, 0, countType(*records, "defang-gcp:defanggcp:Build"))
+}
+
 func TestConstructProjectDependencies(t *testing.T) {
 	type reg struct {
 		name string
