@@ -19,6 +19,9 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
+	// a wildcard certificate and DNS zone are created.
+	Domain string `pulumi:"domain,optional" yaml:"domain,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -44,6 +47,7 @@ func (*Project) Construct(
 	childOpt := pulumi.Parent(comp)
 	args := common.BuildArgs{
 		Services: inputs.Services,
+		Domain:   inputs.Domain,
 	}
 
 	result, err := build(ctx, name, args, childOpt)
@@ -74,7 +78,7 @@ func build(
 ) (*common.BuildResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
-	infra, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Services, childOpts...)
+	infra, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
@@ -119,7 +123,7 @@ func build(
 	}
 
 	if err := providergcp.CreateExternalLoadBalancer(
-		ctx, projectName, infra.PublicIP, lbEntries, infra.Region, childOpts...,
+		ctx, projectName, infra, lbEntries, childOpts...,
 	); err != nil {
 		return nil, fmt.Errorf("creating external load balancer: %w", err)
 	}

@@ -22,9 +22,8 @@ type LBServiceEntry struct {
 func CreateExternalLoadBalancer(
 	ctx *pulumi.Context,
 	projectName string,
-	publicIP *compute.GlobalAddress,
+	config *GlobalConfig,
 	entries []LBServiceEntry,
-	region string,
 	opts ...pulumi.ResourceOption,
 ) error {
 	// Filter to services with ingress ports
@@ -43,16 +42,27 @@ func CreateExternalLoadBalancer(
 		return err
 	}
 
-	urlMap, err := buildURLMap(ctx, projectName, ingressEntries, region, opts...)
+	if config.WildcardCertId != nil {
+		if _, err := certificatemanager.NewCertificateMapEntry(ctx, projectName+"-lb-wildcard-cert-map-entry",
+			&certificatemanager.CertificateMapEntryArgs{
+				Map:          certMap.Name,
+				Certificates: pulumi.StringArray{config.WildcardCertId},
+				Matcher:      pulumi.String("PRIMARY"),
+			}, opts...); err != nil {
+			return err
+		}
+	}
+
+	urlMap, err := buildURLMap(ctx, projectName, ingressEntries, config.Region, opts...)
 	if err != nil {
 		return err
 	}
 
-	if err := createHTTPSForwardingRule(ctx, projectName, publicIP, urlMap, certMap, opts...); err != nil {
+	if err := createHTTPSForwardingRule(ctx, projectName, config.PublicIP, urlMap, certMap, opts...); err != nil {
 		return err
 	}
 
-	return createHTTPRedirectForwardingRule(ctx, projectName, publicIP, opts...)
+	return createHTTPRedirectForwardingRule(ctx, projectName, config.PublicIP, opts...)
 }
 
 func newCertMap(

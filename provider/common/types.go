@@ -10,6 +10,7 @@ const DefangComment = "Managed by Defang"
 // BuildArgs are the inputs to a cloud provider's Build function.
 type BuildArgs struct {
 	Services compose.Services
+	Domain   string
 }
 
 // BuildResult holds the outputs of a cloud build.

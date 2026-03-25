@@ -57,7 +57,7 @@ func (*Service) Construct(
 
 	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
 	services := map[string]compose.ServiceConfig{name: svc}
-	infra, err := providergcp.BuildGlobalConfig(ctx, inputs.ProjectName, services, childOpt)
+	infra, err := providergcp.BuildGlobalConfig(ctx, inputs.ProjectName, "", services, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}

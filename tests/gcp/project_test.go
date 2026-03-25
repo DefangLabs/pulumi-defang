@@ -144,6 +144,54 @@ func TestConstructProjectWithDomainNameSetsHostRule(t *testing.T) {
 	assert.Equal(t, "app.example.com", hosts.Get(0).AsString())
 }
 
+func TestConstructProjectWithDomainCreatesWildcardCert(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// DNS zone for the domain
+	assert.Equal(t, 1, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	// DNS authorization for the wildcard cert challenge
+	assert.Equal(t, 1, countType(*records, "gcp:certificatemanager/dnsAuthorization:DnsAuthorization"))
+	// Wildcard certificate
+	assert.Equal(t, 1, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
+	// Cert map entry wiring the wildcard cert into the LB cert map
+	assert.Equal(t, 1, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
+}
+
+func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(80)),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/dnsAuthorization:DnsAuthorization"))
+	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
+	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
+}
+
 func TestConstructProjectDependencies(t *testing.T) {
 	type reg struct {
 		name string
