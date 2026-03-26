@@ -190,7 +190,7 @@ func createCodeBuildProject(
 		},
 		LogsConfig: &codebuild.ProjectLogsConfigArgs{
 			CloudwatchLogs: &codebuild.ProjectLogsConfigCloudwatchLogsArgs{
-				GroupName:  logGroup.Name,
+				GroupName:  logGroup.Name, // FIXME: separate logGroup for builds
 				StreamName: pulumi.String(name),
 			},
 		},
