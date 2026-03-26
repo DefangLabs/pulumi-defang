@@ -398,6 +398,13 @@ func TestConstructProjectWithPostgresCreatesVPCPeering(t *testing.T) {
 
 	// DatabaseInstance should be present
 	assert.Equal(t, 1, countType(*records, "gcp:sql/databaseInstance:DatabaseInstance"))
+
+	// Private DNS A record pointing to the Cloud SQL private IP
+	dbDNS := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("name").AsString() == "db.google.internal." && m.Get("type").AsString() == "A"
+	})
+	require.NotNil(t, dbDNS, "expected a private DNS A record for Cloud SQL")
+	assert.InDelta(t, 60.0, dbDNS.inputs.Get("ttl").AsNumber(), 0)
 }
 
 func TestConstructProjectWithoutPostgresSkipsVPCPeering(t *testing.T) {
@@ -476,6 +483,13 @@ func TestConstructProjectWithRedisCreatesVPCPeering(t *testing.T) {
 
 	// Memorystore instance should be present
 	assert.Equal(t, 1, countType(*records, "gcp:redis/instance:Instance"))
+
+	// Private DNS A record pointing to the Memorystore host
+	redisDNS := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("name").AsString() == "cache.google.internal." && m.Get("type").AsString() == "A"
+	})
+	require.NotNil(t, redisDNS, "expected a private DNS A record for Memorystore")
+	assert.InDelta(t, 60.0, redisDNS.inputs.Get("ttl").AsNumber(), 0)
 }
 
 func TestConstructProjectWithRedisCreatesMemorystoreInstance(t *testing.T) {

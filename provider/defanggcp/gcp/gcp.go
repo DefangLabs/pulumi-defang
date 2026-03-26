@@ -26,6 +26,7 @@ type GlobalConfig struct {
 	PublicZoneId      pulumi.StringInput              // managed zone name; non-nil when a domain is configured
 	BuildInfra        *BuildInfra                     // non-nil when at least one service has a build config
 	ServiceConnection *servicenetworking.Connection   // non-nil when any service uses managed Postgres or Redis
+	PrivateZoneId     pulumi.StringOutput             // managed zone name for the private google.internal. zone
 }
 
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
@@ -93,7 +94,7 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	_, err = dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
+	privateZone, err := dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
 		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
 		DnsName:     pulumi.String("google.internal."),
 		Visibility:  pulumi.String("private"),
@@ -110,10 +111,11 @@ func BuildGlobalConfig(
 	}
 
 	cfg := &GlobalConfig{
-		Region:   region,
-		VpcId:    vpc.ID().ToStringOutput(),
-		SubnetId: subnet.ID().ToStringOutput(),
-		PublicIP: publicIP,
+		Region:        region,
+		VpcId:         vpc.ID().ToStringOutput(),
+		SubnetId:      subnet.ID().ToStringOutput(),
+		PublicIP:      publicIP,
+		PrivateZoneId: privateZone.Name.ToStringOutput(),
 	}
 
 	if domain != "" {
@@ -242,6 +244,25 @@ func createWildcardCert(
 	cfg.WildcardCertId = cert.ID()
 
 	return nil
+}
+
+// CreatePrivateDNSRecord creates an A record in the private google.internal. zone for a
+// managed service (Cloud SQL or Memorystore), so other services can reach it by name.
+func CreatePrivateDNSRecord(
+	ctx *pulumi.Context,
+	serviceName string,
+	ip pulumi.StringInput,
+	zoneId pulumi.StringOutput,
+	opts ...pulumi.ResourceOption,
+) error {
+	_, err := dns.NewRecordSet(ctx, serviceName+"-private-dns", &dns.RecordSetArgs{
+		Name:        pulumi.String(serviceName + ".google.internal."),
+		Type:        pulumi.String("A"),
+		Ttl:         pulumi.Int(60),
+		ManagedZone: zoneId,
+		Rrdatas:     pulumi.StringArray{ip},
+	}, opts...)
+	return err
 }
 
 const defaultGCPRegion = "us-central1"

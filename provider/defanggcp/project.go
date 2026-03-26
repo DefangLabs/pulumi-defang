@@ -152,6 +152,11 @@ func buildService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
+		if err := providergcp.CreatePrivateDNSRecord(
+			ctx, svcName, sqlResult.Instance.PrivateIpAddress, infra.PrivateZoneId, svcOpts...,
+		); err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating private DNS for %s: %w", svcName, err)
+		}
 		port := firstIngressPort(svc.Ports, defaultPostgresPort)
 		endpoint = pulumi.Sprintf("%s:%d", sqlResult.Instance.PublicIpAddress, port)
 	case svc.Redis != nil:
@@ -164,6 +169,11 @@ func buildService(
 		redisResult, err := providergcp.CreateMemoryStore(ctx, svcName, svc, infra, svcOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Memorystore for %s: %w", svcName, err)
+		}
+		if err := providergcp.CreatePrivateDNSRecord(
+			ctx, svcName, redisResult.Instance.Host, infra.PrivateZoneId, svcOpts...,
+		); err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating private DNS for %s: %w", svcName, err)
 		}
 		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstIngressPort(svc.Ports, defaultRedisPort))
 	default:
