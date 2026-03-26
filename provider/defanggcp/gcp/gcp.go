@@ -9,6 +9,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/servicenetworking"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
@@ -17,13 +18,14 @@ var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert author
 
 // GlobalConfig holds project-level GCP resources shared across all services.
 type GlobalConfig struct {
-	Region         string
-	VpcId          pulumi.StringOutput
-	SubnetId       pulumi.StringOutput
-	PublicIP       *compute.GlobalAddress
-	WildcardCertId pulumi.StringInput // non-nil when a domain is configured
-	PublicZoneId   pulumi.StringInput // managed zone name; non-nil when a domain is configured
-	BuildInfra     *BuildInfra        // non-nil when at least one service has a build config
+	Region            string
+	VpcId             pulumi.StringOutput
+	SubnetId          pulumi.StringOutput
+	PublicIP          *compute.GlobalAddress
+	WildcardCertId    pulumi.StringInput              // non-nil when a domain is configured
+	PublicZoneId      pulumi.StringInput              // managed zone name; non-nil when a domain is configured
+	BuildInfra        *BuildInfra                     // non-nil when at least one service has a build config
+	ServiceConnection *servicenetworking.Connection   // non-nil when any service uses managed Postgres
 }
 
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
@@ -120,15 +122,37 @@ func BuildGlobalConfig(
 		}
 	}
 
+	if err := buildOptionalInfra(ctx, projectName, cfg, services, opts...); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// buildOptionalInfra creates build and database infrastructure when services require it.
+func buildOptionalInfra(
+	ctx *pulumi.Context,
+	projectName string,
+	cfg *GlobalConfig,
+	services map[string]compose.ServiceConfig,
+	opts ...pulumi.ResourceOption,
+) error {
 	if hasBuildConfig(services) {
 		buildInfra, err := createBuildInfra(ctx, projectName, opts...)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		cfg.BuildInfra = buildInfra
 	}
 
-	return cfg, nil
+	if hasPostgresConfig(services) {
+		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
+		if err != nil {
+			return err
+		}
+		cfg.ServiceConnection = serviceConn
+	}
+	return nil
 }
 
 // createWildcardCert creates a public DNS zone, a wildcard DNS authorization, and a
