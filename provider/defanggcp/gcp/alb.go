@@ -37,6 +37,30 @@ func CreateExternalLoadBalancer(
 		return nil
 	}
 
+	// Create public DNS A records for each ingress service when a domain is configured.
+	// Mirrors the CD's getDomainAndCerts logic: one record for the main service domain
+	// ({serviceName}.{domain}) and one per ingress port ({serviceName}--{port}.{domain}).
+	if config.Domain != "" {
+		ip := pulumi.StringArray{config.PublicIP.Address}
+		for _, entry := range ingressEntries {
+			svcDomain := entry.Name + "." + config.Domain
+			if err := CreatePublicDNSRecord(ctx, config.PublicZoneId, svcDomain, "A", pulumi.Int(60), ip, opts...); err != nil {
+				return err
+			}
+			for _, port := range entry.Config.Ports {
+				if port.Mode != "ingress" {
+					continue
+				}
+				portDomain := fmt.Sprintf("%s--%d.%s", entry.Name, port.Target, config.Domain)
+				if err := CreatePublicDNSRecord(
+					ctx, config.PublicZoneId, portDomain, "A", pulumi.Int(60), ip, opts...,
+				); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	certMap, err := newCertMap(ctx, projectName, opts...)
 	if err != nil {
 		return err
