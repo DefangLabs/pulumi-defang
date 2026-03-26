@@ -19,6 +19,7 @@ var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert author
 // GlobalConfig holds project-level GCP resources shared across all services.
 type GlobalConfig struct {
 	Region            string
+	Domain            string                          // delegate domain (e.g. "example.com"); empty when not configured
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
@@ -119,6 +120,7 @@ func BuildGlobalConfig(
 	}
 
 	if domain != "" {
+		cfg.Domain = domain
 		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
 			return nil, err
 		}
@@ -244,6 +246,29 @@ func createWildcardCert(
 	cfg.WildcardCertId = cert.ID()
 
 	return nil
+}
+
+// CreatePublicDNSRecord creates a DNS record in the public zone. The resource name
+// follows the CD's convention: "{fqdn}-{type}-dns" (e.g. "app.example.com.-A-dns").
+func CreatePublicDNSRecord(
+	ctx *pulumi.Context,
+	zoneName pulumi.StringInput,
+	domain, recordType string,
+	ttl pulumi.IntInput,
+	value pulumi.StringArrayInput,
+	opts ...pulumi.ResourceOption,
+) error {
+	if !strings.HasSuffix(domain, ".") {
+		domain += "."
+	}
+	_, err := dns.NewRecordSet(ctx, domain+"-"+recordType+"-dns", &dns.RecordSetArgs{
+		Name:        pulumi.String(domain),
+		Type:        pulumi.String(recordType),
+		Ttl:         ttl,
+		ManagedZone: zoneName,
+		Rrdatas:     value,
+	}, opts...)
+	return err
 }
 
 // CreatePrivateDNSRecord creates an A record in the private google.internal. zone for a

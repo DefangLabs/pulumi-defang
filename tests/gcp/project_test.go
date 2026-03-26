@@ -297,6 +297,60 @@ func TestConstructProjectWithDomainCreatesWildcardCert(t *testing.T) {
 	assert.Equal(t, 1, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
 }
 
+func TestConstructProjectWithDomainCreatesPublicARecords(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Main service domain: app.example.com.
+	mainA := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("name").AsString() == "app.example.com." && m.Get("type").AsString() == "A"
+	})
+	require.NotNil(t, mainA, "expected an A record for app.example.com.")
+	assert.InDelta(t, 60.0, mainA.inputs.Get("ttl").AsNumber(), 0)
+
+	// Port-specific domain: app--80.example.com.
+	portA := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("name").AsString() == "app--80.example.com." && m.Get("type").AsString() == "A"
+	})
+	require.NotNil(t, portA, "expected an A record for app--80.example.com.")
+	assert.InDelta(t, 60.0, portA.inputs.Get("ttl").AsNumber(), 0)
+}
+
+func TestConstructProjectWithoutDomainSkipsPublicARecords(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(80)),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Without a domain, no public A records should be created (only private zone records for managed services)
+	publicA := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("type").AsString() == "A"
+	})
+	assert.Nil(t, publicA, "expected no public A records without a domain")
+}
+
 func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
