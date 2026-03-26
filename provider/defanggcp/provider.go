@@ -25,6 +25,7 @@ func Provider() p.Provider {
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
 			infer.Component[*Service, ServiceInputs, *ServiceOutputs](&Service{}),
 			infer.Component[*Postgres, PostgresInputs, *PostgresOutputs](&Postgres{}),
+			infer.Component[*Redis, RedisInputs, *RedisOutputs](&Redis{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider":  "index",

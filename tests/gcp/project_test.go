@@ -447,6 +447,60 @@ func TestConstructProjectWithPostgresDatabaseInstanceHasPrivateNetwork(t *testin
 	assert.True(t, ipCfg.Get("ipv4Enabled").AsBool(), "expected ipv4Enabled to be true when no private-only network")
 }
 
+func TestConstructProjectWithRedisCreatesVPCPeering(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"cache": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("redis:7"),
+				"redis": property.New(property.NewMap(map[string]property.Value{})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Private IP range for VPC peering
+	peering := findTypeWhere(*records, "gcp:compute/globalAddress:GlobalAddress", func(m property.Map) bool {
+		v := m.Get("purpose")
+		return !v.IsNull() && v.AsString() == gcpVPCPeeringPurpose
+	})
+	require.NotNil(t, peering, "expected a VPC_PEERING GlobalAddress for Memorystore private IP")
+	assert.Equal(t, "INTERNAL", peering.inputs.Get("addressType").AsString())
+
+	// Service networking connection
+	assert.Equal(t, 1, countType(*records, "gcp:servicenetworking/connection:Connection"))
+
+	// Memorystore instance should be present
+	assert.Equal(t, 1, countType(*records, "gcp:redis/instance:Instance"))
+}
+
+func TestConstructProjectWithRedisCreatesMemorystoreInstance(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"cache": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("redis:7"),
+				"redis": property.New(property.NewMap(map[string]property.Value{})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	inst := findTypeWhere(*records, "gcp:redis/instance:Instance", func(m property.Map) bool { return true })
+	require.NotNil(t, inst, "expected a Memorystore Redis instance in Project")
+	assert.Equal(t, "STANDARD_HA", inst.inputs.Get("tier").AsString())
+	assert.Equal(t, "PRIVATE_SERVICE_ACCESS", inst.inputs.Get("connectMode").AsString())
+	assert.Equal(t, "REDIS_7_0", inst.inputs.Get("redisVersion").AsString())
+}
+
 func TestConstructProjectDependencies(t *testing.T) {
 	type reg struct {
 		name string

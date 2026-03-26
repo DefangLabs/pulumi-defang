@@ -12,5 +12,6 @@ var (
 	LaunchStage         = common.String("launch-stage", "BETA")
 	MaxReplicas         = common.Int("max-replicas", 0)
 	PointInTimeRecovery = common.Bool("point-in-time-recovery", false)
-	SslMode             = common.String("ssl-mode", "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
+	SslMode                   = common.String("ssl-mode", "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
+	TransitEncryptionDisabled = common.Bool("transit-encryption-disabled", false)
 )

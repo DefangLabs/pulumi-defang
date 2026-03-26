@@ -153,6 +153,18 @@ func buildService(
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
 		endpoint = pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
+	case svc.Redis != nil:
+		// Managed Redis → Memorystore
+		if err := ctx.RegisterComponentResource("defang-gcp:index:Redis", svcName, svcComp, svcChildOpts...); err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Memorystore component %s: %w", svcName, err)
+		}
+		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
+
+		redisResult, err := providergcp.CreateMemoryStore(ctx, svcName, svc, infra, svcOpts...)
+		if err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Memorystore for %s: %w", svcName, err)
+		}
+		endpoint = pulumi.Sprintf("%s:6379", redisResult.Instance.Host)
 	default:
 		// Container service → Cloud Run
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {

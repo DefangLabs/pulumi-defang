@@ -25,7 +25,7 @@ type GlobalConfig struct {
 	WildcardCertId    pulumi.StringInput              // non-nil when a domain is configured
 	PublicZoneId      pulumi.StringInput              // managed zone name; non-nil when a domain is configured
 	BuildInfra        *BuildInfra                     // non-nil when at least one service has a build config
-	ServiceConnection *servicenetworking.Connection   // non-nil when any service uses managed Postgres
+	ServiceConnection *servicenetworking.Connection   // non-nil when any service uses managed Postgres or Redis
 }
 
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
@@ -145,7 +145,7 @@ func buildOptionalInfra(
 		cfg.BuildInfra = buildInfra
 	}
 
-	if hasPostgresConfig(services) {
+	if hasPostgresConfig(services) || hasRedisConfig(services) {
 		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
 		if err != nil {
 			return err
