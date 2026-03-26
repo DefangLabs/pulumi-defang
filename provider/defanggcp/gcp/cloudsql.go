@@ -149,14 +149,10 @@ func CreateCloudSQL(
 		return nil, fmt.Errorf("creating Cloud SQL instance: %w", err)
 	}
 
-	// Create user
-	if pg.Password != pulumi.String("") {
-		username := pg.Username
-		if username == pulumi.String("") {
-			username = pulumi.String("postgres")
-		}
+	// Create user only if a password is explicitly provided.
+	if svc.Environment["POSTGRES_PASSWORD"] != "" {
 		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
-			Name:           username,
+			Name:           pg.Username,
 			Instance:       instance.Name,
 			Password:       pg.Password,
 			Type:           pulumi.String("BUILT_IN"),
@@ -167,8 +163,8 @@ func CreateCloudSQL(
 		}
 	}
 
-	// Create database if non-default
-	if pg.DBName != pulumi.String("") && pg.DBName != pulumi.String("postgres") {
+	// Create database only if explicitly set to a non-default name.
+	if rawDB := svc.Environment["POSTGRES_DB"]; rawDB != "" && rawDB != compose.DEFAULT_POSTGRES_DB {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
 			Name:           pg.DBName,
 			Instance:       instance.Name,
