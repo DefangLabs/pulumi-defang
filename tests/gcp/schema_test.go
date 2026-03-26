@@ -38,3 +38,12 @@ func TestGcpPostgresSchemaRegistered(t *testing.T) {
 	assert.Contains(t, schema.Schema, "defang-gcp:index:Postgres")
 	assert.Contains(t, schema.Schema, "endpoint")
 }
+
+func TestGcpRedisSchemaRegistered(t *testing.T) {
+	server := testutil.MakeGcpTestServer()
+
+	schema, err := server.GetSchema(p.GetSchemaRequest{})
+	require.NoError(t, err)
+	assert.Contains(t, schema.Schema, "defang-gcp:index:Redis")
+	assert.Contains(t, schema.Schema, "endpoint")
+}
