@@ -41,9 +41,9 @@ func CreateBuildInfra(
 	profile, region string,
 	opts ...pulumi.ResourceOption,
 ) (*BuildInfra, error) {
-	ecrResult, err := createECRRepo(ctx, "builds", opts...)
+	ecrResult, err := createECRRepo(ctx, "build", opts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating ECR repo for builds: %w", err)
+		return nil, fmt.Errorf("creating ECR repo for build: %w", err)
 	}
 
 	cbRole, err := createCodeBuildRole(ctx, "codebuild-role", logGroup, ecrResult.repository, opts...)

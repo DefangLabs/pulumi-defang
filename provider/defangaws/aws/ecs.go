@@ -41,9 +41,10 @@ type SharedInfra struct {
 	HttpListener     *lb.Listener       // nil if no ALB
 	HttpsListener    *lb.Listener       // nil if no ALB
 	Alb              *lb.LoadBalancer   // nil if no ALB
-	Region           string
-	BuildInfra       *BuildInfra // nil if no builds needed
-	SkipNatGW        bool
+	Region              string
+	BuildInfra          *BuildInfra      // nil if no builds needed
+	PublicEcrCache      *PullThroughCache // ECR public pull-through cache
+	SkipNatGW           bool
 	Policies
 }
 
@@ -564,8 +565,14 @@ func CreateECSService(
 	}
 
 	hasIngress := svc.HasIngressPorts() && infra.HttpListener != nil
-	if hasIngress {
-		endpointOutput = pulumix.Val(fmt.Sprintf("service %s via ALB", serviceName))
+	serviceLabel := common.SafeLabel(serviceName)
+	switch {
+	case hasIngress && infra.PublicDomain != "":
+		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceLabel, infra.PublicDomain))
+	case svc.HasHostPorts() && infra.PrivateDomain != "":
+		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
+	default:
+		endpointOutput = pulumix.Val(serviceName)
 	}
 
 	return &EcsServiceResult{

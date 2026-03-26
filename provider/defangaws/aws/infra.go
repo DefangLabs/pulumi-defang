@@ -114,6 +114,7 @@ func BuildSharedInfra(
 func CreateProjectInfra(
 	ctx *pulumi.Context,
 	projectName string,
+	awsConfig *AWSConfig,
 	services compose.Services,
 	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
@@ -176,31 +177,47 @@ func CreateProjectInfra(
 		}
 	}
 
+	// Create public ECR pull-through cache for faster image pulls (matches TS initializeStack)
+	publicEcrCache, err := createEcrPullThroughCache(ctx, "ecr-public", "public.ecr.aws", "ecr-public", opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating ECR pull-through cache: %w", err)
+	}
+
+	// Grant execution role permissions to use pull-through cache repos
+	cacheRepoArn := pulumi.Sprintf("arn:aws:ecr:%s:%s:repository/%s/*",
+		region.Region, publicEcrCache.Rule.RegistryId, publicEcrCache.Rule.EcrRepositoryPrefix)
+	err = attachPullThroughCachePolicy(ctx, execRole, cacheRepoArn, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("attaching pull-through cache policy: %w", err)
+	}
+
 	var albRes *AlbResult
 	var publicDomain string
 	if common.NeedIngress(services) {
-		publicDomain = "defangio.click" // zone in lab account
+		// Create cert for HTTPS listener if a public domain is provided
+		publicDomain = "defangio.click"
 
 		delegationSetId := ""
+		if awsConfig != nil {
+			delegationSetId = awsConfig.DelegationSetId
+		}
+
+		var certArn pulumi.StringPtrInput
 		publicZone, err := getOrCreatePublicZone(ctx, publicDomain, delegationSetId, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("looking up Route53 zone: %w", err)
 		}
 
+		// Create a wildcard and/or apex domain certificate for all the domains
 		wildcardDomain := "*." + publicDomain
-
-		// Create a wildcard and/or apex domain certificate for all the ALBs
-		// TODO: should we use a separate cert for each ALB?
 		domains := []string{wildcardDomain}
-
-		const createApexDnsRecord = true
-		if createApexDnsRecord {
+		if CreateApexRecord.Get(ctx) {
 			domains = append(domains, publicDomain)
 		}
 
-		// Create a wildcard and/or apex domain certificate for all the ALBs
+		// Create a wildcard and/or apex domain certificate for all the domains
 		// TODO: should we use a separate cert for each ALB?
-		certArn, err := createCertificateDNS(ctx, domains, CertificateDnsArgs{
+		certArn, err = createCertificateDNS(ctx, domains, CertificateDnsArgs{
 			CaaIssuer: []string{"amazon.com", "letsencrypt.org"}, // TODO: only add letsencrypt.org if we plan to use ACME
 			Zone:      publicZone,
 			Tags: pulumi.StringMap{
@@ -268,6 +285,7 @@ func CreateProjectInfra(
 		SkipNatGW:        !net.UseNatGW,
 		Region:           region.Region,
 		BuildInfra:       imgInfra,
+		PublicEcrCache:   publicEcrCache,
 	}
 
 	if albRes != nil {

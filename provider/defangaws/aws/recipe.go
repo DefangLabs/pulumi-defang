@@ -10,6 +10,7 @@ var (
 	BackupRetentionDays     = common.Int("backup-retention-days", 0)
 	BackupWindow            = common.String("backup-window", "04:00-05:00")
 	BucketKeyEnabled        = common.Bool("bucket-key-enabled", true)
+	CreateApexRecord        = common.Bool("create-apex-record", true)
 	DeletionProtection      = common.DeletionProtection
 	DeregistrationDelay     = common.Int("deregistration-delay", 0)
 	FargateCapacityProvider = common.String("fargate-capacity-provider", "FARGATE_SPOT")

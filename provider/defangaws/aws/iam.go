@@ -82,6 +82,41 @@ func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*i
 	return execRole, nil
 }
 
+// attachPullThroughCachePolicy adds an inline policy to the execution role allowing
+// ECR pull-through cache operations (BatchImportUpstreamImage, CreateRepository).
+// Matches TS AllowECRPassThrough in shared/ecs/initialize.ts.
+func attachPullThroughCachePolicy(
+	ctx *pulumi.Context,
+	execRole *iam.Role,
+	cacheRepoArn pulumi.StringOutput,
+	opts ...pulumi.ResourceOption,
+) error {
+	policyJson := cacheRepoArn.ApplyT(func(arn string) (string, error) {
+		policy := PolicyDocument{
+			Version: "2012-10-17",
+			Statement: []PolicyStatement{
+				{
+					Sid:    "AllowECRPassThrough",
+					Effect: "Allow",
+					Action: []string{
+						"ecr:BatchImportUpstreamImage",
+						"ecr:CreateRepository",
+					},
+					Resource: arn,
+				},
+			},
+		}
+		b, err := json.Marshal(policy)
+		return string(b), err
+	}).(pulumi.StringOutput)
+
+	_, err := iam.NewRolePolicy(ctx, "ecr-pull-through", &iam.RolePolicyArgs{
+		Role:   execRole.Name,
+		Policy: policyJson,
+	}, opts...)
+	return err
+}
+
 // createTaskRole creates a per-service ECS task role.
 func createTaskRole(ctx *pulumi.Context, serviceName string, opts ...pulumi.ResourceOption) (*iam.Role, error) {
 	assumeRolePolicyBytes, err := json.Marshal(map[string]interface{}{

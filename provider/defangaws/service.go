@@ -128,12 +128,7 @@ func NewECSServiceComponent(
 		return nil, fmt.Errorf("creating ECS service %s: %w", serviceName, err)
 	}
 
-	var endpoint pulumi.StringOutput
-	if ecsResult.HasIngress {
-		endpoint = pulumi.StringOutput(ecsResult.Endpoint)
-	} else {
-		endpoint = pulumi.Sprintf("%s (no ingress)", serviceName)
-	}
+	endpoint := pulumi.StringOutput(ecsResult.Endpoint)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
 		return nil, fmt.Errorf("registering outputs for %s: %w", serviceName, err)

@@ -11,7 +11,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-var errDependencyNotFound = errors.New("not found in dependencies map")
+var errDependencyNotFound = errors.New("service not found in dependencies map")
 
 // Project is the controller struct for the defang-aws:index:Project component.
 type Project struct{}
@@ -21,7 +21,11 @@ type ProjectInputs struct {
 	// compose.Project
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+
+	AWS *AWSConfig `pulumi:"aws,optional" yaml:"x-defang-aws,omitempty"`
 }
+
+type AWSConfig provideraws.AWSConfig
 
 // ProjectOutputs holds the outputs of the Project component.
 type ProjectOutputs struct {
@@ -73,7 +77,8 @@ func buildProject(
 ) (*common.BuildResult, error) {
 	opts := []pulumi.ResourceOption{parentOpt}
 
-	infra, err := provideraws.CreateProjectInfra(ctx, projectName, args.Services, opts...)
+	awsConfig := (*provideraws.AWSConfig)(args.AWS)
+	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Services, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}

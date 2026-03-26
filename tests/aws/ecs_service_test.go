@@ -74,6 +74,7 @@ func TestConstructAwsEcsServiceWithBuild(t *testing.T) {
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
+			"image":        property.New("myapp:latest"),
 			"build": property.New(property.NewMap(map[string]property.Value{
 				"context": property.New("./app"),
 			})),
@@ -90,6 +91,7 @@ func TestConstructAwsEcsServiceWithBuildAndDockerfile(t *testing.T) {
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"project_name": property.New("myproject"),
+			"image":        property.New("myapp:latest"),
 			"build": property.New(property.NewMap(map[string]property.Value{
 				"context":    property.New("./app"),
 				"dockerfile": property.New("docker/Dockerfile.prod"),

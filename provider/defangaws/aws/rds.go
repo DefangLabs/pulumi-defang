@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -190,6 +191,7 @@ func CreateRDS(
 
 	// Create DB subnet group
 	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
+		Name:        pulumi.String(strings.ToLower(autonamePrefix(ctx, serviceName))),
 		Description: pulumi.String(common.DefangComment),
 		SubnetIds:   privateSubnetIDs,
 		Tags:        tags,
