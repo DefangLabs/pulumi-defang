@@ -212,7 +212,7 @@ func createWildcardCert(
 				return nil, fmt.Errorf("%w: invalid DNS record for %s: %v",
 					errInvalidDNSRecord, fqdn, record)
 			}
-			name := fqdn + "-wildcardcert-dns-authz-record"
+			name := fqdn + "-wildcard-cert-dns-authz-record"
 			if i > 0 {
 				name = fmt.Sprintf("%s-%d", name, i)
 			}
