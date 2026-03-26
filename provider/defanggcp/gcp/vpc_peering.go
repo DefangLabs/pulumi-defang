@@ -17,6 +17,16 @@ func hasPostgresConfig(services map[string]compose.ServiceConfig) bool {
 	return false
 }
 
+// hasRedisConfig reports whether any service in the map defines managed Redis.
+func hasRedisConfig(services map[string]compose.ServiceConfig) bool {
+	for _, svc := range services {
+		if svc.Redis != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // createVPCPeeringInfra allocates a private IP range and creates a service networking
 // connection for Cloud SQL private IP access.
 func createVPCPeeringInfra(
