@@ -13,11 +13,12 @@ type Postgres struct{}
 
 // PostgresInputs defines the inputs for a standalone GCP Cloud SQL Postgres instance.
 type PostgresInputs struct {
-	ProjectName string                 `pulumi:"project_name"`
-	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
-	Image       *string                `pulumi:"image,optional"`
-	Deploy      *compose.DeployConfig  `pulumi:"deploy,optional"`
-	Environment map[string]string      `pulumi:"environment,optional"`
+	ProjectName string                      `pulumi:"project_name"`
+	Postgres    *compose.PostgresConfig     `pulumi:"postgres,optional"`
+	Image       *string                     `pulumi:"image,optional"`
+	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
+	Environment map[string]string           `pulumi:"environment,optional"`
+	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 }
 
 // PostgresOutputs holds the outputs of a Postgres component.
@@ -41,6 +42,7 @@ func (*Postgres) Construct(
 		Image:       inputs.Image,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
+		Ports:       inputs.Ports,
 	}
 
 	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
@@ -49,7 +51,8 @@ func (*Postgres) Construct(
 		return nil, fmt.Errorf("failed to build GCP Cloud SQL: %w", err)
 	}
 
-	endpoint := pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
+	port := firstIngressPort(inputs.Ports, defaultPostgresPort)
+	endpoint := pulumi.Sprintf("%s:%d", sqlResult.Instance.PublicIpAddress, port)
 	comp.Endpoint = endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{

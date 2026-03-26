@@ -13,9 +13,10 @@ type Redis struct{}
 
 // RedisInputs defines the inputs for a standalone GCP Memorystore Redis instance.
 type RedisInputs struct {
-	Redis  *compose.RedisConfig  `pulumi:"redis,optional"`
-	Image  *string               `pulumi:"image,optional"`
-	Deploy *compose.DeployConfig `pulumi:"deploy,optional"`
+	Redis  *compose.RedisConfig        `pulumi:"redis,optional"`
+	Image  *string                     `pulumi:"image,optional"`
+	Deploy *compose.DeployConfig       `pulumi:"deploy,optional"`
+	Ports  []compose.ServicePortConfig `pulumi:"ports,optional"`
 }
 
 // RedisOutputs holds the outputs of a Redis component.
@@ -38,6 +39,7 @@ func (*Redis) Construct(
 		Redis:  inputs.Redis,
 		Image:  inputs.Image,
 		Deploy: inputs.Deploy,
+		Ports:  inputs.Ports,
 	}
 
 	result, err := providergcp.CreateMemoryStore(ctx, name, svc, nil, childOpt)
@@ -45,7 +47,7 @@ func (*Redis) Construct(
 		return nil, fmt.Errorf("failed to build GCP Memorystore: %w", err)
 	}
 
-	endpoint := pulumi.Sprintf("%s:6379", result.Instance.Host)
+	endpoint := pulumi.Sprintf("%s:%d", result.Instance.Host, firstIngressPort(inputs.Ports, defaultRedisPort))
 	comp.Endpoint = endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{

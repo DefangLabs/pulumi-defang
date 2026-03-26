@@ -152,7 +152,8 @@ func buildService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
-		endpoint = pulumi.Sprintf("%s:5432", sqlResult.Instance.PublicIpAddress)
+		port := firstIngressPort(svc.Ports, defaultPostgresPort)
+		endpoint = pulumi.Sprintf("%s:%d", sqlResult.Instance.PublicIpAddress, port)
 	case svc.Redis != nil:
 		// Managed Redis → Memorystore
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Redis", svcName, svcComp, svcChildOpts...); err != nil {
@@ -164,7 +165,7 @@ func buildService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Memorystore for %s: %w", svcName, err)
 		}
-		endpoint = pulumi.Sprintf("%s:6379", redisResult.Instance.Host)
+		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstIngressPort(svc.Ports, defaultRedisPort))
 	default:
 		// Container service → Cloud Run
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
