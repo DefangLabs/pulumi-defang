@@ -18,6 +18,7 @@ import (
 )
 
 const gcpCloudRunServiceType = "gcp:cloudrunv2/service:Service"
+const gcpVPCPeeringPurpose = "VPC_PEERING"
 
 func TestConstructGcpCloudRunServiceWithImage(t *testing.T) {
 	server := testutil.MakeGcpTestServer()

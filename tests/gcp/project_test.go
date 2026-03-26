@@ -368,6 +368,85 @@ func TestConstructProjectWithoutBuildSkipsBuildInfra(t *testing.T) {
 	assert.Equal(t, 0, countType(*records, "defang-gcp:defanggcp:Build"))
 }
 
+func TestConstructProjectWithPostgresCreatesVPCPeering(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"db": property.New(property.NewMap(map[string]property.Value{
+				"image":    property.New("postgres:17"),
+				"postgres": property.New(property.NewMap(map[string]property.Value{})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Private IP range for VPC peering
+	peering := findTypeWhere(*records, "gcp:compute/globalAddress:GlobalAddress", func(m property.Map) bool {
+		v := m.Get("purpose")
+		return !v.IsNull() && v.AsString() == gcpVPCPeeringPurpose
+	})
+	require.NotNil(t, peering, "expected a VPC_PEERING GlobalAddress for Cloud SQL private IP")
+	assert.Equal(t, "INTERNAL", peering.inputs.Get("addressType").AsString())
+	assert.InDelta(t, 16.0, peering.inputs.Get("prefixLength").AsNumber(), 0)
+
+	// Service networking connection
+	assert.Equal(t, 1, countType(*records, "gcp:servicenetworking/connection:Connection"))
+
+	// DatabaseInstance should be present
+	assert.Equal(t, 1, countType(*records, "gcp:sql/databaseInstance:DatabaseInstance"))
+}
+
+func TestConstructProjectWithoutPostgresSkipsVPCPeering(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	peering := findTypeWhere(*records, "gcp:compute/globalAddress:GlobalAddress", func(m property.Map) bool {
+		v := m.Get("purpose")
+		return !v.IsNull() && v.AsString() == gcpVPCPeeringPurpose
+	})
+	assert.Nil(t, peering, "expected no VPC_PEERING GlobalAddress without a Postgres service")
+	assert.Equal(t, 0, countType(*records, "gcp:servicenetworking/connection:Connection"))
+}
+
+func TestConstructProjectWithPostgresDatabaseInstanceHasPrivateNetwork(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"db": property.New(property.NewMap(map[string]property.Value{
+				"image":    property.New("postgres:17"),
+				"postgres": property.New(property.NewMap(map[string]property.Value{})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	instance := findTypeWhere(*records, "gcp:sql/databaseInstance:DatabaseInstance", func(m property.Map) bool {
+		return true
+	})
+	require.NotNil(t, instance, "expected a DatabaseInstance")
+	settings := instance.inputs.Get("settings").AsMap()
+	ipCfg := settings.Get("ipConfiguration").AsMap()
+	assert.False(t, ipCfg.Get("privateNetwork").IsNull(), "expected privateNetwork to be set on DatabaseInstance")
+	assert.True(t, ipCfg.Get("ipv4Enabled").AsBool(), "expected ipv4Enabled to be true when no private-only network")
+}
+
 func TestConstructProjectDependencies(t *testing.T) {
 	type reg struct {
 		name string

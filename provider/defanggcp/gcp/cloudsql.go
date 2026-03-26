@@ -64,12 +64,29 @@ func cloudSQLTier(cpus float64, memMiB int) string {
 	return fmt.Sprintf("db-custom-%d-%d", cpu, mem)
 }
 
+// sqlBackupConfig returns the backup configuration from recipe settings, or nil if backups are disabled.
+func sqlBackupConfig(ctx *pulumi.Context) *sql.DatabaseInstanceSettingsBackupConfigurationArgs {
+	if !BackupEnabled.Get(ctx) {
+		return nil
+	}
+	return &sql.DatabaseInstanceSettingsBackupConfigurationArgs{
+		Enabled:                    pulumi.Bool(true),
+		PointInTimeRecoveryEnabled: pulumi.Bool(PointInTimeRecovery.Get(ctx)),
+		BackupRetentionSettings: &sql.DatabaseInstanceSettingsBackupConfigurationBackupRetentionSettingsArgs{
+			RetainedBackups: pulumi.Int(30),
+		},
+		StartTime:                   pulumi.String("04:00"),
+		TransactionLogRetentionDays: pulumi.Int(7),
+	}
+}
+
 // CreateCloudSQL creates a managed Cloud SQL Postgres instance.
 func CreateCloudSQL(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
+	infra *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudSQLResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)
@@ -84,19 +101,7 @@ func CreateCloudSQL(
 		tier = "db-custom-1-3840"
 	}
 
-	// Configure backups from recipe
-	var backupConf *sql.DatabaseInstanceSettingsBackupConfigurationArgs
-	if BackupEnabled.Get(ctx) {
-		backupConf = &sql.DatabaseInstanceSettingsBackupConfigurationArgs{
-			Enabled:                    pulumi.Bool(true),
-			PointInTimeRecoveryEnabled: pulumi.Bool(PointInTimeRecovery.Get(ctx)),
-			BackupRetentionSettings: &sql.DatabaseInstanceSettingsBackupConfigurationBackupRetentionSettingsArgs{
-				RetainedBackups: pulumi.Int(30),
-			},
-			StartTime:                   pulumi.String("04:00"),
-			TransactionLogRetentionDays: pulumi.Int(7),
-		}
-	}
+	backupConf := sqlBackupConfig(ctx)
 
 	databaseVersion := pg.Version.ToStringPtrOutput().ApplyT(func(version *string) string {
 		if version == nil {
@@ -106,20 +111,40 @@ func CreateCloudSQL(
 		return gcpPostgresVersion(v)
 	}).(pulumi.StringOutput)
 
+	instanceOpts := opts
+	if infra != nil && infra.ServiceConnection != nil {
+		instanceOpts = append([]pulumi.ResourceOption{
+			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
+		}, opts...)
+	}
+
+	var regionInput pulumi.StringPtrInput
+	if infra != nil && infra.Region != "" {
+		regionInput = pulumi.StringPtr(infra.Region)
+	}
+
+	_, onlyPrivateIP := svc.Networks["private"]
+	var privateNetwork pulumi.StringPtrInput
+	if infra != nil && infra.ServiceConnection != nil {
+		privateNetwork = infra.VpcId.ApplyT(func(v string) *string { return &v }).(pulumi.StringPtrOutput)
+	}
+
 	instance, err := sql.NewDatabaseInstance(ctx, serviceName, &sql.DatabaseInstanceArgs{
 		DatabaseVersion: databaseVersion,
+		Region:          regionInput,
 		Settings: &sql.DatabaseInstanceSettingsArgs{
 			Tier:                pulumi.String(tier),
 			Edition:             pulumi.String("ENTERPRISE"),
 			AvailabilityType:    pulumi.String(AvailabilityType.Get(ctx)),
 			BackupConfiguration: backupConf,
 			IpConfiguration: &sql.DatabaseInstanceSettingsIpConfigurationArgs{
-				Ipv4Enabled: pulumi.Bool(true),
-				SslMode:     pulumi.StringPtr(SslMode.Get(ctx)),
+				Ipv4Enabled:    pulumi.Bool(!onlyPrivateIP),
+				PrivateNetwork: privateNetwork,
+				SslMode:        pulumi.StringPtr(SslMode.Get(ctx)),
 			},
 		},
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-	}, opts...)
+	}, instanceOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud SQL instance: %w", err)
 	}

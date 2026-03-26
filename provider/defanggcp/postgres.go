@@ -44,7 +44,7 @@ func (*Postgres) Construct(
 	}
 
 	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
-	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, name, svc, childOpt)
+	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, name, svc, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud SQL: %w", err)
 	}

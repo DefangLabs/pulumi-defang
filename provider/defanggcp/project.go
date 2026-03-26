@@ -148,7 +148,7 @@ func buildService(
 		}
 		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
 
-		sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, svcName, svc, svcOpts...)
+		sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, svcName, svc, infra, svcOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
