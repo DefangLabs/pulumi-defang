@@ -48,7 +48,7 @@ func (*Project) Construct(
 		Domain:   inputs.Domain,
 	}
 
-	result, err := build(ctx, name, args, childOpt)
+	result, err := buildProject(ctx, name, args, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP resources: %w", err)
 	}
@@ -68,7 +68,7 @@ func (*Project) Construct(
 
 // Build creates all GCP resources for the project.
 // The GCP provider must be passed via the parent chain (pulumi.Providers on the parent component).
-func build(
+func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
 	args common.BuildArgs,
