@@ -50,7 +50,7 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	subnet, err := compute.NewSubnetwork(ctx, projectName+"-shared-subnet", &compute.SubnetworkArgs{
+	subnet, err := compute.NewSubnetwork(ctx, projectName+"-subnet", &compute.SubnetworkArgs{
 		IpCidrRange: pulumi.String("10.0.0.0/16"),
 		Region:      pulumi.String(region),
 		Network:     vpc.ID(),
@@ -59,7 +59,7 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	publicIP, err := compute.NewGlobalAddress(ctx, projectName+"-lb-ipaddress", &compute.GlobalAddressArgs{
+	publicIP, err := compute.NewGlobalAddress(ctx, projectName+"-ip", &compute.GlobalAddressArgs{
 		AddressType: pulumi.String("EXTERNAL"),
 	}, opts...)
 	if err != nil {
@@ -181,7 +181,7 @@ func createWildcardCert(
 	cfg.PublicZoneId = zone.Name
 
 	// CAA record authorizes pki.goog (GCP Certificate Manager) and letsencrypt.org as valid CAs.
-	if _, err := dns.NewRecordSet(ctx, fqdn+".-CAA-dns", &dns.RecordSetArgs{
+	if _, err := dns.NewRecordSet(ctx, projectName+"-caa", &dns.RecordSetArgs{
 		ManagedZone: zone.Name,
 		Name:        pulumi.String(fqdn + "."),
 		Type:        pulumi.String("CAA"),
@@ -199,7 +199,7 @@ func createWildcardCert(
 		Domain:      pulumi.String(fqdn),
 	}
 	certAuthz, err := certificatemanager.NewDnsAuthorization(ctx,
-		projectName+"-wildcardcert-dns-authz", authzArgs, opts...)
+		projectName+"-cert-authz", authzArgs, opts...)
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func createWildcardCert(
 				return nil, fmt.Errorf("%w: invalid DNS record for %s: %v",
 					errInvalidDNSRecord, fqdn, record)
 			}
-			name := fqdn + "-wildcard-cert-dns-authz-record"
+			name := projectName + "-cert-authz-record"
 			if i > 0 {
 				name = fmt.Sprintf("%s-%d", name, i)
 			}
@@ -233,8 +233,8 @@ func createWildcardCert(
 		return rs, nil
 	})
 
-	certName := projectName + "-" + fqdn + "-wildcard-cert"
-	cert, err := certificatemanager.NewCertificate(ctx, certName, &certificatemanager.CertificateArgs{
+	// Use a short name without the FQDN to stay within GCP's 63-char resource ID limit.
+	cert, err := certificatemanager.NewCertificate(ctx, projectName+"-wildcard-cert", &certificatemanager.CertificateArgs{
 		Managed: &certificatemanager.CertificateManagedArgs{
 			Domains:           pulumi.StringArray{pulumi.String("*." + fqdn)},
 			DnsAuthorizations: pulumi.StringArray{certAuthz.ID()},

@@ -68,7 +68,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)
 	}
 
-	bucket, err := storage.NewBucket(ctx, projectName+"-build-artifacts", &storage.BucketArgs{
+	bucket, err := storage.NewBucket(ctx, projectName+"-artifacts", &storage.BucketArgs{
 		Location:                 pulumi.String(region),
 		ForceDestroy:             pulumi.Bool(true),
 		UniformBucketLevelAccess: pulumi.Bool(true),
@@ -94,7 +94,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding artifact registry admin role: %w", err)
 	}
 
-	if _, err := storage.NewBucketIAMMember(ctx, projectName+"-build-bucket-viewer", &storage.BucketIAMMemberArgs{
+	if _, err := storage.NewBucketIAMMember(ctx, projectName+"-artifacts-viewer", &storage.BucketIAMMemberArgs{
 		Bucket: bucket.Name,
 		Role:   pulumi.String("roles/storage.objectViewer"),
 		Member: pulumi.Sprintf("serviceAccount:%v", bsa.Email),
@@ -102,7 +102,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
 	}
 
-	if _, err := projects.NewIAMMember(ctx, projectName+"-build-log-writer", &projects.IAMMemberArgs{
+	if _, err := projects.NewIAMMember(ctx, projectName+"-log-writer", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.logWriter"),
 		Member:  pulumi.Sprintf("serviceAccount:%v", bsa.Email),
@@ -110,7 +110,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding logging.logWriter role: %w", err)
 	}
 
-	if _, err := projects.NewIAMMember(ctx, projectName+"-build-log-bucket-writer", &projects.IAMMemberArgs{
+	if _, err := projects.NewIAMMember(ctx, projectName+"-log-bucket-writer", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.bucketWriter"),
 		Member:  pulumi.Sprintf("serviceAccount:%v", bsa.Email),

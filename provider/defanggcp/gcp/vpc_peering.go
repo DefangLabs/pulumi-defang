@@ -35,7 +35,7 @@ func createVPCPeeringInfra(
 	vpcId pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
 ) (*servicenetworking.Connection, error) {
-	privateIpAlloc, err := compute.NewGlobalAddress(ctx, projectName+"-vpc-peering-ip", &compute.GlobalAddressArgs{
+	privateIpAlloc, err := compute.NewGlobalAddress(ctx, projectName+"-peering-ip", &compute.GlobalAddressArgs{
 		Purpose:      pulumi.String("VPC_PEERING"),
 		AddressType:  pulumi.String("INTERNAL"),
 		PrefixLength: pulumi.Int(16),
@@ -45,7 +45,7 @@ func createVPCPeeringInfra(
 		return nil, err
 	}
 
-	serviceConn, err := servicenetworking.NewConnection(ctx, projectName+"-service-connection",
+	serviceConn, err := servicenetworking.NewConnection(ctx, projectName+"-svc-conn",
 		&servicenetworking.ConnectionArgs{
 			Network:               vpcId,
 			Service:               pulumi.String("servicenetworking.googleapis.com"),
