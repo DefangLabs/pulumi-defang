@@ -5,10 +5,12 @@ NODE_MODULE_NAME := @defang-io/pulumi-defang-azure
 NUGET_PKG_NAME   := DefangLabs.defang-azure
 
 PROVIDER        := pulumi-resource-${PACK}
+LATEST_TAG  		:= $(shell git tag --sort=creatordate | tail -n1)
+VERSION_PREFIX  := $(shell echo $(LATEST_TAG) | sed -E 's/v?([^-]+).*/\1/')
+IS_PRERELEASE   := $(shell echo $(LATEST_TAG) | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
 PROVIDER_PATH   := provider
 VERSION_PATH    := ${PROVIDER_PATH}/defangazure.Version
-IS_PRERELEASE   := $(shell git tag --sort=creatordate | tail -n1 | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 
 GOPATH		:= $(shell go env GOPATH)
 
@@ -49,7 +51,7 @@ go_sdk: .sdk.go.$(PACK).stamp
 		go mod tidy
 	@touch $@
 
-nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed 's/^v//')
+nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript --version-prefix=$(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed 's/^v//')
 .PHONY: nodejs_sdk
 nodejs_sdk: .sdk.nodejs.$(PACK).stamp
 
@@ -65,7 +67,7 @@ nodejs_sdk: .sdk.nodejs.$(PACK).stamp
 		cp ../../../README.md ../../../LICENSE package.json yarn.lock bin/
 	@touch $@
 
-python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
+python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 .PHONY: python_sdk
 python_sdk: .sdk.python.$(PACK).stamp
 
@@ -82,7 +84,7 @@ python_sdk: .sdk.python.$(PACK).stamp
 		cd ./bin && python3 setup.py build sdist
 	@touch $@
 
-dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
+dotnet_sdk: DOTNET_VERSION := $(shell pulumictl get version --language dotnet --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
 .PHONY: dotnet_sdk
 dotnet_sdk: .sdk.dotnet.$(PACK).stamp
 
