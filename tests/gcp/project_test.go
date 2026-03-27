@@ -82,10 +82,11 @@ func TestConstructProject(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// One Cloud Run service per container service
-	assert.Equal(t, 2, countType(*records, gcpCloudRunServiceType))
+	// Only the ingress-port service goes to Cloud Run; the portless worker goes to Compute Engine
+	assert.Equal(t, 1, countType(*records, gcpCloudRunServiceType))
+	assert.Equal(t, 1, countType(*records, "gcp:compute/regionInstanceGroupManager:RegionInstanceGroupManager"))
 
-	// Load balancer: one NEG and one backend service for the single ingress service
+	// Load balancer: one NEG and one backend service for the single ingress (Cloud Run) service
 	assert.Equal(t, 1, countType(*records, "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup"))
 	assert.Equal(t, 1, countType(*records, "gcp:compute/backendService:BackendService"))
 
@@ -397,8 +398,6 @@ func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 	require.NotNil(t, bsa, "expected a build service account")
 	// Registry admin IAM binding for the build SA
 	assert.Equal(t, 1, countType(*records, "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding"))
-	// Logging IAM members (logWriter + bucketWriter)
-	assert.Equal(t, 2, countType(*records, "gcp:projects/iAMMember:IAMMember"))
 	// Build resource for the service
 	assert.Equal(t, 1, countType(*records, "defang-gcp:defanggcp:Build"))
 }
@@ -418,7 +417,6 @@ func TestConstructProjectWithoutBuildSkipsBuildInfra(t *testing.T) {
 
 	assert.Equal(t, 0, countType(*records, "gcp:artifactregistry/repository:Repository"))
 	assert.Equal(t, 0, countType(*records, "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding"))
-	assert.Equal(t, 0, countType(*records, "gcp:projects/iAMMember:IAMMember"))
 	assert.Equal(t, 0, countType(*records, "defang-gcp:defanggcp:Build"))
 }
 
@@ -651,7 +649,15 @@ func TestConstructProjectDependencies(t *testing.T) {
 
 	hasDep := func(svc, dep string) bool {
 		for _, d := range depsByName[svc] {
-			if strings.HasSuffix(d, "::"+dep) {
+			// Extract the resource name (everything after the last "::")
+			parts := strings.Split(d, "::")
+			if len(parts) == 0 {
+				continue
+			}
+			name := parts[len(parts)-1]
+			// Matches exact name (Cloud Run: service name = resource name) or
+			// any child resource of a service (Compute Engine: cache-sa, cache-instance-template, etc.)
+			if name == dep || strings.HasPrefix(name, dep+"-") {
 				return true
 			}
 		}

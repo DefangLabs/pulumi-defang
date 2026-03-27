@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
@@ -10,11 +11,15 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// LBServiceEntry holds the data needed to wire a Cloud Run service into the external load balancer.
+const portModeIngress = "ingress"
+
+// LBServiceEntry holds the data needed to wire a service into the external load balancer.
+// Exactly one of Service or InstanceGroup should be non-nil.
 type LBServiceEntry struct {
-	Name    string
-	Service *cloudrunv2.Service
-	Config  compose.ServiceConfig
+	Name          string
+	Service       *cloudrunv2.Service                 // non-nil for Cloud Run services
+	InstanceGroup *compute.RegionInstanceGroupManager // non-nil for Compute Engine services
+	Config        compose.ServiceConfig
 }
 
 // CreateExternalLoadBalancer creates a Global HTTPS Load Balancer for Cloud Run services with
@@ -48,7 +53,7 @@ func CreateExternalLoadBalancer(
 				return err
 			}
 			for _, port := range entry.Config.Ports {
-				if port.Mode != "ingress" {
+				if port.Mode != portModeIngress {
 					continue
 				}
 				portDomain := fmt.Sprintf("%s--%d.%s", entry.Name, port.Target, config.Domain)
@@ -112,44 +117,19 @@ func buildURLMap(
 	var pathMatchers compute.URLMapPathMatcherArray
 
 	for _, entry := range entries {
-		neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-neg",
-			&compute.RegionNetworkEndpointGroupArgs{
-				NetworkEndpointType: pulumi.String("SERVERLESS"),
-				Region:              pulumi.String(region),
-				CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
-					Service: entry.Service.Name,
-				},
-			}, opts...)
+		backendID, matcher, hostRule, err := buildLBEntry(ctx, entry, region, opts...)
 		if err != nil {
 			return nil, err
 		}
-
-		backend, err := compute.NewBackendService(ctx, entry.Name+"-backend",
-			&compute.BackendServiceArgs{
-				Protocol:            pulumi.String("HTTPS"),
-				LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
-				Backends: compute.BackendServiceBackendArray{
-					&compute.BackendServiceBackendArgs{Group: neg.ID()},
-				},
-			}, opts...)
-		if err != nil {
-			return nil, err
+		if backendID == nil {
+			continue
 		}
-
-		pathMatchers = append(pathMatchers, &compute.URLMapPathMatcherArgs{
-			Name:           pulumi.String(entry.Name),
-			DefaultService: backend.ID(),
-		})
-
-		if entry.Config.DomainName != nil {
-			hostRules = append(hostRules, &compute.URLMapHostRuleArgs{
-				Hosts:       pulumi.ToStringArray([]string{*entry.Config.DomainName}),
-				PathMatcher: pulumi.String(entry.Name),
-			})
+		pathMatchers = append(pathMatchers, matcher)
+		if hostRule != nil {
+			hostRules = append(hostRules, hostRule)
 		}
-
 		if firstBackendID == nil {
-			firstBackendID = backend.ID()
+			firstBackendID = backendID
 		}
 	}
 
@@ -158,6 +138,118 @@ func buildURLMap(
 		HostRules:      hostRules,
 		PathMatchers:   pathMatchers,
 	}, opts...)
+}
+
+// buildLBEntry creates backend resources for one LB service entry and returns the
+// backend ID, path matcher, and optional host rule. Returns nil backendID if the
+// entry has no applicable ports.
+func buildLBEntry(
+	ctx *pulumi.Context,
+	entry LBServiceEntry,
+	region string,
+	opts ...pulumi.ResourceOption,
+) (pulumi.StringPtrInput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+	if entry.Service != nil {
+		return buildCloudRunLBEntry(ctx, entry, region, opts...)
+	}
+	if entry.InstanceGroup != nil {
+		return buildMIGLBEntry(ctx, entry, opts...)
+	}
+	return nil, nil, nil, nil
+}
+
+func buildCloudRunLBEntry(
+	ctx *pulumi.Context,
+	entry LBServiceEntry,
+	region string,
+	opts ...pulumi.ResourceOption,
+) (pulumi.StringPtrInput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-neg",
+		&compute.RegionNetworkEndpointGroupArgs{
+			NetworkEndpointType: pulumi.String("SERVERLESS"),
+			Region:              pulumi.String(region),
+			CloudRun: &compute.RegionNetworkEndpointGroupCloudRunArgs{
+				Service: entry.Service.Name,
+			},
+		}, opts...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	backend, err := compute.NewBackendService(ctx, entry.Name+"-backend",
+		&compute.BackendServiceArgs{
+			Protocol:            pulumi.String("HTTPS"),
+			LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
+			Backends: compute.BackendServiceBackendArray{
+				&compute.BackendServiceBackendArgs{Group: neg.ID()},
+			},
+		}, opts...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	matcher := &compute.URLMapPathMatcherArgs{
+		Name: pulumi.String(entry.Name), DefaultService: backend.ID(),
+	}
+	var hostRule *compute.URLMapHostRuleArgs
+	if entry.Config.DomainName != "" {
+		hostRule = &compute.URLMapHostRuleArgs{
+			Hosts:       pulumi.ToStringArray([]string{entry.Config.DomainName}),
+			PathMatcher: pulumi.String(entry.Name),
+		}
+	}
+	return backend.ID(), matcher, hostRule, nil
+}
+
+// buildMIGLBEntry creates an LB backend for the first ingress port of a Compute Engine MIG.
+func buildMIGLBEntry(
+	ctx *pulumi.Context,
+	entry LBServiceEntry,
+	opts ...pulumi.ResourceOption,
+) (pulumi.StringPtrInput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+	for _, port := range entry.Config.Ports {
+		if port.Mode != portModeIngress {
+			continue
+		}
+		portStr := strconv.Itoa(int(port.Target))
+		hc, err := compute.NewHealthCheck(ctx, entry.Name+"-"+portStr+"-public-lb-hc",
+			&compute.HealthCheckArgs{
+				CheckIntervalSec: pulumi.Int(5),
+				TimeoutSec:       pulumi.Int(5),
+				TcpHealthCheck: &compute.HealthCheckTcpHealthCheckArgs{
+					Port: pulumi.Int(port.Target),
+				},
+			}, opts...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		backend, err := compute.NewBackendService(ctx, entry.Name+"-"+portStr+"-gce-backend",
+			&compute.BackendServiceArgs{
+				Protocol:            pulumi.String("HTTP"),
+				LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
+				Backends: compute.BackendServiceBackendArray{
+					&compute.BackendServiceBackendArgs{Group: entry.InstanceGroup.InstanceGroup},
+				},
+				HealthChecks: hc.ID(),
+			}, append(opts, pulumi.DependsOn([]pulumi.Resource{entry.InstanceGroup}))...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		matcher := &compute.URLMapPathMatcherArgs{
+			Name: pulumi.String(entry.Name), DefaultService: backend.ID(),
+		}
+		var hostRule *compute.URLMapHostRuleArgs
+		if entry.Config.DomainName != "" {
+			hostRule = &compute.URLMapHostRuleArgs{
+				Hosts:       pulumi.ToStringArray([]string{entry.Config.DomainName}),
+				PathMatcher: pulumi.String(entry.Name),
+			}
+		}
+		return backend.ID(), matcher, hostRule, nil
+	}
+	return nil, nil, nil, nil
 }
 
 func createHTTPSForwardingRule(

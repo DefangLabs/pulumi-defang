@@ -98,7 +98,8 @@ func build(
 			}
 		}
 
-		endpoint, svcComp, lbEntry, err := buildService(ctx, configProvider, svcName, svc, infra, deps, childOpts)
+		endpoint, svcComp, lbEntry, err := buildService(
+			ctx, projectName, configProvider, svcName, svc, infra, deps, childOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -123,6 +124,7 @@ func build(
 
 func buildService(
 	ctx *pulumi.Context,
+	projectName string,
 	configProvider compose.ConfigProvider,
 	svcName string,
 	svc compose.ServiceConfig,
@@ -176,8 +178,8 @@ func buildService(
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating private DNS for %s: %w", svcName, err)
 		}
 		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstIngressPort(svc.Ports, defaultRedisPort))
-	default:
-		// Container service → Cloud Run
+	case providergcp.IsCloudRunService(svc):
+		// Cloud Run: single ingress port
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
 		}
@@ -192,6 +194,26 @@ func buildService(
 			Name:    svcName,
 			Service: crResult.Service,
 			Config:  svc,
+		}
+
+	default:
+		// Compute Engine: portless workers or services with host-mode ports
+		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Compute Engine component %s: %w", svcName, err)
+		}
+		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
+
+		ceResult, err := providergcp.CreateComputeEngine(ctx, projectName, svcName, svc, infra, svcOpts...)
+		if err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Compute Engine service %s: %w", svcName, err)
+		}
+		endpoint = infra.PublicIP.Address.ToStringOutput()
+		if svc.HasIngressPorts() {
+			lbEntry = &providergcp.LBServiceEntry{
+				Name:          svcName,
+				InstanceGroup: ceResult.InstanceGroup,
+				Config:        svc,
+			}
 		}
 	}
 
