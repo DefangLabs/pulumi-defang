@@ -314,6 +314,10 @@ func enableLLM(
 		return fmt.Errorf("failed to grant aiplatform access to service account %v: %w", sa.Email, err)
 	}
 
+	if svc.Environment == nil {
+		svc.Environment = make(map[string]string)
+	}
+
 	// Inject environment variables for Vercel routing for GCP Vertex AI access
 	// https://ai-sdk.dev/providers/ai-sdk-providers/google-vertex
 	if val, ok := svc.Environment["GOOGLE_VERTEX_PROJECT"]; !ok || val == "" {

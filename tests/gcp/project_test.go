@@ -674,3 +674,272 @@ func TestConstructProjectDependencies(t *testing.T) {
 			"%s component should declare a dependency on %s; got deps: %v", after, before, depsByName[after])
 	}
 }
+
+// --- LLM support ---
+
+// llmService returns a service property value with the llm field set and an image.
+func llmService(image string) property.Value {
+	return property.New(property.NewMap(map[string]property.Value{
+		"image": property.New(image),
+		"llm":   property.New(property.NewMap(map[string]property.Value{})),
+	}))
+}
+
+func TestConstructProjectWithLLMEnablesAiplatformAPI(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"ai": llmService("myai:latest"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	api := findTypeWhere(*records, "gcp:projects/service:Service", func(m property.Map) bool {
+		return m.Get("service").AsString() == "aiplatform.googleapis.com"
+	})
+	require.NotNil(t, api, "expected aiplatform.googleapis.com API to be enabled for LLM service")
+}
+
+func TestConstructProjectWithoutLLMSkipsAiplatformAPI(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	api := findTypeWhere(*records, "gcp:projects/service:Service", func(m property.Map) bool {
+		return m.Get("service").AsString() == "aiplatform.googleapis.com"
+	})
+	assert.Nil(t, api, "expected no aiplatform.googleapis.com API without LLM service")
+}
+
+func TestConstructProjectWithLLMGrantsAiplatformIAM(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"ai": llmService("myai:latest"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	iam := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/aiplatform.user"
+	})
+	require.NotNil(t, iam, "expected an IAM member granting roles/aiplatform.user for LLM service")
+}
+
+func TestConstructProjectWithoutLLMSkipsAiplatformIAM(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	iam := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/aiplatform.user"
+	})
+	assert.Nil(t, iam, "expected no roles/aiplatform.user IAM binding without LLM service")
+}
+
+func TestConstructProjectCreatesServiceAccountForContainerServices(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"web":    testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// createServiceAccount sets a description containing "Service Account used by run services of"
+	saDescription := func(m property.Map) string {
+		d := m.Get("description")
+		if d.IsNull() {
+			return ""
+		}
+		return d.AsString()
+	}
+	isNewSA := func(m property.Map) bool {
+		return strings.HasPrefix(saDescription(m), "Service Account used by run services of")
+	}
+
+	webSA := findTypeWhere(*records, "gcp:serviceaccount/account:Account", func(m property.Map) bool {
+		return isNewSA(m) && strings.Contains(saDescription(m), "web")
+	})
+	require.NotNil(t, webSA, "expected a project-level service account for the web service")
+
+	workerSA := findTypeWhere(*records, "gcp:serviceaccount/account:Account", func(m property.Map) bool {
+		return isNewSA(m) && strings.Contains(saDescription(m), "worker")
+	})
+	require.NotNil(t, workerSA, "expected a project-level service account for the worker service")
+}
+
+func TestConstructProjectDoesNotCreateServiceAccountForManagedServices(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"db": property.New(property.NewMap(map[string]property.Value{
+				"image":    property.New("postgres:17"),
+				"postgres": property.New(property.NewMap(map[string]property.Value{})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Managed Postgres uses Cloud SQL — no project-level service account should be created for it
+	sa := findTypeWhere(*records, "gcp:serviceaccount/account:Account", func(m property.Map) bool {
+		d := m.Get("description")
+		return !d.IsNull() && strings.HasPrefix(d.AsString(), "Service Account used by run services of")
+	})
+	assert.Nil(t, sa, "expected no project-level service account for a managed Postgres service")
+}
+
+// findEnvInCloudRun scans the containers' envs array in a captured Cloud Run resource
+// and returns the env entry with the given name, or nil if not found.
+func findEnvInCloudRun(crInputs property.Map, name string) *property.Value {
+	containers := crInputs.Get("template").AsMap().Get("containers").AsArray()
+	for i := range containers.Len() {
+		envs := containers.Get(i).AsMap().Get("envs").AsArray()
+		for j := range envs.Len() {
+			e := envs.Get(j).AsMap()
+			if e.Get("name").AsString() == name {
+				v := envs.Get(j)
+				return &v
+			}
+		}
+	}
+	return nil
+}
+
+func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoCloudRun(t *testing.T) {
+	var capturedCR property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == gcpCloudRunServiceType {
+				capturedCR = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"ai": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myai:latest"),
+				"llm":   property.New(property.NewMap(map[string]property.Value{})),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedCR.Len(), "expected a Cloud Run service to be registered")
+
+	for _, envName := range []string{
+		"GOOGLE_VERTEX_PROJECT",
+		"GOOGLE_VERTEX_LOCATION",
+		"GOOGLE_CLOUD_PROJECT",
+		"GOOGLE_CLOUD_LOCATION",
+	} {
+		assert.NotNil(t, findEnvInCloudRun(capturedCR, envName),
+			"expected %s env var to be injected into Cloud Run service", envName)
+	}
+}
+
+func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"ai": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myai:latest"),
+				"llm":   property.New(property.NewMap(map[string]property.Value{})),
+				// no ingress port → Compute Engine
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
+	require.NotNil(t, it, "expected a Compute Engine instance template")
+	userData := it.inputs.Get("metadata").AsMap().Get("user-data").AsString()
+
+	for _, envName := range []string{
+		"GOOGLE_VERTEX_PROJECT",
+		"GOOGLE_VERTEX_LOCATION",
+		"GOOGLE_CLOUD_PROJECT",
+		"GOOGLE_CLOUD_LOCATION",
+	} {
+		assert.Contains(t, userData, envName,
+			"expected %s to appear in Compute Engine cloud-init user-data", envName)
+	}
+}
+
+func TestConstructProjectWithLLMPreservesExistingEnvVars(t *testing.T) {
+	var capturedCR property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if args.TypeToken == gcpCloudRunServiceType {
+				capturedCR = args.Inputs
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"ai": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myai:latest"),
+				"llm":   property.New(property.NewMap(map[string]property.Value{})),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"environment": property.New(property.NewMap(map[string]property.Value{
+					"GOOGLE_VERTEX_PROJECT": property.New("my-custom-project"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	require.NotEqual(t, 0, capturedCR.Len(), "expected a Cloud Run service to be registered")
+
+	// enableLLM should not overwrite a pre-existing non-empty value
+	env := findEnvInCloudRun(capturedCR, "GOOGLE_VERTEX_PROJECT")
+	require.NotNil(t, env, "expected GOOGLE_VERTEX_PROJECT env var to be present")
+	assert.Equal(t, "my-custom-project", env.AsMap().Get("value").AsString(),
+		"enableLLM should not overwrite a pre-existing GOOGLE_VERTEX_PROJECT value")
+}
