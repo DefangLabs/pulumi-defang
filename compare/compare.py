@@ -56,7 +56,7 @@ def extract_json_objects(text: str) -> list[dict]:
 
         if depth == 0 and buf:
             raw = ''.join(buf).strip()
-            if raw:
+            if raw.startswith('{') and raw[1:].lstrip().startswith('"'):
                 try:
                     objects.append(json.loads(raw))
                 except json.JSONDecodeError as e:
@@ -94,7 +94,8 @@ def normalize_resource(obj: dict) -> dict | None:
 
     urn = obj.get('urn', '')
     inputs = state.get('inputs', {}) or {}
-    service_tag = (inputs.get('tags') or {}).get('defang:service')
+    tags = inputs.get('tags')
+    service_tag = tags.get('defang:service') if isinstance(tags, dict) else None
 
     return {
         'op': obj.get('op'),
@@ -232,22 +233,25 @@ def compare(path_a: str, path_b: str, all_types_flag: bool = False):
     types_b = Counter(rtype for rtype, _ in keys_b)
     all_types = sorted(set(types_a) | set(types_b))
 
+    _IGNORE_PREFIXES = (
+        'defang-gcp:', 'defang-aws:', 'defang-azure:',
+        'pulumi:providers:gcp', 'pulumi:providers:aws', 'pulumi:providers:azure',
+        'pulumi:pulumi:Stack',
+        # CD uses a standalone cloudbuild plugin; OSS reimplements as defang-gcp:defanggcp:Build
+        'cloudbuild:', 'pulumi:providers:cloudbuild',
+    )
+
     for rtype in all_types:
-        if not all_types_flag and not rtype.startswith('aws:'):
+        if not all_types_flag and rtype.startswith(_IGNORE_PREFIXES):
             continue
         a_count = types_a.get(rtype, 0)
         b_count = types_b.get(rtype, 0)
-        if a_count == b_count:
+        if not all_types_flag and a_count == b_count:
             continue
         print(f"  {rtype:<55} {a_count:>4} {b_count:>4}")
 
-    if all_types_flag:
-        total_a, total_b = sum(types_a.values()), sum(types_b.values())
-        label = 'TOTAL'
-    else:
-        total_a = sum(v for k, v in types_a.items() if k.startswith('aws:'))
-        total_b = sum(v for k, v in types_b.items() if k.startswith('aws:'))
-        label = 'TOTAL (aws: only)'
+    total_a, total_b = sum(types_a.values()), sum(types_b.values())
+    label = 'TOTAL'
     print("-" * 65)
     print(f"  {label:<53} {total_a:>4} {total_b:>4}")
 
