@@ -13,15 +13,38 @@ func main() {
 		domain := cfg.Get("domain")
 
 		project, err := defanggcp.NewProject(ctx, "gcp-go", &defanggcp.ProjectArgs{
-			Domain: pulumi.StringInput(pulumi.String(domain)),
-			Services: shared.ServiceInputMap{
-				"app": &shared.ServiceInputArgs{
-					Image: pulumi.String("nginx"),
+			Domain: &domain,
+			Services: compose.ServiceConfigMap{
+				"app": compose.ServiceConfigArgs{
+					Image: pulumi.StringPtr("nginx:latest"),
 					Ports: compose.ServicePortConfigArray{
-						&compose.ServicePortConfigArgs{
+						compose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
-							Mode:        pulumi.String("ingress"),
-							AppProtocol: pulumi.String("http"),
+							Mode:        pulumi.StringPtr("ingress"),
+							AppProtocol: pulumi.StringPtr("http"),
+						},
+					},
+				},
+				"db": compose.ServiceConfigArgs{
+					Image:    pulumi.StringPtr("postgres:17"),
+					Postgres: &compose.PostgresConfigArgs{},
+					Environment: pulumi.StringMap{
+						"POSTGRES_PASSWORD": pulumi.String("supersecret"),
+					},
+					Ports: compose.ServicePortConfigArray{
+						compose.ServicePortConfigArgs{
+							Target: pulumi.Int(5432),
+							Mode:   pulumi.StringPtr("host"),
+						},
+					},
+				},
+				"redis": compose.ServiceConfigArgs{
+					Image: pulumi.StringPtr("redis:7"),
+					Redis: &compose.RedisConfigArgs{},
+					Ports: compose.ServicePortConfigArray{
+						compose.ServicePortConfigArgs{
+							Target: pulumi.Int(6379),
+							Mode:   pulumi.StringPtr("host"),
 						},
 					},
 				},

@@ -5,3 +5,6 @@ plugins:
   providers:
     - name: defang-gcp
       path: ../../bin
+config:
+  gcp:project: my-project-123456
+  domain: gcp-go-my-project.example.defang.app

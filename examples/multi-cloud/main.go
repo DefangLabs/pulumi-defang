@@ -1,12 +1,10 @@
 package main
 
 import (
-	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/defangaws"
-	awsShared "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/shared"
-	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/defangazure"
-	azureShared "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/shared"
-	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/defanggcp"
-	gcpShared "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/shared"
+	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
+	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
+	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
+	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	pulumiazurenative "github.com/pulumi/pulumi-azure-native-sdk/v2"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
@@ -24,11 +22,11 @@ func main() {
 		}
 
 		awsProj, err := defangaws.NewProject(ctx, "awsProject", &defangaws.ProjectArgs{
-			Services: awsShared.ServiceInputMap{
-				"web": awsShared.ServiceInputArgs{
+			Services: compose.ServiceConfigMap{
+				"web": compose.ServiceConfigArgs{
 					Image: pulumi.StringPtr("nginx:latest"),
-					Ports: awsShared.PortConfigArray{
-						awsShared.PortConfigArgs{
+					Ports: compose.ServicePortConfigArray{
+						compose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
 							Mode:        pulumi.StringPtr("ingress"),
 							AppProtocol: pulumi.StringPtr("http"),
@@ -51,11 +49,11 @@ func main() {
 		}
 
 		gcpProj, err := defanggcp.NewProject(ctx, "gcpProject", &defanggcp.ProjectArgs{
-			Services: gcpShared.ServiceInputMap{
-				"web": gcpShared.ServiceInputArgs{
+			Services: compose.ServiceConfigMap{
+				"web": compose.ServiceConfigArgs{
 					Image: pulumi.StringPtr("nginx:latest"),
-					Ports: gcpShared.PortConfigArray{
-						gcpShared.PortConfigArgs{
+					Ports: compose.ServicePortConfigArray{
+						compose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
 							Mode:        pulumi.StringPtr("ingress"),
 							AppProtocol: pulumi.StringPtr("http"),
@@ -77,11 +75,11 @@ func main() {
 		}
 
 		azureProj, err := defangazure.NewProject(ctx, "azureProject", &defangazure.ProjectArgs{
-			Services: azureShared.ServiceInputMap{
-				"web": azureShared.ServiceInputArgs{
+			Services: compose.ServiceConfigMap{
+				"web": compose.ServiceConfigArgs{
 					Image: pulumi.StringPtr("nginx:latest"),
-					Ports: azureShared.PortConfigArray{
-						azureShared.PortConfigArgs{
+					Ports: compose.ServicePortConfigArray{
+						compose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
 							Mode:        pulumi.StringPtr("ingress"),
 							AppProtocol: pulumi.StringPtr("http"),
