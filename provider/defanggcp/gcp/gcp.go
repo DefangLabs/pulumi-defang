@@ -19,16 +19,18 @@ var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert author
 // GlobalConfig holds project-level GCP resources shared across all services.
 type GlobalConfig struct {
 	Region            string
-	GcpProject        string                          // GCP project ID, used for IAM bindings
-	Domain            string                          // delegate domain (e.g. "example.com"); empty when not configured
+	GcpProject        string // GCP project ID, used for IAM bindings
+	Domain            string // delegate domain (e.g. "example.com"); empty when not configured
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
-	WildcardCertId    pulumi.StringInput              // non-nil when a domain is configured
-	PublicZoneId      pulumi.StringInput              // managed zone name; non-nil when a domain is configured
-	BuildInfra        *BuildInfra                     // non-nil when at least one service has a build config
-	ServiceConnection *servicenetworking.Connection   // non-nil when any service uses managed Postgres or Redis
-	PrivateZoneId     pulumi.StringOutput             // managed zone name for the private google.internal. zone
+	WildcardCertId    pulumi.StringInput            // non-nil when a domain is configured
+	PublicZoneId      pulumi.StringInput            // managed zone name; non-nil when a domain is configured
+	BuildInfra        *BuildInfra                   // non-nil when at least one service has a build config
+	ServiceConnection *servicenetworking.Connection // non-nil when any service uses managed Postgres or Redis
+	PrivateZoneId     pulumi.StringOutput           // managed zone name for the private google.internal. zone
+	Prefix            string                        // prefix for all resource names (e.g. "myproject")
+	Stack             string                        // Pulumi stack name (e.g. "dev")
 }
 
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
@@ -113,6 +115,7 @@ func BuildGlobalConfig(
 	}
 
 	cfg := &GlobalConfig{
+		Stack:         ctx.Stack(),
 		Region:        region,
 		GcpProject:    gcpProjectId(ctx),
 		VpcId:         vpc.ID().ToStringOutput(),
