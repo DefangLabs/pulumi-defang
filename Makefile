@@ -1,3 +1,4 @@
+SHELL=/bin/bash -o pipefail
 PROJECT_NAME := Pulumi defang Resource Provider
 
 PACKS           := defang-aws defang-gcp defang-azure
@@ -61,11 +62,11 @@ GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
 test_provider: provider
-	cd tests && ${GO_TEST} -coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/... -short ./...
+	cd tests && ${GO_TEST} -coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/... -short ./... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test_unit
 test_unit:
-	${GO_TEST} -coverprofile=coverage_provider.out ./provider/...
+	${GO_TEST} -coverprofile=coverage_provider.out ./provider/... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test
 test: test_unit test_provider

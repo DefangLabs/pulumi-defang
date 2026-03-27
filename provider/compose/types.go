@@ -305,6 +305,11 @@ func (s ServiceConfig) GetPlatform() string {
 	return "linux/amd64"
 }
 
+// DefaultNetwork returns the default network config for the service, defaulting to empty config.
+func (s ServiceConfig) DefaultNetwork() ServiceNetworkConfig {
+	return s.Networks[DefaultNetwork]
+}
+
 // HasIngressPorts returns true if any port has mode "ingress".
 func (s ServiceConfig) HasIngressPorts() bool {
 	for _, p := range s.Ports {

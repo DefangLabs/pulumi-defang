@@ -13,18 +13,37 @@ import (
 
 var ErrEmptyHostnames = errors.New("hostnames must not be empty")
 
-type CertificateDnsArgs struct {
-	CaaIssuer []string
-	// Route53Provider pulumi.ProviderResource
-	Tags pulumi.StringMapInput
-	// record name=>fqdn to avoid creating conflicting validation records
-	ValidationRecords map[string]pulumi.StringOutput
-	Zone              IZone
+// GroupHostnamesByCert groups hostnames by their ACM DNS validation base domain.
+// Hostnames that differ only by a "*." prefix (e.g. "example.com" and "*.example.com")
+// produce the same validation CNAME record, so they belong on a single certificate.
+// The returned map keys are the base domain (without "*." prefix); each value slice
+// has the non-wildcard domain first (cert CN), followed by any wildcards (SANs).
+func GroupHostnamesByCert(hostnames []string) map[string][]string {
+	groups := make(map[string][]string)
+	for _, h := range hostnames {
+		base := strings.TrimPrefix(h, "*.")
+		if h == base {
+			// Non-wildcard: prepend so it becomes CN
+			groups[base] = append([]string{h}, groups[base]...)
+		} else {
+			// Wildcard: append as SAN
+			groups[base] = append(groups[base], h)
+		}
+	}
+	return groups
 }
 
-// createCertificateDNS creates a new ACM certificate with DNS validation w/ or w/o CAA records.
+type CertificateDnsArgs struct {
+	CaaIssuer []string
+	// Route53Provider aws.Provider
+	Tags              pulumi.StringMapInput
+	ValidationRecords map[string]pulumi.StringOutput
+	ZoneId            pulumi.StringInput
+}
+
+// CreateCertificateDNS creates a new ACM certificate with DNS validation w/ or w/o CAA records.
 // This needs aws:RequestCertificate IAM permission.
-func createCertificateDNS(
+func CreateCertificateDNS(
 	ctx *pulumi.Context,
 	hostnames []string,
 	args CertificateDnsArgs,
@@ -61,7 +80,7 @@ func createCertificateDNS(
 	var caaRecords []pulumi.Resource
 	if len(args.CaaIssuer) != 0 {
 		for _, hostname := range hostnames {
-			rec, err := createCaaDnsRecord(ctx, hostname, args.Zone, args.CaaIssuer, opts...)
+			rec, err := createCaaDnsRecord(ctx, hostname, args.ZoneId, args.CaaIssuer, opts...)
 			if err != nil {
 				return pulumi.StringOutput{}, err
 			}
@@ -95,7 +114,7 @@ func createCertificateDNS(
 				if existing, ok := args.ValidationRecords[*dvo.ResourceRecordName]; ok {
 					fqdns[i] = existing
 				} else {
-					record, err := createValidationDnsRecord(ctx, dvo, args.Zone, opts...)
+					record, err := createValidationDnsRecord(ctx, dvo, args.ZoneId, opts...)
 					if err != nil {
 						return pulumi.StringArrayOutput{}, err
 					}
@@ -129,7 +148,7 @@ func createCertificateDNS(
 func createValidationDnsRecord(
 	ctx *pulumi.Context,
 	cdvo acm.CertificateDomainValidationOption,
-	zone IZone,
+	zoneId pulumi.StringInput,
 	opts ...pulumi.ResourceOption,
 ) (*route53.Record, error) {
 	return CreateRecord(ctx,
@@ -138,7 +157,7 @@ func createValidationDnsRecord(
 		&route53.RecordArgs{
 			Records: pulumi.StringArray{pulumi.String(*cdvo.ResourceRecordValue)},
 			Ttl:     pulumi.Int(60), // 1 MINUTE
-			ZoneId:  zone.ZoneId(),
+			ZoneId:  zoneId,
 		},
 		common.MergeOptions(opts,
 			pulumi.DeleteBeforeReplace(true), // HACK: workaround for "already exists" error

@@ -128,7 +128,7 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
 
-	sg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
+	privateSg, err := ec2.NewSecurityGroup(ctx, "svc-sg", &ec2.SecurityGroupArgs{
 		VpcId:       net.VpcID,
 		Description: pulumi.String(fmt.Sprintf("Security group for %s services", projectName)),
 		Egress: ec2.SecurityGroupEgressArray{
@@ -192,64 +192,64 @@ func CreateProjectInfra(
 	}
 
 	var albRes *AlbResult
-	var publicDomain string
+	var projectDomain, publicZoneId string
+	if awsConfig != nil {
+		projectDomain = awsConfig.ProjectDomain
+	}
+
 	if common.NeedIngress(services) {
-		// Create cert for HTTPS listener if a public domain is provided
-		publicDomain = "defangio.click"
-
-		delegationSetId := ""
-		if awsConfig != nil {
-			delegationSetId = awsConfig.DelegationSetId
-		}
-
 		var certArn pulumi.StringPtrInput
-		publicZone, err := getOrCreatePublicZone(ctx, publicDomain, delegationSetId, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("looking up Route53 zone: %w", err)
-		}
 
-		// Create a wildcard and/or apex domain certificate for all the domains
-		wildcardDomain := "*." + publicDomain
-		domains := []string{wildcardDomain}
-		if CreateApexRecord.Get(ctx) {
-			domains = append(domains, publicDomain)
-		}
+		// Create wildcard cert + DNS if a public zone is provided
+		if publicZoneId != "" && projectDomain != "" {
+			zoneId := pulumi.String(publicZoneId)
 
-		// Create a wildcard and/or apex domain certificate for all the domains
-		// TODO: should we use a separate cert for each ALB?
-		certArn, err = createCertificateDNS(ctx, domains, CertificateDnsArgs{
-			CaaIssuer: []string{"amazon.com", "letsencrypt.org"}, // TODO: only add letsencrypt.org if we plan to use ACME
-			Zone:      publicZone,
-			Tags: pulumi.StringMap{
-				"defang:scope": pulumi.String("pub"),
-			},
-		}, common.MergeOptions(opts,
-			pulumi.RetainOnDelete(true), // deletion will fail if there's a listener: keep it, ACM certs are free anyway
-		)...)
-		if err != nil {
-			return nil, fmt.Errorf("creating certificate: %w", err)
-		}
+			wildcardDomain := "*." + projectDomain
+			domains := []string{wildcardDomain}
+			if CreateApexRecord.Get(ctx) {
+				domains = append(domains, projectDomain)
+			}
 
-		albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating ALB: %w", err)
-		}
-
-		// Create ALIAS DNS records for the ALB
-		aliases := route53.RecordAliasArray{
-			&route53.RecordAliasArgs{
-				EvaluateTargetHealth: pulumi.Bool(true),
-				Name:                 albRes.Alb.DnsName,
-				ZoneId:               albRes.Alb.ZoneId,
-			},
-		}
-		for _, hostname := range domains {
-			_, err := CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
-				Aliases: aliases,
-				ZoneId:  publicZone.ZoneId(),
-			}, opts...) // TODO: route53Opts
+			certArn, err = CreateCertificateDNS(ctx, domains, CertificateDnsArgs{
+				CaaIssuer: []string{"amazon.com", "letsencrypt.org"},
+				ZoneId:    zoneId,
+				Tags: pulumi.StringMap{
+					"defang:scope": pulumi.String("pub"),
+				},
+			}, common.MergeOptions(opts,
+				pulumi.RetainOnDelete(true), // deletion will fail if there's a listener: keep it, ACM certs are free anyway
+			)...)
 			if err != nil {
-				return nil, fmt.Errorf("creating DNS record for %s: %w", hostname, err)
+				return nil, fmt.Errorf("creating certificate: %w", err)
+			}
+
+			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating ALB: %w", err)
+			}
+
+			// Create ALIAS DNS records for the ALB
+			aliases := route53.RecordAliasArray{
+				&route53.RecordAliasArgs{
+					EvaluateTargetHealth: pulumi.Bool(true),
+					Name:                 albRes.Alb.DnsName,
+					ZoneId:               albRes.Alb.ZoneId,
+				},
+			}
+			for _, hostname := range domains {
+				_, err := CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
+					Aliases: aliases,
+					ZoneId:  zoneId,
+				}, opts...)
+				if err != nil {
+					return nil, fmt.Errorf("creating DNS record for %s: %w", hostname, err)
+				}
+			}
+		} else {
+			// No public zone: HTTP-only ALB
+			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, nil, opts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating ALB: %w", err)
 			}
 		}
 	}
@@ -278,10 +278,10 @@ func CreateProjectInfra(
 		VpcID:            net.VpcID,
 		PublicSubnetIDs:  net.PublicSubnetIDs,
 		PrivateSubnetIDs: net.PrivateSubnetIDs,
-		PrivateZoneID:    net.PrivateZone.ID().ToIDPtrOutput(),
+		PrivateZoneID:    net.PrivateZone.ZoneId,
 		PrivateDomain:    net.PrivateDomain,
-		PublicDomain:     publicDomain,
-		Sg:               sg,
+		ProjectDomain:    projectDomain,
+		PrivateSgID:      privateSg.ID(),
 		SkipNatGW:        !net.UseNatGW,
 		Region:           region.Region,
 		BuildInfra:       imgInfra,

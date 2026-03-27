@@ -20,7 +20,7 @@ func TestConstructAwsPostgres(t *testing.T) {
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"aws": property.New(property.NewMap(map[string]property.Value{
-				"vpcId": property.New("vpc-12345"),
+				"vpcID": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -40,7 +40,7 @@ func TestConstructAwsPostgresWithAllowDowntime(t *testing.T) {
 				"allowDowntime": property.New(true),
 			})),
 			"aws": property.New(property.NewMap(map[string]property.Value{
-				"vpcId": property.New("vpc-12345"),
+				"vpcID": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -60,7 +60,7 @@ func TestConstructAwsPostgresWithSnapshot(t *testing.T) {
 				"fromSnapshot": property.New("rds:myproject-db-2024-01-01"),
 			})),
 			"aws": property.New(property.NewMap(map[string]property.Value{
-				"vpcId": property.New("vpc-12345"),
+				"vpcID": property.New("vpc-12345"),
 			})),
 		}),
 	})
@@ -83,7 +83,29 @@ func TestConstructAwsPostgresWithEnvironment(t *testing.T) {
 				"POSTGRES_PASSWORD": property.New("secret"),
 			})),
 			"aws": property.New(property.NewMap(map[string]property.Value{
-				"vpcId": property.New("vpc-12345"),
+				"vpcID": property.New("vpc-12345"),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+}
+
+func TestConstructAwsPostgresWithVPC(t *testing.T) {
+	server := testutil.MakeTestServer()
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Postgres"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"project_name": property.New("myproject"),
+			"image":        property.New("postgres:16"),
+			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcID": property.New("vpc-12345"),
+				"privateSubnetDs": property.New(property.NewArray([]property.Value{
+					property.New("subnet-private-0"),
+					property.New("subnet-private-1"),
+				})),
 			})),
 		}),
 	})

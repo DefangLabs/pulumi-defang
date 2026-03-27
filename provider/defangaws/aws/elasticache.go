@@ -183,12 +183,11 @@ func transitEncryptionSupported(engine, engineVersion string) bool {
 //nolint:funlen
 func CreateElasticache(
 	ctx *pulumi.Context,
-	_ compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
-	serviceSG *ec2.SecurityGroup,
+	privateSgID pulumi.IDPtrInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -231,13 +230,17 @@ func CreateElasticache(
 	}
 
 	// Create ElastiCache subnet group (always private).
-	subnetGroup, err := awselasticache.NewSubnetGroup(ctx, serviceName, &awselasticache.SubnetGroupArgs{
-		Description: pulumi.String(common.DefangComment),
-		SubnetIds:   privateSubnetIDs,
-		Tags:        tags,
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating ElastiCache subnet group: %w", err)
+	var subnetGroupName pulumi.StringPtrOutput
+	if privateSubnetIDs != nil {
+		subnetGroup, err := awselasticache.NewSubnetGroup(ctx, serviceName, &awselasticache.SubnetGroupArgs{
+			Description: pulumi.String(common.DefangComment),
+			SubnetIds:   privateSubnetIDs,
+			Tags:        tags,
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating ElastiCache subnet group: %w", err)
+		}
+		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
 	// Create security group allowing ingress only from the service SG.
@@ -250,7 +253,7 @@ func CreateElasticache(
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
-				SecurityGroups: pulumi.StringArray{serviceSG.ID()},
+				SecurityGroups: pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()},
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{
@@ -295,7 +298,7 @@ func CreateElasticache(
 		NumCacheClusters:         pulumi.Int(replicas),
 		Port:                     pulumi.Int(port),
 		SecurityGroupIds:         pulumi.StringArray{cacheSG.ID()},
-		SubnetGroupName:          subnetGroup.Name,
+		SubnetGroupName:          subnetGroupName,
 		Tags:                     tags,
 		TransitEncryptionEnabled: pulumi.Bool(transitEncryption),
 	}

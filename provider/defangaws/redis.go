@@ -56,8 +56,6 @@ func (*Redis) Construct(
 		Environment: inputs.Environment,
 	}
 
-	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
-
 	sg, err := awsec2.NewSecurityGroup(ctx, name, &awsec2.SecurityGroupArgs{
 		VpcId:       inputs.AWS.VpcID,
 		Description: pulumi.String("Security group for Redis"),
@@ -75,7 +73,7 @@ func (*Redis) Construct(
 	}
 
 	redisResult, err := provideraws.CreateElasticache(
-		ctx, configProvider, name, svc, inputs.AWS.VpcID, inputs.AWS.PrivateSubnetIDs, sg, nil, childOpt,
+		ctx, name, svc, inputs.AWS.VpcID, inputs.AWS.PrivateSubnetIDs, sg.ID(), nil, childOpt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache: %w", err)
@@ -109,7 +107,7 @@ type RedisResult struct {
 // creates its ElastiCache children, registers outputs, and returns the host:port endpoint.
 func newRedisComponent(
 	ctx *pulumi.Context,
-	configProvider compose.ConfigProvider,
+	_ compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *provideraws.SharedInfra,
@@ -123,17 +121,17 @@ func newRedisComponent(
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 	redisResult, err := provideraws.CreateElasticache(
-		ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...,
+		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, opts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}
 
 	var dependency pulumi.Resource // = redisResult.Address
-	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
+	if infra.PrivateZoneID != nil {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
-			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
+			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{redisResult.Address},
 			Ttl:     pulumi.Int(300),
 		}, opts...)

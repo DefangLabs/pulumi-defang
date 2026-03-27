@@ -171,7 +171,7 @@ func CreateRDS(
 	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
-	serviceSG *ec2.SecurityGroup,
+	privateSgID pulumi.IDPtrInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
@@ -190,14 +190,18 @@ func CreateRDS(
 	}
 
 	// Create DB subnet group
-	subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
-		Name:        pulumi.String(strings.ToLower(autonamePrefix(ctx, serviceName))),
-		Description: pulumi.String(common.DefangComment),
-		SubnetIds:   privateSubnetIDs,
-		Tags:        tags,
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating DB subnet group: %w", err)
+	var subnetGroupName pulumi.StringPtrOutput
+	if privateSubnetIDs != nil {
+		subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
+			Name:        pulumi.String(strings.ToLower(autonamePrefix(ctx, serviceName))),
+			Description: pulumi.String(common.DefangComment),
+			SubnetIds:   privateSubnetIDs,
+			Tags:        tags,
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating DB subnet group: %w", err)
+		}
+		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
 	// Create security group for RDS
@@ -209,7 +213,7 @@ func CreateRDS(
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
-				SecurityGroups: pulumi.StringArray{serviceSG.ID()},
+				SecurityGroups: pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()},
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{
@@ -251,7 +255,7 @@ func CreateRDS(
 		Password:                 pg.Password,
 		AllowMajorVersionUpgrade: pulumi.Bool(pg.AllowDowntime),
 		ApplyImmediately:         pulumi.Bool(pg.AllowDowntime),
-		DbSubnetGroupName:        subnetGroup.Name,
+		DbSubnetGroupName:        subnetGroupName,
 		VpcSecurityGroupIds:      pulumi.StringArray{rdsSG.ID()},
 		SkipFinalSnapshot:        pulumi.Bool(skipFinalSnapshot),
 		FinalSnapshotIdentifier:  finalSnapshotIdentifier,

@@ -15,7 +15,7 @@ import (
 
 // awsConfig is the minimal AWS config needed by standalone AWS components.
 var awsConfig = property.New(property.NewMap(map[string]property.Value{
-	"vpcId": property.New("vpc-12345"),
+	"vpcID": property.New("vpc-12345"),
 }))
 
 func TestConstructAwsRedis(t *testing.T) {
@@ -110,8 +110,8 @@ func TestConstructAwsRedisWithVPC(t *testing.T) {
 			"project_name": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
 			"aws": property.New(property.NewMap(map[string]property.Value{
-				"vpcId": property.New("vpc-0123456789abcdef0"),
-				"privateSubnetIds": property.New(property.NewArray([]property.Value{
+				"vpcID": property.New("vpc-0123456789abcdef0"),
+				"privateSubnetDs": property.New(property.NewArray([]property.Value{
 					property.New("subnet-private-0"),
 					property.New("subnet-private-1"),
 				})),

@@ -1,8 +1,6 @@
 package aws
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -89,7 +87,7 @@ func createSoaRecord(
 func createCaaDnsRecord(
 	ctx *pulumi.Context,
 	hostname string,
-	zone IZone,
+	zoneId pulumi.StringInput,
 	issuer []string,
 	opts ...pulumi.ResourceOption,
 ) (*route53.Record, error) {
@@ -109,65 +107,32 @@ func createCaaDnsRecord(
 	return CreateRecord(ctx, hostname, common.RecordTypeCAA, &route53.RecordArgs{
 		Records: records,
 		Ttl:     pulumi.Int(3600), // 1 HOUR
-		ZoneId:  zone.ZoneId(),
+		ZoneId:  zoneId,
 	},
 		opts...,
 	)
 }
 
-// https://www.rfc-editor.org/rfc/rfc6762#appendix-G and https://www.rfc-editor.org/rfc/rfc8375
-var PRIVATE_ZONE_REGEX = regexp.MustCompile(`(?i)\b(intranet|internal|private|corp|home|home\.arpa|lan|local)\.?$`)
-
-func isPrivateZone(domain string) bool {
-	return PRIVATE_ZONE_REGEX.MatchString(domain)
+func getZone(ctx *pulumi.Context, name string, opts ...pulumi.InvokeOption) (*route53.LookupZoneResult, error) {
+	isPrivateZone := common.IsPrivateZone(name)
+	return route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &name, PrivateZone: &isPrivateZone}, opts...)
 }
 
-func getHostedZone(ctx *pulumi.Context, domain string, opts ...pulumi.InvokeOption) IZone {
-	zone := route53.LookupZoneOutput(ctx, route53.LookupZoneOutputArgs{
-		Name:        pulumi.String(domain),
-		PrivateZone: pulumi.Bool(isPrivateZone(domain)),
-	}, opts...)
-	return zone
-}
-
-func getOrCreatePublicZone(
+func GetHostedZoneForHost(
 	ctx *pulumi.Context,
-	domain string,
-	delegationSetId string,
-	opts ...pulumi.ResourceOption,
-) (IZone, error) {
-	if delegationSetId == "" {
-		return getHostedZone(ctx, domain), nil
-	}
-
-	zone, err := route53.NewZone(ctx,
-		domain,
-		&route53.ZoneArgs{
-			Comment:         pulumi.String(common.DefangComment),
-			DelegationSetId: pulumi.String(delegationSetId),
-			ForceDestroy:    pulumi.Bool(ForceDestroyHostedzone.Get(ctx)),
-			Name:            pulumi.String(domain),
-		},
-		opts...,
-	)
+	hostname string,
+	opts ...pulumi.InvokeOption,
+) (*route53.LookupZoneResult, error) {
+	// Start with the parent zone of the host.
+	zoneName := common.GetZoneName(hostname)
+	result, err := getZone(ctx, zoneName, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating Route53 public zone: %w", err)
+		// That failed. Try the next zone up.
+		parentZoneName := common.GetZoneName(zoneName)
+		if parentZoneName == zoneName {
+			return nil, err // no more zones to try; fail with the original error
+		}
+		return getZone(ctx, parentZoneName, opts...)
 	}
-
-	zoneOutput := zone.ToZoneOutput()
-	_, err = createSoaRecord(
-		ctx,
-		domain,
-		zoneOutput,
-		SoaRecordArgs{
-			Serial:  pulumi.Int(2025092601),
-			Minimum: pulumi.Int(15),
-		},
-		opts...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating SOA record for public zone: %w", err)
-	}
-
-	return zoneOutput, nil
+	return result, nil
 }

@@ -17,13 +17,12 @@ type Postgres struct{}
 
 // PostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
 type PostgresInputs struct {
-	ProjectName string                  `pulumi:"project_name"`
-	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
-	Image       *string                 `pulumi:"image,optional"`
-	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`
-	Environment map[string]string       `pulumi:"environment,optional"`
-
-	Infra *provideraws.SharedInfra `pulumi:"aws,optional"`
+	ProjectName string                   `pulumi:"project_name"`
+	Postgres    *compose.PostgresConfig  `pulumi:"postgres,optional"`
+	Image       *string                  `pulumi:"image,optional"`
+	Deploy      *compose.DeployConfig    `pulumi:"deploy,optional"`
+	Environment map[string]string        `pulumi:"environment,optional"`
+	Infra       *provideraws.SharedInfra `pulumi:"aws,optional"`
 }
 
 // PostgresOutputs holds the outputs of an AWS Postgres component.
@@ -68,7 +67,7 @@ func (*Postgres) Construct(
 	}
 
 	rdsResult, err := provideraws.CreateRDS(
-		ctx, configProvider, name, svc, inputs.Infra.VpcID, inputs.Infra.PrivateSubnetIDs, sg, nil, childOpt,
+		ctx, configProvider, name, svc, inputs.Infra.VpcID, inputs.Infra.PrivateSubnetIDs, sg.ID(), nil, childOpt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS: %w", err)
@@ -110,17 +109,17 @@ func newPostgresComponent(
 	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 	rdsResult, err := provideraws.CreateRDS(
-		ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.Sg, deps, opts...,
+		ctx, configProvider, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, opts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS for %s: %w", serviceName, err)
 	}
 
 	var dependency pulumi.Resource = rdsResult.Instance
-	if infra.PrivateZoneID != (pulumi.IDPtrOutput{}) {
+	if infra.PrivateZoneID != nil {
 		privateFqdn := serviceName + "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
-			ZoneId:  infra.PrivateZoneID.Elem().ToStringOutput(),
+			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{rdsResult.Instance.Address},
 			Ttl:     pulumi.Int(300),
 		}, opts...)
