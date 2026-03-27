@@ -67,7 +67,7 @@ func CreateExternalLoadBalancer(
 	}
 
 	if config.WildcardCertId != nil {
-		if _, err := certificatemanager.NewCertificateMapEntry(ctx, projectName+"-lb-wildcard-cert-map-entry",
+		if _, err := certificatemanager.NewCertificateMapEntry(ctx, projectName+"-cert-map-entry",
 			&certificatemanager.CertificateMapEntryArgs{
 				Map:          certMap.Name,
 				Certificates: pulumi.StringArray{config.WildcardCertId},
@@ -97,7 +97,7 @@ func newCertMap(
 	args := &certificatemanager.CertificateMapResourceArgs{
 		Description: pulumi.String(projectName + " public load balancer certificate map"),
 	}
-	return certificatemanager.NewCertificateMapResource(ctx, projectName+"-lb-cert-map", args, opts...)
+	return certificatemanager.NewCertificateMapResource(ctx, projectName+"-cert-map", args, opts...)
 }
 
 func buildURLMap(
@@ -112,7 +112,7 @@ func buildURLMap(
 	var pathMatchers compute.URLMapPathMatcherArray
 
 	for _, entry := range entries {
-		neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-lb-neg",
+		neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-neg",
 			&compute.RegionNetworkEndpointGroupArgs{
 				NetworkEndpointType: pulumi.String("SERVERLESS"),
 				Region:              pulumi.String(region),
@@ -124,7 +124,7 @@ func buildURLMap(
 			return nil, err
 		}
 
-		backend, err := compute.NewBackendService(ctx, entry.Name+"-lb-cloudrun-backend",
+		backend, err := compute.NewBackendService(ctx, entry.Name+"-backend",
 			&compute.BackendServiceArgs{
 				Protocol:            pulumi.String("HTTPS"),
 				LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
@@ -153,7 +153,7 @@ func buildURLMap(
 		}
 	}
 
-	return compute.NewURLMap(ctx, projectName+"-lb-urlmap", &compute.URLMapArgs{
+	return compute.NewURLMap(ctx, projectName+"-urlmap", &compute.URLMapArgs{
 		DefaultService: firstBackendID,
 		HostRules:      hostRules,
 		PathMatchers:   pathMatchers,
@@ -172,7 +172,7 @@ func createHTTPSForwardingRule(
 		return fmt.Sprintf("//certificatemanager.googleapis.com/%v", id), nil
 	}).(pulumi.StringOutput)
 
-	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, projectName+"-lb-https-proxy",
+	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, projectName+"-https-proxy",
 		&compute.TargetHttpsProxyArgs{
 			UrlMap:         urlMap.SelfLink,
 			CertificateMap: certMapRef,
@@ -181,7 +181,7 @@ func createHTTPSForwardingRule(
 		return err
 	}
 
-	_, err = compute.NewGlobalForwardingRule(ctx, projectName+"-lb-forwarding-rule",
+	_, err = compute.NewGlobalForwardingRule(ctx, projectName+"-https-rule",
 		&compute.GlobalForwardingRuleArgs{
 			Target:              httpsProxy.SelfLink,
 			IpAddress:           publicIP.Address,
@@ -197,7 +197,7 @@ func createHTTPRedirectForwardingRule(
 	publicIP *compute.GlobalAddress,
 	opts ...pulumi.ResourceOption,
 ) error {
-	redirectMap, err := compute.NewURLMap(ctx, projectName+"-lb-http-redirect-url-map",
+	redirectMap, err := compute.NewURLMap(ctx, projectName+"-http-urlmap",
 		&compute.URLMapArgs{
 			DefaultUrlRedirect: &compute.URLMapDefaultUrlRedirectArgs{
 				HttpsRedirect:        pulumi.Bool(true),
@@ -209,13 +209,13 @@ func createHTTPRedirectForwardingRule(
 		return err
 	}
 
-	httpProxy, err := compute.NewTargetHttpProxy(ctx, projectName+"-lb-http-proxy",
+	httpProxy, err := compute.NewTargetHttpProxy(ctx, projectName+"-http-proxy",
 		&compute.TargetHttpProxyArgs{UrlMap: redirectMap.ID()}, opts...)
 	if err != nil {
 		return err
 	}
 
-	_, err = compute.NewGlobalForwardingRule(ctx, projectName+"-lb-http-forwarding-rule",
+	_, err = compute.NewGlobalForwardingRule(ctx, projectName+"-http-rule",
 		&compute.GlobalForwardingRuleArgs{
 			IpAddress:           publicIP.Address,
 			IpProtocol:          pulumi.String("TCP"),
