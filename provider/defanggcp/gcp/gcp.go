@@ -19,6 +19,7 @@ var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert author
 // GlobalConfig holds project-level GCP resources shared across all services.
 type GlobalConfig struct {
 	Region            string
+	GcpProject        string                          // GCP project ID, used for IAM bindings
 	Domain            string                          // delegate domain (e.g. "example.com"); empty when not configured
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
@@ -113,6 +114,7 @@ func BuildGlobalConfig(
 
 	cfg := &GlobalConfig{
 		Region:        region,
+		GcpProject:    gcpProjectId(ctx),
 		VpcId:         vpc.ID().ToStringOutput(),
 		SubnetId:      subnet.ID().ToStringOutput(),
 		PublicIP:      publicIP,

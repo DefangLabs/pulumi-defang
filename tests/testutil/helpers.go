@@ -50,3 +50,11 @@ func IngressPort(port int) property.Value {
 		"mode":   property.New("ingress"),
 	}))
 }
+
+// HostPort builds a port config property value for a host-mode port.
+func HostPort(port int) property.Value {
+	return property.New(property.NewMap(map[string]property.Value{
+		"target": property.New(float64(port)),
+		"mode":   property.New("host"),
+	}))
+}
