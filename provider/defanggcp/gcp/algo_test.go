@@ -5,8 +5,51 @@ import (
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 )
+
+// TestBuildMIGUpdatePolicyMaxSurgeConstraint verifies that MaxSurgeFixed is
+// always either 0 or >= numZones, which is the constraint enforced by the GCP
+// API for regional managed instance groups.
+func TestBuildMIGUpdatePolicyMaxSurgeConstraint(t *testing.T) {
+	tests := []struct {
+		name       string
+		numZones   int
+		targetSize int
+	}{
+		{"single replica, 4-zone region (us-central1)", 4, 1},
+		{"single replica, 3-zone region", 3, 1},
+		{"two replicas, 4-zone region", 4, 2},
+		{"ten replicas, 4-zone region", 4, 10},
+		{"zero zones (unknown/mock)", 0, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := buildMIGUpdatePolicy(tt.numZones, tt.targetSize)
+
+			// Percent-based policies (targetSize > 10) don't use fixed counts.
+			if policy.MaxSurgeFixed == nil {
+				assert.NotNil(t, policy.MaxSurgePercent, "expected percent-based surge for large targetSize")
+				return
+			}
+
+			surgeFixed := int(policy.MaxSurgeFixed.(pulumi.Int))
+			unavailFixed := int(policy.MaxUnavailableFixed.(pulumi.Int))
+
+			effectiveZones := tt.numZones
+			if effectiveZones < 1 {
+				effectiveZones = 1
+			}
+
+			assert.True(t, surgeFixed == 0 || surgeFixed >= effectiveZones,
+				"MaxSurgeFixed=%d must be 0 or >= numZones=%d", surgeFixed, effectiveZones)
+			assert.True(t, unavailFixed == 0 || unavailFixed >= effectiveZones,
+				"MaxUnavailableFixed=%d must be 0 or >= numZones=%d", unavailFixed, effectiveZones)
+		})
+	}
+}
 
 func TestIsCloudRunService(t *testing.T) {
 	tests := []struct {

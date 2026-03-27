@@ -84,10 +84,11 @@ func CreateComputeEngine(
 		return nil, err
 	}
 
-	updatePolicy, err := buildMIGUpdatePolicy(ctx, int(svc.GetReplicas()))
+	zones, err := compute.GetZones(ctx, &compute.GetZonesArgs{Region: pulumi.StringRef(gcpConfig.Region)})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting zones in region %s: %w", gcpConfig.Region, err)
 	}
+	updatePolicy := buildMIGUpdatePolicy(len(zones.Names), int(svc.GetReplicas()))
 
 	instanceGroup, err := compute.NewRegionInstanceGroupManager(ctx, serviceName+"-instance-group",
 		&compute.RegionInstanceGroupManagerArgs{
@@ -221,10 +222,13 @@ func createMIGAutoHealing(
 	}, nil
 }
 
-func buildMIGUpdatePolicy(
-	ctx *pulumi.Context,
-	targetSize int,
-) (*compute.RegionInstanceGroupManagerUpdatePolicyArgs, error) {
+// buildMIGUpdatePolicy returns update policy args for a regional MIG.
+//
+// GCP constraint: MaxSurgeFixed and MaxUnavailableFixed must each be either 0
+// or >= the number of zones in the region. We satisfy this by clamping the
+// batch size to at least numZones. numZones should be the number of zones in
+// the deployment region (from compute.GetZones); pass 1 if unknown.
+func buildMIGUpdatePolicy(numZones, targetSize int) *compute.RegionInstanceGroupManagerUpdatePolicyArgs {
 	policy := &compute.RegionInstanceGroupManagerUpdatePolicyArgs{
 		Type:          pulumi.String("PROACTIVE"),
 		MinimalAction: pulumi.String("RESTART"),
@@ -232,19 +236,15 @@ func buildMIGUpdatePolicy(
 	if targetSize > 10 {
 		policy.MaxSurgePercent = pulumi.Int(25)
 		policy.MaxUnavailablePercent = pulumi.Int(25)
-		return policy, nil
+		return policy
 	}
-	batchSize := max(targetSize/2, 1)
-	zones, err := compute.GetZones(ctx, &compute.GetZonesArgs{})
-	if err != nil {
-		return nil, fmt.Errorf("getting zones: %w", err)
+	if numZones < 1 {
+		numZones = 1
 	}
-	if batchSize < len(zones.Names) {
-		batchSize = len(zones.Names)
-	}
+	batchSize := max(targetSize/2, numZones)
 	policy.MaxSurgeFixed = pulumi.Int(batchSize)
 	policy.MaxUnavailableFixed = pulumi.Int(batchSize)
-	return policy, nil
+	return policy
 }
 
 // addRolesToServiceAccount grants IAM roles to a service account at the project level.
