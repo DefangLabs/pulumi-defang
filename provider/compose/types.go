@@ -198,7 +198,7 @@ type HealthCheckConfig struct {
 }
 
 type ConfigProvider interface {
-	GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput
+	GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput
 }
 
 // PostgresConfigArgs holds resolved managed Postgres configuration.

@@ -2,32 +2,35 @@ package aws
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/acm"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 var ErrEmptyHostnames = errors.New("hostnames must not be empty")
 
-// GroupHostnamesByCert groups hostnames by their ACM DNS validation base domain.
+// groupHostnamesByCert groups hostnames by their ACM DNS validation base domain.
 // Hostnames that differ only by a "*." prefix (e.g. "example.com" and "*.example.com")
 // produce the same validation CNAME record, so they belong on a single certificate.
 // The returned map keys are the base domain (without "*." prefix); each value slice
 // has the non-wildcard domain first (cert CN), followed by any wildcards (SANs).
-func GroupHostnamesByCert(hostnames []string) map[string][]string {
+func groupHostnamesByCert(hostnames []string) map[string][]string {
 	groups := make(map[string][]string)
-	for _, h := range hostnames {
-		base := strings.TrimPrefix(h, "*.")
-		if h == base {
-			// Non-wildcard: prepend so it becomes CN
-			groups[base] = append([]string{h}, groups[base]...)
-		} else {
+	for _, hostname := range hostnames {
+		domain, wildcard := strings.CutPrefix(hostname, "*.")
+		if wildcard {
 			// Wildcard: append as SAN
-			groups[base] = append(groups[base], h)
+			groups[domain] = append(groups[domain], hostname)
+		} else {
+			// Non-wildcard: prepend so it becomes CN
+			groups[domain] = append([]string{hostname}, groups[domain]...)
 		}
 	}
 	return groups
@@ -164,4 +167,78 @@ func createValidationDnsRecord(
 			pulumi.RetainOnDelete(false),     // we don't need to keep validation records around
 		)...,
 	)
+}
+
+// createCertsAndRoute53Dns creates BYOD (Bring Your Own Domain) ACM certificates,
+// listener attachments, and DNS records as children of the service component.
+// Hostnames that share the same DNS validation record are grouped onto one cert
+// (e.g. example.com and *.example.com).
+func createCertsAndRoute53Dns(
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	infra *SharedInfra,
+	opt pulumi.ResourceOrInvokeOption,
+) error {
+	if infra == nil || infra.HttpsListener == nil || infra.Alb == nil {
+		return nil
+	}
+	if svc.DomainName == "" {
+		return nil
+	}
+
+	// Collect all BYOD hostnames: domainname + network aliases
+	hostnames := append([]string{svc.DomainName}, svc.DefaultNetwork().Aliases...)
+
+	// Group hostnames that share the same validation record onto one cert
+	certGroups := groupHostnamesByCert(hostnames)
+
+	albAliases := route53.RecordAliasArray{
+		&route53.RecordAliasArgs{
+			EvaluateTargetHealth: pulumi.Bool(true),
+			Name:                 infra.Alb.DnsName,
+			ZoneId:               infra.Alb.ZoneId,
+		},
+	}
+
+	// Iterate groups in sorted order for deterministic resource names
+	for base, group := range certGroups {
+		// Look up the Route53 hosted zone for this domain
+		zone, err := GetHostedZoneForHost(ctx, base, opt)
+		if err != nil {
+			return fmt.Errorf("finding hosted zone for %s: %w", base, err)
+		}
+
+		certArn, err := CreateCertificateDNS(ctx, group, CertificateDnsArgs{
+			CaaIssuer: []string{"amazon.com", "letsencrypt.org"},
+			ZoneId:    pulumi.String(zone.Id),
+			Tags: pulumi.StringMap{
+				"defang:service": pulumi.String(serviceName),
+			},
+		}, opt, pulumi.RetainOnDelete(true))
+		if err != nil {
+			return fmt.Errorf("creating BYOD certificate for %s: %w", base, err)
+		}
+
+		_, err = lb.NewListenerCertificate(ctx, serviceName+"-"+base+"-cert", &lb.ListenerCertificateArgs{
+			ListenerArn:    infra.HttpsListener.Arn,
+			CertificateArn: certArn,
+		}, opt)
+		if err != nil {
+			return fmt.Errorf("attaching BYOD certificate for %s: %w", base, err)
+		}
+
+		// Create ALIAS DNS records for each hostname in this group → ALB
+		zoneId := pulumi.String(zone.Id)
+		for _, hostname := range group {
+			_, err = CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
+				Aliases: albAliases,
+				ZoneId:  zoneId,
+			}, opt)
+			if err != nil {
+				return fmt.Errorf("creating DNS record for %s: %w", hostname, err)
+			}
+		}
+	}
+	return nil
 }

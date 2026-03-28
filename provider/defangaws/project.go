@@ -47,8 +47,7 @@ func (*Project) Construct(
 		return nil, err
 	}
 
-	childOpt := pulumi.Parent(comp)
-	result, err := buildProject(ctx, name, inputs, childOpt)
+	result, err := buildProject(ctx, name, inputs, pulumi.Parent(comp))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
@@ -73,12 +72,10 @@ func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
 	args ProjectInputs,
-	parentOpt pulumi.ResourceOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*common.BuildResult, error) {
-	opts := []pulumi.ResourceOption{parentOpt}
-
 	awsConfig := (*provideraws.AWSConfig)(args.AWS)
-	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Services, opts...)
+	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Services, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
@@ -86,8 +83,6 @@ func buildProject(
 	var albDNS pulumi.StringPtrOutput
 	if infra.Alb != nil {
 		albDNS = infra.Alb.DnsName.ToStringPtrOutput()
-	} else {
-		albDNS = pulumi.StringPtr("").ToStringPtrOutput()
 	}
 
 	// Deploy each service, wrapped in a component resource for tree organization
@@ -123,7 +118,7 @@ func buildProject(
 
 		waitForHealthy := waitForSteady[svcName]
 		endpoint, dependency, err := buildService(
-			ctx, configProvider, svcName, svc, args.Networks, infra, waitForHealthy, deps, opts[0])
+			ctx, configProvider, svcName, svc, args.Networks, infra, waitForHealthy, deps, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
@@ -149,7 +144,7 @@ func buildService(
 	infra *provideraws.SharedInfra,
 	waitForSteadyState bool,
 	deps []pulumi.Resource,
-	parentOpt pulumi.ResourceOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (pulumi.StringOutput, pulumi.Resource, error) {
 	var endpoint pulumi.StringOutput
 	var dependency pulumi.Resource
@@ -182,7 +177,7 @@ func buildService(
 			return pulumi.StringOutput{}, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}
 		var ecsResult *ECSResult
-		ecsResult, err = NewECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
+		ecsResult, err = newECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
 			Infra:              infra,
 			ImageURI:           imageURI,
 			Networks:           networks,

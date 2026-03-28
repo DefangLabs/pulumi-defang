@@ -160,13 +160,13 @@ func roleArn(r *iam.Role) pulumi.StringOutput {
 	return r.Arn
 }
 
-// createPrivateSG creates a per-service security group with port-specific ingress rules.
-// Matches TS createPrivateSG → createInstanceSG pattern:
+// createServiceSG creates a per-service security group with port-specific ingress rules.
+// Matches TS createServiceSG → createInstanceSG pattern:
 //   - LB-backed (ingress) ports: allow from ALB SG (or VPC CIDR if no ALB SG)
 //   - Public non-LB ports: allow from 0.0.0.0/0
 //   - Private non-LB ports: allow from privateSG (infra.PrivateSgID) as source SG
 //   - ICMP PMTUD rule when there are endpoints
-func createPrivateSG(
+func createServiceSG(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
@@ -257,7 +257,7 @@ func CreateECSService(
 	svc compose.ServiceConfig,
 	args *ECSServiceArgs,
 	deps []pulumi.Resource,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*EcsServiceResult, error) {
 	infra := args.Infra
 	if infra == nil {
@@ -265,7 +265,7 @@ func CreateECSService(
 	}
 
 	// Create task role
-	taskRole, err := createTaskRole(ctx, serviceName, opts...)
+	taskRole, err := createTaskRole(ctx, serviceName, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating task role: %w", err)
 	}
@@ -276,7 +276,7 @@ func CreateECSService(
 		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-AllowRoute53Sidecar", &iam.RolePolicyAttachmentArgs{
 			Role:      taskRole.Name,
 			PolicyArn: infra.route53SidecarPolicy.Arn,
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("attaching route53 sidecar policy: %w", err)
 		}
@@ -288,7 +288,7 @@ func CreateECSService(
 		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-BedrockPolicy", &iam.RolePolicyAttachmentArgs{
 			Role:      taskRole.Name,
 			PolicyArn: infra.bedrockPolicy.Arn,
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("attaching bedrock policy: %w", err)
 		}
@@ -382,14 +382,14 @@ func CreateECSService(
 		}}
 
 		if svc.HasHostPorts() && hasPrivateZone {
-			privateZoneID := all[2].(*string)
-			privateFqdn := fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain)
+			privateZoneID := all[2].(string)                                         // FIXME: this is [1] if there's no loggroup
+			privateFqdn := common.SafeLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
 			sidecarDef := awsecs.ContainerDefinition{
 				Name:      ptr.String("route53-sidecar"),
 				Image:     ptr.String("public.ecr.aws/defang-io/route53-sidecar:65e431c"),
 				Essential: ptr.Bool(false),
 				Environment: []awsecs.KeyValuePair{
-					{Name: ptr.String("HOSTEDZONE"), Value: ptr.String(*privateZoneID)},
+					{Name: ptr.String("HOSTEDZONE"), Value: ptr.String(privateZoneID)},
 					{Name: ptr.String("DNS"), Value: ptr.String(privateFqdn)},
 					{Name: ptr.String("IPADDRESS"), Value: ptr.String("ecs")},
 					// not (always?) set by the ECS agent; https://github.com/aws/containers-roadmap/issues/1611
@@ -440,7 +440,7 @@ func CreateECSService(
 		Tags: pulumi.StringMap{
 			"defang:service": pulumi.String(serviceName),
 		},
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating task definition: %w", err)
 	}
@@ -477,7 +477,7 @@ func CreateECSService(
 				firstIngress = false
 			}
 
-			tg, lr, err := createTgLrPair(ctx, serviceName, infra.VpcID, listener, port, svc.HealthCheck, endpoints, opts...)
+			tg, lr, err := createTgLrPair(ctx, serviceName, infra.VpcID, listener, port, svc.HealthCheck, endpoints, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
 			}
@@ -503,8 +503,8 @@ func CreateECSService(
 		subnetIds = infra.PublicSubnetIDs
 	}
 
-	// Create per-service SG with port-specific ingress (matches TS createprivateSg)
-	privateSg, err := createPrivateSG(ctx, serviceName, svc, infra, isPrivate, opts...)
+	// Create per-service SG with port-specific ingress (matches TS createServiceSg)
+	serviceSG, err := createServiceSG(ctx, serviceName, svc, infra, isPrivate, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +515,7 @@ func CreateECSService(
 		clusterArn = infra.Cluster.Arn
 	}
 	// Attach both per-service SG and shared privateSG (matches TS: [privateSg])
-	securityGroups := pulumi.StringArray{privateSg.ID()}
+	securityGroups := pulumi.StringArray{serviceSG.ID()}
 	if infra.PrivateSgID != nil {
 		securityGroups = append(securityGroups, infra.PrivateSgID.ToIDPtrOutput().Elem())
 	}
@@ -558,11 +558,13 @@ func CreateECSService(
 		ecsServiceArgs.WaitForSteadyState = pulumi.Bool(true)
 	}
 
-	ecsServiceOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.DependsOn(lbDependsOn))
-	if len(deps) > 0 {
-		ecsServiceOpts = append(ecsServiceOpts, pulumi.DependsOn(deps))
-	}
-	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, ecsServiceOpts...)
+	ecsService, err := ecs.NewService(
+		ctx,
+		serviceName,
+		ecsServiceArgs,
+		opt,
+		pulumi.DependsOn(lbDependsOn),
+		pulumi.DependsOn(deps))
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}
@@ -576,6 +578,11 @@ func CreateECSService(
 		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
 	default:
 		endpointOutput = pulumix.Val(serviceName)
+	}
+
+	err = createCertsAndRoute53Dns(ctx, serviceName, svc, args.Infra, opt)
+	if err != nil {
+		return nil, fmt.Errorf("creating certs and Route53 DNS: %w", err)
 	}
 
 	return &EcsServiceResult{

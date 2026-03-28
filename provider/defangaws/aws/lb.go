@@ -16,35 +16,34 @@ import (
 type LoadBalancerType string
 
 const (
-	ApplicationLoadBalancer LoadBalancerType = "application"
-	NetworkLoadBalancer     LoadBalancerType = "network"
+	LoadBalancerTypeApplication LoadBalancerType = "application"
+	LoadBalancerTypeNetwork     LoadBalancerType = "network"
 )
 
 func createLbLogsBucket(
 	ctx *pulumi.Context,
 	name string,
 	typ LoadBalancerType,
-	opts ...pulumi.InvokeOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*s3.Bucket, error) {
-	lbAccountId, err := getCallerAccountId(ctx, opts...)
+	lbAccountId, err := getCallerAccountId(ctx, opt)
 	if err != nil {
 		return nil, err
 	}
 
 	var lbPrincipal any
-	if typ == NetworkLoadBalancer {
+	if typ == LoadBalancerTypeNetwork {
 		lbPrincipal = getNlbPrincipal()
 	} else {
-		lbRegion, err := getCallerRegion(ctx, opts...)
+		lbRegion, err := getCallerRegion(ctx, opt)
 		if err != nil {
 			return nil, err
 		}
 		lbPrincipal = getElbPrincipal(lbRegion)
 	}
 
-	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{},
-	// opts...,
-	)
+	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{}, opt)
+
 	if err != nil {
 		return nil, err
 	}
@@ -61,9 +60,7 @@ func createLbLogsBucket(
 				},
 			},
 		},
-	},
-	// opts...,
-	)
+	}, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -102,67 +99,12 @@ func createLbLogsBucket(
 			Bucket: bucket.ID(),
 			Policy: policyJson,
 		},
-		// opts...,
-	)
+		opt)
 	if err != nil {
 		return nil, err
 	}
 
 	return bucket, nil
-}
-
-// Ported from https://github.com/DefangLabs/defang-mvp/blob/main/pulumi/shared/aws/common.ts
-//
-//nolint:unused // ported from TypeScript, will be used when custom listeners are needed
-func createListener(
-	ctx *pulumi.Context,
-	name string,
-	args *lb.ListenerArgs,
-	opts ...pulumi.ResourceOption,
-) (*lb.Listener, error) {
-	if args == nil {
-		args = &lb.ListenerArgs{}
-	}
-	if args.Port == nil {
-		if args.CertificateArn != nil {
-			args.Port = pulumi.Int(443)
-		} else {
-			args.Port = pulumi.Int(80)
-		}
-	}
-	if args.DefaultActions == nil {
-		args.DefaultActions = lb.ListenerDefaultActionArray{
-			lb.ListenerDefaultActionArgs{
-				Type: pulumi.String("fixed-response"),
-				FixedResponse: &lb.ListenerDefaultActionFixedResponseArgs{
-					ContentType: pulumi.String("text/html"),
-					MessageBody: pulumi.String(common.GetErrorHtml(
-						"404 Not Found",
-						"Resource Not Found",
-						"The service you are looking for doesn't exist or is pending deployment. Check its status or domain name.",
-					)),
-					StatusCode: pulumi.String("404"),
-				},
-			},
-		}
-	}
-	if args.Protocol == nil {
-		if args.CertificateArn != nil {
-			args.Protocol = pulumi.String("HTTPS")
-		} else {
-			args.Protocol = pulumi.String("HTTP")
-		}
-	}
-	return lb.NewListener(ctx,
-		name,
-		args,
-		common.MergeOptions(opts,
-			// can't create a listener with the same port as an existing one
-			pulumi.DeleteBeforeReplace(true),
-			// certs remain in use even after update, so replace the listener
-			pulumi.ReplaceOnChanges([]string{"certificateArn"}),
-		)...,
-	)
 }
 
 //nolint:funlen // sequential TG+LR setup is clearer as one function
@@ -174,7 +116,7 @@ func createTgLrPair(
 	port compose.ServicePortConfig,
 	healthCheck *compose.HealthCheckConfig,
 	endpoints []string,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOption,
 ) (*lb.TargetGroup, *lb.ListenerRule, error) {
 	if !port.IsIngress() {
 		return nil, nil, nil // skip
@@ -243,7 +185,7 @@ func createTgLrPair(
 		tgArgs.ProtocolVersion = pulumi.String("GRPC")
 	}
 
-	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opts...)
+	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opt)
 	if tgErr != nil {
 		return nil, nil, fmt.Errorf("creating target group: %w", tgErr)
 	}
@@ -287,7 +229,7 @@ func createTgLrPair(
 			},
 		},
 		Conditions: conditions,
-	}, common.MergeOptions(opts, pulumi.DeleteBeforeReplace(true))...)
+	}, opt, pulumi.DeleteBeforeReplace(true))
 	if lrErr != nil {
 		return nil, nil, fmt.Errorf("creating listener rule: %w", lrErr)
 	}

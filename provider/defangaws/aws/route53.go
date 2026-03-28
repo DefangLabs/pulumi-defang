@@ -16,9 +16,6 @@ func CreateRecord(
 	if args == nil {
 		args = &route53.RecordArgs{}
 	}
-	// TODO: look up the zone by name
-	// if args.ZoneId == nil {
-	// }
 	// Route 53 treats www.example.com (without a trailing dot) and www.example.com. (with a trailing dot) as identical.
 	normalized := common.NormalizeDNS(name)
 	args.Name = pulumi.String(normalized)
@@ -114,6 +111,7 @@ func createCaaDnsRecord(
 }
 
 func getZone(ctx *pulumi.Context, name string, opts ...pulumi.InvokeOption) (*route53.LookupZoneResult, error) {
+	// ctx.Log.Warn("getZone "+name, nil)
 	isPrivateZone := common.IsPrivateZone(name)
 	return route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &name, PrivateZone: &isPrivateZone}, opts...)
 }

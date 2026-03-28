@@ -18,6 +18,7 @@ var (
 	ErrBuildTimedOut    = errors.New("build timed out")
 	ErrBuildNotFound    = errors.New("build not found")
 	ErrBuildFailed      = errors.New("build failed")
+	ErrBuildFaulted     = errors.New("build faulted")
 	ErrBuildStopped     = errors.New("build was stopped (ABORTED)")
 	ErrCodeBuildTimeout = errors.New("build timed out on CodeBuild side")
 )
@@ -79,18 +80,19 @@ func (*Build) Create(
 
 	// Initial wait for IAM role to sync
 	time.Sleep(3 * time.Second)
+	const waitDur = 5 * time.Second
 
 	var buildID string
 	var err error
 	for attempt := range 2 {
 		buildID, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, inputs.Profile, maxWait)
 		if err == nil {
-			break
+			break // success
 		}
 		if attempt == 1 || !isRetryable(err) {
 			return infer.CreateResponse[BuildState]{}, fmt.Errorf("CodeBuild build failed: %w", err)
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(waitDur)
 	}
 
 	image := inputs.Destination
@@ -99,8 +101,8 @@ func (*Build) Create(
 		ID: inputs.ProjectName,
 		Output: BuildState{
 			BuildInputs: inputs,
-			BuildID:                   buildID,
-			Image:                     image,
+			BuildID:     buildID,
+			Image:       image,
 		},
 	}, nil
 }
@@ -165,26 +167,16 @@ func runCodeBuildBuild(ctx context.Context, projectName, region, profile string,
 			return buildID, fmt.Errorf("build %s: %w", buildID, ErrBuildNotFound)
 		}
 
-		build := batchOut.Builds[0]
+		build := batchOut.Builds[0] // assume only one build per request
 		switch build.BuildStatus {
 		case cbtypes.StatusTypeSucceeded:
 			return buildID, nil
 		case cbtypes.StatusTypeInProgress:
 			continue
-		case cbtypes.StatusTypeFailed, cbtypes.StatusTypeFault:
-			msg := "build failed"
-			if build.Phases != nil {
-				for _, phase := range build.Phases {
-					if phase.PhaseStatus == cbtypes.StatusTypeFailed && len(phase.Contexts) > 0 {
-						for _, c := range phase.Contexts {
-							if c.Message != nil {
-								msg = *c.Message
-							}
-						}
-					}
-				}
-			}
-			return buildID, fmt.Errorf("%s: %s: %w", build.BuildStatus, msg, ErrBuildFailed)
+		case cbtypes.StatusTypeFailed:
+			return buildID, fmt.Errorf(`{"state":"%w","reason":%q}`, ErrBuildFailed, getBuildPhaseErrorContexts(build))
+		case cbtypes.StatusTypeFault:
+			return buildID, fmt.Errorf(`{"state":"%w","reason":%q}`, ErrBuildFaulted, getBuildPhaseErrorContexts(build))
 		case cbtypes.StatusTypeStopped:
 			return buildID, ErrBuildStopped
 		case cbtypes.StatusTypeTimedOut:
@@ -193,4 +185,16 @@ func runCodeBuildBuild(ctx context.Context, projectName, region, profile string,
 			continue
 		}
 	}
+}
+
+func getBuildPhaseErrorContexts(build cbtypes.Build) string {
+	var msgs []string
+	for _, phase := range build.Phases {
+		for _, c := range phase.Contexts {
+			if c.Message != nil && len(*c.Message) > 0 {
+				msgs = append(msgs, *c.Message)
+			}
+		}
+	}
+	return strings.Join(msgs, "\n")
 }

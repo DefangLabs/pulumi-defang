@@ -26,6 +26,10 @@ func createBucket(
 			Bucket: bucket.ID(),
 			Rules: s3.BucketServerSideEncryptionConfigurationRuleArray{
 				s3.BucketServerSideEncryptionConfigurationRuleArgs{
+					ApplyServerSideEncryptionByDefault: &s3.
+						BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
+						SseAlgorithm: pulumi.String("AES256"),
+					},
 					BucketKeyEnabled: pulumi.Bool(BucketKeyEnabled.Get(ctx)), // minimize KMS costs in non-prod environments
 				},
 			},

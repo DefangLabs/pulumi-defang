@@ -10,6 +10,6 @@ func NewConfigProvider(projectName string) *ConfigProvider {
 	return &ConfigProvider{projectName: projectName}
 }
 
-func (p *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput {
+func (p *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
 	return pulumi.String("unimplemented").ToStringOutput()
 }

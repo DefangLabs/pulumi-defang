@@ -20,7 +20,7 @@ func NewConfigProvider(projectName string) *ConfigProvider {
 	return &ConfigProvider{projectName: projectName, cache: make(map[string]pulumi.StringOutput)}
 }
 
-func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput {
+func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
 	// In dry-run mode, return a placeholder value
 	if ctx.DryRun() {
 		return pulumi.Sprintf("dry-run-%s", key).ToStringOutput()
@@ -30,7 +30,7 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.Stri
 	defer cp.mu.Unlock()
 
 	if !cp.fetched {
-		values, err := getParametersByPath(ctx, cp.projectName)
+		values, err := getParametersByPath(ctx, cp.projectName, opts...)
 		if err == nil {
 			cp.fetched = true
 			for k, v := range values {
@@ -46,14 +46,18 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string) pulumi.Stri
 	return pulumi.StringOutput{}
 }
 
-func getParametersByPath(ctx *pulumi.Context, projectName string) (map[string]string, error) {
+func getParametersByPath(
+	ctx *pulumi.Context,
+	projectName string,
+	opts ...pulumi.InvokeOption,
+) (map[string]string, error) {
 	path := getSecretPath(projectName, ctx.Stack())
 	withDecryption := true
 
 	gpr, err := ssm.GetParametersByPath(ctx, &ssm.GetParametersByPathArgs{
 		Path:           path,
 		WithDecryption: &withDecryption,
-	})
+	}, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ type mockConfigProvider struct {
 	values map[string]string
 }
 
-func (m *mockConfigProvider) GetConfig(_ *pulumi.Context, key string) pulumi.StringOutput {
+func (m *mockConfigProvider) GetConfig(_ *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
 	if v, ok := m.values[key]; ok {
 		return pulumi.String(v).ToStringOutput()
 	}
