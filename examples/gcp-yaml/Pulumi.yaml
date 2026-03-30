@@ -1,4 +1,4 @@
-name: defang-gcp-yaml
+name: defang-gcp
 runtime: yaml
 description: Example using defang-gcp to deploy services to GCP (Pulumi YAML)
 
@@ -8,7 +8,7 @@ plugins:
       path: ../../bin
 
 resources:
-  gcp-yaml:
+  gcp-demo:
     type: defang-gcp:index:Project
     properties:
       services:
@@ -20,4 +20,4 @@ resources:
               appProtocol: http
 
 outputs:
-  endpoints: ${gcp-yaml.endpoints}
+  endpoints: ${gcp-demo.endpoints}

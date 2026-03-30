@@ -5,16 +5,16 @@ using DefangAzure = DefangLabs.DefangAzure;
 
 return await Deployment.RunAsync(() => 
 {
-    var azureYaml = new DefangAzure.Defangazure.Project("azure-yaml", new()
+    var azureDemo = new DefangAzure.Project("azure-demo", new()
     {
         Services = 
         {
-            { "app", new DefangAzure.Shared.Inputs.ServiceInputArgs
+            { "app", new DefangAzure.Compose.Inputs.ServiceConfigArgs
             {
                 Image = "nginx",
                 Ports = new[]
                 {
-                    new DefangAzure.Shared.Inputs.ServicePortConfigArgs
+                    new DefangAzure.Compose.Inputs.ServicePortConfigArgs
                     {
                         Target = 80,
                         Mode = "ingress",
@@ -27,7 +27,7 @@ return await Deployment.RunAsync(() =>
 
     return new Dictionary<string, object?>
     {
-        ["endpoints"] = azureYaml.Endpoints,
+        ["endpoints"] = azureDemo.Endpoints,
     };
 });
 

@@ -1,19 +1,19 @@
 package main
 
 import (
-	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/defanggcp"
-	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/shared"
+	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
+	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		gcpYaml, err := defanggcp.NewProject(ctx, "gcp-yaml", &defanggcp.ProjectArgs{
-			Services: shared.ServiceInputMap{
-				"app": &shared.ServiceInputArgs{
+		gcpDemo, err := defanggcp.NewProject(ctx, "gcp-demo", &defanggcp.ProjectArgs{
+			Services: compose.ServiceConfigMap{
+				"app": &compose.ServiceConfigArgs{
 					Image: pulumi.String("nginx"),
-					Ports: shared.ServicePortConfigArray{
-						&shared.ServicePortConfigArgs{
+					Ports: compose.ServicePortConfigArray{
+						&compose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
 							Mode:        pulumi.String("ingress"),
 							AppProtocol: pulumi.String("http"),
@@ -25,7 +25,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		ctx.Export("endpoints", gcpYaml.Endpoints)
+		ctx.Export("endpoints", gcpDemo.Endpoints)
 		return nil
 	})
 }

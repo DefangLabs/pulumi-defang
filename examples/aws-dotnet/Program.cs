@@ -5,16 +5,16 @@ using DefangAws = DefangLabs.DefangAws;
 
 return await Deployment.RunAsync(() => 
 {
-    var awsYaml = new DefangAws.Project("aws-yaml", new()
+    var awsDemo = new DefangAws.Project("aws-demo", new()
     {
         Services = 
         {
-            { "app", new DefangAws.Shared.Inputs.ServiceInputArgs
+            { "app", new DefangAws.Compose.Inputs.ServiceConfigArgs
             {
                 Image = "nginx",
                 Ports = new[]
                 {
-                    new DefangAws.Shared.Inputs.ServicePortConfigArgs
+                    new DefangAws.Compose.Inputs.ServicePortConfigArgs
                     {
                         Target = 80,
                         Mode = "ingress",
@@ -27,7 +27,7 @@ return await Deployment.RunAsync(() =>
 
     return new Dictionary<string, object?>
     {
-        ["endpoints"] = awsYaml.Endpoints,
+        ["endpoints"] = awsDemo.Endpoints,
     };
 });
 

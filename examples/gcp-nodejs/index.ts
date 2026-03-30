@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as defang_gcp from "@defang-io/pulumi-defang-gcp";
 
-const gcpYaml = new defang_gcp.defanggcp.Project("gcp-yaml", {services: {
+const gcpDemo = new defang_gcp.Project("gcp-demo", {services: {
     app: {
         image: "nginx",
         ports: [{
@@ -11,4 +11,4 @@ const gcpYaml = new defang_gcp.defanggcp.Project("gcp-yaml", {services: {
         }],
     },
 }});
-export const endpoints = gcpYaml.endpoints;
+export const endpoints = gcpDemo.endpoints;

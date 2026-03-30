@@ -1,4 +1,4 @@
-name: defang-aws-yaml
+name: defang-aws
 runtime: dotnet
 description: Example using defang-aws to deploy services to AWS (Pulumi YAML)
 plugins:
