@@ -9,6 +9,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/servicenetworking"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -33,6 +34,37 @@ type GlobalConfig struct {
 	Stack             string                        // Pulumi stack name (e.g. "dev")
 }
 
+// EnableGcpAPIs enables the GCP APIs required by the project.
+func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.ResourceOption) error {
+	apis := []string{
+		"storage.googleapis.com",              // Cloud Storage API
+		"artifactregistry.googleapis.com",     // Artifact Registry API
+		"run.googleapis.com",                  // Cloud Run API
+		"iam.googleapis.com",                  // IAM API
+		"cloudresourcemanager.googleapis.com", // For service account and role management
+		"cloudbuild.googleapis.com",           // For building images using cloud build
+		"compute.googleapis.com",              // For load balancer
+		"dns.googleapis.com",                  // For DNS
+		"secretmanager.googleapis.com",        // For config/secrets
+		"sqladmin.googleapis.com",             // For Cloud SQL
+		"servicenetworking.googleapis.com",    // For VPC peering
+		"redis.googleapis.com",                // For Redis
+		"certificatemanager.googleapis.com",   // For SSL certs
+		"firestore.googleapis.com",            // For Firestore MongoDB
+	}
+
+	opts = append(opts, pulumi.RetainOnDelete(true))
+	for _, api := range apis {
+		if _, err := projects.NewService(ctx, api, &projects.ServiceArgs{
+			Project: pulumi.String(gcpProject),
+			Service: pulumi.String(api),
+		}, opts...); err != nil {
+			return fmt.Errorf("failed to enable API %s: %w", api, err)
+		}
+	}
+	return nil
+}
+
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
 // domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 // a public DNS managed zone, a wildcard DNS authorization, and a wildcard certificate
@@ -45,6 +77,7 @@ func BuildGlobalConfig(
 	opts ...pulumi.ResourceOption,
 ) (*GlobalConfig, error) {
 	region := GcpRegion(ctx)
+	gcpProject := gcpProjectId(ctx)
 
 	vpc, err := compute.NewNetwork(ctx, projectName+"-vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
@@ -117,7 +150,7 @@ func BuildGlobalConfig(
 	cfg := &GlobalConfig{
 		Stack:         ctx.Stack(),
 		Region:        region,
-		GcpProject:    gcpProjectId(ctx),
+		GcpProject:    gcpProject,
 		VpcId:         vpc.ID().ToStringOutput(),
 		SubnetId:      subnet.ID().ToStringOutput(),
 		PublicIP:      publicIP,

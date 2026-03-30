@@ -88,6 +88,10 @@ func buildProject(
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
 
+	if err := providergcp.EnableGcpAPIs(ctx, infra.GcpProject, childOpts...); err != nil {
+		return nil, err
+	}
+
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → component resource for dependees
@@ -199,7 +203,7 @@ func buildService(
 	default:
 		var err error
 		endpoint, lbEntry, err = buildContainerService(
-				ctx, projectName, configProvider, svcName, svc, infra, svcComp, svcChildOpts)
+			ctx, projectName, configProvider, svcName, svc, infra, svcComp, svcChildOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, err
 		}
