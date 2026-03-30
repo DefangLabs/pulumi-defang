@@ -1,0 +1,144 @@
+package program
+
+import (
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
+	gcpcompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
+)
+
+func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+	cfg := config.New(ctx, "gcp")
+
+	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
+		Project: pulumi.StringPtr(cfg.Require("project")),
+		Region:  pulumi.StringPtr(cfg.Require("region")),
+		DefaultLabels: pulumi.StringMap{
+			"defang-org":     pulumi.String(ctx.Organization()),
+			"defang-project": pulumi.String(ctx.Project()),
+			"defang-stack":   pulumi.String(ctx.Stack()),
+			"defang-version": pulumi.String(Version),
+		},
+	})
+	if err != nil {
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	project, err := defanggcp.NewProject(ctx, ctx.Project(), toGCPArgs(cf), pulumi.Providers(gcpProvider))
+	if err != nil {
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+	return project.Endpoints, project.LoadBalancerDns, nil
+}
+
+func toGCPArgs(cf *compose.Project) *defanggcp.ProjectArgs {
+	args := &defanggcp.ProjectArgs{
+		Services: toGCPServices(cf.Services),
+	}
+	if len(cf.Networks) > 0 {
+		nm := make(gcpcompose.NetworkConfigMap, len(cf.Networks))
+		for k, v := range cf.Networks {
+			nm[string(k)] = gcpcompose.NetworkConfigArgs{Internal: pulumi.Bool(v.Internal)}
+		}
+		args.Networks = nm
+	}
+	return args
+}
+
+func toGCPServices(services compose.Services) gcpcompose.ServiceConfigMap {
+	m := make(gcpcompose.ServiceConfigMap, len(services))
+	for name, svc := range services {
+		m[name] = toGCPServiceArgs(svc)
+	}
+	return m
+}
+
+func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
+	args := gcpcompose.ServiceConfigArgs{
+		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
+		Environment: pulumi.ToStringMap(svc.Environment),
+		Command:     pulumi.ToStringArray(svc.Command),
+		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
+	}
+	if svc.DomainName != "" {
+		args.DomainName = pulumi.StringPtr(svc.DomainName)
+	}
+	if svc.Build != nil {
+		args.Build = gcpcompose.BuildConfigArgs{
+			Context:    svc.Build.Context,
+			Dockerfile: pulumi.StringPtrFromPtr(svc.Build.Dockerfile),
+			Args:       pulumi.ToStringMap(svc.Build.Args),
+			ShmSize:    pulumi.StringPtrFromPtr(svc.Build.ShmSize),
+			Target:     pulumi.StringPtrFromPtr(svc.Build.Target),
+		}
+	}
+	if len(svc.Ports) > 0 {
+		ports := make(gcpcompose.ServicePortConfigArray, 0, len(svc.Ports))
+		for _, p := range svc.Ports {
+			ports = append(ports, gcpcompose.ServicePortConfigArgs{
+				Target:      pulumi.Int(int(p.Target)),
+				Mode:        pulumi.String(p.Mode),
+				Protocol:    pulumi.String(p.Protocol),
+				AppProtocol: pulumi.String(p.AppProtocol),
+			})
+		}
+		args.Ports = ports
+	}
+	if svc.Deploy != nil {
+		da := gcpcompose.DeployConfigArgs{}
+		if svc.Deploy.Replicas != nil {
+			da.Replicas = pulumi.IntPtr(int(*svc.Deploy.Replicas))
+		}
+		if svc.Deploy.Resources != nil && svc.Deploy.Resources.Reservations != nil {
+			r := svc.Deploy.Resources.Reservations
+			ra := gcpcompose.ResourceConfigArgs{
+				Cpus:   pulumi.Float64PtrFromPtr(r.CPUs),
+				Memory: pulumi.StringPtrFromPtr(r.Memory),
+			}
+			da.Resources = gcpcompose.ResourcesArgs{Reservations: ra}
+		}
+		args.Deploy = da
+	}
+	if svc.Postgres != nil {
+		args.Postgres = gcpcompose.PostgresConfigArgs{
+			AllowDowntime: pulumi.BoolPtrFromPtr(svc.Postgres.AllowDowntime),
+			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Postgres.FromSnapshot),
+		}
+	}
+	if svc.Redis != nil {
+		args.Redis = gcpcompose.RedisConfigArgs{
+			AllowDowntime: pulumi.BoolPtrFromPtr(svc.Redis.AllowDowntime),
+			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Redis.FromSnapshot),
+		}
+	}
+	if svc.HealthCheck != nil {
+		args.HealthCheck = gcpcompose.HealthCheckConfigArgs{
+			Test:               pulumi.ToStringArray(svc.HealthCheck.Test),
+			IntervalSeconds:    pulumi.IntPtr(int(svc.HealthCheck.IntervalSeconds)),
+			TimeoutSeconds:     pulumi.IntPtr(int(svc.HealthCheck.TimeoutSeconds)),
+			Retries:            pulumi.IntPtr(int(svc.HealthCheck.Retries)),
+			StartPeriodSeconds: pulumi.IntPtr(int(svc.HealthCheck.StartPeriodSeconds)),
+		}
+	}
+	if len(svc.Networks) > 0 {
+		nm := make(gcpcompose.ServiceNetworkConfigMap, len(svc.Networks))
+		for k, v := range svc.Networks {
+			nm[string(k)] = gcpcompose.ServiceNetworkConfigArgs{Aliases: pulumi.ToStringArray(v.Aliases)}
+		}
+		args.Networks = nm
+	}
+	if len(svc.DependsOn) > 0 {
+		dm := make(gcpcompose.ServiceDependencyMap, len(svc.DependsOn))
+		for k, v := range svc.DependsOn {
+			dm[k] = gcpcompose.ServiceDependencyArgs{Condition: pulumi.String(v.Condition), Required: pulumi.Bool(v.Required)}
+		}
+		args.DependsOn = dm
+	}
+	if svc.LLM != nil {
+		args.Llm = gcpcompose.LlmConfigArgs{}
+	}
+	return args
+}
