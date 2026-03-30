@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v2"
 	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v2"
+	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -23,9 +25,18 @@ var (
 // BuildInfra holds the shared Azure Container Registry used across all builds in a project.
 // Created once per project when at least one service requires a build.
 type BuildInfra struct {
-	registry       *containerregistry.Registry
-	subscriptionID pulumi.StringOutput
+	registry          *containerregistry.Registry
+	subscriptionID    pulumi.StringOutput
+	// managedIdentityID is the resource ID of the user-assigned managed identity
+	// granted AcrPull on the registry. Container Apps use it for image pull auth.
+	managedIdentityID pulumi.StringOutput
 }
+
+// ManagedIdentityID returns the resource ID of the AcrPull managed identity.
+func (b *BuildInfra) ManagedIdentityID() pulumi.StringOutput { return b.managedIdentityID }
+
+// LoginServer returns the ACR login server hostname (e.g. "myregistry.azurecr.io").
+func (b *BuildInfra) LoginServer() pulumi.StringOutput { return b.registry.LoginServer }
 
 // acrImageBuildResource is the Pulumi resource state for the ACRImageBuild custom resource.
 // Used with ctx.RegisterResource to create the resource from within the component.
@@ -63,7 +74,12 @@ func sanitizeRegistryName(name string) string {
 	return s
 }
 
-// CreateBuildInfra creates the shared Azure Container Registry for image builds.
+// acrPullRoleDefinitionID is the built-in Azure role for pulling images from ACR.
+const acrPullRoleDefinitionID = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+
+// CreateBuildInfra creates the shared Azure Container Registry for image builds,
+// a user-assigned managed identity, and an AcrPull role assignment so Container
+// Apps can pull built images without admin credentials.
 func CreateBuildInfra(
 	ctx *pulumi.Context,
 	name string,
@@ -79,7 +95,6 @@ func CreateBuildInfra(
 		Sku: &containerregistry.SkuArgs{
 			Name: pulumi.String(string(containerregistry.SkuNameStandard)),
 		},
-		AdminUserEnabled: pulumi.Bool(true),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACR registry: %w", err)
@@ -87,9 +102,43 @@ func CreateBuildInfra(
 
 	subID := registry.ID().ToStringOutput().ApplyT(subscriptionIDFromResourceID).(pulumi.StringOutput)
 
+	// User-assigned managed identity for Container Apps to pull built images.
+	identity, err := managedidentity.NewUserAssignedIdentity(ctx, name+"-acr-identity", &managedidentity.UserAssignedIdentityArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		Location:          pulumi.String(location),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating managed identity: %w", err)
+	}
+
+	// Grant the identity AcrPull on the registry.
+	roleDefID := pulumi.Sprintf(
+		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
+		subID, acrPullRoleDefinitionID,
+	)
+	roleAssignment, err := authorization.NewRoleAssignment(ctx, name+"-acr-pull", &authorization.RoleAssignmentArgs{
+		Scope:            registry.ID(),
+		RoleDefinitionId: roleDefID,
+		PrincipalId:      identity.PrincipalId,
+		PrincipalType:    pulumi.String("ServicePrincipal"),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating AcrPull role assignment: %w", err)
+	}
+
+	// Derive managedIdentityID from both the identity AND the role assignment so
+	// the Container App implicitly depends on the role assignment being active
+	// before it attempts to pull images from ACR.
+	managedIdentityID := pulumi.All(identity.ID(), roleAssignment.ID()).ApplyT(
+		func(args []interface{}) string {
+			return string(args[0].(pulumi.ID))
+		},
+	).(pulumi.StringOutput)
+
 	return &BuildInfra{
-		registry:       registry,
-		subscriptionID: subID,
+		registry:          registry,
+		subscriptionID:    subID,
+		managedIdentityID: managedIdentityID,
 	}, nil
 }
 

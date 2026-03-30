@@ -110,11 +110,31 @@ func CreateContainerApp(
 		probes = append(probes, probe)
 	}
 
+	// If there's a build infra (ACR), configure the Container App to pull images
+	// using the pre-created user-assigned managed identity (AcrPull role).
+	var registries app.RegistryCredentialsArray
+	var identity *app.ManagedServiceIdentityArgs
+	if infra.BuildInfra != nil {
+		identityID := infra.BuildInfra.ManagedIdentityID()
+		registries = app.RegistryCredentialsArray{
+			app.RegistryCredentialsArgs{
+				Server:   infra.BuildInfra.LoginServer(),
+				Identity: identityID,
+			},
+		}
+		identity = &app.ManagedServiceIdentityArgs{
+			Type:                   pulumi.String("UserAssigned"),
+			UserAssignedIdentities: pulumi.StringArray{identityID},
+		}
+	}
+
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,
 		ManagedEnvironmentId: infra.Environment.ID().ToStringOutput(),
+		Identity:             identity,
 		Configuration: &app.ConfigurationArgs{
-			Ingress: ingress,
+			Ingress:    ingress,
+			Registries: registries,
 		},
 		Template: &app.TemplateArgs{
 			Scale: &app.ScaleArgs{
