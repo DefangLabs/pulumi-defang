@@ -469,17 +469,19 @@ func CreateECSService(
 
 	if svc.HasIngressPorts() && listener != nil {
 		serviceLabel := common.SafeLabel(serviceName)
-		publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain)
 
 		firstIngress := true
 		for _, port := range svc.Ports {
-			endpoint := fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.ProjectDomain)
+			var endpoints []string
 
-			endpoints := []string{endpoint}
+			if infra.ProjectDomain != "" {
+				endpoints = append(endpoints, fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.ProjectDomain))
+			}
 			if port.IsIngress() && firstIngress {
 				if svc.DomainName != "" {
 					endpoints = append(endpoints, svc.DomainName)
-				} else {
+				} else if infra.ProjectDomain != "" {
+					publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain)
 					// FIXME: which service should listen on the project domain?
 					endpoints = append(endpoints, publicFqdn, infra.ProjectDomain)
 				}
