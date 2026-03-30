@@ -1,9 +1,11 @@
 package aws
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -300,19 +302,19 @@ func CreateECSService(
 	memMiB := svc.GetMemoryMiB()
 
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
-	portMappings := make([]awsecs.PortMapping, 0, len(svc.Ports))
+	portMappings := make([]PortMapping, 0, len(svc.Ports))
 	for _, p := range svc.Ports {
-		portMappings = append(portMappings, awsecs.PortMapping{
+		portMappings = append(portMappings, PortMapping{
 			ContainerPort: ptr.Int32(p.Target),
-			// HostPort:      p.Target,
-			Protocol: portProtocol(p),
+			HostPort:      ptr.Int32(p.Target), // awsvpc mode: AWS normalizes hostPort = containerPort
+			Protocol:      portProtocol(p),
 		})
 	}
 
 	// Build health check with clamped values (matches TS clamp ranges)
-	var healthCheck *awsecs.HealthCheck
+	var healthCheck *HealthCheck
 	if svc.HealthCheck != nil && len(svc.HealthCheck.Test) > 0 {
-		healthCheck = &awsecs.HealthCheck{
+		healthCheck = &HealthCheck{
 			Command:  svc.HealthCheck.Test,
 			Interval: ptr.Int32(clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30)),
 			Timeout:  ptr.Int32(clampInt(svc.HealthCheck.TimeoutSeconds, 2, 60, 5)),
@@ -325,15 +327,19 @@ func CreateECSService(
 	}
 
 	// Build environment variables (plain strings, resolved before JSON marshaling)
-	envVars := []awsecs.KeyValuePair{
+	envVars := []KeyValuePair{
 		{Name: ptr.String("DEFANG_SERVICE"), Value: ptr.String(serviceName)},
 	}
 	if svc.DomainName != "" {
-		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(svc.DomainName)})
+		envVars = append(envVars, KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(svc.DomainName)})
 	}
 	for k, v := range svc.Environment {
-		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String(k), Value: ptr.String(v)})
+		envVars = append(envVars, KeyValuePair{Name: ptr.String(k), Value: ptr.String(v)})
 	}
+	// Sort environment variables for deterministic JSON output (map iteration order is random)
+	slices.SortFunc(envVars, func(a, b KeyValuePair) int {
+		return cmp.Compare(*a.Name, *b.Name)
+	})
 
 	// Resolve outputs (image URI, log group name) before building the container
 	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
@@ -353,10 +359,10 @@ func CreateECSService(
 	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []any) (string, error) {
 		imageUri := all[0].(string)
 
-		var logConfiguration *awsecs.LogConfiguration
+		var logConfiguration *LogConfiguration
 		if hasLogGroup {
 			logGroupName := all[1].(string)
-			logConfiguration = &awsecs.LogConfiguration{
+			logConfiguration = &LogConfiguration{
 				LogDriver: awsecs.LogDriverAwslogs,
 				Options: map[string]string{
 					"awslogs-group":         logGroupName,
@@ -369,7 +375,7 @@ func CreateECSService(
 		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
 
-		containerDefs := []awsecs.ContainerDefinition{{
+		containerDefs := []ContainerDefinition{{
 			Name:             &containerName,
 			Essential:        ptr.Bool(true),
 			PortMappings:     portMappings,
@@ -379,29 +385,33 @@ func CreateECSService(
 			HealthCheck:      healthCheck,
 			Image:            &imageUri,
 			LogConfiguration: logConfiguration,
+			// AWS normalizes these to [] on read; use empty slices to avoid null vs [] diffs
+			MountPoints:    []MountPoint{},
+			SystemControls: []SystemControl{},
+			VolumesFrom:    []VolumeFrom{},
 		}}
 
 		if svc.HasHostPorts() && hasPrivateZone {
 			privateZoneID := all[2].(string)                                         // FIXME: this is [1] if there's no loggroup
 			privateFqdn := common.SafeLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
-			sidecarDef := awsecs.ContainerDefinition{
+			sidecarDef := ContainerDefinition{
 				Name:      ptr.String("route53-sidecar"),
 				Image:     ptr.String("public.ecr.aws/defang-io/route53-sidecar:65e431c"),
 				Essential: ptr.Bool(false),
-				Environment: []awsecs.KeyValuePair{
+				Environment: []KeyValuePair{
 					{Name: ptr.String("HOSTEDZONE"), Value: ptr.String(privateZoneID)},
 					{Name: ptr.String("DNS"), Value: ptr.String(privateFqdn)},
 					{Name: ptr.String("IPADDRESS"), Value: ptr.String("ecs")},
 					// not (always?) set by the ECS agent; https://github.com/aws/containers-roadmap/issues/1611
 					{Name: ptr.String("AWS_REGION"), Value: ptr.String(infra.Region)},
 				},
-				DependsOn: []awsecs.ContainerDependency{{
+				DependsOn: []ContainerDependency{{
 					ContainerName: &containerName,
 					Condition:     awsecs.ContainerConditionStart,
 				}},
 			}
 			if Route53SidecarLogs.Get(ctx) && logConfiguration != nil {
-				sidecarDef.LogConfiguration = &awsecs.LogConfiguration{
+				sidecarDef.LogConfiguration = &LogConfiguration{
 					LogDriver: awsecs.LogDriverAwslogs,
 					Options: map[string]string{
 						"awslogs-group":         logConfiguration.Options["awslogs-group"],
