@@ -42,6 +42,7 @@ func CreateContainerApp(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
+	imageURI pulumi.StringInput,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
 	// Build environment variables
@@ -123,7 +124,7 @@ func CreateContainerApp(
 			Containers: app.ContainerArray{
 				app.ContainerArgs{
 					Name:    pulumi.String(serviceName),
-					Image:   pulumi.String(*svc.Image), // TODO: support build config
+					Image:   imageURI,
 					Command: compose.ToPulumiStringArray(svc.Entrypoint),
 					Args:    compose.ToPulumiStringArray(svc.Command),
 					Env:     envs,

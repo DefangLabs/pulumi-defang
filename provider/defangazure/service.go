@@ -75,7 +75,16 @@ func (*Service) Construct(
 
 	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
 
-	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, childOpt)
+	if svc.Build != nil && infra.BuildInfra == nil {
+		return nil, fmt.Errorf("service %s has build config but build infrastructure is not set up", name)
+	}
+
+	imageURI, err := azure.GetServiceImage(ctx, name, svc, infra.BuildInfra, infra, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
+	}
+
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}

@@ -60,9 +60,26 @@ func (*Project) Construct(
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
 
+	// Create shared build infrastructure if any service has a build config.
+	hasBuild := false
+	for _, svc := range inputs.Services {
+		if svc.Build != nil {
+			hasBuild = true
+			break
+		}
+	}
+
 	infra := &providerazure.SharedInfra{
 		ResourceGroup: rg,
 		Environment:   env,
+	}
+
+	if hasBuild {
+		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, location, childOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating build infrastructure: %w", err)
+		}
+		infra.BuildInfra = buildInfra
 	}
 
 	type serviceComponent struct{ pulumi.ResourceState }
@@ -91,7 +108,12 @@ func (*Project) Construct(
 			}
 			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-			caResult, err := providerazure.CreateContainerApp(ctx, svcName, svc, infra, svcOpts...)
+			imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, svcOpts...)
+			if err != nil {
+				return nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
+			}
+
+			caResult, err := providerazure.CreateContainerApp(ctx, svcName, svc, infra, imageURI, svcOpts...)
 			if err != nil {
 				return nil, fmt.Errorf("creating Container App %s: %w", svcName, err)
 			}
