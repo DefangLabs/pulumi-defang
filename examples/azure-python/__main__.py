@@ -1,7 +1,7 @@
 import pulumi
 import pulumi_defang_azure as defang_azure
 
-azure_yaml = defang_azure.defangazure.Project("azure-yaml", services={
+azure_demo = defang_azure.Project("azure-demo", services={
     "app": {
         "image": "nginx",
         "ports": [{
@@ -11,4 +11,4 @@ azure_yaml = defang_azure.defangazure.Project("azure-yaml", services={
         }],
     },
 })
-pulumi.export("endpoints", azure_yaml.endpoints)
+pulumi.export("endpoints", azure_demo.endpoints)

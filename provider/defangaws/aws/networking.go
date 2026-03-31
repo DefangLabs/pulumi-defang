@@ -23,7 +23,7 @@ type NetworkingResult struct {
 
 // ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
 func ResolveNetworking(
-	ctx *pulumi.Context, projectName string, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context, projectName string, opt pulumi.ResourceOrInvokeOption,
 ) (*NetworkingResult, error) {
 	privateDomain := common.SafeLabel(projectName) + ".internal"
 
@@ -51,7 +51,7 @@ func ResolveNetworking(
 	// 	}, nil
 	// }
 
-	region, err := aws.GetRegion(ctx, nil)
+	region, err := aws.GetRegion(ctx, nil, opt)
 	if err != nil {
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
@@ -77,7 +77,7 @@ func ResolveNetworking(
 		Tags: pulumi.StringMap{
 			"Name": pulumi.String(vpcName),
 		},
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func ResolveNetworking(
 		Vpcs: route53.ZoneVpcArray{
 			route53.ZoneVpcArgs{VpcId: vpc.VpcId},
 		},
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Route53 private hosted zone: %w", err)
 	}
@@ -99,7 +99,7 @@ func ResolveNetworking(
 	_, err = createSoaRecord(ctx, privateDomain, privateZone.ToZoneOutput(), SoaRecordArgs{
 		Serial:  pulumi.Int(2023022101),
 		Minimum: pulumi.Int(15),
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating SOA record: %w", err)
 	}
@@ -107,7 +107,7 @@ func ResolveNetworking(
 	options, err := ec2.NewVpcDhcpOptions(ctx, "dhcp-options", &ec2.VpcDhcpOptionsArgs{
 		DomainName:        pulumi.String(privateDomain),
 		DomainNameServers: pulumi.StringArray{pulumi.String("AmazonProvidedDNS")},
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating VPC DHCP options: %w", err)
 	}
@@ -115,7 +115,7 @@ func ResolveNetworking(
 	_, err = ec2.NewVpcDhcpOptionsAssociation(ctx, "dhcp-options-association", &ec2.VpcDhcpOptionsAssociationArgs{
 		DhcpOptionsId: options.ID(),
 		VpcId:         vpc.VpcId,
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating VPC DHCP options association: %w", err)
 	}

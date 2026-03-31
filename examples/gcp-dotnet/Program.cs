@@ -5,16 +5,16 @@ using DefangGcp = DefangLabs.DefangGcp;
 
 return await Deployment.RunAsync(() => 
 {
-    var gcpYaml = new DefangGcp.Defanggcp.Project("gcp-yaml", new()
+    var gcpDemo = new DefangGcp.Project("gcp-demo", new()
     {
         Services = 
         {
-            { "app", new DefangGcp.Shared.Inputs.ServiceInputArgs
+            { "app", new DefangGcp.Compose.Inputs.ServiceConfigArgs
             {
                 Image = "nginx",
                 Ports = new[]
                 {
-                    new DefangGcp.Shared.Inputs.ServicePortConfigArgs
+                    new DefangGcp.Compose.Inputs.ServicePortConfigArgs
                     {
                         Target = 80,
                         Mode = "ingress",
@@ -27,7 +27,7 @@ return await Deployment.RunAsync(() =>
 
     return new Dictionary<string, object?>
     {
-        ["endpoints"] = gcpYaml.Endpoints,
+        ["endpoints"] = gcpDemo.Endpoints,
     };
 });
 

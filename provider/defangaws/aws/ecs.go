@@ -1,9 +1,11 @@
 package aws
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -160,13 +162,13 @@ func roleArn(r *iam.Role) pulumi.StringOutput {
 	return r.Arn
 }
 
-// createPrivateSG creates a per-service security group with port-specific ingress rules.
-// Matches TS createPrivateSG → createInstanceSG pattern:
+// createServiceSG creates a per-service security group with port-specific ingress rules.
+// Matches TS createServiceSG → createInstanceSG pattern:
 //   - LB-backed (ingress) ports: allow from ALB SG (or VPC CIDR if no ALB SG)
 //   - Public non-LB ports: allow from 0.0.0.0/0
 //   - Private non-LB ports: allow from privateSG (infra.PrivateSgID) as source SG
 //   - ICMP PMTUD rule when there are endpoints
-func createPrivateSG(
+func createServiceSG(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
@@ -257,7 +259,7 @@ func CreateECSService(
 	svc compose.ServiceConfig,
 	args *ECSServiceArgs,
 	deps []pulumi.Resource,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*EcsServiceResult, error) {
 	infra := args.Infra
 	if infra == nil {
@@ -265,7 +267,7 @@ func CreateECSService(
 	}
 
 	// Create task role
-	taskRole, err := createTaskRole(ctx, serviceName, opts...)
+	taskRole, err := createTaskRole(ctx, serviceName, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating task role: %w", err)
 	}
@@ -276,7 +278,7 @@ func CreateECSService(
 		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-AllowRoute53Sidecar", &iam.RolePolicyAttachmentArgs{
 			Role:      taskRole.Name,
 			PolicyArn: infra.route53SidecarPolicy.Arn,
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("attaching route53 sidecar policy: %w", err)
 		}
@@ -288,7 +290,7 @@ func CreateECSService(
 		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-BedrockPolicy", &iam.RolePolicyAttachmentArgs{
 			Role:      taskRole.Name,
 			PolicyArn: infra.bedrockPolicy.Arn,
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("attaching bedrock policy: %w", err)
 		}
@@ -300,19 +302,19 @@ func CreateECSService(
 	memMiB := svc.GetMemoryMiB()
 
 	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
-	portMappings := make([]awsecs.PortMapping, 0, len(svc.Ports))
+	portMappings := make([]PortMapping, 0, len(svc.Ports))
 	for _, p := range svc.Ports {
-		portMappings = append(portMappings, awsecs.PortMapping{
+		portMappings = append(portMappings, PortMapping{
 			ContainerPort: ptr.Int32(p.Target),
-			// HostPort:      p.Target,
-			Protocol: portProtocol(p),
+			HostPort:      ptr.Int32(p.Target), // awsvpc mode: AWS normalizes hostPort = containerPort
+			Protocol:      portProtocol(p),
 		})
 	}
 
 	// Build health check with clamped values (matches TS clamp ranges)
-	var healthCheck *awsecs.HealthCheck
+	var healthCheck *HealthCheck
 	if svc.HealthCheck != nil && len(svc.HealthCheck.Test) > 0 {
-		healthCheck = &awsecs.HealthCheck{
+		healthCheck = &HealthCheck{
 			Command:  svc.HealthCheck.Test,
 			Interval: ptr.Int32(clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30)),
 			Timeout:  ptr.Int32(clampInt(svc.HealthCheck.TimeoutSeconds, 2, 60, 5)),
@@ -325,15 +327,19 @@ func CreateECSService(
 	}
 
 	// Build environment variables (plain strings, resolved before JSON marshaling)
-	envVars := []awsecs.KeyValuePair{
+	envVars := []KeyValuePair{
 		{Name: ptr.String("DEFANG_SERVICE"), Value: ptr.String(serviceName)},
 	}
 	if svc.DomainName != "" {
-		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(svc.DomainName)})
+		envVars = append(envVars, KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(svc.DomainName)})
 	}
 	for k, v := range svc.Environment {
-		envVars = append(envVars, awsecs.KeyValuePair{Name: ptr.String(k), Value: ptr.String(v)})
+		envVars = append(envVars, KeyValuePair{Name: ptr.String(k), Value: ptr.String(v)})
 	}
+	// Sort environment variables for deterministic JSON output (map iteration order is random)
+	slices.SortFunc(envVars, func(a, b KeyValuePair) int {
+		return cmp.Compare(*a.Name, *b.Name)
+	})
 
 	// Resolve outputs (image URI, log group name) before building the container
 	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
@@ -353,10 +359,10 @@ func CreateECSService(
 	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []any) (string, error) {
 		imageUri := all[0].(string)
 
-		var logConfiguration *awsecs.LogConfiguration
+		var logConfiguration *LogConfiguration
 		if hasLogGroup {
 			logGroupName := all[1].(string)
-			logConfiguration = &awsecs.LogConfiguration{
+			logConfiguration = &LogConfiguration{
 				LogDriver: awsecs.LogDriverAwslogs,
 				Options: map[string]string{
 					"awslogs-group":         logGroupName,
@@ -369,7 +375,7 @@ func CreateECSService(
 		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
 
-		containerDefs := []awsecs.ContainerDefinition{{
+		containerDefs := []ContainerDefinition{{
 			Name:             &containerName,
 			Essential:        ptr.Bool(true),
 			PortMappings:     portMappings,
@@ -379,29 +385,33 @@ func CreateECSService(
 			HealthCheck:      healthCheck,
 			Image:            &imageUri,
 			LogConfiguration: logConfiguration,
+			// AWS normalizes these to [] on read; use empty slices to avoid null vs [] diffs
+			MountPoints:    []MountPoint{},
+			SystemControls: []SystemControl{},
+			VolumesFrom:    []VolumeFrom{},
 		}}
 
 		if svc.HasHostPorts() && hasPrivateZone {
-			privateZoneID := all[2].(*string)
-			privateFqdn := fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain)
-			sidecarDef := awsecs.ContainerDefinition{
+			privateZoneID := all[2].(string)                                         // FIXME: this is [1] if there's no loggroup
+			privateFqdn := common.SafeLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
+			sidecarDef := ContainerDefinition{
 				Name:      ptr.String("route53-sidecar"),
 				Image:     ptr.String("public.ecr.aws/defang-io/route53-sidecar:65e431c"),
 				Essential: ptr.Bool(false),
-				Environment: []awsecs.KeyValuePair{
-					{Name: ptr.String("HOSTEDZONE"), Value: ptr.String(*privateZoneID)},
+				Environment: []KeyValuePair{
+					{Name: ptr.String("HOSTEDZONE"), Value: ptr.String(privateZoneID)},
 					{Name: ptr.String("DNS"), Value: ptr.String(privateFqdn)},
 					{Name: ptr.String("IPADDRESS"), Value: ptr.String("ecs")},
 					// not (always?) set by the ECS agent; https://github.com/aws/containers-roadmap/issues/1611
 					{Name: ptr.String("AWS_REGION"), Value: ptr.String(infra.Region)},
 				},
-				DependsOn: []awsecs.ContainerDependency{{
+				DependsOn: []ContainerDependency{{
 					ContainerName: &containerName,
 					Condition:     awsecs.ContainerConditionStart,
 				}},
 			}
 			if Route53SidecarLogs.Get(ctx) && logConfiguration != nil {
-				sidecarDef.LogConfiguration = &awsecs.LogConfiguration{
+				sidecarDef.LogConfiguration = &LogConfiguration{
 					LogDriver: awsecs.LogDriverAwslogs,
 					Options: map[string]string{
 						"awslogs-group":         logConfiguration.Options["awslogs-group"],
@@ -440,7 +450,7 @@ func CreateECSService(
 		Tags: pulumi.StringMap{
 			"defang:service": pulumi.String(serviceName),
 		},
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating task definition: %w", err)
 	}
@@ -459,17 +469,19 @@ func CreateECSService(
 
 	if svc.HasIngressPorts() && listener != nil {
 		serviceLabel := common.SafeLabel(serviceName)
-		publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain)
 
 		firstIngress := true
 		for _, port := range svc.Ports {
-			endpoint := fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.ProjectDomain)
+			var endpoints []string
 
-			endpoints := []string{endpoint}
+			if infra.ProjectDomain != "" {
+				endpoints = append(endpoints, fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.ProjectDomain))
+			}
 			if port.IsIngress() && firstIngress {
 				if svc.DomainName != "" {
 					endpoints = append(endpoints, svc.DomainName)
-				} else {
+				} else if infra.ProjectDomain != "" {
+					publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain)
 					// FIXME: which service should listen on the project domain?
 					endpoints = append(endpoints, publicFqdn, infra.ProjectDomain)
 				}
@@ -477,7 +489,7 @@ func CreateECSService(
 				firstIngress = false
 			}
 
-			tg, lr, err := createTgLrPair(ctx, serviceName, infra.VpcID, listener, port, svc.HealthCheck, endpoints, opts...)
+			tg, lr, err := createTgLrPair(ctx, serviceName, infra.VpcID, listener, port, svc.HealthCheck, endpoints, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
 			}
@@ -503,8 +515,8 @@ func CreateECSService(
 		subnetIds = infra.PublicSubnetIDs
 	}
 
-	// Create per-service SG with port-specific ingress (matches TS createprivateSg)
-	privateSg, err := createPrivateSG(ctx, serviceName, svc, infra, isPrivate, opts...)
+	// Create per-service SG with port-specific ingress (matches TS createServiceSg)
+	serviceSG, err := createServiceSG(ctx, serviceName, svc, infra, isPrivate, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +527,7 @@ func CreateECSService(
 		clusterArn = infra.Cluster.Arn
 	}
 	// Attach both per-service SG and shared privateSG (matches TS: [privateSg])
-	securityGroups := pulumi.StringArray{privateSg.ID()}
+	securityGroups := pulumi.StringArray{serviceSG.ID()}
 	if infra.PrivateSgID != nil {
 		securityGroups = append(securityGroups, infra.PrivateSgID.ToIDPtrOutput().Elem())
 	}
@@ -558,11 +570,13 @@ func CreateECSService(
 		ecsServiceArgs.WaitForSteadyState = pulumi.Bool(true)
 	}
 
-	ecsServiceOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.DependsOn(lbDependsOn))
-	if len(deps) > 0 {
-		ecsServiceOpts = append(ecsServiceOpts, pulumi.DependsOn(deps))
-	}
-	ecsService, err := ecs.NewService(ctx, serviceName, ecsServiceArgs, ecsServiceOpts...)
+	ecsService, err := ecs.NewService(
+		ctx,
+		serviceName,
+		ecsServiceArgs,
+		opt,
+		pulumi.DependsOn(lbDependsOn),
+		pulumi.DependsOn(deps))
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}
@@ -576,6 +590,11 @@ func CreateECSService(
 		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
 	default:
 		endpointOutput = pulumix.Val(serviceName)
+	}
+
+	err = createCertsAndRoute53Dns(ctx, serviceName, svc, args.Infra, opt)
+	if err != nil {
+		return nil, fmt.Errorf("creating certs and Route53 DNS: %w", err)
 	}
 
 	return &EcsServiceResult{

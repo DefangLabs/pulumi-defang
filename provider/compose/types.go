@@ -4,8 +4,10 @@ package compose
 
 import (
 	"regexp"
+	"time"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"gopkg.in/yaml.v3"
 )
 
 type NetworkID string
@@ -76,6 +78,15 @@ type ServiceConfig struct {
 }
 
 type LlmConfig struct{}
+
+// UnmarshalYAML allows `x-defang-llm: true` (bare boolean) in addition to an object.
+func (c *LlmConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return nil // bare true/false just enables with defaults
+	}
+	type raw LlmConfig
+	return value.Decode((*raw)(c))
+}
 
 // type ServiceModelConfig struct {}
 
@@ -160,6 +171,28 @@ type BuildConfig struct {
 	Target *string `pulumi:"target,optional" yaml:"target,omitempty"`
 }
 
+// UnmarshalYAML allows BuildConfig to be parsed from YAML, converting the
+// string "context" field into a pulumi.String.
+func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
+	// Use a plain struct to avoid infinite recursion.
+	var raw struct {
+		Context    string            `yaml:"context"`
+		Dockerfile *string           `yaml:"dockerfile,omitempty"`
+		Args       map[string]string `yaml:"args,omitempty"`
+		ShmSize    *string           `yaml:"shm_size,omitempty"`
+		Target     *string           `yaml:"target,omitempty"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	b.Context = pulumi.String(raw.Context)
+	b.Dockerfile = raw.Dockerfile
+	b.Args = raw.Args
+	b.ShmSize = raw.ShmSize
+	b.Target = raw.Target
+	return nil
+}
+
 // PostgresConfig matches the x-defang-postgres Compose extension.
 // Version is derived from image tag; DBName/Username/Password from env vars.
 type PostgresConfig struct {
@@ -170,12 +203,30 @@ type PostgresConfig struct {
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
 }
 
+// UnmarshalYAML allows `x-defang-postgres: true` (bare boolean) in addition to an object.
+func (c *PostgresConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return nil // bare true/false just enables with defaults
+	}
+	type raw PostgresConfig
+	return value.Decode((*raw)(c))
+}
+
 // RedisConfig matches the x-defang-redis Compose extension.
 // Version is derived from image tag; FromSnapshot allows restoring from a backup.
 type RedisConfig struct {
 	AllowDowntime *bool `pulumi:"allowDowntime,optional" yaml:"allow-downtime,omitempty"`
 
 	FromSnapshot *string `pulumi:"fromSnapshot,optional" yaml:"from-snapshot,omitempty"`
+}
+
+// UnmarshalYAML allows `x-defang-redis: true` (bare boolean) in addition to an object.
+func (c *RedisConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return nil // bare true/false just enables with defaults
+	}
+	type raw RedisConfig
+	return value.Decode((*raw)(c))
 }
 
 // HealthCheckConfig defines health check parameters.
@@ -197,8 +248,39 @@ type HealthCheckConfig struct {
 	StartPeriodSeconds int32 `pulumi:"startPeriodSeconds,optional" yaml:"start_period,omitempty"`
 }
 
+// UnmarshalYAML parses Docker Compose duration strings (e.g. "5s", "30s") into seconds.
+func (h *HealthCheckConfig) UnmarshalYAML(value *yaml.Node) error {
+	var raw struct {
+		Test        []string `yaml:"test,omitempty"`
+		Interval    string   `yaml:"interval,omitempty"`
+		Timeout     string   `yaml:"timeout,omitempty"`
+		Retries     int32    `yaml:"retries,omitempty"`
+		StartPeriod string   `yaml:"start_period,omitempty"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	h.Test = raw.Test
+	h.Retries = raw.Retries
+	h.IntervalSeconds = int32(parseDurationSeconds(raw.Interval))
+	h.TimeoutSeconds = int32(parseDurationSeconds(raw.Timeout))
+	h.StartPeriodSeconds = int32(parseDurationSeconds(raw.StartPeriod))
+	return nil
+}
+
+func parseDurationSeconds(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0
+	}
+	return d.Seconds()
+}
+
 type ConfigProvider interface {
-	GetConfig(ctx *pulumi.Context, key string) pulumi.StringOutput
+	GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput
 }
 
 // PostgresConfigArgs holds resolved managed Postgres configuration.

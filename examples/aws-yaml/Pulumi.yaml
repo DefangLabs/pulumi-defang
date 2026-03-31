@@ -1,4 +1,4 @@
-name: defang-aws-yaml
+name: defang-aws
 runtime: yaml
 description: Example using defang-aws to deploy services to AWS (Pulumi YAML)
 
@@ -8,7 +8,7 @@ plugins:
       path: ../../bin
 
 resources:
-  aws-yaml:
+  aws-demo:
     type: defang-aws:index:Project
     properties:
       services:
@@ -20,4 +20,4 @@ resources:
               appProtocol: http
 
 outputs:
-  endpoints: ${aws-yaml.endpoints}
+  endpoints: ${aws-demo.endpoints}

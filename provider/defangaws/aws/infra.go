@@ -31,7 +31,7 @@ func BuildSharedInfra(
 	}
 	profile := config.New(ctx, "aws").Get("profile")
 
-	net, err := ResolveNetworking(ctx, serviceName, opts...)
+	net, err := ResolveNetworking(ctx, serviceName, opt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -47,31 +47,31 @@ func BuildSharedInfra(
 				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
 
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
 		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
 	}
 
-	execRole, err := CreateExecutionRole(ctx, opts...)
+	execRole, err := CreateExecutionRole(ctx, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
 
 	var imgInfra *BuildInfra
 	if svc.NeedsBuild() {
-		imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opts...)
+		imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 		}
@@ -80,7 +80,7 @@ func BuildSharedInfra(
 	var httpListener *lb.Listener
 	var svcALB *lb.LoadBalancer
 	if svc.HasIngressPorts() {
-		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, nil, opts...)
+		albRes, err := CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, sg, nil, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating ALB: %w", err)
 		}
@@ -116,14 +116,14 @@ func CreateProjectInfra(
 	projectName string,
 	awsConfig *AWSConfig,
 	services compose.Services,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*SharedInfra, error) {
-	region, err := aws.GetRegion(ctx, nil)
+	region, err := aws.GetRegion(ctx, nil, opt)
 	if err != nil {
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	net, err := ResolveNetworking(ctx, projectName, opts...)
+	net, err := ResolveNetworking(ctx, projectName, opt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -140,26 +140,24 @@ func CreateProjectInfra(
 				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-	}, common.MergeOptions(opts,
-		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}), // lowered, to fail quickly when SG is in use
-	)...)
+	}, opt, pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"})) // lowered, to fail quickly when SG is in use
 	if err != nil {
 		return nil, fmt.Errorf("creating security group: %w", err)
 	}
 
-	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opts...)
+	cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS cluster: %w", err)
 	}
 
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
 		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
 	}
 
-	execRole, err := CreateExecutionRole(ctx, opts...)
+	execRole, err := CreateExecutionRole(ctx, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
@@ -169,7 +167,7 @@ func CreateProjectInfra(
 	var imgInfra *BuildInfra
 	for _, svc := range services {
 		if svc.NeedsBuild() {
-			imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opts...)
+			imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 			}
@@ -178,7 +176,7 @@ func CreateProjectInfra(
 	}
 
 	// Create public ECR pull-through cache for faster image pulls (matches TS initializeStack)
-	publicEcrCache, err := createEcrPullThroughCache(ctx, "ecr-public", "public.ecr.aws", "ecr-public", opts...)
+	publicEcrCache, err := createEcrPullThroughCache(ctx, "ecr-public", "public.ecr.aws", "ecr-public", opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECR pull-through cache: %w", err)
 	}
@@ -186,44 +184,39 @@ func CreateProjectInfra(
 	// Grant execution role permissions to use pull-through cache repos
 	cacheRepoArn := pulumi.Sprintf("arn:aws:ecr:%s:%s:repository/%s/*",
 		region.Region, publicEcrCache.Rule.RegistryId, publicEcrCache.Rule.EcrRepositoryPrefix)
-	err = attachPullThroughCachePolicy(ctx, execRole, cacheRepoArn, opts...)
+	err = attachPullThroughCachePolicy(ctx, execRole, cacheRepoArn, opt)
 	if err != nil {
 		return nil, fmt.Errorf("attaching pull-through cache policy: %w", err)
 	}
 
+	var projectDomain string
 	var albRes *AlbResult
-	var projectDomain, publicZoneId string
-	if awsConfig != nil {
-		projectDomain = awsConfig.ProjectDomain
-	}
-
 	if common.NeedIngress(services) {
 		var certArn pulumi.StringPtrInput
 
 		// Create wildcard cert + DNS if a public zone is provided
-		if publicZoneId != "" && projectDomain != "" {
-			zoneId := pulumi.String(publicZoneId)
+		if awsConfig != nil && awsConfig.PublicZoneId != nil && awsConfig.ProjectDomain != "" {
+			publicZoneId := awsConfig.PublicZoneId.ToStringPtrOutput().Elem() // TODO: look up?
+			projectDomain = awsConfig.ProjectDomain
 
-			wildcardDomain := "*." + projectDomain
+			wildcardDomain := "*." + awsConfig.ProjectDomain
 			domains := []string{wildcardDomain}
 			if CreateApexRecord.Get(ctx) {
-				domains = append(domains, projectDomain)
+				domains = append(domains, awsConfig.ProjectDomain)
 			}
 
 			certArn, err = CreateCertificateDNS(ctx, domains, CertificateDnsArgs{
-				CaaIssuer: []string{"amazon.com", "letsencrypt.org"},
-				ZoneId:    zoneId,
+				CaaIssuer: []string{"amazon.com", "letsencrypt.org"}, // FIXME: only pick CAs that we need
+				ZoneId:    publicZoneId,
 				Tags: pulumi.StringMap{
 					"defang:scope": pulumi.String("pub"),
 				},
-			}, common.MergeOptions(opts,
-				pulumi.RetainOnDelete(true), // deletion will fail if there's a listener: keep it, ACM certs are free anyway
-			)...)
+			}, opt, pulumi.RetainOnDelete(true)) // deletion will fail if there's a listener: keep it, ACM certs are free anyway
 			if err != nil {
 				return nil, fmt.Errorf("creating certificate: %w", err)
 			}
 
-			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opts...)
+			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating ALB: %w", err)
 			}
@@ -239,15 +232,15 @@ func CreateProjectInfra(
 			for _, hostname := range domains {
 				_, err := CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
 					Aliases: aliases,
-					ZoneId:  zoneId,
-				}, opts...)
+					ZoneId:  publicZoneId,
+				}, opt)
 				if err != nil {
 					return nil, fmt.Errorf("creating DNS record for %s: %w", hostname, err)
 				}
 			}
 		} else {
 			// No public zone: HTTP-only ALB
-			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, nil, opts...)
+			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, nil, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating ALB: %w", err)
 			}
@@ -256,13 +249,13 @@ func CreateProjectInfra(
 
 	var bedrockPolicy *iam.Policy
 	if common.IsProjectUsingLLM(services) {
-		bedrockPolicy, err = createBedrockPolicy(ctx, "BedrockPolicy", []string{}, opts...) // all models
+		bedrockPolicy, err = createBedrockPolicy(ctx, "BedrockPolicy", []string{}, opt) // all models
 		if err != nil {
 			return nil, fmt.Errorf("creating Bedrock policy: %w", err)
 		}
 	}
 
-	route53SidecarePolicy, err := createRoute53SidecarPolicy(ctx, "AllowRoute53Sidecar", net.PrivateZone, opts...)
+	route53SidecarePolicy, err := createRoute53SidecarPolicy(ctx, "AllowRoute53Sidecar", net.PrivateZone, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Route53 sidecar policy: %w", err)
 	}

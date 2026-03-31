@@ -1,4 +1,4 @@
-name: defang-azure-yaml
+name: defang-azure
 runtime: python
 description: Example using defang-azure to deploy services to Azure (Pulumi YAML)
 plugins:

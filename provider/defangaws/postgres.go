@@ -117,7 +117,7 @@ func newPostgresComponent(
 
 	var dependency pulumi.Resource = rdsResult.Instance
 	if infra.PrivateZoneID != nil {
-		privateFqdn := serviceName + "." + infra.PrivateDomain
+		privateFqdn := common.SafeLabel(serviceName) //+ "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{rdsResult.Instance.Address},

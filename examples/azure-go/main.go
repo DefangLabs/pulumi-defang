@@ -8,7 +8,7 @@ import (
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		azureYaml, err := defangazure.NewProject(ctx, "azure-yaml", &defangazure.ProjectArgs{
+		azureDemo, err := defangazure.NewProject(ctx, "azure-demo", &defangazure.ProjectArgs{
 			Services: compose.ServiceConfigMap{
 				"app": &compose.ServiceConfigArgs{
 					// Image: pulumi.String("nginx"),
@@ -29,8 +29,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		ctx.Export("endpoints", azureYaml.Endpoints)
-
+		ctx.Export("endpoints", azureDemo.Endpoints)
 		pg, err := defangazure.NewPostgres(ctx, "postgres", &defangazure.PostgresArgs{
 			Project_name: "azure-yaml",
 		})
@@ -46,7 +45,6 @@ func main() {
 			return err
 		}
 		ctx.Export("redisEndpoint", redis.Endpoint)
-
 		return nil
 	})
 }

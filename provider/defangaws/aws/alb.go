@@ -24,7 +24,7 @@ func CreateALB(
 	vpcID pulumi.StringInput,
 	subnetIDs pulumi.StringArrayInput,
 	certificateArn pulumi.StringPtrInput,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*AlbResult, error) {
 	// Create ALB security group allowing HTTP/HTTPS ingress
 	albSG, err := ec2.NewSecurityGroup(ctx, "alb-sg", &ec2.SecurityGroupArgs{
@@ -53,9 +53,7 @@ func CreateALB(
 				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
-	}, common.MergeOptions(opts,
-		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
-	)...)
+	}, opt, pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}))
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB security group: %w", err)
 	}
@@ -74,7 +72,7 @@ func CreateALB(
 	}
 
 	if AlbAccessLogs.Get(ctx) {
-		logsBucket, logErr := createLbLogsBucket(ctx, name+"-logs", ApplicationLoadBalancer)
+		logsBucket, logErr := createLbLogsBucket(ctx, name+"-logs", LoadBalancerTypeApplication, opt)
 		if logErr != nil {
 			return nil, fmt.Errorf("creating ALB logs bucket: %w", logErr)
 		}
@@ -84,7 +82,7 @@ func CreateALB(
 		}
 	}
 
-	alb, err := lb.NewLoadBalancer(ctx, name, albArgs, opts...)
+	alb, err := lb.NewLoadBalancer(ctx, name, albArgs, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating ALB: %w", err)
 	}
@@ -113,7 +111,7 @@ func CreateALB(
 			Port:            pulumi.Int(443),
 			Protocol:        pulumi.String("HTTPS"),
 			DefaultActions:  defaultActions,
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating HTTPS listener: %w", err)
 		}
@@ -137,7 +135,7 @@ func CreateALB(
 		Port:            pulumi.Int(80),
 		Protocol:        pulumi.String("HTTP"),
 		DefaultActions:  defaultActions,
-	}, opts...)
+	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating HTTP listener: %w", err)
 	}

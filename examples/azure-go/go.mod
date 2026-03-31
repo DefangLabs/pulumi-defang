@@ -1,4 +1,4 @@
-module defang-azure-yaml
+module defang-azure
 
 go 1.25.6
 

@@ -1,5 +1,6 @@
 { pkgs ? import <nixpkgs> { } }:
 pkgs.mkShell {
+  VERSION_PREFIX = "2.0.0";
   buildInputs = [
     pkgs.azure-cli
     pkgs.dotnet-sdk
@@ -13,8 +14,9 @@ pkgs.mkShell {
     pkgs.nodejs_22
     pkgs.pulumi-bin
     pkgs.pulumictl
-    pkgs.python3
-    pkgs.python312Packages.setuptools
+    (pkgs.python312.withPackages (ps: [
+      ps.setuptools
+    ]))
     pkgs.vim
     pkgs.yarn
   ];

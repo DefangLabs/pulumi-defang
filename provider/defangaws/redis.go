@@ -129,7 +129,7 @@ func newRedisComponent(
 
 	var dependency pulumi.Resource // = redisResult.Address
 	if infra.PrivateZoneID != nil {
-		privateFqdn := serviceName + "." + infra.PrivateDomain
+		privateFqdn := common.SafeLabel(serviceName) //+ "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{redisResult.Address},

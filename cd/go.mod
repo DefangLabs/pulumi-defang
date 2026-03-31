@@ -1,16 +1,25 @@
 module github.com/DefangLabs/pulumi-defang/examples/cd
 
-go 1.25.6
+go 1.25.8
 
 replace (
-	github.com/DefangLabs/pulumi-defang => ../..
+	github.com/DefangLabs/pulumi-defang => ../
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../sdk/v2/go/defang-aws
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure => ../sdk/v2/go/defang-azure
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp => ../sdk/v2/go/defang-gcp
 	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 )
 
 require (
 	github.com/DefangLabs/pulumi-defang v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
+	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
+	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.92.0
+	github.com/pulumi/pulumi-gcp/sdk/v8 v8.41.1
 	github.com/pulumi/pulumi/sdk/v3 v3.212.0
-	go.yaml.in/yaml/v3 v3.0.4
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -37,6 +46,8 @@ require (
 	github.com/djherbis/times v1.5.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/frankban/quicktest v1.14.6 // indirect
+	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/go-git/go-git/v5 v5.16.5 // indirect
@@ -49,6 +60,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl/v2 v2.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/iwdgo/sigintwindows v0.2.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
@@ -60,6 +72,7 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
+	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/opentracing/basictracer-go v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pgavlin/fx v0.1.6 // indirect
@@ -69,15 +82,6 @@ require (
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.21.0 // indirect
-	github.com/pulumi/pulumi-aws/sdk/v7 v7.15.0 // indirect
-	github.com/pulumi/pulumi-awsx/sdk/v3 v3.3.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/app/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.90.0 // indirect
-	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
-	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
-	github.com/pulumi/pulumi-gcp/sdk/v9 v9.6.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
@@ -86,6 +90,7 @@ require (
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
@@ -106,9 +111,10 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
-	google.golang.org/grpc v1.79.1 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/frand v1.5.1 // indirect
+	pgregory.net/rapid v1.1.0 // indirect
 )
