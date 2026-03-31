@@ -30,6 +30,23 @@ func main() {
 			return err
 		}
 		ctx.Export("endpoints", azureYaml.Endpoints)
+
+		pg, err := defangazure.NewPostgres(ctx, "postgres", &defangazure.PostgresArgs{
+			Project_name: "azure-yaml",
+		})
+		if err != nil {
+			return err
+		}
+		ctx.Export("postgresEndpoint", pg.Endpoint)
+
+		redis, err := defangazure.NewRedis(ctx, "redis", &defangazure.RedisArgs{
+			Project_name: "azure-yaml",
+		})
+		if err != nil {
+			return err
+		}
+		ctx.Export("redisEndpoint", redis.Endpoint)
+
 		return nil
 	})
 }

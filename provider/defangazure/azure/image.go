@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
-	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v2"
-	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v2"
-	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v2"
+	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
+	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )

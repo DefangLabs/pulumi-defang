@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
-	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v2"
+	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -31,9 +31,9 @@ func CreatePostgresFlexible(
 
 	// Backup config
 	backupRetention := BackupRetentionDays.Get(ctx)
-	geoBackup := dbforpostgresql.GeoRedundantBackupEnumDisabled
+	geoBackup := dbforpostgresql.GeoRedundantBackupDisabled
 	if GeoRedundantBackup.Get(ctx) {
-		geoBackup = dbforpostgresql.GeoRedundantBackupEnumEnabled
+		geoBackup = dbforpostgresql.GeoRedundantBackupEnabled
 	}
 
 	// Admin credentials
@@ -61,7 +61,7 @@ func CreatePostgresFlexible(
 	}
 	if HighAvailability.Get(ctx) {
 		serverArgs.HighAvailability = &dbforpostgresql.HighAvailabilityArgs{
-			Mode: pulumi.String(string(dbforpostgresql.HighAvailabilityModeZoneRedundant)),
+			Mode: pulumi.String(string(dbforpostgresql.PostgreSqlFlexibleServerHighAvailabilityModeZoneRedundant)),
 		}
 	}
 

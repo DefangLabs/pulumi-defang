@@ -5,8 +5,8 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
-	"github.com/pulumi/pulumi-azure-native-sdk/app/v2"
-	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
+	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -100,6 +100,17 @@ func (*Project) Construct(
 				return nil, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 			}
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
+		} else if svc.Redis != nil {
+			if err := ctx.RegisterComponentResource("defang-azure:index:Redis", svcName, comp, childOpts...); err != nil {
+				return nil, fmt.Errorf("registering Azure Redis component %s: %w", svcName, err)
+			}
+			svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+			redisResult, err := providerazure.CreateRedisEnterprise(ctx, svcName, svc, infra, svcOpts...)
+			if err != nil {
+				return nil, fmt.Errorf("creating Redis for %s: %w", svcName, err)
+			}
+			endpoints[svcName] = pulumi.Sprintf("%s:10000", redisResult.Cluster.HostName)
 		} else {
 			if err := ctx.RegisterComponentResource(
 				"defang-azure:index:AzureContainerApp", svcName, comp, childOpts...,

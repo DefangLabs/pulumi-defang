@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
-	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v2"
+	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
