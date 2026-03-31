@@ -1,16 +1,15 @@
 package program
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
 	awscompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
-
-// Version is set by main to the build version string.
-var Version = "development"
 
 func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "aws")
@@ -37,12 +36,17 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 
 	args := toAWSArgs(cf)
 	if domain != "" {
-		args.Aws = defangaws.AWSConfigArgs{
+		awsCfg := defangaws.AWSConfigArgs{
 			ProjectDomain: pulumi.StringPtr(domain),
 		}
+		// Recursively look up the public Route53 zone for HTTPS support
+		if zone, err := getHostedZoneForHost(ctx, domain, pulumi.Provider(awsProvider)); err == nil {
+			awsCfg.PublicZoneId = pulumi.StringPtr(zone.ZoneId)
+		}
+		args.Aws = awsCfg
 	}
 
-	project, err := defangaws.NewProject(ctx, ctx.Project(), args, pulumi.Providers(awsProvider))
+	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Providers(awsProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -157,4 +161,20 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 		args.Llm = awscompose.LlmConfigArgs{}
 	}
 	return args
+}
+
+// getHostedZoneForHost recursively looks up the Route53 hosted zone for a hostname,
+// matching the logic in provider/defangaws/aws/route53.go:GetHostedZoneForHost.
+func getHostedZoneForHost(ctx *pulumi.Context, hostname string, opts ...pulumi.InvokeOption) (*route53.LookupZoneResult, error) {
+	zoneName := common.GetZoneName(hostname)
+	isPrivate := common.IsPrivateZone(zoneName)
+	result, err := route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &zoneName, PrivateZone: &isPrivate}, opts...)
+	if err != nil {
+		parentZoneName := common.GetZoneName(zoneName)
+		if parentZoneName == zoneName {
+			return nil, err
+		}
+		return route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &parentZoneName, PrivateZone: &isPrivate}, opts...)
+	}
+	return result, nil
 }

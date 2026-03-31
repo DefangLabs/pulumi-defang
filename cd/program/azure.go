@@ -19,7 +19,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutp
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defangazure.NewProject(ctx, ctx.Project(), toAzureArgs(cf), pulumi.Providers(azureProvider))
+	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf), pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}

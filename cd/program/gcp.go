@@ -4,7 +4,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
 	gcpcompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
-	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
@@ -26,7 +26,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defanggcp.NewProject(ctx, ctx.Project(), toGCPArgs(cf), pulumi.Providers(gcpProvider))
+	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
