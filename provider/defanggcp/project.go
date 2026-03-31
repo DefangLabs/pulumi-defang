@@ -128,12 +128,11 @@ func buildProject(
 		}
 	}
 
-	// TODO:
-	// if providergcp.NeedNATGateway(args.Networks, args.Services) {
-	// 	if err := createNAT(ctx, vpcId, config); err != nil {
-	// 		return nil, err
-	// 	}
-	// }
+	if providergcp.NeedNATGateway(args.Networks, args.Services) {
+		if err := providergcp.CreateNAT(ctx, config.VpcId, *config, childOpts...); err != nil {
+			return nil, err
+		}
+	}
 
 	err = providergcp.CreateLoadBalancers(
 		ctx,

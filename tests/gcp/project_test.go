@@ -925,6 +925,129 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing
 	}
 }
 
+// --- NAT Gateway ---
+
+// serviceInNetwork returns a service property value for a portless Compute Engine
+// worker that explicitly lists the named network (so AllowEgress can match against
+// the top-level networks map).
+func serviceInNetwork(image, network string) property.Value {
+	return property.New(property.NewMap(map[string]property.Value{
+		"image": property.New(image),
+		"networks": property.New(property.NewMap(map[string]property.Value{
+			network: property.New(property.NewMap(map[string]property.Value{})),
+		})),
+	}))
+}
+
+// nonInternalNetworks builds a top-level "networks" property value with each
+// named network marked as non-internal.
+func nonInternalNetworks(names ...string) property.Value {
+	m := map[string]property.Value{}
+	for _, n := range names {
+		m[n] = property.New(property.NewMap(map[string]property.Value{
+			"internal": property.New(false),
+		}))
+	}
+	return property.New(property.NewMap(m))
+}
+
+func TestConstructProjectCreatesNATForComputeEngineWithEgress(t *testing.T) {
+	// A portless Compute Engine worker in a non-internal network needs egress → Router + RouterNat
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"worker": serviceInNetwork("myapp:worker", "default"),
+			})),
+			"networks": nonInternalNetworks("default"),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, countType(*records, "gcp:compute/router:Router"))
+	assert.Equal(t, 1, countType(*records, "gcp:compute/routerNat:RouterNat"))
+}
+
+func TestConstructProjectCreatesNATForWorkerWithoutExplicitNetworks(t *testing.T) {
+	// A portless Compute Engine worker with no explicit networks is implicitly in the
+	// non-internal "default" network (compose-spec normalization) → Router + RouterNat
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, countType(*records, "gcp:compute/router:Router"))
+	assert.Equal(t, 1, countType(*records, "gcp:compute/routerNat:RouterNat"))
+}
+
+func TestConstructProjectSkipsNATForCloudRunService(t *testing.T) {
+	// Cloud Run services (single ingress port) are exempt from NAT even when in a non-internal network
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+					"networks": property.New(property.NewMap(map[string]property.Value{
+						"default": property.New(property.NewMap(map[string]property.Value{})),
+					})),
+				})),
+			})),
+			"networks": nonInternalNetworks("default"),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, countType(*records, "gcp:compute/router:Router"))
+	assert.Equal(t, 0, countType(*records, "gcp:compute/routerNat:RouterNat"))
+}
+
+func TestConstructProjectNATSettings(t *testing.T) {
+	// Verify the Router and RouterNat are created with settings faithful to the reference implementation
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"worker": serviceInNetwork("myapp:worker", "default"),
+			})),
+			"networks": nonInternalNetworks("default"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	router := findTypeWhere(*records, "gcp:compute/router:Router", func(_ property.Map) bool { return true })
+	require.NotNil(t, router, "expected a Router to be created")
+	assert.Equal(t, "nat-router", router.name)
+	bgp := router.inputs.Get("bgp").AsMap()
+	assert.InDelta(t, 64514.0, bgp.Get("asn").AsNumber(), 0, "expected BGP ASN 64514 (private ASN range)")
+
+	nat := findTypeWhere(*records, "gcp:compute/routerNat:RouterNat", func(_ property.Map) bool { return true })
+	require.NotNil(t, nat, "expected a RouterNat to be created")
+	assert.Equal(t, "nat", nat.name)
+	assert.Equal(t, "AUTO_ONLY", nat.inputs.Get("natIpAllocateOption").AsString())
+	assert.Equal(t, "ALL_SUBNETWORKS_ALL_IP_RANGES", nat.inputs.Get("sourceSubnetworkIpRangesToNat").AsString())
+	logCfg := nat.inputs.Get("logConfig").AsMap()
+	assert.True(t, logCfg.Get("enable").AsBool(), "expected NAT log config to be enabled")
+	assert.Equal(t, "ERRORS_ONLY", logCfg.Get("filter").AsString())
+}
+
 func TestConstructProjectWithLLMPreservesExistingEnvVars(t *testing.T) {
 	var capturedCR property.Map
 	mock := &integration.MockResourceMonitor{

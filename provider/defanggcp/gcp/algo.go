@@ -25,8 +25,10 @@ func IsNetworkInternal(networks compose.Networks, networkId compose.NetworkID) b
 }
 
 func AllowEgress(networks compose.Networks, service *compose.ServiceConfig) bool {
-	if networks == nil {
-		return false
+	if len(networks) == 0 {
+		// No explicit networks defined; services with no explicit network membership
+		// have implicit egress through the "default" network (compose-spec normalization).
+		return len(service.Networks) == 0
 	}
 	// Egress is allowed if the service is in at least one non-internal network
 	for serviceNetwork := range service.Networks {
@@ -47,6 +49,11 @@ func HasPort(service *compose.ServiceConfig, mode string) bool {
 }
 
 func InPublicNetwork(networks compose.Networks, service *compose.ServiceConfig) bool {
+	if len(networks) == 0 {
+		// No explicit networks defined; services with no explicit network membership
+		// are implicitly in the non-internal "default" network (compose-spec normalization).
+		return len(service.Networks) == 0
+	}
 	_, inDefaultNetwork := service.Networks["default"]
 	return inDefaultNetwork && !IsNetworkInternal(networks, "default")
 }
