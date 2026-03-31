@@ -255,7 +255,7 @@ func TestConstructGcpCloudRunServiceSetsVpcAccess(t *testing.T) {
 	assert.Equal(t, 1, networkInterfaces.Len())
 }
 
-func TestConstructGcpServiceCreatesServiceAccountWithIAMRoles(t *testing.T) {
+func TestConstructGcpServiceCreatesServiceAccount(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -268,25 +268,39 @@ func TestConstructGcpServiceCreatesServiceAccountWithIAMRoles(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// The standalone Service component (service.go) calls createServiceAccount independently;
-	// verify the SA is created and the 4 basic IAM roles are granted.
 	sa := findTypeWhere(*records, "gcp:serviceaccount/account:Account", func(m property.Map) bool {
 		d := m.Get("description")
 		return !d.IsNull() && strings.HasPrefix(d.AsString(), "Service Account used by run services of")
 	})
 	require.NotNil(t, sa, "expected a service account for the standalone Service component")
+}
 
-	requiredRoles := []string{
+func TestConstructGcpServiceDoesNotGrantComputeIAMRoles(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Service"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"image": property.New("myapp:latest"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Cloud Run uses the serverless-robot service agent for image pulls and has built-in
+	// logging/metrics/tracing — the user SA does not need explicit project-level IAM roles.
+	computeOnlyRoles := []string{
 		"roles/artifactregistry.reader",
 		"roles/logging.logWriter",
 		"roles/monitoring.metricWriter",
 		"roles/cloudtrace.agent",
 	}
-	for _, role := range requiredRoles {
+	for _, role := range computeOnlyRoles {
 		found := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
 			return m.Get("role").AsString() == role
 		})
-		assert.NotNil(t, found, "expected IAM member for role %s on standalone Service component", role)
+		assert.Nil(t, found, "Cloud Run Service component should not grant IAM role %s", role)
 	}
 }
 

@@ -357,7 +357,7 @@ func TestComputeEngineGrantsRequiredIAMRoles(t *testing.T) {
 	}
 }
 
-func TestCloudRunServiceGrantsRequiredIAMRoles(t *testing.T) {
+func TestCloudRunServiceDoesNotGrantComputeIAMRoles(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -370,19 +370,19 @@ func TestCloudRunServiceGrantsRequiredIAMRoles(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// Cloud Run services previously received no IAM roles; after SA consolidation they get the same
-	// 4 basic roles as Compute Engine instances.
-	requiredRoles := []string{
+	// Cloud Run uses the serverless-robot service agent to pull images and has built-in
+	// logging/metrics/tracing — the user SA does not need explicit project-level IAM roles.
+	computeOnlyRoles := []string{
 		"roles/artifactregistry.reader",
 		"roles/logging.logWriter",
 		"roles/monitoring.metricWriter",
 		"roles/cloudtrace.agent",
 	}
-	for _, role := range requiredRoles {
+	for _, role := range computeOnlyRoles {
 		found := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
 			return m.Get("role").AsString() == role
 		})
-		assert.NotNil(t, found, "expected IAM member for role %s on Cloud Run service", role)
+		assert.Nil(t, found, "Cloud Run service should not grant IAM role %s", role)
 	}
 }
 

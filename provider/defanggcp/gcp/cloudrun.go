@@ -58,13 +58,6 @@ func CreateCloudRunService(
 	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
-	addRolesToServiceAccount(ctx, sa, []string{
-		"roles/artifactregistry.reader",
-		"roles/logging.logWriter",
-		"roles/monitoring.metricWriter",
-		"roles/cloudtrace.agent",
-	}, gcpConfig, opts...)
-
 	template, err := buildTemplate(ctx, configProvider, serviceName, svc, sa, gcpConfig, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("building Cloud Run template: %w", err)
