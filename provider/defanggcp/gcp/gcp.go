@@ -25,11 +25,12 @@ type GlobalConfig struct {
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
-	WildcardCertId    pulumi.StringInput            // non-nil when a domain is configured
-	PublicZoneId      pulumi.StringInput            // managed zone name; non-nil when a domain is configured
+	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
+	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
+	ProxySubnetId     string
 	BuildInfra        *BuildInfra                   // non-nil when at least one service has a build config
 	ServiceConnection *servicenetworking.Connection // non-nil when any service uses managed Postgres or Redis
-	PrivateZoneId     pulumi.StringOutput           // managed zone name for the private google.internal. zone
+	PrivateZone       pulumi.StringOutput           // managed zone name for the private google.internal. zone
 	Prefix            string                        // prefix for all resource names (e.g. "myproject")
 	Stack             string                        // Pulumi stack name (e.g. "dev")
 }
@@ -148,13 +149,13 @@ func BuildGlobalConfig(
 	}
 
 	cfg := &GlobalConfig{
-		Stack:         ctx.Stack(),
-		Region:        region,
-		GcpProject:    gcpProject,
-		VpcId:         vpc.ID().ToStringOutput(),
-		SubnetId:      subnet.ID().ToStringOutput(),
-		PublicIP:      publicIP,
-		PrivateZoneId: privateZone.Name.ToStringOutput(),
+		Stack:       ctx.Stack(),
+		Region:      region,
+		GcpProject:  gcpProject,
+		VpcId:       vpc.ID().ToStringOutput(),
+		SubnetId:    subnet.ID().ToStringOutput(),
+		PublicIP:    publicIP,
+		PrivateZone: privateZone.Name.ToStringOutput(),
 	}
 
 	if domain != "" {

@@ -92,7 +92,7 @@ func TestIsCloudRunService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := compose.ServiceConfig{Ports: tt.ports}
+			svc := &compose.ServiceConfig{Ports: tt.ports}
 			assert.Equal(t, tt.expected, IsCloudRunService(svc))
 		})
 	}

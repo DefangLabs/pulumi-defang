@@ -50,12 +50,8 @@ func (*Project) Construct(
 	}
 
 	childOpt := pulumi.Parent(comp)
-	args := common.BuildArgs{
-		Services: inputs.Services,
-		Domain:   inputs.Domain,
-	}
 
-	result, err := buildProject(ctx, name, args, childOpt)
+	result, err := buildProject(ctx, name, inputs, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP resources: %w", err)
 	}
@@ -78,17 +74,17 @@ func (*Project) Construct(
 func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
-	args common.BuildArgs,
+	args ProjectInputs,
 	parentOpt pulumi.ResourceOption,
 ) (*common.BuildResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
-	infra, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
+	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
 
-	if err := providergcp.EnableGcpAPIs(ctx, infra.GcpProject, childOpts...); err != nil {
+	if err := providergcp.EnableGcpAPIs(ctx, config.GcpProject, childOpts...); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +97,7 @@ func buildProject(
 	if common.IsProjectUsingLLM(args.Services) {
 		// FIXME: create dependency between this NewService and the services that need this API
 		_, err := projects.NewService(ctx, projectName+"-defang-llm", &projects.ServiceArgs{
-			Project: pulumi.StringPtr(infra.GcpProject),
+			Project: pulumi.StringPtr(config.GcpProject),
 			Service: pulumi.String("aiplatform.googleapis.com"),
 		}, pulumi.RetainOnDelete(true)) // Do not try disabling on compose down
 		if err != nil {
@@ -121,7 +117,7 @@ func buildProject(
 		}
 
 		endpoint, svcComp, lbEntry, err := buildService(
-			ctx, projectName, configProvider, svcName, svc, infra, deps, childOpts)
+			ctx, projectName, configProvider, svcName, svc, config, deps, childOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -132,10 +128,21 @@ func buildProject(
 		}
 	}
 
-	if err := providergcp.CreateExternalLoadBalancer(
-		ctx, projectName, infra, lbEntries, childOpts...,
-	); err != nil {
-		return nil, fmt.Errorf("creating external load balancer: %w", err)
+	// TODO:
+	// if providergcp.NeedNATGateway(args.Networks, args.Services) {
+	// 	if err := createNAT(ctx, vpcId, config); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+
+	err = providergcp.CreateLoadBalancers(
+		ctx,
+		projectName,
+		lbEntries,
+		config,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return &common.BuildResult{
@@ -176,8 +183,10 @@ func buildService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
 		}
+
+		lbEntry = &providergcp.LBServiceEntry{Name: svcName, PostgresInstance: sqlResult.Instance, Config: svc}
 		if err := providergcp.CreatePrivateDNSRecord(
-			ctx, svcName, sqlResult.Instance.PrivateIpAddress, infra.PrivateZoneId, svcOpts...,
+			ctx, svcName, sqlResult.Instance.PrivateIpAddress, infra.PrivateZone, svcOpts...,
 		); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating private DNS for %s: %w", svcName, err)
 		}
@@ -195,10 +204,12 @@ func buildService(
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Memorystore for %s: %w", svcName, err)
 		}
 		if err := providergcp.CreatePrivateDNSRecord(
-			ctx, svcName, redisResult.Instance.Host, infra.PrivateZoneId, svcOpts...,
+			ctx, svcName, redisResult.Instance.Host, infra.PrivateZone, svcOpts...,
 		); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating private DNS for %s: %w", svcName, err)
 		}
+
+		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisResult.Instance, Config: svc}
 		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstIngressPort(svc.Ports, defaultRedisPort))
 	default:
 		var err error
@@ -207,6 +218,9 @@ func buildService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, err
 		}
+	}
+	if lbEntry != nil && svc.HasHostPorts() {
+		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", svcName, "google.internal")
 	}
 
 	if err := ctx.RegisterResourceOutputs(svcComp, pulumi.Map{
@@ -239,7 +253,7 @@ func buildContainerService(
 		}
 	}
 
-	if providergcp.IsCloudRunService(svc) {
+	if providergcp.IsCloudRunService(&svc) {
 		// Cloud Run: single ingress port
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
@@ -248,7 +262,7 @@ func buildContainerService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 		}
-		lbEntry := &providergcp.LBServiceEntry{Name: svcName, Service: crResult.Service, Config: svc}
+		lbEntry := &providergcp.LBServiceEntry{Name: svcName, CloudRunService: crResult.Service, Config: svc}
 		return crResult.Service.Uri, lbEntry, nil
 	}
 

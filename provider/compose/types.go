@@ -64,6 +64,9 @@ type ServiceConfig struct {
 	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
 	Redis *RedisConfig `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
 
+	// Restart policy (e.g. "no" for Cloud Run jobs)
+	Restart string `pulumi:"restart,optional" yaml:"restart,omitempty"`
+
 	// Health check configuration
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional" yaml:"healthcheck,omitempty"`
 
