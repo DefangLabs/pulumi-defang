@@ -227,6 +227,7 @@ func createInternalLoadBalancer(
 			if len(service.Config.Ports) == 1 && service.Config.Ports[0].Mode == "ingress" {
 				port := service.Config.Ports[0]
 				portTargetStr := strconv.FormatInt(int64(port.Target), 10)
+				portProto := port.GetProtocol()
 				healthCheckPath, healthCheckPort := getHealthCheckPathAndPort(service.Config.HealthCheck)
 				if int(port.Target) != healthCheckPort {
 					return fmt.Errorf(
@@ -246,7 +247,7 @@ func createInternalLoadBalancer(
 							pulumi.String("0.0.0.0/0"), // Allow traffic from LB backend.  TODO: Can this be stricter?
 						},
 						Allows: compute.FirewallAllowArray{&compute.FirewallAllowArgs{
-							Protocol: pulumi.String(port.Protocol),
+							Protocol: pulumi.String(portProto),
 							Ports:    pulumi.StringArray{pulumi.String(portTargetStr)},
 						}},
 						TargetTags: pulumi.StringArray{
@@ -291,7 +292,7 @@ func createInternalLoadBalancer(
 							},
 						},
 						HealthChecks: healthCheck.ID(),
-						PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", port.Protocol, port.Target)), // Matching compute.go
+						PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", portProto, port.Target)), // Matching compute.go
 					},
 					pulumi.Aliases([]pulumi.Alias{
 						{Name: pulumi.String(projectName + "-" + service.Name + "-" + portTargetStr + "-private-lb-gce-backend")},
@@ -339,16 +340,17 @@ func createInternalLoadBalancer(
 				// Try minimize the number of forwarding rules by grouping the ports by protocol
 				protocolPorts := make(map[string][]uint32)
 				for _, port := range service.Config.Ports {
-					if port.Protocol != protoTCP && port.Protocol != "udp" {
-						return fmt.Errorf("unsupported protocol %s: %w", port.Protocol, errUnsupportedProtocol)
+					proto := port.GetProtocol()
+					if proto != protoTCP && proto != "udp" {
+						return fmt.Errorf("unsupported protocol %s: %w", proto, errUnsupportedProtocol)
 					}
 					portTarget := uint32(port.Target) //nolint:gosec // port numbers are always non-negative
-					if tcpHealthCheckPort == nil && port.Protocol == protoTCP {
+					if tcpHealthCheckPort == nil && proto == protoTCP {
 						tcpHealthCheckPort = &portTarget
 					}
-					protocolPorts[port.Protocol] = append(protocolPorts[port.Protocol], portTarget)
+					protocolPorts[proto] = append(protocolPorts[proto], portTarget)
 					firewallAllows = append(firewallAllows, &compute.FirewallAllowArgs{
-						Protocol: pulumi.String(port.Protocol),
+						Protocol: pulumi.String(proto),
 						Ports:    pulumi.StringArray{pulumi.String(strconv.FormatUint(uint64(portTarget), 10))},
 					})
 				}

@@ -55,11 +55,12 @@ func CreateComputeEngine(
 	var namedPorts compute.RegionInstanceGroupManagerNamedPortArray
 	var healthCheckPort *int
 	for _, port := range svc.Ports {
+		proto := port.GetProtocol()
 		namedPorts = append(namedPorts, &compute.RegionInstanceGroupManagerNamedPortArgs{
-			Name: pulumi.String(fmt.Sprintf("port-%s-%d", port.Protocol, port.Target)),
+			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
 			Port: pulumi.Int(port.Target),
 		})
-		if port.Protocol == "tcp" || port.Protocol == "" {
+		if proto == "tcp" {
 			p := int(port.Target)
 			healthCheckPort = &p
 		}
