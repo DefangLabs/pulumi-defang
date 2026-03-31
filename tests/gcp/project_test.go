@@ -68,6 +68,17 @@ func findTypeWhere(records []resourceRecord, typ string, pred func(property.Map)
 	return nil
 }
 
+// countTypeWhere returns how many records match the given type token and predicate.
+func countTypeWhere(records []resourceRecord, typ string, pred func(property.Map) bool) int {
+	n := 0
+	for _, r := range records {
+		if r.typ == typ && pred(r.inputs) {
+			n++
+		}
+	}
+	return n
+}
+
 func TestConstructProject(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
@@ -451,12 +462,15 @@ func TestConstructProjectWithPostgresCreatesVPCPeering(t *testing.T) {
 	// DatabaseInstance should be present
 	assert.Equal(t, 1, countType(*records, "gcp:sql/databaseInstance:DatabaseInstance"))
 
-	// Private DNS A record pointing to the Cloud SQL private IP
+	// Exactly one private DNS A record pointing to the Cloud SQL private IP
 	dbDNS := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
 		return m.Get("name").AsString() == "db.google.internal." && m.Get("type").AsString() == "A"
 	})
 	require.NotNil(t, dbDNS, "expected a private DNS A record for Cloud SQL")
 	assert.InDelta(t, 60.0, dbDNS.inputs.Get("ttl").AsNumber(), 0)
+	assert.Equal(t, 1, countTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("name").AsString() == "db.google.internal." && m.Get("type").AsString() == "A"
+	}), "expected exactly one private DNS A record for Cloud SQL")
 }
 
 func TestConstructProjectWithoutPostgresSkipsVPCPeering(t *testing.T) {
@@ -536,12 +550,15 @@ func TestConstructProjectWithRedisCreatesVPCPeering(t *testing.T) {
 	// Memorystore instance should be present
 	assert.Equal(t, 1, countType(*records, "gcp:redis/instance:Instance"))
 
-	// Private DNS A record pointing to the Memorystore host
+	// Exactly one private DNS A record pointing to the Memorystore host
 	redisDNS := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
 		return m.Get("name").AsString() == "cache.google.internal." && m.Get("type").AsString() == "A"
 	})
 	require.NotNil(t, redisDNS, "expected a private DNS A record for Memorystore")
 	assert.InDelta(t, 60.0, redisDNS.inputs.Get("ttl").AsNumber(), 0)
+	assert.Equal(t, 1, countTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		return m.Get("name").AsString() == "cache.google.internal." && m.Get("type").AsString() == "A"
+	}), "expected exactly one private DNS A record for Memorystore")
 }
 
 func TestConstructProjectWithRedisCreatesMemorystoreInstance(t *testing.T) {

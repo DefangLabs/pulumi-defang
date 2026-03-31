@@ -141,6 +141,32 @@ func createInternalLoadBalancer(
 	var privateHostRules compute.RegionUrlMapHostRuleArray
 	var privatePathMatchers compute.RegionUrlMapPathMatcherArray
 	for _, service := range services {
+		// Managed services: always create private DNS regardless of ports.
+		switch {
+		case service.Config.Postgres != nil:
+			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-db-dns", &dns.RecordSetArgs{
+				Name:        pulumi.String(internalServiceDns(service.Name)),
+				Type:        pulumi.String("A"),
+				Ttl:         pulumi.Int(60),
+				ManagedZone: config.PrivateZone,
+				Rrdatas:     pulumi.StringArray{service.PostgresInstance.PrivateIpAddress},
+			}); err != nil {
+				return err
+			}
+			continue
+		case service.Config.Redis != nil:
+			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-redis-dns", &dns.RecordSetArgs{
+				Name:        pulumi.String(internalServiceDns(service.Name)),
+				Type:        pulumi.String("A"),
+				Ttl:         pulumi.Int(60),
+				ManagedZone: config.PrivateZone,
+				Rrdatas:     pulumi.StringArray{service.RedisInstance.Host},
+			}); err != nil {
+				return err
+			}
+			continue
+		}
+
 		if len(service.Config.Ports) == 0 {
 			continue
 		}
@@ -466,26 +492,6 @@ func createInternalLoadBalancer(
 				}, pulumi.DependsOn([]pulumi.Resource{trafficFirewall})); err != nil {
 					return err
 				}
-			}
-		case service.Config.Postgres != nil: // Always create private DNS for managed Postgres
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-db-dns", &dns.RecordSetArgs{
-				Name:        pulumi.String(internalServiceDns(service.Name)),
-				Type:        pulumi.String("A"),
-				Ttl:         pulumi.Int(60),
-				ManagedZone: config.PrivateZone,
-				Rrdatas:     pulumi.StringArray{service.PostgresInstance.PrivateIpAddress},
-			}); err != nil {
-				return err
-			}
-		case service.Config.Redis != nil: // Always create private DNS for managed Redis
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-redis-dns", &dns.RecordSetArgs{
-				Name:        pulumi.String(internalServiceDns(service.Name)),
-				Type:        pulumi.String("A"),
-				Ttl:         pulumi.Int(60),
-				ManagedZone: config.PrivateZone,
-				Rrdatas:     pulumi.StringArray{service.RedisInstance.Host},
-			}); err != nil {
-				return err
 			}
 		}
 	}

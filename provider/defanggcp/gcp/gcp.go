@@ -310,25 +310,6 @@ func CreatePublicDNSRecord(
 	return err
 }
 
-// CreatePrivateDNSRecord creates an A record in the private google.internal. zone for a
-// managed service (Cloud SQL or Memorystore), so other services can reach it by name.
-func CreatePrivateDNSRecord(
-	ctx *pulumi.Context,
-	serviceName string,
-	ip pulumi.StringInput,
-	zoneId pulumi.StringOutput,
-	opts ...pulumi.ResourceOption,
-) error {
-	_, err := dns.NewRecordSet(ctx, serviceName+"-private-dns", &dns.RecordSetArgs{
-		Name:        pulumi.String(serviceName + ".google.internal."),
-		Type:        pulumi.String("A"),
-		Ttl:         pulumi.Int(60),
-		ManagedZone: zoneId,
-		Rrdatas:     pulumi.StringArray{ip},
-	}, opts...)
-	return err
-}
-
 const defaultGCPRegion = "us-central1"
 
 // GcpRegion reads the GCP region from Pulumi stack config, falling back to the default.
