@@ -61,7 +61,11 @@ func (*Service) Construct(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
-	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, svc, infra, childOpt)
+	sa, err := createServiceAccount(ctx, inputs.ProjectName, name, infra, []pulumi.ResourceOption{childOpt})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service account: %w", err)
+	}
+	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, svc, sa, infra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
 	}

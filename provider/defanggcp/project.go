@@ -246,7 +246,8 @@ func buildContainerService(
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
 		}
-		crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, svcName, svc, infra, pulumi.Parent(svcComp))
+		crResult, err := providergcp.CreateCloudRunService(
+			ctx, configProvider, svcName, svc, sa, infra, pulumi.Parent(svcComp))
 		if err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 		}
@@ -258,7 +259,7 @@ func buildContainerService(
 	if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 		return pulumi.StringOutput{}, nil, fmt.Errorf("registering Compute Engine component %s: %w", svcName, err)
 	}
-	ceResult, err := providergcp.CreateComputeEngine(ctx, projectName, svcName, svc, infra, pulumi.Parent(svcComp))
+	ceResult, err := providergcp.CreateComputeEngine(ctx, projectName, svcName, svc, sa, infra, pulumi.Parent(svcComp))
 	if err != nil {
 		return pulumi.StringOutput{}, nil, fmt.Errorf("creating Compute Engine service %s: %w", svcName, err)
 	}

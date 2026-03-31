@@ -192,6 +192,7 @@ func createInternalLoadBalancer(
 				ctx,
 				resourceName(projectName, config, service.Name, "private-lb-cloudrun-backend"),
 				&compute.RegionBackendServiceArgs{
+					Region:              pulumi.String(config.Region),
 					Protocol:            pulumi.String("HTTPS"),
 					LoadBalancingScheme: pulumi.String("INTERNAL_MANAGED"),
 					Backends: compute.RegionBackendServiceBackendArray{
@@ -251,7 +252,7 @@ func createInternalLoadBalancer(
 							Ports:    pulumi.StringArray{pulumi.String(portTargetStr)},
 						}},
 						TargetTags: pulumi.StringArray{
-							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template
+							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template tag
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
@@ -284,6 +285,7 @@ func createInternalLoadBalancer(
 				serviceBackend, err := compute.NewRegionBackendService(ctx,
 					resourceName(projectName, config, service.Name, portTargetStr, "private-lb-cloudrun-backend"),
 					&compute.RegionBackendServiceArgs{
+						Region:              pulumi.String(config.Region),
 						Protocol:            pulumi.String("HTTP"),
 						LoadBalancingScheme: pulumi.String("INTERNAL_MANAGED"),
 						Backends: compute.RegionBackendServiceBackendArray{
@@ -367,7 +369,7 @@ func createInternalLoadBalancer(
 						SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")}, // TODO: Can this be stricter?
 						Allows:       firewallAllows,
 						TargetTags: pulumi.StringArray{
-							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template
+							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template tag
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
@@ -392,7 +394,7 @@ func createInternalLoadBalancer(
 							Ports:    pulumi.StringArray{pulumi.String(strconv.FormatUint(uint64(*tcpHealthCheckPort), 10))},
 						}},
 						TargetTags: pulumi.StringArray{
-							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template
+							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template tag
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
@@ -437,6 +439,7 @@ func createInternalLoadBalancer(
 						backendService, err := compute.NewRegionBackendService(ctx,
 							resourceName(projectName, config, service.Name, fmt.Sprintf("host-%v-backend-service", portsName)),
 							&compute.RegionBackendServiceArgs{
+								Region:              pulumi.String(config.Region),
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
 								Backends: compute.RegionBackendServiceBackendArray{
 									&compute.RegionBackendServiceBackendArgs{

@@ -54,10 +54,18 @@ func CreateCloudRunService(
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
+	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
-	template, err := buildTemplate(ctx, configProvider, serviceName, svc, gcpConfig, opts...)
+	addRolesToServiceAccount(ctx, sa, []string{
+		"roles/artifactregistry.reader",
+		"roles/logging.logWriter",
+		"roles/monitoring.metricWriter",
+		"roles/cloudtrace.agent",
+	}, gcpConfig, opts...)
+
+	template, err := buildTemplate(ctx, configProvider, serviceName, svc, sa, gcpConfig, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("building Cloud Run template: %w", err)
 	}
@@ -85,18 +93,10 @@ func buildTemplate(
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
+	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*cloudrunv2.ServiceTemplateArgs, error) {
-	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
-	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
-		DisplayName: pulumi.String("Service account for " + serviceName),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating service account: %w", err)
-	}
-
 	// Build environment variables
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
 		&cloudrunv2.ServiceTemplateContainerEnvArgs{

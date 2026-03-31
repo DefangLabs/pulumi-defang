@@ -815,6 +815,31 @@ func TestConstructProjectCreatesServiceAccountForContainerServices(t *testing.T)
 	require.NotNil(t, workerSA, "expected a project-level service account for the worker service")
 }
 
+func TestConstructProjectCreatesExactlyOneServiceAccountPerContainerService(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"web":    testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Before the SA consolidation, CreateComputeEngine and CreateCloudRunService each created their own
+	// SA in addition to the one from buildContainerService — resulting in 2 SAs per service (4 total).
+	// After the fix, each container service gets exactly one SA (2 total).
+	isRunSA := func(m property.Map) bool {
+		d := m.Get("description")
+		return !d.IsNull() && strings.HasPrefix(d.AsString(), "Service Account used by run services of")
+	}
+	assert.Equal(t, 2, countTypeWhere(*records, "gcp:serviceaccount/account:Account", isRunSA),
+		"expected exactly one service account per container service (no duplicates from cloud-specific functions)")
+}
+
 func TestConstructProjectDoesNotCreateServiceAccountForManagedServices(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))

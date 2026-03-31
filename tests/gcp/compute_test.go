@@ -357,6 +357,35 @@ func TestComputeEngineGrantsRequiredIAMRoles(t *testing.T) {
 	}
 }
 
+func TestCloudRunServiceGrantsRequiredIAMRoles(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Cloud Run services previously received no IAM roles; after SA consolidation they get the same
+	// 4 basic roles as Compute Engine instances.
+	requiredRoles := []string{
+		"roles/artifactregistry.reader",
+		"roles/logging.logWriter",
+		"roles/monitoring.metricWriter",
+		"roles/cloudtrace.agent",
+	}
+	for _, role := range requiredRoles {
+		found := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+			return m.Get("role").AsString() == role
+		})
+		assert.NotNil(t, found, "expected IAM member for role %s on Cloud Run service", role)
+	}
+}
+
 // --- Load balancer integration ---
 
 func TestComputeEngineWithoutIngressPortSkipsLB(t *testing.T) {

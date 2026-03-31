@@ -27,6 +27,7 @@ func CreateComputeEngine(
 	projectName string,
 	serviceName string,
 	svc compose.ServiceConfig,
+	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*ComputeEngineResult, error) {
@@ -35,14 +36,6 @@ func CreateComputeEngine(
 	image, err := GetServiceImage(ctx, serviceName, svc, gcpConfig.BuildInfra, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving image for %s: %w", serviceName, err)
-	}
-
-	sa, err := serviceaccount.NewAccount(ctx, serviceName+"-sa", &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
-		DisplayName: pulumi.String(serviceName + " service account"),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating service account for %s: %w", serviceName, err)
 	}
 
 	iamDeps := addRolesToServiceAccount(ctx, sa, []string{
@@ -73,14 +66,16 @@ func CreateComputeEngine(
 
 	cloudInit := getCloudInitConfig(serviceName, svc, image, gcpConfig.Region, addHealthCheckSidecar)
 
+	instanceTag := resourceName(projectName, gcpConfig, serviceName)
+
 	instanceTemplate, err := createInstanceTemplate(
-		ctx, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
+		ctx, serviceName, instanceTag, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	autoHealing, err := createMIGAutoHealing(
-		ctx, serviceName, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, opts...)
+		ctx, serviceName, instanceTag, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +111,7 @@ func CreateComputeEngine(
 
 func createInstanceTemplate(
 	ctx *pulumi.Context,
-	serviceName, machineType string,
+	serviceName, instanceTag, machineType string,
 	cloudInit pulumi.StringInput,
 	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
@@ -152,7 +147,7 @@ func createInstanceTemplate(
 				Email:  sa.Email,
 				Scopes: pulumi.ToStringArray([]string{"cloud-platform"}),
 			},
-			Tags: pulumi.StringArray{pulumi.String(serviceName)},
+			Tags: pulumi.StringArray{pulumi.String(instanceTag)},
 		}, append(opts,
 			pulumi.DependsOnInputs(iamDeps),
 			pulumi.RetainOnDelete(true),
@@ -165,7 +160,7 @@ func createInstanceTemplate(
 
 func createMIGAutoHealing(
 	ctx *pulumi.Context,
-	serviceName string,
+	serviceName, instanceTag string,
 	healthCheckPort *int,
 	addSidecar bool,
 	vpcId pulumi.StringOutput,
@@ -211,7 +206,7 @@ func createMIGAutoHealing(
 				Ports:    pulumi.StringArray{pulumi.String(portStr)},
 			},
 		},
-		TargetTags: pulumi.StringArray{pulumi.String(serviceName)},
+		TargetTags: pulumi.StringArray{pulumi.String(instanceTag)},
 		Direction:  pulumi.String("INGRESS"),
 	}, opts...); err != nil {
 		return nil, fmt.Errorf("creating health check firewall for %s: %w", serviceName, err)
