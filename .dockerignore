@@ -1,0 +1,21 @@
+# Ignore everything
+**
+
+!/go.mod
+!/go.sum
+
+# Include CD
+!/cd/go.mod
+!/cd/go.sum
+!/cd/*.go
+!/cd/program
+!/cd/program/**
+
+# Include providers
+!/provider
+!/provider/**
+
+# Include Go SDK
+!/sdk
+!/sdk/v2
+!/sdk/v2/**

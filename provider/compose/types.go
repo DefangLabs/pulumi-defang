@@ -22,6 +22,8 @@ const DefaultNetwork NetworkID = "default"
 // This is a subset of the full types.Project from compose-go, from
 // https://github.com/compose-spec/compose-go/blob/main/types/project.go
 type Project struct {
+	Name string `pulumi:"name,optional" yaml:"name,omitempty"`
+
 	// Services map: name -> service config
 	Services Services `pulumi:"services" yaml:"services"`
 
