@@ -9,6 +9,6 @@ var (
 	GeoRedundantBackup  = common.Bool("geo-redundant-backup", false)
 	HighAvailability    = common.Bool("high-availability", false)
 	MaxReplicas         = common.Int("max-replicas", 0)
-	SkuName             = common.String("sku-name", "B_Standard_B1ms")
+	SkuName             = common.String("sku-name", "Standard_B1ms")
 	StorageSizeGB       = common.Int("storage-size-gb", 32)
 )
