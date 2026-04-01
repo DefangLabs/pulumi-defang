@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
-	azurecache "github.com/pulumi/pulumi-azure-native-sdk/cache/v2/v20250401"
+	redis "github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -13,8 +13,8 @@ var ErrRedisConfigNil = errors.New("redis config is nil")
 
 // RedisResult holds the Azure Managed Redis cluster and database resources.
 type RedisResult struct {
-	Cluster  *azurecache.RedisEnterprise
-	Database *azurecache.Database
+	Cluster  *redis.RedisEnterprise
+	Database *redis.Database
 }
 
 // selectEnterpriseSkuName picks the Azure Managed Redis SKU name based on memory in MiB.
@@ -80,12 +80,12 @@ func CreateRedisEnterprise(
 		haValue = "Disabled"
 	}
 
-	cluster, err := azurecache.NewRedisEnterprise(ctx, serviceName, &azurecache.RedisEnterpriseArgs{
+	cluster, err := redis.NewRedisEnterprise(ctx, serviceName, &redis.RedisEnterpriseArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.StringPtr(location),
 		MinimumTlsVersion: pulumi.String("1.2"),
 		HighAvailability:  pulumi.String(haValue),
-		Sku: azurecache.EnterpriseSkuArgs{
+		Sku: redis.SkuArgs{
 			Name: pulumi.String(skuName),
 		},
 	}, opts...)
@@ -93,7 +93,7 @@ func CreateRedisEnterprise(
 		return nil, fmt.Errorf("creating Azure Managed Redis cluster: %w", err)
 	}
 
-	db, err := azurecache.NewDatabase(ctx, serviceName+"-db", &azurecache.DatabaseArgs{
+	db, err := redis.NewDatabase(ctx, serviceName+"-db", &redis.DatabaseArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ClusterName:       cluster.Name,
 		ClientProtocol:    pulumi.String("Encrypted"),

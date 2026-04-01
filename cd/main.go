@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -85,6 +87,8 @@ func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 		return fetchS3(ctx, uri)
 	case strings.HasPrefix(uri, "gs://"):
 		return fetchGCS(ctx, uri)
+	case strings.Contains(uri, ".blob.core.windows.net"):
+		return fetchAzureBlob(ctx, uri)
 	case strings.HasPrefix(uri, "http://"), strings.HasPrefix(uri, "https://"):
 		return fetchHTTP(ctx, uri)
 	default:
@@ -131,6 +135,23 @@ func fetchGCS(ctx context.Context, uri string) ([]byte, error) {
 	}
 	defer rc.Close()
 	return io.ReadAll(rc)
+}
+
+func fetchAzureBlob(ctx context.Context, uri string) ([]byte, error) {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating Azure credential: %w", err)
+	}
+	client, err := blob.NewClient(uri, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating Azure blob client: %w", err)
+	}
+	resp, err := client.DownloadStream(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("downloading Azure blob: %w", err)
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {

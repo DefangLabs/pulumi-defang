@@ -62,7 +62,7 @@ ARG GITHUB_TOKEN
 RUN pulumi plugin install resource aws $(grep 'pulumi-aws/sdk/v7' go.mod | awk '{print $2}') && \
     pulumi plugin install resource awsx $(grep 'pulumi-awsx/sdk/v3' go.mod | awk '{print $2}') && \
     pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' go.mod | awk '{print $2}') && \
-    pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/v2 ' go.mod | awk '{print $2}')
+    pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/v3 ' go.mod | awk '{print $2}')
 
 ARG PROVIDER_VERSION
 COPY --link --from=build /out/pulumi-resource-defang-aws /tmp/

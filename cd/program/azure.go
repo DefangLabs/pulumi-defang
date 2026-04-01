@@ -4,7 +4,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
 	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
-	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v2"
+	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )

@@ -12,6 +12,13 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
+func splitNonEmpty(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, sep)
+}
+
 // Environment variables read at startup.
 var (
 	awsProfile        = os.Getenv("AWS_PROFILE")           // AWS only
@@ -33,7 +40,7 @@ var (
 	project           = envOrDefault("PROJECT", org)
 	pulumiDebug       = os.Getenv("DEFANG_PULUMI_DEBUG") != ""
 	pulumiDiff        = os.Getenv("DEFANG_PULUMI_DIFF") != ""
-	pulumiTargets     = strings.Split(os.Getenv("DEFANG_PULUMI_TARGETS"), ",")
+	pulumiTargets     = splitNonEmpty(os.Getenv("DEFANG_PULUMI_TARGETS"), ",")
 	region            = os.Getenv("REGION")
 	registryCredsArn  = os.Getenv("CI_REGISTRY_CREDENTIALS_ARN") // AWS only
 	stack             = os.Getenv("STACK")                       // required

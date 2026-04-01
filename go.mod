@@ -16,10 +16,10 @@ require (
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/cache/v2 v2.90.0
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.6.0
 	github.com/pulumi/pulumi-go-provider v1.3.1
@@ -126,11 +126,9 @@ require (
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.23.0 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.90.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.16.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
-	github.com/pulumi/pulumi-random/sdk/v4 v4.19.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect

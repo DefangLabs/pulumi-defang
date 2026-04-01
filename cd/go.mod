@@ -12,6 +12,8 @@ replace (
 
 require (
 	cloud.google.com/go/storage v1.61.3
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/DefangLabs/pulumi-defang v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
@@ -19,7 +21,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.98.0
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
-	github.com/pulumi/pulumi-azure-native-sdk/v2 v2.92.0
+	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.16.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.6.0
 	github.com/pulumi/pulumi/sdk/v3 v3.227.0
 	google.golang.org/protobuf v1.36.11
@@ -35,6 +37,9 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	cloud.google.com/go/monitoring v1.24.3 // indirect
 	dario.cat/mergo v1.0.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
@@ -92,6 +97,7 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/glog v1.2.5 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
@@ -110,6 +116,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -127,6 +134,7 @@ require (
 	github.com/pgavlin/fx v0.1.6 // indirect
 	github.com/pgavlin/fx/v2 v2.0.10 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
+	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
