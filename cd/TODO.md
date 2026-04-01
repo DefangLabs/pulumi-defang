@@ -2,6 +2,10 @@
 
 Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
+## Refactoring
+
+- [ ] **Migrate `BuildResult` to `pulumix` types** — `common.BuildResult.LoadBalancerDNS` uses `pulumi.StringPtrOutput`; switching to `pulumix.Output[*string]` would simplify nil-output initialization (e.g. `pulumix.Val[*string](nil)` instead of `.Untyped()` cast)
+
 ## Bugs in Go code
 
 - [ ] `main.go:218` — `stackConfig()` called with no args but signature requires `composePath string`

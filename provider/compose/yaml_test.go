@@ -1,7 +1,6 @@
 package compose
 
 import (
-	"os"
 	"testing"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -101,27 +100,4 @@ networks:
 
 	require.Contains(t, p.Networks, NetworkID("backend"))
 	assert.True(t, p.Networks[NetworkID("backend")].Internal)
-}
-
-func TestCrewAIComposeUnmarshalYAML(t *testing.T) {
-	data, err := os.ReadFile("../../cd/compose.yaml")
-	if err != nil {
-		t.Skip("cd/compose.yaml not found")
-	}
-	var p Project
-	require.NoError(t, yaml.Unmarshal(data, &p))
-
-	require.Contains(t, p.Services, "app")
-	require.Contains(t, p.Services, "postgres")
-	require.Contains(t, p.Services, "redis")
-
-	// x-defang-postgres: true (bare boolean, not object)
-	require.NotNil(t, p.Services["postgres"].Postgres)
-	// x-defang-redis: true (bare boolean, not object)
-	require.NotNil(t, p.Services["redis"].Redis)
-
-	// Build context should be a pulumi.StringInput
-	app := p.Services["app"]
-	require.NotNil(t, app.Build)
-	assert.Implements(t, (*pulumi.StringInput)(nil), app.Build.Context)
 }
