@@ -71,6 +71,14 @@ func projectConfig() map[string]workspace.ProjectConfigType {
 							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
 						},
 					},
+					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
+					// The default pattern includes hyphens from project/stack names, so override it.
+					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
+					"azure-native": map[string]any{
+						"resources": map[string]any{
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${hex(7)}"},
+						},
+					},
 				},
 			},
 		},
@@ -235,6 +243,10 @@ func stackConfig() auto.ConfigMap {
 			log.Fatal("missing required environment variable: AZURE_LOCATION")
 		}
 		cfg["azure-native:location"] = auto.ConfigValue{Value: azureLocation}
+		cfg["azure-native:useMsi"] = auto.ConfigValue{Value: "true"}
+		if azureSubscription != "" {
+			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
+		}
 	}
 
 	// Defang recipe config
@@ -354,6 +366,12 @@ func main() {
 		composeYaml, err = extractComposeYaml(data)
 		if err != nil {
 			log.Fatalf("failed to extract compose: %v", err)
+		}
+		if provider() == "azure" {
+			composeYaml, err = addAzureBlobSASTokens(ctx, composeYaml)
+			if err != nil {
+				log.Fatalf("failed to add Azure Blob SAS tokens: %v", err)
+			}
 		}
 	}
 

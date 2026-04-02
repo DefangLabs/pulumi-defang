@@ -30,9 +30,10 @@ func main() {
 			return err
 		}
 		ctx.Export("endpoints", azureDemo.Endpoints)
+		postgresImage := "16"
 		pg, err := defangazure.NewPostgres(ctx, "postgres", &defangazure.PostgresArgs{
 			Project_name: "azure-demo",
-			Image:        pulumi.StringPtr("postgres:16"),
+			Image:        &postgresImage,
 			Postgres:     &compose.PostgresConfigArgs{},
 			Environment: pulumi.StringMap{
 				"POSTGRES_PASSWORD": pulumi.String("Ch4ng3M3pl3as3!"),

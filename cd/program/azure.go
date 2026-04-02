@@ -12,9 +12,14 @@ import (
 func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "azure-native")
 
-	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", &pulumiazure.ProviderArgs{
-		Location: pulumi.StringPtr(cfg.Require("location")),
-	})
+	providerArgs := &pulumiazure.ProviderArgs{
+		Location:                  pulumi.StringPtr(cfg.Require("location")),
+		UseDefaultAzureCredential: pulumi.BoolPtr(true),
+	}
+	if subID := cfg.Get("subscriptionId"); subID != "" {
+		providerArgs.SubscriptionId = pulumi.StringPtr(subID)
+	}
+	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", providerArgs)
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}

@@ -130,6 +130,7 @@ func CreateContainerApp(
 
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,
+		ContainerAppName:     pulumi.StringPtr(serviceName),
 		ManagedEnvironmentId: infra.Environment.ID().ToStringOutput(),
 		Identity:             identity,
 		Configuration: &app.ConfigurationArgs{
