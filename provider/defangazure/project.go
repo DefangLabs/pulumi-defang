@@ -52,27 +52,51 @@ func (*Project) Construct(
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
 
-	env, err := app.NewManagedEnvironment(ctx, name, &app.ManagedEnvironmentArgs{
-		ResourceGroupName: rg.Name,
-		Location:          pulumi.String(location),
-	}, childOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating managed environment: %w", err)
-	}
-
-	// Create shared build infrastructure if any service has a build config.
+	// Create VNet and private DNS zones when any service uses PostgreSQL (requires VNet integration).
+	hasPostgres := false
 	hasBuild := false
 	for _, svc := range inputs.Services {
+		if svc.Postgres != nil {
+			hasPostgres = true
+		}
 		if svc.Build != nil {
 			hasBuild = true
-			break
 		}
 	}
 
-	infra := &providerazure.SharedInfra{
-		ResourceGroup: rg,
-		Environment:   env,
+	// Bootstrap a minimal SharedInfra (without Environment) so CreateNetworking can reference the RG.
+	infra := &providerazure.SharedInfra{ResourceGroup: rg}
+
+	if hasPostgres {
+		networking, err := providerazure.CreateNetworking(ctx, name, infra, location, childOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating networking: %w", err)
+		}
+		infra.Networking = networking
+
+		dns, err := providerazure.CreateDNSZones(ctx, name, infra, networking, childOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating DNS zones: %w", err)
+		}
+		infra.DNS = dns
 	}
+
+	// Build managed environment args; attach VNet infra subnet when networking is configured.
+	envArgs := &app.ManagedEnvironmentArgs{
+		ResourceGroupName: rg.Name,
+		Location:          pulumi.String(location),
+	}
+	if infra.Networking != nil {
+		envArgs.VnetConfiguration = &app.VnetConfigurationArgs{
+			InfrastructureSubnetId: infra.Networking.AppsSubnet.ID().ToStringOutput(),
+		}
+	}
+
+	env, err := app.NewManagedEnvironment(ctx, name, envArgs, childOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating managed environment: %w", err)
+	}
+	infra.Environment = env
 
 	if hasBuild {
 		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, location, childOpts...)
@@ -99,6 +123,15 @@ func (*Project) Construct(
 			if err != nil {
 				return nil, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 			}
+
+			// Add a CNAME in the "internal" DNS zone so services can resolve the
+			// postgres server by short name (e.g. "db" → full Azure FQDN).
+			if infra.DNS != nil {
+				if err := providerazure.AddPostgresDNSRecord(ctx, svcName, pgResult.Server.FullyQualifiedDomainName, infra.DNS, infra, svcOpts...); err != nil {
+					return nil, fmt.Errorf("adding DNS record for %s: %w", svcName, err)
+				}
+			}
+
 			endpoints[svcName] = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 		} else if svc.Redis != nil {
 			if err := ctx.RegisterComponentResource("defang-azure:index:Redis", svcName, comp, childOpts...); err != nil {

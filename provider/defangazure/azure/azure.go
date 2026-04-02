@@ -13,7 +13,9 @@ const defaultAzureLocation = "eastus"
 type SharedInfra struct {
 	ResourceGroup *resources.ResourceGroup
 	Environment   *app.ManagedEnvironment
-	BuildInfra    *BuildInfra // nil when no services require image builds
+	BuildInfra    *BuildInfra    // nil when no services require image builds
+	Networking    *NetworkingResult // nil when no VNet-integrated services are present
+	DNS           *DNSResult        // nil when no VNet-integrated services are present
 }
 
 // Location reads the Azure location from Pulumi stack config, falling back to the default.

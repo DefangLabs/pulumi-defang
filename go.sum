@@ -497,6 +497,10 @@ github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0 h1:0ahdGJXg
 github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0/go.mod h1:JMfQ+jmQf0YYI31s3fQe5hJ73hWEv0Mlc/sjukf6o8U=
 github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0 h1:uhCgqKSaOU3rkjUkzsDz0TbU50XSSygVQUX2/6+VWhc=
 github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0/go.mod h1:dHaprf7wwcp8Y/L3mGW8u2geqeaYQybjn9cScB2+yLo=
+github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0 h1:EXdiCzZNHpNc4gSem7e6VVpI/CrF2O8JdQcNFQus1tI=
+github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0/go.mod h1:2r+Vt14MLHpCr2bz/aXO6+VIGOl9dHXncqCoGsUsQUI=
+github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0 h1:4fknGY+uY24B8Y/xwL6ZutfwPbkq0xxnHOSbvreOKLM=
+github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0/go.mod h1:Vip24OK8gb+niNLUsdu0+nAfm1QeUJJJTDjbMqvmIXQ=
 github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.16.0 h1:3r+4pH9TiiyIL/q//VHNLN/JRP0SUbIjK95ax0SqkJk=
 github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.16.0/go.mod h1:SVaFc/qU0xWfcS0u2bbgfWvy7aLWVLar3axkDj9hMQE=
 github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0 h1:AP62GJ3I5a5tY31fEdPPBWL+uJ5T/Lh93iicOMzG2LM=
