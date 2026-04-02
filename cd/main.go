@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -35,13 +36,16 @@ import (
 var version = "development" // overwritten by -ldflags "-X main.version=..."
 
 func provider() string {
-	if gcpProject != "" {
+	switch {
+	case awsRegion != "":
+		return "aws"
+	case gcpProject != "":
 		return "gcp"
-	}
-	if azureSubscription != "" {
+	case azureSubscription != "":
 		return "azure"
 	}
-	return "aws"
+	log.Fatal("missing required environment variable: must set one of: AWS_REGION, GCP_PROJECT, or AZURE_SUBSCRIPTION")
+	return ""
 }
 
 func color() string {
@@ -100,10 +104,7 @@ func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 	case strings.HasPrefix(uri, "http://"), strings.HasPrefix(uri, "https://"):
 		return fetchHTTP(ctx, uri)
 	default:
-		if data, err := base64.StdEncoding.DecodeString(uri); err == nil {
-			return data, nil
-		}
-		return os.ReadFile(uri)
+		return base64.StdEncoding.DecodeString(uri)
 	}
 }
 
@@ -180,34 +181,34 @@ func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
 
 // extractComposeYaml extracts the compose bytes (field 4) from a ProjectUpdate protobuf
 // without importing the full defang CLI proto package.
-func extractComposeYaml(data []byte) ([]byte, error) {
-	for len(data) > 0 {
-		num, typ, n := protowire.ConsumeTag(data)
+func extractComposeYaml(projectUpdate []byte) ([]byte, error) {
+	for len(projectUpdate) > 0 {
+		num, typ, n := protowire.ConsumeTag(projectUpdate)
 		if n < 0 {
-			return nil, fmt.Errorf("invalid protobuf tag")
+			return nil, errors.New("invalid protobuf tag")
 		}
-		data = data[n:]
+		projectUpdate = projectUpdate[n:]
 		switch typ {
 		case protowire.BytesType:
-			v, n := protowire.ConsumeBytes(data)
+			v, n := protowire.ConsumeBytes(projectUpdate)
 			if n < 0 {
-				return nil, fmt.Errorf("invalid protobuf bytes field")
+				return nil, errors.New("invalid protobuf bytes field")
 			}
 			if num == 4 {
 				return v, nil
 			}
-			data = data[n:]
+			projectUpdate = projectUpdate[n:]
 		case protowire.VarintType:
-			_, n := protowire.ConsumeVarint(data)
+			_, n := protowire.ConsumeVarint(projectUpdate)
 			if n < 0 {
-				return nil, fmt.Errorf("invalid protobuf varint field")
+				return nil, errors.New("invalid protobuf varint field")
 			}
-			data = data[n:]
+			projectUpdate = projectUpdate[n:]
 		default:
 			return nil, fmt.Errorf("unexpected protobuf wire type %d", typ)
 		}
 	}
-	return nil, fmt.Errorf("ProjectUpdate has no compose field")
+	return nil, errors.New("ProjectUpdate has no compose field")
 }
 
 // stackConfig returns config for Pulumi.<stack>.yaml (stack-level settings).
@@ -264,6 +265,10 @@ func stackConfig() auto.ConfigMap {
 	}
 	if registryCredsArn != "" {
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
+	}
+
+	switch mode {
+	case "development":
 	}
 
 	return cfg
@@ -336,6 +341,9 @@ func main() {
 	if stack == "" {
 		log.Fatal("missing required environment variable: STACK")
 	}
+	if stack != strings.ToLower(stack) {
+		log.Fatal("STACK name must be lowercase")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -350,46 +358,47 @@ func main() {
 	if len(os.Args) > 1 {
 		command = os.Args[1]
 	}
-	// Payload URL from args (like old code): cd <command> <payload>
-	var payload string
-	if len(os.Args) > 2 {
-		payload = os.Args[2]
-	}
 
-	// Fetch protobuf and extract compose YAML for up/preview/deploy
-	var composeYaml []byte
-	if payload != "" {
-		data, err := fetchPayload(ctx, payload)
-		if err != nil {
-			log.Fatalf("failed to fetch payload: %v", err)
+	var s auto.Stack
+	var err error
+	switch command {
+	case "up", "deploy", "preview":
+		// Payload URL from args (like old code): cd <command> <payload>
+		if len(os.Args) <= 2 {
+			log.Fatalf("missing required argument: payload")
 		}
-		composeYaml, err = extractComposeYaml(data)
-		if err != nil {
-			log.Fatalf("failed to extract compose: %v", err)
-		}
-		if provider() == "azure" {
-			composeYaml, err = addAzureBlobSASTokens(ctx, composeYaml)
+		payload := os.Args[2]
+		// Fetch protobuf and extract compose YAML
+		var composeYaml []byte
+		if payload != "" {
+			projectUpdate, err := fetchPayload(ctx, payload)
 			if err != nil {
-				log.Fatalf("failed to add Azure Blob SAS tokens: %v", err)
+				log.Fatalf("failed to fetch payload: %v", err)
+			}
+			composeYaml, err = extractComposeYaml(projectUpdate)
+			if err != nil {
+				log.Fatalf("failed to extract compose: %v", err)
 			}
 		}
+		// if provider() == "azure" {
+		// 	composeYaml, err = addAzureBlobSASTokens(ctx, composeYaml)
+		// 	if err != nil {
+		// 		log.Fatalf("failed to add Azure Blob SAS tokens: %v", err)
+		// 	}
+		// }
+		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(composeYaml))
+	default:
+		s, err = auto.SelectStackInlineSource(ctx, stack, project, nil)
 	}
-
-	stack, err := auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(composeYaml))
 	if err != nil {
 		log.Fatalf("failed to create/select stack: %v", err)
 	}
+	stack := s
 
 	// Set workspace env vars
-	wsEnv := map[string]string{}
 	if etag != "" {
-		wsEnv["USER"] = etag // USER ends up in Pulumi lock files for debugging; FIXME: doens't work on linux
-	}
-	if stateUrl != "" {
-		wsEnv["PULUMI_BACKEND_URL"] = stateUrl
-	}
-	if len(wsEnv) > 0 {
-		stack.Workspace().SetEnvVars(wsEnv)
+		// USER ends up in Pulumi lock files for debugging; FIXME: doens't work on linux
+		stack.Workspace().SetEnvVar("USER", etag)
 	}
 
 	// Set project-level config (autonaming, disable-default-providers)
