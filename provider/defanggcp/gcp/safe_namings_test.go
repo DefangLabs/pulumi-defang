@@ -47,7 +47,7 @@ func TestCloudrunServiceName(t *testing.T) {
 	}
 }
 
-// nolint: thelper,funlen // reporting the line in validate is more useful; table is intentionally long
+//nolint: thelper,funlen // reporting the line in validate is more useful; table is intentionally long
 func TestNetworkName(t *testing.T) {
 	tests := []struct {
 		name     string
