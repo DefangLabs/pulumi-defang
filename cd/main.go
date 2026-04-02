@@ -380,12 +380,6 @@ func main() {
 				log.Fatalf("failed to extract compose: %v", err)
 			}
 		}
-		// if provider() == "azure" {
-		// 	composeYaml, err = addAzureBlobSASTokens(ctx, composeYaml)
-		// 	if err != nil {
-		// 		log.Fatalf("failed to add Azure Blob SAS tokens: %v", err)
-		// 	}
-		// }
 		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(composeYaml))
 	default:
 		s, err = auto.SelectStackInlineSource(ctx, stack, project, nil)
