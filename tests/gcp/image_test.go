@@ -12,7 +12,6 @@ package gcp
 // the repo without the rewrite → Cloud Run rejects the registry URL.
 
 import (
-	"strings"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
