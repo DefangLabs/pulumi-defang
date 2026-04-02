@@ -188,6 +188,12 @@ func buildOptionalInfra(
 		cfg.BuildInfra = buildInfra
 	}
 
+	if externalRegistries := collectExternalRegistries(services); len(externalRegistries) > 0 {
+		if err := createRemoteRepos(ctx, externalRegistries, projectName, cfg.Region, opts...); err != nil {
+			return err
+		}
+	}
+
 	if hasPostgresConfig(services) || hasRedisConfig(services) {
 		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
 		if err != nil {

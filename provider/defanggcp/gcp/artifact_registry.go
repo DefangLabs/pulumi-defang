@@ -33,6 +33,56 @@ func hasBuildConfig(services map[string]compose.ServiceConfig) bool {
 	return false
 }
 
+// collectExternalRegistries returns the unique non-Cloud-Run-supported registries
+// referenced by pre-built images across all services (build-only services are skipped
+// because their image is produced by Cloud Build and pushed to Artifact Registry).
+func collectExternalRegistries(services map[string]compose.ServiceConfig) []string {
+	seen := map[string]bool{}
+	var result []string
+	for _, svc := range services {
+		if svc.Image == nil || svc.Build != nil {
+			continue
+		}
+		info := parseImage(*svc.Image)
+		if info.registry != "" && !isCloudRunSupportedRegistry(info.registry) && !seen[info.registry] {
+			seen[info.registry] = true
+			result = append(result, info.registry)
+		}
+	}
+	return result
+}
+
+// createRemoteRepos creates Artifact Registry REMOTE repositories that act as
+// pull-through caches for external Docker registries not natively supported by
+// Cloud Run. One repository is created per unique registry. The repository ID
+// matches sanitizeRepoName(registry), which is the same name GetServiceImage
+// uses when rewriting image references.
+func createRemoteRepos(
+	ctx *pulumi.Context,
+	registries []string,
+	projectName, region string,
+	opts ...pulumi.ResourceOption,
+) error {
+	for _, registry := range registries {
+		repoId := sanitizeRepoName(registry)
+		if _, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId+"-remote", &artifactregistry.RepositoryArgs{
+			Location:     pulumi.String(region),
+			RepositoryId: pulumi.String(repoId),
+			Description:  pulumi.String("Remote pull-through cache for " + registry),
+			Format:       pulumi.String("DOCKER"),
+			Mode:         pulumi.String("REMOTE_REPOSITORY"),
+			RemoteRepositoryConfig: &artifactregistry.RepositoryRemoteRepositoryConfigArgs{
+				CommonRepository: &artifactregistry.RepositoryRemoteRepositoryConfigCommonRepositoryArgs{
+					Uri: pulumi.String("https://" + registry),
+				},
+			},
+		}, append(opts, pulumi.RetainOnDelete(true))...); err != nil {
+			return fmt.Errorf("creating remote repository for %s: %w", registry, err)
+		}
+	}
+	return nil
+}
+
 // gcpProjectId reads the GCP project ID from Pulumi stack config.
 func gcpProjectId(ctx *pulumi.Context) string {
 	cfg := config.New(ctx, "gcp")

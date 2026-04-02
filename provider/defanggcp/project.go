@@ -335,6 +335,14 @@ func enableLLM(
 		svc.Environment["GOOGLE_VERTEX_LOCATION"] = infra.Region
 	}
 
+	if val, ok := svc.Environment["VERTEX_PROJECT"]; !ok || val == "" {
+		svc.Environment["VERTEX_PROJECT"] = infra.GcpProject
+	}
+
+	if val, ok := svc.Environment["VERTEX_LOCATION"]; !ok || val == "" {
+		svc.Environment["VERTEX_LOCATION"] = infra.Region
+	}
+
 	// Inject environment variables for Google ADK to have access to GCP Vertex AI
 	if val, ok := svc.Environment["GOOGLE_CLOUD_PROJECT"]; !ok || val == "" {
 		svc.Environment["GOOGLE_CLOUD_PROJECT"] = infra.GcpProject

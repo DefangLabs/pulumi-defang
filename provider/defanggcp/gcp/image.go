@@ -133,7 +133,7 @@ func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
 // rewritten to point at the project's Artifact Registry so that Cloud Run can
 // pull it. This mirrors the logic in getServiceImage in the CD implementation
 // and assumes a corresponding Artifact Registry remote repository has been
-// configured to proxy the original registry.
+// configured to proxy the original registry (see createRemoteRepos).
 func GetServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
