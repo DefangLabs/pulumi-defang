@@ -80,7 +80,7 @@ func buildProject(
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
 
-	var albDNS pulumi.StringPtrOutput
+	albDNS := pulumix.Val[*string](nil).Untyped().(pulumi.StringPtrOutput)
 	if infra.Alb != nil {
 		albDNS = infra.Alb.DnsName.ToStringPtrOutput()
 	}
