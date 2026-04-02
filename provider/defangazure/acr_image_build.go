@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -32,7 +34,7 @@ type ACRImageBuildInputs struct {
 	// Name of the Azure Container Registry
 	RegistryName string `pulumi:"registryName"`
 
-	// Name of the ACR task to run
+	// Name of the ACR task — used only to declare a Pulumi dependency on the Task resource.
 	TaskName string `pulumi:"taskName"`
 
 	// Image name (without tag) pushed by the task, e.g. "myservice"
@@ -40,6 +42,13 @@ type ACRImageBuildInputs struct {
 
 	// Registry login server, e.g. "myregistry.azurecr.io"
 	LoginServer string `pulumi:"loginServer"`
+
+	// Full context URL for the build (may include a SAS token query string).
+	// Passed at run time via EncodedTaskRunRequest so the ARM API never strips the token.
+	ContextPath string `pulumi:"contextPath"`
+
+	// Base64-encoded ACR task YAML (from generateTaskYAML).
+	EncodedTaskContent string `pulumi:"encodedTaskContent"`
 
 	// Max wait time in seconds (default: 3600)
 	MaxWaitTime *int `pulumi:"maxWaitTime,optional"`
@@ -84,7 +93,8 @@ func (*ACRImageBuild) Create(
 		inputs.SubscriptionID,
 		inputs.ResourceGroupName,
 		inputs.RegistryName,
-		inputs.TaskName,
+		inputs.EncodedTaskContent,
+		inputs.ContextPath,
 		inputs.LoginServer,
 		inputs.ImageName,
 		maxWait,
@@ -103,10 +113,16 @@ func (*ACRImageBuild) Create(
 	}, nil
 }
 
-// scheduleAndWaitACRRun schedules an ACR task run and polls until it reaches a terminal state.
+// scheduleAndWaitACRRun schedules an inline ACR task run using EncodedTaskRunRequest
+// and polls until it reaches a terminal state.
+// Using EncodedTaskRunRequest (rather than TaskRunRequest) means the context URL is
+// passed in the request body, which is never persisted — so the ARM API cannot strip
+// the SAS query string the way it does when storing a task definition.
 func scheduleAndWaitACRRun(
 	ctx context.Context,
-	subscriptionID, rgName, registryName, taskName, loginServer, imageName string,
+	subscriptionID, rgName, registryName string,
+	encodedTaskContent, contextPath string,
+	loginServer, imageName string,
 	maxWaitSeconds int,
 ) (string, string, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -124,16 +140,23 @@ func scheduleAndWaitACRRun(
 		return "", "", fmt.Errorf("creating runs client: %w", err)
 	}
 
-	taskID := fmt.Sprintf(
-		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/tasks/%s",
-		subscriptionID, rgName, registryName, taskName,
-	)
-	taskRunType := "TaskRunRequest"
+	runType := "EncodedTaskRunRequest"
 	isArchiveEnabled := false
-	poller, err := regClient.BeginScheduleRun(ctx, rgName, registryName, &armcontainerregistry.TaskRunRequest{
-		Type:             &taskRunType,
-		TaskID:           &taskID,
+	osLinux := armcontainerregistry.OSLinux
+	cpu := int32(2)
+	poller, err := regClient.BeginScheduleRun(ctx, rgName, registryName, &armcontainerregistry.EncodedTaskRunRequest{
+		Type:               &runType,
+		EncodedTaskContent: &encodedTaskContent,
+		// SourceLocation carries the full context URL including SAS token.
+		// EncodedTaskRunRequest is never persisted by ARM, so the query string is preserved.
+		SourceLocation:   &contextPath,
 		IsArchiveEnabled: &isArchiveEnabled,
+		Platform: &armcontainerregistry.PlatformProperties{
+			OS: &osLinux,
+		},
+		AgentConfiguration: &armcontainerregistry.AgentProperties{
+			CPU: &cpu,
+		},
 	}, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("scheduling ACR task run: %w", err)
@@ -151,8 +174,12 @@ func scheduleAndWaitACRRun(
 
 	// Check whether the run already reached a terminal state.
 	if scheduled.Properties.Status != nil {
-		if image, done, err := checkRunStatus(scheduled.Properties, loginServer, imageName, runID); done {
-			return runID, image, err
+		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, runID); done {
+			if runErr != nil {
+				log := fetchRunLog(ctx, runsClient, rgName, registryName, runID)
+				return runID, image, fmt.Errorf("%w\n--- ACR run log ---\n%s", runErr, log)
+			}
+			return runID, image, nil
 		}
 	}
 
@@ -177,10 +204,40 @@ func scheduleAndWaitACRRun(
 		if resp.Properties == nil || resp.Properties.Status == nil {
 			continue
 		}
-		if image, done, err := checkRunStatus(resp.Properties, loginServer, imageName, runID); done {
-			return runID, image, err
+		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, runID); done {
+			if runErr != nil {
+				log := fetchRunLog(ctx, runsClient, rgName, registryName, runID)
+				return runID, image, fmt.Errorf("%w\n--- ACR run log ---\n%s", runErr, log)
+			}
+			return runID, image, nil
 		}
 	}
+}
+
+// fetchRunLog fetches the run log content via the ACR log SAS URL.
+// Returns a best-effort string; errors are embedded in the returned string.
+func fetchRunLog(ctx context.Context, runsClient *armcontainerregistry.RunsClient, rgName, registryName, runID string) string {
+	resp, err := runsClient.GetLogSasURL(ctx, rgName, registryName, runID, nil)
+	if err != nil {
+		return fmt.Sprintf("(could not get log URL: %v)", err)
+	}
+	if resp.LogLink == nil {
+		return "(no log URL returned)"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, *resp.LogLink, nil)
+	if err != nil {
+		return fmt.Sprintf("(could not build log request: %v)", err)
+	}
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Sprintf("(could not fetch log: %v)", err)
+	}
+	defer httpResp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, 64*1024))
+	if err != nil {
+		return fmt.Sprintf("(could not read log: %v)", err)
+	}
+	return string(body)
 }
 
 // checkRunStatus inspects run properties and returns (image, done, err).

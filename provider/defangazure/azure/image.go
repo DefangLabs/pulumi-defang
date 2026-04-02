@@ -2,6 +2,7 @@ package azure
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -207,12 +208,14 @@ func buildServiceImage(
 	platform := svc.GetPlatform()
 	imageName := serviceName
 
+	taskYAML := generateTaskYAML(imageName, svc.Build.GetDockerfile(), svc.Build.Args, platform)
+	encodedYAML := base64.StdEncoding.EncodeToString([]byte(taskYAML))
+
 	task, err := createACRTask(
 		ctx,
 		serviceName+"-build",
-		*svc.Build,
-		platform,
-		imageName,
+		encodedYAML,
+		svc.Build.Context,
 		infra.registry,
 		sharedInfra,
 		opts...,
@@ -225,13 +228,15 @@ func buildServiceImage(
 
 	var buildResource acrImageBuildResource
 	err = ctx.RegisterResource("defang-azure:index:ACRImageBuild", serviceName+"-build", pulumi.Map{
-		"subscriptionId":    infra.subscriptionID,
-		"resourceGroupName": sharedInfra.ResourceGroup.Name,
-		"registryName":      infra.registry.Name,
-		"taskName":          task.Name,
-		"imageName":         pulumi.String(imageName),
-		"loginServer":       infra.registry.LoginServer,
-		"triggers":          pulumi.StringArray{triggerHash},
+		"subscriptionId":     infra.subscriptionID,
+		"resourceGroupName":  sharedInfra.ResourceGroup.Name,
+		"registryName":       infra.registry.Name,
+		"taskName":           task.Name,
+		"imageName":          pulumi.String(imageName),
+		"loginServer":        infra.registry.LoginServer,
+		"contextPath":        svc.Build.Context,
+		"encodedTaskContent": pulumi.String(encodedYAML),
+		"triggers":           pulumi.StringArray{triggerHash},
 	}, &buildResource, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACRImageBuild resource for %s: %w", serviceName, err)

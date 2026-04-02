@@ -50,10 +50,14 @@ func addAzureBlobSASTokens(ctx context.Context, composeYaml []byte) ([]byte, err
 		if !ok || !strings.Contains(contextURL, ".blob.core.windows.net") {
 			continue
 		}
+		// URL already carries a SAS token — use it as-is.
+		if strings.Contains(contextURL, "?") {
+			log.Printf("Build context for %s already has SAS token, skipping", svcName)
+			continue
+		}
 		sasURL, err := blobToSASURL(ctx, contextURL)
 		if err != nil {
-			log.Printf("warning: failed to generate SAS URL for %s build context: %v", svcName, err)
-			continue
+			return composeYaml, fmt.Errorf("generating SAS URL for %s build context: %w", svcName, err)
 		}
 		build["context"] = sasURL
 		modified = true

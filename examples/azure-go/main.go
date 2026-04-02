@@ -30,19 +30,19 @@ func main() {
 			return err
 		}
 		ctx.Export("endpoints", azureDemo.Endpoints)
-		postgresImage := "16"
-		pg, err := defangazure.NewPostgres(ctx, "postgres", &defangazure.PostgresArgs{
-			Project_name: "azure-demo",
-			Image:        &postgresImage,
-			Postgres:     &compose.PostgresConfigArgs{},
-			Environment: pulumi.StringMap{
-				"POSTGRES_PASSWORD": pulumi.String("Ch4ng3M3pl3as3!"),
-			},
-		})
-		if err != nil {
-			return err
-		}
-		ctx.Export("postgresEndpoint", pg.Endpoint)
+		// postgresImage := "16"
+		// pg, err := defangazure.NewPostgres(ctx, "postgres", &defangazure.PostgresArgs{
+		// 	Project_name: "azure-demo",
+		// 	Image:        &postgresImage,
+		// 	Postgres:     &compose.PostgresConfigArgs{},
+		// 	Environment: pulumi.StringMap{
+		// 		"POSTGRES_PASSWORD": pulumi.String("Ch4ng3M3pl3as3!"),
+		// 	},
+		// })
+		// if err != nil {
+		// 	return err
+		// }
+		// ctx.Export("postgresEndpoint", pg.Endpoint)
 		//
 		// redis, err := defangazure.NewRedis(ctx, "redis", &defangazure.RedisArgs{
 		// 	Project_name: "azure-demo",

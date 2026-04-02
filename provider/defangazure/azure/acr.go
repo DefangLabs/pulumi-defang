@@ -1,12 +1,10 @@
 package azure
 
 import (
-	"encoding/base64"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -59,39 +57,29 @@ steps:
 }
 
 // createACRTask creates an ACR task that builds and pushes a Docker image.
-// The build context is supplied via build.Context (an Azure Blob SAS URL or plain URL).
+// encodedYAML is the base64-encoded ACR task YAML (from generateTaskYAML).
+// The build context is NOT stored in the task definition because the ARM API
+// strips SAS query strings from contextPath; it is passed at run time instead.
 func createACRTask(
 	ctx *pulumi.Context,
 	name string,
-	build compose.BuildConfig,
-	platform string,
-	imageName string,
+	encodedYAML string,
+	contextURL pulumi.StringInput,
 	registry *containerregistry.Registry,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*containerregistry.Task, error) {
-	dockerfile := build.GetDockerfile()
-
-	taskYAML := generateTaskYAML(imageName, dockerfile, build.Args, platform)
-	encodedYAML := base64.StdEncoding.EncodeToString([]byte(taskYAML))
-
-	// Split blob SAS URL into base URL and SAS token (if present).
-	// ACR Tasks require the token separately as ContextAccessToken.
-	contextURL := build.Context.ToStringOutput().ApplyT(func(s string) *string {
+	// Log context URL for debugging (without exposing the token value).
+	contextURL.ToStringOutput().ApplyT(func(s string) string {
+		base := s
 		if idx := strings.Index(s, "?"); idx >= 0 {
-			url := s[:idx]
-			return &url
+			base = s[:idx]
+			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (SAS token present, %d bytes)", name, base, len(s)-idx-1), nil)
+		} else {
+			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", name, s), nil)
 		}
-		return &s
-	}).(pulumi.StringPtrOutput)
-
-	contextToken := build.Context.ToStringOutput().ApplyT(func(s string) *string {
-		if idx := strings.Index(s, "?"); idx >= 0 {
-			token := s[idx+1:]
-			return &token
-		}
-		return nil
-	}).(pulumi.StringPtrOutput)
+		return s
+	})
 
 	task, err := containerregistry.NewTask(ctx, name, &containerregistry.TaskArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
@@ -103,8 +91,9 @@ func createACRTask(
 		Step: containerregistry.EncodedTaskStepArgs{
 			Type:               pulumi.String("EncodedTask"),
 			EncodedTaskContent: pulumi.String(encodedYAML),
-			ContextPath:        contextURL,
-			ContextAccessToken: contextToken,
+			// ContextPath intentionally omitted: ARM strips SAS query strings when
+			// persisting the task. The full SAS URL is passed at run time via
+			// EncodedTaskRunRequest, which is never stored.
 		},
 		AgentConfiguration: &containerregistry.AgentPropertiesArgs{
 			Cpu: pulumi.Int(2),
