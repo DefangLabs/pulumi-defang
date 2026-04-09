@@ -61,11 +61,21 @@ func (*Service) Construct(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
+	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.BuildInfra, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
+	}
 	sa, err := createServiceAccount(ctx, inputs.ProjectName, name, infra, []pulumi.ResourceOption{childOpt})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service account: %w", err)
 	}
-	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, svc, sa, infra, childOpt)
+	_, _, err = BuildContainerService(
+		ctx, inputs.ProjectName, configProvider, name, image, svc, infra, comp, []pulumi.ResourceOption{childOpt},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build container service: %w", err)
+	}
+	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, image, svc, sa, infra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
 	}

@@ -53,16 +53,13 @@ func CreateCloudRunService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
 	serviceName string,
+	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
-	template, err := buildTemplate(ctx, configProvider, serviceName, svc, sa, gcpConfig, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("building Cloud Run template: %w", err)
-	}
-
+	template := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig)
 	// Create Cloud Run service
 	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
 		Location:           pulumi.String(gcpConfig.Region),
@@ -85,11 +82,11 @@ func buildTemplate(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
 	serviceName string,
+	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
-	opts ...pulumi.ResourceOption,
-) (*cloudrunv2.ServiceTemplateArgs, error) {
+) *cloudrunv2.ServiceTemplateArgs {
 	// Build environment variables
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
 		&cloudrunv2.ServiceTemplateContainerEnvArgs{
@@ -149,11 +146,6 @@ func buildTemplate(
 			startupProbe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
 	}
-	image, err := GetServiceImage(ctx, serviceName, svc, gcpConfig.BuildInfra, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("getting service image: %w", err)
-	}
-
 	template := &cloudrunv2.ServiceTemplateArgs{
 		Containers: cloudrunv2.ServiceTemplateContainerArray{
 			&cloudrunv2.ServiceTemplateContainerArgs{
@@ -179,7 +171,7 @@ func buildTemplate(
 		template.VpcAccess = buildVpcAccess(gcpConfig)
 	}
 
-	return template, nil
+	return template
 }
 
 func buildVpcAccess(gcpConfig *GlobalConfig) *cloudrunv2.ServiceTemplateVpcAccessArgs {

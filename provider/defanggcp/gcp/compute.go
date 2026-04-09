@@ -26,17 +26,13 @@ func CreateComputeEngine(
 	ctx *pulumi.Context,
 	projectName string,
 	serviceName string,
+	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*ComputeEngineResult, error) {
 	machineType := getComputeMachineType(svc)
-
-	image, err := GetServiceImage(ctx, serviceName, svc, gcpConfig.BuildInfra, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("resolving image for %s: %w", serviceName, err)
-	}
 
 	iamDeps := addRolesToServiceAccount(ctx, sa, []string{
 		"roles/artifactregistry.reader",
@@ -64,7 +60,7 @@ func CreateComputeEngine(
 		healthCheckPort = &p
 	}
 
-	cloudInit := getCloudInitConfig(serviceName, svc, image, gcpConfig.Region, addHealthCheckSidecar)
+	cloudInit := getCloudInitConfig(serviceName, svc, gcpConfig.Region, addHealthCheckSidecar)
 
 	instanceTag := resourceName(projectName, gcpConfig, serviceName)
 
@@ -324,7 +320,6 @@ func getComputeMachineType(svc compose.ServiceConfig) string {
 func getCloudInitConfig(
 	serviceName string,
 	svc compose.ServiceConfig,
-	image pulumi.StringInput,
 	region string,
 	addHealthCheckSidecar bool,
 ) pulumi.StringInput {
@@ -409,7 +404,7 @@ runcmd:
 		strings.Join(runcmds, "\n  - "),
 	))
 
-	return pulumi.Sprintf(buf.String(), image)
+	return pulumi.Sprintf(buf.String(), svc.Image)
 }
 
 // buildSidecarUnits returns the cloud-init write_files entries and runcmd lines for the

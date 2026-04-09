@@ -200,9 +200,13 @@ func buildService(
 		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisResult.Instance, Config: svc}
 		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstIngressPort(svc.Ports, defaultRedisPort))
 	default:
-		var err error
-		endpoint, lbEntry, err = buildContainerService(
-			ctx, projectName, configProvider, svcName, svc, infra, svcComp, svcChildOpts)
+		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, svcChildOpts...)
+		if err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
+		}
+
+		endpoint, lbEntry, err = BuildContainerService(
+			ctx, projectName, configProvider, svcName, image, svc, infra, svcComp, svcChildOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, err
 		}
@@ -220,11 +224,12 @@ func buildService(
 	return endpoint, svcComp, lbEntry, nil
 }
 
-func buildContainerService(
+func BuildContainerService(
 	ctx *pulumi.Context,
 	projectName string,
 	configProvider compose.ConfigProvider,
 	svcName string,
+	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	infra *providergcp.GlobalConfig,
 	svcComp pulumi.Resource,
@@ -247,7 +252,7 @@ func buildContainerService(
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
 		}
 		crResult, err := providergcp.CreateCloudRunService(
-			ctx, configProvider, svcName, svc, sa, infra, pulumi.Parent(svcComp))
+			ctx, configProvider, svcName, image, svc, sa, infra, pulumi.Parent(svcComp))
 		if err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
 		}
@@ -259,7 +264,10 @@ func buildContainerService(
 	if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 		return pulumi.StringOutput{}, nil, fmt.Errorf("registering Compute Engine component %s: %w", svcName, err)
 	}
-	ceResult, err := providergcp.CreateComputeEngine(ctx, projectName, svcName, svc, sa, infra, pulumi.Parent(svcComp))
+
+	ceResult, err := providergcp.CreateComputeEngine(
+		ctx, projectName, svcName, image, svc, sa, infra, pulumi.Parent(svcComp),
+	)
 	if err != nil {
 		return pulumi.StringOutput{}, nil, fmt.Errorf("creating Compute Engine service %s: %w", svcName, err)
 	}
