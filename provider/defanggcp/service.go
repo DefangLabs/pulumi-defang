@@ -13,7 +13,6 @@ type Service struct{}
 
 // ServiceInputs defines the inputs for a standalone GCP Cloud Run service.
 type ServiceInputs struct {
-	Build       *compose.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"project_name"`
@@ -43,7 +42,6 @@ func (*Service) Construct(
 
 	childOpt := pulumi.Parent(comp)
 	svc := compose.ServiceConfig{
-		Build:       inputs.Build,
 		Image:       inputs.Image,
 		Platform:    inputs.Platform,
 		Ports:       inputs.Ports,
