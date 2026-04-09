@@ -13,6 +13,7 @@ type Service struct{}
 
 // ServiceInputs defines the inputs for a standalone GCP Cloud Run service.
 type ServiceInputs struct {
+	Build       *compose.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"project_name"`
@@ -42,6 +43,7 @@ func (*Service) Construct(
 
 	childOpt := pulumi.Parent(comp)
 	svc := compose.ServiceConfig{
+		Build:       inputs.Build,
 		Image:       inputs.Image,
 		Platform:    inputs.Platform,
 		Ports:       inputs.Ports,
@@ -67,15 +69,9 @@ func (*Service) Construct(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service account: %w", err)
 	}
-	_, _, err = BuildContainerService(
-		ctx, inputs.ProjectName, configProvider, name, image, svc, infra, comp, []pulumi.ResourceOption{childOpt},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build container service: %w", err)
-	}
 	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, image, svc, sa, infra, childOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
+		return nil, fmt.Errorf("failed to create Cloud Run service: %w", err)
 	}
 
 	comp.Endpoint = crResult.Service.Uri

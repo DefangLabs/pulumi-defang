@@ -60,7 +60,7 @@ func CreateComputeEngine(
 		healthCheckPort = &p
 	}
 
-	cloudInit := getCloudInitConfig(serviceName, svc, gcpConfig.Region, addHealthCheckSidecar)
+	cloudInit := getCloudInitConfig(serviceName, image, svc, gcpConfig.Region, addHealthCheckSidecar)
 
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
@@ -317,6 +317,7 @@ func getComputeMachineType(svc compose.ServiceConfig) string {
 // check sidecar so the MIG auto-healer can probe container liveness.
 func getCloudInitConfig(
 	serviceName string,
+	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	region string,
 	addHealthCheckSidecar bool,
@@ -402,7 +403,7 @@ runcmd:
 		strings.Join(runcmds, "\n  - "),
 	))
 
-	return pulumi.Sprintf(buf.String(), svc.Image)
+	return pulumi.Sprintf(buf.String(), image)
 }
 
 // buildSidecarUnits returns the cloud-init write_files entries and runcmd lines for the

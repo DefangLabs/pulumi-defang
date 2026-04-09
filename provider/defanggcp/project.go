@@ -195,13 +195,20 @@ func buildService(
 		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisResult.Instance, Config: svc}
 		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstPort(svc.Ports, defaultRedisPort))
 	default:
+		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Service component %s: %w", svcName, err)
+		}
 		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, svcChildOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
 
+		var extraDeps []pulumi.ResourceOption
+		if len(deps) > 0 {
+			extraDeps = []pulumi.ResourceOption{pulumi.DependsOn(deps)}
+		}
 		endpoint, lbEntry, err = BuildContainerService(
-			ctx, projectName, configProvider, svcName, image, svc, infra, svcComp, svcChildOpts)
+			ctx, projectName, configProvider, svcName, image, svc, infra, svcComp, extraDeps...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, err
 		}
@@ -219,6 +226,8 @@ func buildService(
 	return endpoint, svcComp, lbEntry, nil
 }
 
+// BuildContainerService creates Cloud Run or Compute Engine resources for a service.
+// svcComp must already be registered as a component resource before calling this function.
 func BuildContainerService(
 	ctx *pulumi.Context,
 	projectName string,
@@ -228,24 +237,23 @@ func BuildContainerService(
 	svc compose.ServiceConfig,
 	infra *providergcp.GlobalConfig,
 	svcComp pulumi.Resource,
-	svcChildOpts []pulumi.ResourceOption,
+	extraOpts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, *providergcp.LBServiceEntry, error) {
-	sa, err := createServiceAccount(ctx, projectName, svcName, infra, svcChildOpts)
+	childOpts := append([]pulumi.ResourceOption{pulumi.Parent(svcComp)}, extraOpts...)
+
+	sa, err := createServiceAccount(ctx, projectName, svcName, infra, childOpts)
 	if err != nil {
 		return pulumi.StringOutput{}, nil, err
 	}
 
 	if svc.LLM != nil {
-		if err := enableLLM(ctx, svcName, &svc, sa, infra, svcChildOpts); err != nil {
+		if err := enableLLM(ctx, svcName, &svc, sa, infra, childOpts); err != nil {
 			return pulumi.StringOutput{}, nil, err
 		}
 	}
 
 	if providergcp.IsCloudRunService(&svc) {
 		// Cloud Run: single ingress port
-		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Cloud Run component %s: %w", svcName, err)
-		}
 		crResult, err := providergcp.CreateCloudRunService(
 			ctx, configProvider, svcName, image, svc, sa, infra, pulumi.Parent(svcComp))
 		if err != nil {
@@ -256,10 +264,6 @@ func BuildContainerService(
 	}
 
 	// Compute Engine: portless workers or services with host-mode ports
-	if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
-		return pulumi.StringOutput{}, nil, fmt.Errorf("registering Compute Engine component %s: %w", svcName, err)
-	}
-
 	ceResult, err := providergcp.CreateComputeEngine(
 		ctx, projectName, svcName, image, svc, sa, infra, pulumi.Parent(svcComp),
 	)
