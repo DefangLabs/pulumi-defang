@@ -42,7 +42,7 @@ runs:
     - if: ${{ inputs.language == 'nodejs' }}
       name: Upgrade npm for Trusted Publishers support
       shell: bash
-      run: npm install -g npm@latest
+      run: npm install -g npm@11.12.1
 
     - if: ${{ inputs.language == 'dotnet' }}
       name: Setup DotNet
