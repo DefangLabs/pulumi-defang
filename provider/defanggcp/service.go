@@ -11,11 +11,12 @@ import (
 // Service is the controller struct for the defang-gcp:index:Service component.
 type Service struct{}
 
-// GcpCloudRunServiceInputs defines the inputs for a standalone GCP Cloud Run service.
-type GcpCloudRunServiceInputs struct {
+// ServiceInputs defines the inputs for a standalone GCP Cloud Run service.
+type ServiceInputs struct {
 	Build       *compose.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Platform    *string                     `pulumi:"platform,optional"`
+	ProjectName string                      `pulumi:"project_name"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
 	Environment map[string]string           `pulumi:"environment,optional"`
@@ -25,17 +26,17 @@ type GcpCloudRunServiceInputs struct {
 	DomainName  string                      `pulumi:"domainName,optional"`
 }
 
-// GcpCloudRunServiceOutputs holds the outputs of a Service component.
-type GcpCloudRunServiceOutputs struct {
+// ServiceOutputs holds the outputs of a Service component.
+type ServiceOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // Construct implements the ComponentResource interface for Service.
 func (*Service) Construct(
-	ctx *pulumi.Context, name, typ string, inputs GcpCloudRunServiceInputs, opts pulumi.ResourceOption,
-) (*GcpCloudRunServiceOutputs, error) {
-	comp := &GcpCloudRunServiceOutputs{}
+	ctx *pulumi.Context, name, typ string, inputs ServiceInputs, opts pulumi.ResourceOption,
+) (*ServiceOutputs, error) {
+	comp := &ServiceOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
@@ -54,10 +55,23 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	region := providergcp.GcpRegion(ctx)
-	crResult, err := providergcp.CreateCloudRunService(ctx, name, svc, region, childOpt)
+	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
+	services := map[string]compose.ServiceConfig{name: svc}
+	infra, err := providergcp.BuildGlobalConfig(ctx, inputs.ProjectName, "", services, childOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build GCP Cloud Run service: %w", err)
+		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
+	}
+	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.BuildInfra, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
+	}
+	sa, err := createServiceAccount(ctx, inputs.ProjectName, name, infra, []pulumi.ResourceOption{childOpt})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service account: %w", err)
+	}
+	crResult, err := providergcp.CreateCloudRunService(ctx, configProvider, name, image, svc, sa, infra, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cloud Run service: %w", err)
 	}
 
 	comp.Endpoint = crResult.Service.Uri

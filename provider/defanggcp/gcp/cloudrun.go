@@ -51,20 +51,42 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 // CreateCloudRunService creates a Cloud Run service.
 func CreateCloudRunService(
 	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
 	serviceName string,
+	image pulumi.StringInput,
 	svc compose.ServiceConfig,
-	location string,
+	sa *serviceaccount.Account,
+	gcpConfig *GlobalConfig,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
-	// Create service account (AccountId max 30 chars, must be lowercase alphanumeric + hyphens)
-	sa, err := serviceaccount.NewAccount(ctx, serviceName, &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(sanitizeAccountId(serviceName)),
-		DisplayName: pulumi.String("Service account for " + serviceName),
+	template := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig)
+	// Create Cloud Run service
+	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
+		Location:           pulumi.String(gcpConfig.Region),
+		Ingress:            pulumi.String(Ingress.Get(ctx)),
+		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
+		InvokerIamDisabled: pulumi.Bool(true),
+		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
+		Template:           template,
 	}, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating service account: %w", err)
+		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
 	}
 
+	return &CloudRunResult{
+		Service: crService,
+	}, nil
+}
+
+func buildTemplate(
+	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
+	serviceName string,
+	image pulumi.StringInput,
+	svc compose.ServiceConfig,
+	sa *serviceaccount.Account,
+	gcpConfig *GlobalConfig,
+) *cloudrunv2.ServiceTemplateArgs {
 	// Build environment variables
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
 		&cloudrunv2.ServiceTemplateContainerEnvArgs{
@@ -73,9 +95,10 @@ func CreateCloudRunService(
 		},
 	}
 	for k, v := range svc.Environment {
+		value := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, v)
 		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String(k),
-			Value: pulumi.String(v),
+			Value: value,
 		})
 	}
 
@@ -97,7 +120,12 @@ func CreateCloudRunService(
 		maxInstances = mr
 	}
 
-	cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
+	resourceLimits := pulumi.StringMap{}
+	if svc.HasResourceReservations() {
+		cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
+		resourceLimits["cpu"] = pulumi.String(cpuLimit)
+		resourceLimits["memory"] = pulumi.String(memLimit)
+	}
 
 	// Build health check probes
 	var startupProbe *cloudrunv2.ServiceTemplateContainerStartupProbeArgs
@@ -118,42 +146,42 @@ func CreateCloudRunService(
 			startupProbe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 		}
 	}
-
-	// Create Cloud Run service
-	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
-		Location:           pulumi.String(location),
-		Ingress:            pulumi.String(Ingress.Get(ctx)),
-		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
-		InvokerIamDisabled: pulumi.Bool(true),
-		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-		Template: &cloudrunv2.ServiceTemplateArgs{
-			Containers: cloudrunv2.ServiceTemplateContainerArray{
-				&cloudrunv2.ServiceTemplateContainerArgs{
-					Image:    pulumi.String(*svc.Image),
-					Commands: commands,
-					Args:     cmdArgs,
-					Ports:    ports,
-					Envs:     envs,
-					Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
-						Limits: pulumi.StringMap{
-							"cpu":    pulumi.String(cpuLimit),
-							"memory": pulumi.String(memLimit),
-						},
-					},
-					StartupProbe: startupProbe,
+	template := &cloudrunv2.ServiceTemplateArgs{
+		Containers: cloudrunv2.ServiceTemplateContainerArray{
+			&cloudrunv2.ServiceTemplateContainerArgs{
+				Image:    image,
+				Commands: commands,
+				Args:     cmdArgs,
+				Ports:    ports,
+				Envs:     envs,
+				Resources: &cloudrunv2.ServiceTemplateContainerResourcesArgs{
+					Limits: resourceLimits,
 				},
-			},
-			ServiceAccount: sa.Email,
-			Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
-				MaxInstanceCount: pulumi.Int(maxInstances),
+				StartupProbe: startupProbe,
 			},
 		},
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
+		MaxInstanceRequestConcurrency: pulumi.Int(80),
+		ServiceAccount:                sa.Email,
+		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
+			MaxInstanceCount: pulumi.Int(maxInstances),
+		},
 	}
 
-	return &CloudRunResult{
-		Service: crService,
-	}, nil
+	if gcpConfig != nil {
+		template.VpcAccess = buildVpcAccess(gcpConfig)
+	}
+
+	return template
+}
+
+func buildVpcAccess(gcpConfig *GlobalConfig) *cloudrunv2.ServiceTemplateVpcAccessArgs {
+	return &cloudrunv2.ServiceTemplateVpcAccessArgs{
+		Egress: pulumi.String("PRIVATE_RANGES_ONLY"),
+		NetworkInterfaces: cloudrunv2.ServiceTemplateVpcAccessNetworkInterfaceArray{
+			&cloudrunv2.ServiceTemplateVpcAccessNetworkInterfaceArgs{
+				Network:    gcpConfig.VpcId,
+				Subnetwork: gcpConfig.SubnetId,
+			},
+		},
+	}
 }
