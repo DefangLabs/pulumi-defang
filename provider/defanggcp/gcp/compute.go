@@ -62,16 +62,14 @@ func CreateComputeEngine(
 
 	cloudInit := getCloudInitConfig(serviceName, svc, gcpConfig.Region, addHealthCheckSidecar)
 
-	instanceTag := resourceName(projectName, gcpConfig, serviceName)
-
 	instanceTemplate, err := createInstanceTemplate(
-		ctx, serviceName, instanceTag, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
+		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	autoHealing, err := createMIGAutoHealing(
-		ctx, serviceName, instanceTag, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, opts...)
+		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, opts...)
 	if err != nil {
 		return nil, err
 	}

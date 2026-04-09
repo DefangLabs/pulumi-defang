@@ -1,12 +1,7 @@
 package defanggcp
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -184,7 +179,7 @@ func buildService(
 		}
 
 		lbEntry = &providergcp.LBServiceEntry{Name: svcName, PostgresInstance: sqlResult.Instance, Config: svc}
-		port := firstIngressPort(svc.Ports, defaultPostgresPort)
+		port := firstPort(svc.Ports, defaultPostgresPort)
 		endpoint = pulumi.Sprintf("%s:%d", sqlResult.Instance.PublicIpAddress, port)
 	case svc.Redis != nil:
 		// Managed Redis → Memorystore
@@ -198,7 +193,7 @@ func buildService(
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Memorystore for %s: %w", svcName, err)
 		}
 		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisResult.Instance, Config: svc}
-		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstIngressPort(svc.Ports, defaultRedisPort))
+		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstPort(svc.Ports, defaultRedisPort))
 	default:
 		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, svcChildOpts...)
 		if err != nil {
@@ -294,7 +289,6 @@ func createServiceAccount(
 	)
 	// Create a service account for the services running in cloudrun or compute engine
 	sa, err := serviceaccount.NewAccount(ctx, projectName+"-"+svcName+"-service-account", &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(serviceAccountId(projectName, svcName, *infra)),
 		DisplayName: pulumi.String(displayName),
 		Description: pulumi.String(description),
 	}, svcChildOpts...)
@@ -360,57 +354,4 @@ func enableLLM(
 		svc.Environment["GOOGLE_CLOUD_LOCATION"] = infra.Region
 	}
 	return nil
-}
-
-const pulumiSuffixLength = 8
-
-// Service account ID must be between 6 and 30 characters.
-// Service account ID must start with a lower case letter, followed by one or
-// more lower case alphanumerical characters that can be separated by hyphens.
-func serviceAccountId(project, service string, config providergcp.GlobalConfig) string {
-	fullName := fullDefangResourceName(project, config, service)
-	fullName = replaceNonAlphaNumericOrDash(fullName)
-	return hashTrim(fullName, 30-pulumiSuffixLength)
-}
-
-func fullDefangResourceName(project string, config providergcp.GlobalConfig, names ...string) string {
-	var parts []string
-	if config.Prefix != "" {
-		parts = append(parts, config.Prefix)
-	}
-	parts = append(parts, project, config.Stack)
-	parts = append(parts, names...)
-	return strings.Join(parts, "-")
-}
-
-var nonLowerAlphaNumericOrDashRe = regexp.MustCompile(`[^a-z0-9-]`)
-
-func replaceNonAlphaNumericOrDash(name string) string {
-	name = strings.ToLower(name)
-	name = nonLowerAlphaNumericOrDashRe.ReplaceAllLiteralString(name, "-")
-	return strings.TrimRight(name, "-")
-}
-
-func hashTrim(name string, maxLength int) string {
-	if len(name) <= maxLength {
-		return name
-	}
-
-	const hashLength = 6
-	prefix := name[:maxLength-hashLength]
-	suffix := name[maxLength-hashLength:]
-	return prefix + hashn(suffix, hashLength)
-}
-
-func hashn(str string, length int) string {
-	hash := sha256.New()
-	hash.Write([]byte(str))
-	hashInt := binary.LittleEndian.Uint64(hash.Sum(nil)[:8])
-	hashBase36 := strconv.FormatUint(hashInt, 36) // base 36 string
-	// truncate if the hash is too long
-	if len(hashBase36) > length {
-		return hashBase36[:length]
-	}
-	// if the hash is too short, pad with leading zeros
-	return fmt.Sprintf("%0*s", length, hashBase36)
 }

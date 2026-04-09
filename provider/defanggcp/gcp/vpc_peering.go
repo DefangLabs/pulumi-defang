@@ -7,20 +7,10 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// hasPostgresConfig reports whether any service in the map defines managed Postgres.
-func hasPostgresConfig(services map[string]compose.ServiceConfig) bool {
+// needsVpcPeering reports whether any service in the map requires VPC peering.
+func needsVpcPeering(services map[string]compose.ServiceConfig) bool {
 	for _, svc := range services {
-		if svc.Postgres != nil {
-			return true
-		}
-	}
-	return false
-}
-
-// hasRedisConfig reports whether any service in the map defines managed Redis.
-func hasRedisConfig(services map[string]compose.ServiceConfig) bool {
-	for _, svc := range services {
-		if svc.Redis != nil {
+		if svc.Postgres != nil || svc.Redis != nil {
 			return true
 		}
 	}

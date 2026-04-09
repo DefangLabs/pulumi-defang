@@ -194,7 +194,7 @@ func buildOptionalInfra(
 		}
 	}
 
-	if hasPostgresConfig(services) || hasRedisConfig(services) {
+	if needsVpcPeering(services) {
 		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
 		if err != nil {
 			return err

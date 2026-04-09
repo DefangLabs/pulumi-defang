@@ -47,7 +47,7 @@ func (*Redis) Construct(
 		return nil, fmt.Errorf("failed to build GCP Memorystore: %w", err)
 	}
 
-	endpoint := pulumi.Sprintf("%s:%d", result.Instance.Host, firstIngressPort(inputs.Ports, defaultRedisPort))
+	endpoint := pulumi.Sprintf("%s:%d", result.Instance.Host, firstPort(inputs.Ports, defaultRedisPort))
 	comp.Endpoint = endpoint
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{

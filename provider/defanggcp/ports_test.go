@@ -48,7 +48,7 @@ func TestFirstIngressPort(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, firstIngressPort(tc.ports, tc.defaultPort))
+			assert.Equal(t, tc.want, firstPort(tc.ports, tc.defaultPort))
 		})
 	}
 }

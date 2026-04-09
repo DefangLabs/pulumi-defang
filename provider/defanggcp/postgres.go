@@ -51,7 +51,7 @@ func (*Postgres) Construct(
 		return nil, fmt.Errorf("failed to build GCP Cloud SQL: %w", err)
 	}
 
-	port := firstIngressPort(inputs.Ports, defaultPostgresPort)
+	port := firstPort(inputs.Ports, defaultPostgresPort)
 	endpoint := pulumi.Sprintf("%s:%d", sqlResult.Instance.PublicIpAddress, port)
 	comp.Endpoint = endpoint
 
