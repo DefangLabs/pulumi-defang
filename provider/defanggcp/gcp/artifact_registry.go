@@ -3,6 +3,7 @@ package gcp
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
@@ -17,7 +18,7 @@ import (
 type BuildInfra struct {
 	Repository     *artifactregistry.Repository
 	ServiceAccount *serviceaccount.Account
-	BuildBucket    *storage.Bucket // GCS bucket for uploading local build contexts
+	BuildBucket    *storage.Bucket     // GCS bucket for uploading local build contexts
 	RepositoryURL  pulumi.StringOutput // e.g. "us-central1-docker.pkg.dev/project/repo"
 	Region         string
 	GcpProject     string
@@ -43,10 +44,10 @@ func collectExternalRegistries(services map[string]compose.ServiceConfig) []stri
 		if svc.Image == nil || svc.Build != nil {
 			continue
 		}
-		info := parseImage(*svc.Image)
-		if info.registry != "" && !isCloudRunSupportedRegistry(info.registry) && !seen[info.registry] {
-			seen[info.registry] = true
-			result = append(result, info.registry)
+		info := common.ParseImage(*svc.Image)
+		if info.Registry != "" && !isCloudRunSupportedRegistry(info.Registry) && !seen[info.Registry] {
+			seen[info.Registry] = true
+			result = append(result, info.Registry)
 		}
 	}
 	return result

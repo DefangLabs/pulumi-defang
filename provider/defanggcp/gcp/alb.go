@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -174,7 +175,7 @@ func createInternalLoadBalancer(
 		case service.CloudRunService != nil && service.PrivateFqdn != "":
 			serviceNeg, err := compute.NewRegionNetworkEndpointGroup(
 				ctx,
-				resourceName(projectName, config, service.Name, "private-lb-neg"),
+				service.Name,
 				&compute.RegionNetworkEndpointGroupArgs{
 					NetworkEndpointType: pulumi.String("SERVERLESS"),
 					Region:              pulumi.String(config.Region),
@@ -182,7 +183,6 @@ func createInternalLoadBalancer(
 						Service: pulumi.StringPtrInput(service.CloudRunService.Name),
 					},
 				},
-				pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(projectName + "-" + service.Name + "-private-lb-neg")}}),
 			)
 			if err != nil {
 				return err
@@ -190,7 +190,7 @@ func createInternalLoadBalancer(
 
 			serviceBackend, err := compute.NewRegionBackendService(
 				ctx,
-				resourceName(projectName, config, service.Name, "private-lb-cloudrun-backend"),
+				"private-lb-cloudrun-backend",
 				&compute.RegionBackendServiceArgs{
 					Region:              pulumi.String(config.Region),
 					Protocol:            pulumi.String("HTTPS"),
@@ -201,9 +201,6 @@ func createInternalLoadBalancer(
 						},
 					},
 				},
-				pulumi.Aliases(
-					[]pulumi.Alias{{Name: pulumi.String(projectName + "-" + service.Name + "-private-lb-cloudrun-backend")}},
-				),
 			)
 			if err != nil {
 				return err
@@ -237,7 +234,7 @@ func createInternalLoadBalancer(
 				}
 
 				firewall, err := compute.NewFirewall(ctx,
-					resourceName(projectName, config, service.Name, "private-lb-healthcheck-firewall"),
+					service.Name,
 					&compute.FirewallArgs{
 						Network: config.VpcId,
 						// Fixed health check IP ranges for internal passthrough NLB:
@@ -252,18 +249,17 @@ func createInternalLoadBalancer(
 							Ports:    pulumi.StringArray{pulumi.String(portTargetStr)},
 						}},
 						TargetTags: pulumi.StringArray{
-							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template tag
+							pulumi.String(service.Name), // Matching compute.go instance template tag
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
-					pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(service.Name + "-private-lb-healthcheck-firewall")}}),
 				)
 				if err != nil {
 					return err
 				}
 
 				healthCheck, err := compute.NewHealthCheck(ctx,
-					resourceName(projectName, config, service.Name, portTargetStr, "private-lb-health-check"),
+					service.Name,
 					&compute.HealthCheckArgs{
 						CheckIntervalSec: pulumi.Int(5),
 						TimeoutSec:       pulumi.Int(5),
@@ -273,17 +269,12 @@ func createInternalLoadBalancer(
 						},
 					},
 					pulumi.DependsOn([]pulumi.Resource{firewall}),
-					pulumi.Aliases(
-						[]pulumi.Alias{
-							{Name: pulumi.String(service.Name + fmt.Sprintf("-%d", port.Target) + "-private-lb-health-check")},
-						},
-					),
 				)
 				if err != nil {
 					return err
 				}
 				serviceBackend, err := compute.NewRegionBackendService(ctx,
-					resourceName(projectName, config, service.Name, portTargetStr, "private-lb-cloudrun-backend"),
+					service.Name,
 					&compute.RegionBackendServiceArgs{
 						Region:              pulumi.String(config.Region),
 						Protocol:            pulumi.String("HTTP"),
@@ -296,9 +287,6 @@ func createInternalLoadBalancer(
 						HealthChecks: healthCheck.ID(),
 						PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", portProto, port.Target)), // Matching compute.go
 					},
-					pulumi.Aliases([]pulumi.Alias{
-						{Name: pulumi.String(projectName + "-" + service.Name + "-" + portTargetStr + "-private-lb-gce-backend")},
-					}),
 				)
 				if err != nil {
 					return err
@@ -324,14 +312,13 @@ func createInternalLoadBalancer(
 				}
 				// Create a private IP for the service
 				internalNlbIP, err := compute.NewAddress(ctx,
-					resourceName(projectName, config, service.Name, "private-lb-ip"),
+					service.Name,
 					&compute.AddressArgs{
 						Subnetwork:  config.SubnetId,
 						AddressType: pulumi.String("INTERNAL"),
 						Region:      pulumi.String(config.Region),
 						Purpose:     pulumi.String("SHARED_LOADBALANCER_VIP"),
 					},
-					pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(service.Name + "-private-lb-ip")}}),
 				)
 				if err != nil {
 					return err
@@ -363,24 +350,23 @@ func createInternalLoadBalancer(
 				}
 
 				trafficFirewall, err := compute.NewFirewall(ctx,
-					resourceName(projectName, config, service.Name, "private-lb-traffic-firewall"),
+					service.Name,
 					&compute.FirewallArgs{
 						Network:      config.VpcId,
 						SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")}, // TODO: Can this be stricter?
 						Allows:       firewallAllows,
 						TargetTags: pulumi.StringArray{
-							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template tag
+							pulumi.String(service.Name), // Matching compute.go instance template tag
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
-					pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(service.Name + "-private-lb-traffic-firewall")}}),
 				)
 				if err != nil {
 					return err
 				}
 
 				healthCheckFirewall, err := compute.NewFirewall(ctx,
-					resourceName(projectName, config, service.Name, "private-lb-healthcheck-firewall"),
+					service.Name,
 					&compute.FirewallArgs{
 						Network: config.VpcId,
 						// Fixed health check IP ranges for internal passthrough NLB:
@@ -394,11 +380,10 @@ func createInternalLoadBalancer(
 							Ports:    pulumi.StringArray{pulumi.String(strconv.FormatUint(uint64(*tcpHealthCheckPort), 10))},
 						}},
 						TargetTags: pulumi.StringArray{
-							pulumi.String(resourceName(projectName, config, service.Name)), // Matching compute.go instance template tag
+							pulumi.String(service.Name), // Matching compute.go instance template tag
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
-					pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(service.Name + "-private-lb-healthcheck-firewall")}}),
 				)
 				if err != nil {
 					return err
@@ -406,7 +391,7 @@ func createInternalLoadBalancer(
 
 				hcPortStr := strconv.FormatUint(uint64(*tcpHealthCheckPort), 10)
 				healthCheck, err := compute.NewHealthCheck(ctx,
-					resourceName(projectName, config, service.Name, hcPortStr, "host-lb-health-check"),
+					service.Name+hcPortStr,
 					&compute.HealthCheckArgs{
 						CheckIntervalSec:   pulumi.Int(30),
 						TimeoutSec:         pulumi.Int(10),
@@ -417,9 +402,6 @@ func createInternalLoadBalancer(
 						},
 					},
 					pulumi.DependsOn([]pulumi.Resource{healthCheckFirewall}),
-					pulumi.Aliases([]pulumi.Alias{
-						{Name: pulumi.String(service.Name + fmt.Sprintf("-%d", *tcpHealthCheckPort) + "-private-lb-health-check")},
-					}),
 				)
 				if err != nil {
 					return err
@@ -431,13 +413,11 @@ func createInternalLoadBalancer(
 					}
 					// Max 5 ports per forwarding rule:
 					// https://cloud.google.com/load-balancing/docs/forwarding-rule-concepts#port_specifications
-					for i := 0; i < len(allPorts); i += 5 {
-						ports := allPorts[i:min(i+5, len(allPorts))]
-
+					for ports := range slices.Chunk(allPorts, 5) {
 						portsName := strings.Trim(strings.ReplaceAll(fmt.Sprint(ports), " ", "-"), "[]")
 
 						backendService, err := compute.NewRegionBackendService(ctx,
-							resourceName(projectName, config, service.Name, fmt.Sprintf("host-%v-backend-service", portsName)),
+							service.Name+fmt.Sprintf("host-%v-backend-service", portsName),
 							&compute.RegionBackendServiceArgs{
 								Region:              pulumi.String(config.Region),
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
@@ -452,9 +432,6 @@ func createInternalLoadBalancer(
 								ConnectionDrainingTimeoutSec: pulumi.Int(0), // Make configurable?
 								HealthChecks:                 healthCheck.ID(),
 							},
-							pulumi.Aliases([]pulumi.Alias{
-								{Name: pulumi.String(service.Name + fmt.Sprintf("-host-%v-backend-service", portsName))},
-							}),
 						)
 						if err != nil {
 							return err
@@ -466,7 +443,7 @@ func createInternalLoadBalancer(
 						}
 						// Create a forwarding rule
 						_, err = compute.NewForwardingRule(ctx,
-							resourceName(projectName, config, service.Name+fmt.Sprintf("host-%v-forwarding-rule", portsName)),
+							service.Name+fmt.Sprintf("host-%v-forwarding-rule", portsName),
 							&compute.ForwardingRuleArgs{
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
 								IpProtocol:          pulumi.String(strings.ToUpper(protocol)),
@@ -478,9 +455,6 @@ func createInternalLoadBalancer(
 								// Multiple forwarding rules share the same IP so internal DNS works.
 								IpAddress: internalNlbIP.Address,
 							},
-							pulumi.Aliases([]pulumi.Alias{
-								{Name: pulumi.String(service.Name + fmt.Sprintf("-host-%v-forwarding-rule", portsName))},
-							}),
 						)
 						if err != nil {
 							return err
@@ -506,13 +480,12 @@ func createInternalLoadBalancer(
 		var err error
 		if config.ProxySubnetId != "" {
 			regionalManagedProxySubnet, err = compute.GetSubnetwork(ctx,
-				resourceName(projectName, config, "managed-proxy-subnet"),
+				"managed-proxy-subnet",
 				pulumi.ID(config.ProxySubnetId), nil,
-				pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(projectName + "-managed-proxy-subnet")}}),
 			)
 		} else {
 			regionalManagedProxySubnet, err = compute.NewSubnetwork(ctx,
-				resourceName(projectName, config, "managed-proxy-subnet"),
+				"managed-proxy-subnet",
 				&compute.SubnetworkArgs{
 					Purpose:     pulumi.String("REGIONAL_MANAGED_PROXY"),
 					IpCidrRange: pulumi.String("10.10.0.0/16"),
@@ -520,7 +493,6 @@ func createInternalLoadBalancer(
 					Role:        pulumi.String("ACTIVE"),
 					Network:     config.VpcId,
 				},
-				pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(projectName + "-managed-proxy-subnet")}}),
 			)
 		}
 		if err != nil {
@@ -528,34 +500,32 @@ func createInternalLoadBalancer(
 		}
 
 		privateUrlMap, err := compute.NewRegionUrlMap(ctx,
-			resourceName(projectName, config, "private-lb-urlmap"),
+			"private-lb-urlmap",
 			&compute.RegionUrlMapArgs{
 				Region:         pulumi.String(config.Region),
 				DefaultService: firstPrivateBackendID,
 				HostRules:      privateHostRules,
 				PathMatchers:   privatePathMatchers,
 			},
-			pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(projectName + "-private-lb-urlmap")}}),
 		)
 		if err != nil {
 			return err
 		}
 
 		privateHttpProxy, err := compute.NewRegionTargetHttpProxy(ctx,
-			resourceName(projectName, config, "private-lb-http-proxy"),
+			"private-lb-http-proxy",
 			&compute.RegionTargetHttpProxyArgs{
 				Region: pulumi.String(config.Region),
 				UrlMap: privateUrlMap.SelfLink,
 			},
 			pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
-			pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(projectName + "-private-lb-http-proxy")}}),
 		)
 		if err != nil {
 			return err
 		}
 		// TODO: Currently only support HTTP traffic for internal ALB
 		forwardingRule, err := compute.NewForwardingRule(ctx,
-			resourceName(projectName, config, "private-lb-forwarding-rule"),
+			"private-lb-forwarding-rule",
 			&compute.ForwardingRuleArgs{
 				Target:              privateHttpProxy.SelfLink,
 				Region:              pulumi.String(config.Region),
@@ -565,7 +535,6 @@ func createInternalLoadBalancer(
 				LoadBalancingScheme: pulumi.String("INTERNAL_MANAGED"),
 			},
 			pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
-			pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(projectName + "-private-lb-forwarding-rule")}}),
 		)
 		if err != nil {
 			return err
@@ -827,4 +796,29 @@ func pathMatcherName(name string) string {
 		name = name[:len(name)-1] // Remove trailing dashes
 	}
 	return name
+}
+
+// Based on cd/aws/defang_service.ts
+var healthcheckUrlRegex = regexp.MustCompile(
+	`(?i)(?:http:\/\/)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`)
+
+func getHealthCheckPathAndPort(hc *compose.HealthCheckConfig) (string, int) {
+	path := "/"
+	port := 80
+	if hc == nil || len(hc.Test) < 1 || (hc.Test[0] != "CMD" && hc.Test[0] != "CMD-SHELL") {
+		return path, port
+	}
+	for _, arg := range hc.Test[1:] {
+		if match := healthcheckUrlRegex.FindStringSubmatch(arg); match != nil {
+			if match[1] != "" {
+				if n, err := strconv.Atoi(match[1]); err == nil {
+					port = n
+				}
+			}
+			if match[2] != "" {
+				path = match[2]
+			}
+		}
+	}
+	return path, port
 }

@@ -4,53 +4,16 @@ import (
 	"crypto/sha1" //nolint:gosec
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
 )
-
-var errNoImageOrBuildConfig = errors.New("no image or build config")
-
-// imgRE parses a Docker image reference into registry, repo, tag, and digest parts.
-// Mirrors the regex used by DefangLabs/defang/src/pkg/dockerhub.
-//
-//nolint:lll
-var imgRE = regexp.MustCompile(`^((?:((?:[0-9a-z](?:[0-9a-z-]{0,61}[0-9a-z])?\.)+[a-z]{2,63})\/)?(.{1,127}?))(?::(\w[\w.-]{0,127}))?(?:@(sha256:[0-9a-f]{64}))?$`)
-
-type imageInfo struct {
-	registry string
-	repo     string
-	tag      string
-	digest   string
-}
-
-func parseImage(image string) imageInfo {
-	m := imgRE.FindStringSubmatch(image)
-	if m == nil {
-		return imageInfo{repo: image}
-	}
-	return imageInfo{registry: m[2], repo: m[3], tag: m[4], digest: m[5]}
-}
-
-func (i imageInfo) fullImage() string {
-	s := i.repo
-	if i.registry != "" {
-		s = i.registry + "/" + s
-	}
-	if i.tag != "" {
-		s += ":" + i.tag
-	}
-	if i.digest != "" {
-		s += "@" + i.digest
-	}
-	return s
-}
 
 // Based on Cloud Run error:
 // "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
@@ -145,25 +108,25 @@ func GetServiceImage(
 		return buildServiceImage(ctx, serviceName, svc, infra, opts...)
 	}
 	if svc.Image == nil {
-		return nil, fmt.Errorf("service %s: %w", serviceName, errNoImageOrBuildConfig)
+		return nil, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
 	}
 
-	info := parseImage(*svc.Image)
-	if !isCloudRunSupportedRegistry(info.registry) {
+	info := common.ParseImage(*svc.Image)
+	if !isCloudRunSupportedRegistry(info.Registry) {
 		gcpProject := gcpProjectId(ctx)
 		region := GcpRegion(ctx)
 		if infra != nil {
 			gcpProject = infra.GcpProject
 			region = infra.Region
 		}
-		originalRegistry := info.registry
-		info.registry = region + "-docker.pkg.dev"
-		info.repo = fmt.Sprintf("%s/%s/%s", gcpProject, sanitizeRepoName(originalRegistry), info.repo)
+		originalRegistry := info.Registry
+		info.Registry = region + "-docker.pkg.dev"
+		info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, sanitizeRepoName(originalRegistry), info.Repo)
 		msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
-			serviceName, *svc.Image, info.fullImage())
+			serviceName, *svc.Image, info.FullImage())
 		_ = ctx.Log.Info(msg, nil)
 	}
-	return pulumi.String(info.fullImage()), nil
+	return pulumi.String(info.FullImage()), nil
 }
 
 // cloudBuildMachineType returns the Cloud Build machine type string for a given

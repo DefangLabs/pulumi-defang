@@ -56,8 +56,33 @@ func AcceptPublicTraffic(networks compose.Networks, service compose.ServiceConfi
 	return inDefaultNetwork && !IsNetworkInternal(networks, compose.DefaultNetwork) && service.HasHostPorts()
 }
 
+func IsManagedService(service compose.ServiceConfig) bool {
+	return service.Postgres != nil || service.Redis != nil
+}
+
 func IsNetworkInternal(networks compose.Networks, networkId compose.NetworkID) bool {
 	return networks[networkId].Internal
+}
+
+func InPublicNetwork(networks compose.Networks, service compose.ServiceConfig) bool {
+	if len(networks) == 0 {
+		// No explicit networks defined; services with no explicit network membership
+		// are implicitly in the non-internal "default" network (compose-spec normalization).
+		return len(service.Networks) == 0
+	}
+	_, inDefaultNetwork := service.Networks[compose.DefaultNetwork]
+	return inDefaultNetwork && !IsNetworkInternal(networks, compose.DefaultNetwork)
+}
+
+func InPrivateNetwork(networks compose.Networks, service compose.ServiceConfig) bool {
+	switch len(service.Networks) {
+	case 0:
+		return false
+	case 1:
+		return !InPublicNetwork(networks, service)
+	default:
+		return true
+	}
 }
 
 func AllowEgress(networks compose.Networks, service compose.ServiceConfig) bool {
