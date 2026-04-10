@@ -163,6 +163,7 @@ jobs:
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v7
         with:
+          context: . # build context must be repo root to include generated Go SDK
           push: true
           build-args: CLOUDS=all
           tags: ${{ env.IMAGE_REPO }}:pr-${{ github.sha }}
