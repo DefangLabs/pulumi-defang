@@ -131,6 +131,9 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v6
 
+      - name: Unshallow clone for tags
+        run: git fetch --prune --unshallow --tags # pulumictl needs tags to compute v2.x version
+
       - name: Install Go
         uses: actions/setup-go@v6
         with:
