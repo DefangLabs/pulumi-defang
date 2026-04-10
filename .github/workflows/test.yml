@@ -9,6 +9,9 @@ on:
       - .devcontainer
       - examples
 
+env:
+  IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/cd
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,22 +20,30 @@ jobs:
       cancel-in-progress: true
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
+
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: go.mod
+        cache-dependency-path: go.sum
+
     - name: Install pulumictl
       run: |
         gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
         tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
       env:
         GH_TOKEN: ${{ github.token }}
+
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
+
     - run: make provider
+
     - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
+
     - run: make test
+
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v9
       with:
@@ -70,7 +81,7 @@ jobs:
 
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Setup and build SDK
       uses: ./.github/actions/build-sdk
@@ -109,3 +120,34 @@ jobs:
     #       >&2 echo "error: found +dirty version in examples. Regenerate examples with \`make examples\` and commit the changes."
     #       exit 1
     #     fi
+
+  build_image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image repo
+        run: echo "IMAGE_REPO=${IMAGE_REPO,,}" >> $GITHUB_ENV
+
+      - name: Build and push image to GHCR
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          build-args: CLOUDS=all
+          tags: ${{ env.IMAGE_REPO }}:pr-${{ github.sha }}
+          cache-from: type=gha,scope=${{ github.workflow }}
+          cache-to: type=gha,scope=${{ github.workflow }},mode=max
