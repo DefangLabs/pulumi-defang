@@ -9,6 +9,11 @@ on:
       - .devcontainer
       - examples
 
+env:
+  IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/cd
+
+permissions: {}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -18,21 +23,29 @@ jobs:
     steps:
     - name: Checkout Repo
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
     - name: Install Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
         go-version-file: go.mod
+        cache-dependency-path: go.sum
+
     - name: Install pulumictl
       run: |
         gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
         tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
       env:
         GH_TOKEN: ${{ github.token }}
+
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
+
     - run: make provider
+
     - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
+
     - run: make test
+
     - name: golangci-lint
       uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
       with:
@@ -49,34 +62,34 @@ jobs:
       matrix:
         language: ${{ fromJson(github.event_name == 'pull_request' && '["go"]' || '["nodejs","python","dotnet","go"]') }}
         provider:
-        - aws
-        - gcp
-        - azure
+          - aws
+          - gcp
+          - azure
 
     steps:
-    - name: Checkout Repo
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-    - name: Setup and build SDK
-      uses: ./.github/actions/build-sdk
-      with:
-        language: ${{ matrix.language }}
-        provider: defang-${{ matrix.provider }}
+      - name: Setup and build SDK
+        uses: ./.github/actions/build-sdk
+        with:
+          language: ${{ matrix.language }}
+          provider: defang-${{ matrix.provider }}
 
-    - name: Check clean sdks working tree
-      run: |
-        git update-index -q --refresh
-        if ! git diff-index --quiet HEAD -- sdks/; then
-          >&2 echo "error: sdks directory is not clean, aborting!"
-          git status sdks/
-          git diff sdks/
-          exit 1
-        fi
+      - name: Check clean sdks working tree
+        run: |
+          git update-index -q --refresh
+          if ! git diff-index --quiet HEAD -- sdks/; then
+            >&2 echo "error: sdks directory is not clean, aborting!"
+            git status sdks/
+            git diff sdks/
+            exit 1
+          fi
 
-    - name: Build Example
-      run: make example_${{ matrix.provider }}_${{ matrix.language }}
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
+      - name: Build Example
+        run: make example_${{ matrix.provider }}_${{ matrix.language }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
     # - name: Check clean examples working tree
     #   run: |
@@ -94,3 +107,59 @@ jobs:
     #       >&2 echo "error: found +dirty version in examples. Regenerate examples with \`make examples\` and commit the changes."
     #       exit 1
     #     fi
+
+  build_image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs:
+      - test
+      - build_sdks
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+
+      - name: Unshallow clone for tags
+        run: git fetch --prune --unshallow --tags # pulumictl needs tags to compute v2.x version
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate Go SDK
+        run: make go_sdk
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        run: |
+          echo "IMAGE_REPO=${IMAGE_REPO,,}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Build and push image to GHCR
+        uses: docker/build-push-action@v7
+        with:
+          context: . # build context must be repo root to include generated Go SDK
+          push: true
+          build-args: CLOUDS=all
+          tags: ${{ env.IMAGE_REPO }}:pr-${{ env.SHORT_SHA }}
+          cache-from: type=gha,scope=${{ github.workflow }}
+          cache-to: type=gha,scope=${{ github.workflow }},mode=max

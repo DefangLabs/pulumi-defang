@@ -27,6 +27,8 @@ env:
   # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE PUBLISH_PYPI: TRUE.
   # Authentication is handled via PyPI Trusted Publishers (no token required).
   PUBLISH_PYPI: true
+  IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/cd
+
 jobs:
   publish_binary:
     name: publish
@@ -52,6 +54,7 @@ jobs:
         distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
         args: -p 3 release
         version: v2
+
   publish_sdk:
     name: Publish SDKs
     runs-on: ubuntu-latest
@@ -119,6 +122,7 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Install pulumictl
         run: |
@@ -155,3 +159,106 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+
+  build_images_arm:
+    name: Build Docker Images (ARM cache)
+    runs-on: ubuntu-24.04-arm
+    needs: publish_binary
+    strategy:
+      fail-fast: false
+      matrix:
+        clouds: [aws, gcp, azure, all]
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern "pulumictl-*-linux-$(dpkg --print-architecture).tar.gz" --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-*.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate Go SDK
+        run: make go_sdk
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ARM image (cache only)
+        uses: docker/build-push-action@v6
+        with:
+          context: . # include generated Go SDK
+          platforms: linux/arm64
+          push: false
+          build-args: CLOUDS=${{ matrix.clouds }}
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.clouds }}
+          cache-to: type=gha,scope=${{ github.workflow }}-${{ matrix.clouds }},mode=max
+
+  publish_images:
+    name: Publish Docker Images
+    runs-on: ubuntu-latest
+    needs: build_images_arm
+    strategy:
+      fail-fast: false
+      matrix:
+        clouds: [aws, gcp, azure, all]
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate Go SDK
+        run: make go_sdk
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image repo
+        run: echo "IMAGE_REPO=${IMAGE_REPO,,}" >> "$GITHUB_ENV"
+
+      - name: Build and push multi-arch images
+        uses: docker/build-push-action@v6
+        with:
+          context: . # include generated Go SDK
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            CLOUDS=${{ matrix.clouds }}
+            CD_VERSION=${{ github.ref_name }}
+            PROVIDER_VERSION=${{ github.ref_name }}
+          tags: ${{ env.IMAGE_REPO }}:${{ github.ref_name }}-${{ matrix.clouds }}
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.clouds }}
+          cache-to: type=gha,scope=${{ github.workflow }}-${{ matrix.clouds }},mode=max
