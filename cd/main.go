@@ -405,8 +405,20 @@ func main() {
 		log.Fatalf("failed to save project settings: %v", err)
 	}
 
-	// Set stack-level config (provider settings, defang config)
-	if err := stack.SetAllConfig(ctx, stackConfig()); err != nil {
+	// Set stack-level config (provider settings, defang config, user secrets)
+	cfg := stackConfig()
+	if provider() == "azure" {
+		userCfg, err := fetchAzureUserConfig(ctx)
+		if err != nil {
+			log.Printf("warning: failed to read Azure user config from App Configuration: %v", err)
+		}
+		for k, v := range userCfg {
+			// Store under the project namespace so the provider's ConfigProvider can
+			// read it via config.New(ctx, "").GetSecret(key).
+			cfg[project+":"+k] = auto.ConfigValue{Value: v, Secret: true}
+		}
+	}
+	if err := stack.SetAllConfig(ctx, cfg); err != nil {
 		log.Fatalf("failed to set config: %v", err)
 	}
 

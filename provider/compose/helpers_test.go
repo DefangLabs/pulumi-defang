@@ -70,11 +70,11 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			expected:    "hello",
 		},
 		{
-			name:        "interpolated value returned as-is (no interpolation)",
+			name:        "interpolated value resolves variables from config provider",
 			environment: map[string]string{"MY_KEY": "prefix_${SECRET}_suffix"},
 			key:         "MY_KEY",
 			configs:     map[string]string{"SECRET": "resolved"},
-			expected:    "prefix_${SECRET}_suffix",
+			expected:    "prefix_resolved_suffix",
 		},
 	}
 

@@ -2,11 +2,77 @@ package azure
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+// postgresURLEndpoint checks whether v is a postgres(ql):// URL whose host matches a managed
+// service in serviceEndpoints. If so it returns a new URL with:
+//   - the hostname replaced by the managed service FQDN
+//   - any ${VAR} credential/query references interpolated from configProvider
+func postgresURLEndpoint(
+	ctx *pulumi.Context,
+	v string,
+	serviceEndpoints map[string]pulumi.StringOutput,
+	configProvider *ConfigProvider,
+) (pulumi.StringOutput, bool) {
+	var prefix string
+	switch {
+	case strings.HasPrefix(v, "postgresql://"):
+		prefix = "postgresql://"
+	case strings.HasPrefix(v, "postgres://"):
+		prefix = "postgres://"
+	default:
+		return pulumi.StringOutput{}, false
+	}
+
+	rest := strings.TrimPrefix(v, prefix)
+	// Find the last "@" to split userinfo from host
+	atIdx := strings.LastIndex(rest, "@")
+	if atIdx < 0 {
+		return pulumi.StringOutput{}, false
+	}
+
+	hostAndRest := rest[atIdx+1:]
+	// Extract hostname (stop at ':' or '/')
+	host := hostAndRest
+	if i := strings.IndexAny(host, ":/"); i >= 0 {
+		host = host[:i]
+	}
+
+	ep, ok := serviceEndpoints[host]
+	if !ok {
+		return pulumi.StringOutput{}, false
+	}
+
+	// Split into: "scheme+userinfo@" and "afterhost" (port/path/query)
+	beforeHost := prefix + rest[:atIdx+1]
+	afterHost := hostAndRest[len(host):]
+
+	// Interpolate ${VAR} in credentials and query parts if a config provider is available.
+	var beforeOut, afterOut pulumi.StringOutput
+	if configProvider != nil {
+		beforeOut = compose.InterpolateEnvironmentVariable(ctx, configProvider, beforeHost)
+		afterOut = compose.InterpolateEnvironmentVariable(ctx, configProvider, afterHost)
+	} else {
+		beforeOut = pulumi.String(beforeHost).ToStringOutput()
+		afterOut = pulumi.String(afterHost).ToStringOutput()
+	}
+
+	// ep is "host:port" — use just the hostname portion.
+	result := pulumi.All(beforeOut, ep, afterOut).ApplyT(func(args []any) string {
+		before := args[0].(string)
+		endpoint := args[1].(string)
+		after := args[2].(string)
+		epHost := strings.SplitN(endpoint, ":", 2)[0]
+		return before + epHost + after
+	}).(pulumi.StringOutput)
+
+	return result, true
+}
 
 type containerAppResult struct {
 	App *app.ContainerApp
@@ -37,12 +103,19 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 }
 
 // CreateContainerApp creates an Azure Container App.
+//
+// serviceEndpoints maps managed-service names (e.g. "redisx") to their connection URLs
+// (e.g. "rediss://:<key>@host:10000"). Env var values that look like
+// "redis://<serviceName>[:<port>]..." are automatically replaced with the real URL so
+// that apps which reference a Redis or other managed service by its Compose service name
+// continue to work without source changes.
 func CreateContainerApp(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
 	imageURI pulumi.StringInput,
+	serviceEndpoints map[string]pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
 	// Build environment variables
@@ -53,9 +126,33 @@ func CreateContainerApp(
 		},
 	}
 	for k, v := range svc.Environment {
+		var value pulumi.StringInput
+		switch {
+		case k == "OPENAI_API_KEY" && infra.LLMInfra != nil:
+			// Replace the placeholder API key with the real Azure OpenAI key.
+			value = infra.LLMInfra.APIKey
+		case v == "" && infra.ConfigProvider != nil:
+			// null/empty in compose means "read from config store" (set via `defang config set`).
+			value = infra.ConfigProvider.GetConfig(ctx, k)
+		default:
+			if ep, ok := redisURLEndpoint(v, serviceEndpoints); ok {
+				value = ep
+			} else if ep, ok := llmURLEndpoint(v, serviceEndpoints); ok {
+				value = ep
+			} else if ep, ok := postgresURLEndpoint(ctx, v, serviceEndpoints, infra.ConfigProvider); ok {
+				// Postgres URL: replace service hostname with managed FQDN and
+				// interpolate ${VAR} credential references from config store.
+				value = ep
+			} else if infra.ConfigProvider != nil && strings.Contains(v, "${") {
+				// Any other value with ${VAR} references: interpolate from config store.
+				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, v)
+			} else {
+				value = pulumi.String(v)
+			}
+		}
 		envs = append(envs, app.EnvironmentVarArgs{
 			Name:  pulumi.String(k),
-			Value: pulumi.String(v),
+			Value: value,
 		})
 	}
 
@@ -163,4 +260,55 @@ func CreateContainerApp(
 	}
 
 	return &containerAppResult{App: containerApp}, nil
+}
+
+// llmURLEndpoint checks whether v is an LLM gateway URL ("http://<name>/api/v1/") whose
+// host matches a key in serviceEndpoints. If so, it returns the mapped (Azure OpenAI base)
+// endpoint output and true.
+func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (pulumi.StringOutput, bool) {
+	if !strings.HasPrefix(v, "http://") {
+		return pulumi.StringOutput{}, false
+	}
+	rest := strings.TrimPrefix(v, "http://")
+	host := rest
+	if i := strings.IndexAny(host, ":/"); i >= 0 {
+		host = host[:i]
+	}
+	if ep, ok := serviceEndpoints[host]; ok {
+		return ep, true
+	}
+	return pulumi.StringOutput{}, false
+}
+
+// redisURLEndpoint checks whether v is a Redis URL ("redis://<name>...") whose host matches
+// a key in serviceEndpoints. If so, it returns the mapped endpoint output and true.
+// For rediss:// endpoints, ssl_cert_reqs=CERT_NONE is appended so that Celery 5.x and
+// channels_redis can connect to Azure Redis Enterprise without certificate validation.
+func redisURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (pulumi.StringOutput, bool) {
+	if !strings.HasPrefix(v, "redis://") {
+		return pulumi.StringOutput{}, false
+	}
+	// Extract the host from "redis://[userinfo@]host[:port][/path]"
+	rest := strings.TrimPrefix(v, "redis://")
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
+	}
+	host := rest
+	if i := strings.IndexAny(host, ":/"); i >= 0 {
+		host = host[:i]
+	}
+	if ep, ok := serviceEndpoints[host]; ok {
+		ep = ep.ApplyT(func(u string) string {
+			if strings.HasPrefix(u, "rediss://") {
+				sep := "?"
+				if strings.Contains(u, "?") {
+					sep = "&"
+				}
+				return u + sep + "ssl_cert_reqs=none"
+			}
+			return u
+		}).(pulumi.StringOutput)
+		return ep, true
+	}
+	return pulumi.StringOutput{}, false
 }

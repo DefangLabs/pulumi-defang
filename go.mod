@@ -126,6 +126,7 @@ require (
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.23.0 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.16.0 // indirect

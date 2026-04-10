@@ -61,8 +61,29 @@ func CreatePostgresFlexible(
 		username = pulumi.String("postgres")
 	}
 
+	// Sanitize the logical name: Azure PostgreSQL server names allow only lowercase
+	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
+	sanitized := sanitizePostgresName(serviceName)
+
+	// Build a globally-unique server name from the resource group's random suffix.
+	// The RG is already auto-named by Pulumi (e.g. "nextjs-postgres-b89e321"),
+	// so its last segment is unique without needing a separate random value.
+	serverName := infra.ResourceGroup.Name.ApplyT(func(rgName string) string {
+		suffix := rgName
+		if idx := strings.LastIndexByte(rgName, '-'); idx >= 0 {
+			suffix = rgName[idx+1:] // e.g. "b89e321"
+		}
+		n := sanitized + "-" + suffix
+		if len(n) > 63 {
+			n = strings.Trim(n[:63], "-")
+		}
+		return n
+	}).(pulumi.StringOutput)
+
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
+		Location:          infra.ResourceGroup.Location,
+		ServerName:        serverName.ToStringPtrOutput(),
 		Version:           pg.Version,
 		Sku: &dbforpostgresql.SkuArgs{
 			Name: pulumi.String(SkuName.Get(ctx)),
@@ -84,11 +105,6 @@ func CreatePostgresFlexible(
 		}
 	}
 
-	// Sanitize the logical name so Pulumi auto-naming produces a valid Azure server name.
-	// Azure PostgreSQL server names may only contain lowercase letters, digits, and hyphens.
-	// StackDir-style names (e.g. "/myproject/dev/db") contain slashes that would be rejected.
-	sanitized := sanitizePostgresName(serviceName)
-
 	// VNet integration: attach to the delegated subnet and private DNS zone when networking is configured.
 	if infra.Networking != nil && infra.DNS != nil {
 		serverArgs.Network = &dbforpostgresql.NetworkArgs{
@@ -102,8 +118,21 @@ func CreatePostgresFlexible(
 		return nil, fmt.Errorf("creating PostgreSQL Flexible Server: %w", err)
 	}
 
+	// Allowlist the pgvector extension. Azure Postgres Flexible Server blocks CREATE EXTENSION
+	// unless the extension is listed in the azure.extensions server parameter first.
+	_, err = dbforpostgresql.NewConfiguration(ctx, sanitized+"-pgvector", &dbforpostgresql.ConfigurationArgs{
+		ResourceGroupName:  infra.ResourceGroup.Name,
+		ServerName:         server.Name,
+		ConfigurationName:  pulumi.String("azure.extensions"),
+		Value:              pulumi.String("VECTOR"),
+		Source:             pulumi.String("user-override"),
+	}, append(opts, pulumi.Parent(server))...)
+	if err != nil {
+		return nil, fmt.Errorf("enabling pgvector extension: %w", err)
+	}
+
 	// Create database if non-default; "postgres" already exists on every new Flexible Server.
-	if pg.DBName != nil {
+	if pg.DBNameStr != "" && pg.DBNameStr != compose.DEFAULT_POSTGRES_DB {
 		_, err := dbforpostgresql.NewDatabase(ctx, sanitized+"-db", &dbforpostgresql.DatabaseArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			ServerName:        server.Name,

@@ -11,11 +11,13 @@ const defaultAzureLocation = "eastus"
 
 // SharedInfra holds resources shared across all services in a project.
 type SharedInfra struct {
-	ResourceGroup *resources.ResourceGroup
-	Environment   *app.ManagedEnvironment
-	BuildInfra    *BuildInfra    // nil when no services require image builds
-	Networking    *NetworkingResult // nil when no VNet-integrated services are present
-	DNS           *DNSResult        // nil when no VNet-integrated services are present
+	ResourceGroup  *resources.ResourceGroup
+	Environment    *app.ManagedEnvironment
+	BuildInfra     *BuildInfra       // nil when no services require image builds
+	Networking     *NetworkingResult // nil when no VNet-integrated services are present
+	DNS            *DNSResult        // nil when no VNet-integrated services are present
+	LLMInfra       *LLMInfra         // nil when no LLM services are present
+	ConfigProvider *ConfigProvider   // reads project secrets (set via `defang config set`)
 }
 
 // Location reads the Azure location from Pulumi stack config, falling back to the default.
