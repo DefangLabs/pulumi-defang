@@ -169,12 +169,34 @@ jobs:
       matrix:
         clouds: [aws, gcp, azure, all]
     steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern "pulumictl-*-linux-$(dpkg --print-architecture).tar.gz" --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-*.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate Go SDK
+        run: make go_sdk
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build ARM image (cache only)
         uses: docker/build-push-action@v6
         with:
+          context: . # include generated Go SDK
           platforms: linux/arm64
           push: false
           build-args: CLOUDS=${{ matrix.clouds }}
@@ -195,12 +217,21 @@ jobs:
         with:
           fetch-tags: true
 
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
       - name: Install pulumictl
         run: |
           gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
           tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Generate Go SDK
+        run: make go_sdk
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -221,6 +252,7 @@ jobs:
       - name: Build and push multi-arch images
         uses: docker/build-push-action@v6
         with:
+          context: . # include generated Go SDK
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
