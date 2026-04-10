@@ -102,23 +102,14 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 	return 2.0, "4.00Gi"
 }
 
-// CreateContainerApp creates an Azure Container App.
-//
-// serviceEndpoints maps managed-service names (e.g. "redisx") to their connection URLs
-// (e.g. "rediss://:<key>@host:10000"). Env var values that look like
-// "redis://<serviceName>[:<port>]..." are automatically replaced with the real URL so
-// that apps which reference a Redis or other managed service by its Compose service name
-// continue to work without source changes.
-func CreateContainerApp(
+// buildEnvVars constructs the environment variable array for a Container App.
+func buildEnvVars(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	imageURI pulumi.StringInput,
 	serviceEndpoints map[string]pulumi.StringOutput,
-	opts ...pulumi.ResourceOption,
-) (*containerAppResult, error) {
-	// Build environment variables
+) app.EnvironmentVarArray {
 	envs := app.EnvironmentVarArray{
 		app.EnvironmentVarArgs{
 			Name:  pulumi.String("DEFANG_SERVICE"),
@@ -155,6 +146,26 @@ func CreateContainerApp(
 			Value: value,
 		})
 	}
+	return envs
+}
+
+// CreateContainerApp creates an Azure Container App.
+//
+// serviceEndpoints maps managed-service names (e.g. "redisx") to their connection URLs
+// (e.g. "rediss://:<key>@host:10000"). Env var values that look like
+// "redis://<serviceName>[:<port>]..." are automatically replaced with the real URL so
+// that apps which reference a Redis or other managed service by its Compose service name
+// continue to work without source changes.
+func CreateContainerApp(
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	infra *SharedInfra,
+	imageURI pulumi.StringInput,
+	serviceEndpoints map[string]pulumi.StringOutput,
+	opts ...pulumi.ResourceOption,
+) (*containerAppResult, error) {
+	envs := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints)
 
 	// Resource limits
 	cpu, mem := containerAppCpuMemory(svc.GetCPUs(), svc.GetMemoryMiB())

@@ -24,7 +24,7 @@ type acrTaskSpec struct {
 // generateTaskYAML creates the ACR task YAML for building and pushing a Docker image.
 // Uses BuildKit layer cache stored in the registry (type=registry).
 func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]string, platform string) (string, error) {
-	var flags []string
+	flags := make([]string, 0, 1+len(buildArgs)+5)
 
 	if platform != "" {
 		flags = append(flags, "--platform "+platform)
@@ -92,10 +92,11 @@ func createACRTask(
 ) (*containerregistry.Task, error) {
 	// Log context URL for debugging (without exposing the token value).
 	contextURL.ToStringOutput().ApplyT(func(s string) string {
-		base := s
 		if idx := strings.Index(s, "?"); idx >= 0 {
-			base = s[:idx]
-			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (SAS token present, %d bytes)", name, base, len(s)-idx-1), nil)
+			base := s[:idx]
+			msg := fmt.Sprintf("ACR task %s: build context URL: %s (SAS token present, %d bytes)",
+				name, base, len(s)-idx-1)
+			_ = ctx.Log.Info(msg, nil)
 		} else {
 			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", name, s), nil)
 		}

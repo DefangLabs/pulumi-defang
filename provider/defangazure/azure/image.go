@@ -104,10 +104,11 @@ func CreateBuildInfra(
 	subID := registry.ID().ToStringOutput().ApplyT(subscriptionIDFromResourceID).(pulumi.StringOutput)
 
 	// User-assigned managed identity for Container Apps to pull built images.
-	identity, err := managedidentity.NewUserAssignedIdentity(ctx, name+"-acr-identity", &managedidentity.UserAssignedIdentityArgs{
-		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.String(location),
-	}, opts...)
+	identity, err := managedidentity.NewUserAssignedIdentity(
+		ctx, name+"-acr-identity", &managedidentity.UserAssignedIdentityArgs{
+			ResourceGroupName: infra.ResourceGroup.Name,
+			Location:          pulumi.String(location),
+		}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed identity: %w", err)
 	}

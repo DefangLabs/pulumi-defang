@@ -296,7 +296,7 @@ type ConfigProvider interface {
 type PostgresConfigArgs struct {
 	Version       pulumi.StringPtrInput // Major version (derived from image tag, e.g. postgres:16 → 16)
 	DBName        pulumi.StringInput    // From POSTGRES_DB env or default "postgres"
-	DBNameStr     string                // Plain string needed for conditional resource creation; resources cannot be created inside ApplyT callbacks
+	DBNameStr     string                // Plain string for conditional resource creation (no resources inside ApplyT)
 	Username      pulumi.StringInput    // From POSTGRES_USER env or default "postgres"
 	Password      pulumi.StringInput    // From POSTGRES_PASSWORD env
 	AllowDowntime bool                  // From x-defang-postgres "allow-downtime"

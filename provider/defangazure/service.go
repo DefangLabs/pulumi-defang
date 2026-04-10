@@ -1,6 +1,7 @@
 package defangazure
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -9,6 +10,8 @@ import (
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var ErrBuildInfraNotConfigured = errors.New("build infrastructure is not set up")
 
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
@@ -76,7 +79,7 @@ func (*Service) Construct(
 	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
 
 	if svc.Build != nil && infra.BuildInfra == nil {
-		return nil, fmt.Errorf("service %s has build config but build infrastructure is not set up", name)
+		return nil, fmt.Errorf("service %s: %w", name, ErrBuildInfraNotConfigured)
 	}
 
 	imageURI, err := azure.GetServiceImage(ctx, name, svc, infra.BuildInfra, infra, childOpt)

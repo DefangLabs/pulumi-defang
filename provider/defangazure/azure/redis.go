@@ -119,7 +119,10 @@ func CreateRedisEnterprise(
 		ClientProtocol:    pulumi.String(clientProtocol),
 		ClusteringPolicy:  pulumi.String("EnterpriseCluster"),
 		Port:              pulumi.Int(10000),
-	}, append(opts, pulumi.ReplaceOnChanges([]string{"clusteringPolicy", "clientProtocol"}), pulumi.DeleteBeforeReplace(true))...)
+	}, append(opts,
+		pulumi.ReplaceOnChanges([]string{"clusteringPolicy", "clientProtocol"}),
+		pulumi.DeleteBeforeReplace(true),
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure Managed Redis database: %w", err)
 	}
@@ -131,8 +134,6 @@ func CreateRedisEnterprise(
 		DatabaseName:      db.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
 	})
-
-	var connectionURL pulumi.StringOutput
 
 	if useVNet {
 		// VNet is available: create a private endpoint so traffic stays off the public internet.
@@ -172,24 +173,16 @@ func CreateRedisEnterprise(
 		if err != nil {
 			return nil, fmt.Errorf("creating Redis private DNS zone group: %w", err)
 		}
-
-		connectionURL = pulumi.All(cluster.HostName, keysOut.PrimaryKey()).ApplyT(
-			func(args []any) string {
-				host := args[0].(string)
-				key := args[1].(string)
-				return urlScheme + "://:" + key + "@" + host + ":10000"
-			},
-		).(pulumi.StringOutput)
-	} else {
-		// No VNet: connect via public FQDN over TLS.
-		connectionURL = pulumi.All(cluster.HostName, keysOut.PrimaryKey()).ApplyT(
-			func(args []any) string {
-				host := args[0].(string)
-				key := args[1].(string)
-				return urlScheme + "://:" + key + "@" + host + ":10000"
-			},
-		).(pulumi.StringOutput)
 	}
+
+	// Build connection URL using urlScheme (redis:// for VNet/Plaintext, rediss:// for public/TLS).
+	connectionURL := pulumi.All(cluster.HostName, keysOut.PrimaryKey()).ApplyT(
+		func(args []any) string {
+			host := args[0].(string)
+			key := args[1].(string)
+			return urlScheme + "://:" + key + "@" + host + ":10000"
+		},
+	).(pulumi.StringOutput)
 
 	return &RedisResult{Cluster: cluster, Database: db, ConnectionURL: connectionURL}, nil
 }

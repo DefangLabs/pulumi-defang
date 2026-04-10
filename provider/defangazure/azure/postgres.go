@@ -34,20 +34,13 @@ type postgresResult struct {
 	Server *dbforpostgresql.Server
 }
 
-// CreatePostgresFlexible creates an Azure Database for PostgreSQL Flexible Server.
-func CreatePostgresFlexible(
-	ctx *pulumi.Context,
-	configProvider compose.ConfigProvider,
-	serviceName string,
-	svc compose.ServiceConfig,
+// buildPostgresServerArgs constructs the ServerArgs for an Azure PostgreSQL Flexible Server.
+func buildPostgresServerArgs(
+	pg *compose.PostgresConfigArgs,
+	sanitized string,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOption,
-) (*postgresResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
-	if pg == nil {
-		return nil, ErrPostgresConfigNil
-	}
-
+	ctx *pulumi.Context,
+) *dbforpostgresql.ServerArgs {
 	// Backup config
 	backupRetention := BackupRetentionDays.Get(ctx)
 	geoBackup := dbforpostgresql.GeoRedundantBackupDisabled
@@ -55,19 +48,7 @@ func CreatePostgresFlexible(
 		geoBackup = dbforpostgresql.GeoRedundantBackupEnabled
 	}
 
-	// Admin credentials
-	username := pg.Username
-	if username == pulumi.String("") {
-		username = pulumi.String("postgres")
-	}
-
-	// Sanitize the logical name: Azure PostgreSQL server names allow only lowercase
-	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
-	sanitized := sanitizePostgresName(serviceName)
-
 	// Build a globally-unique server name from the resource group's random suffix.
-	// The RG is already auto-named by Pulumi (e.g. "nextjs-postgres-b89e321"),
-	// so its last segment is unique without needing a separate random value.
 	serverName := infra.ResourceGroup.Name.ApplyT(func(rgName string) string {
 		suffix := rgName
 		if idx := strings.LastIndexByte(rgName, '-'); idx >= 0 {
@@ -96,9 +77,10 @@ func CreatePostgresFlexible(
 			BackupRetentionDays: pulumi.Int(backupRetention),
 			GeoRedundantBackup:  pulumi.String(string(geoBackup)),
 		},
-		AdministratorLogin:         username,
+		AdministratorLogin:         pg.Username,
 		AdministratorLoginPassword: pg.Password,
 	}
+
 	if HighAvailability.Get(ctx) {
 		serverArgs.HighAvailability = &dbforpostgresql.HighAvailabilityArgs{
 			Mode: pulumi.String(string(dbforpostgresql.PostgreSqlFlexibleServerHighAvailabilityModeZoneRedundant)),
@@ -112,6 +94,34 @@ func CreatePostgresFlexible(
 			PrivateDnsZoneArmResourceId: infra.DNS.PostgresZoneID.ToStringPtrOutput(),
 		}
 	}
+
+	return serverArgs
+}
+
+// CreatePostgresFlexible creates an Azure Database for PostgreSQL Flexible Server.
+func CreatePostgresFlexible(
+	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
+	serviceName string,
+	svc compose.ServiceConfig,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) (*postgresResult, error) {
+	pg := svc.ResolvePostgres(ctx, configProvider)
+	if pg == nil {
+		return nil, ErrPostgresConfigNil
+	}
+
+	// Admin credentials
+	if pg.Username == pulumi.String("") {
+		pg.Username = pulumi.String("postgres")
+	}
+
+	// Sanitize the logical name: Azure PostgreSQL server names allow only lowercase
+	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
+	sanitized := sanitizePostgresName(serviceName)
+
+	serverArgs := buildPostgresServerArgs(pg, sanitized, infra, ctx)
 
 	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, opts...)
 	if err != nil {

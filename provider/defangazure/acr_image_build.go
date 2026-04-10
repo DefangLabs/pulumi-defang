@@ -216,7 +216,11 @@ func scheduleAndWaitACRRun(
 
 // fetchRunLog fetches the run log content via the ACR log SAS URL.
 // Returns a best-effort string; errors are embedded in the returned string.
-func fetchRunLog(ctx context.Context, runsClient *armcontainerregistry.RunsClient, rgName, registryName, runID string) string {
+func fetchRunLog(
+	ctx context.Context,
+	runsClient *armcontainerregistry.RunsClient,
+	rgName, registryName, runID string,
+) string {
 	resp, err := runsClient.GetLogSasURL(ctx, rgName, registryName, runID, nil)
 	if err != nil {
 		return fmt.Sprintf("(could not get log URL: %v)", err)
@@ -232,7 +236,7 @@ func fetchRunLog(ctx context.Context, runsClient *armcontainerregistry.RunsClien
 	if err != nil {
 		return fmt.Sprintf("(could not fetch log: %v)", err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, 64*1024))
 	if err != nil {
 		return fmt.Sprintf("(could not read log: %v)", err)
@@ -255,9 +259,12 @@ func checkRunStatus(
 		return "", true, fmt.Errorf("run %s was canceled: %w", runID, ErrACRRunFailed)
 	case armcontainerregistry.RunStatusTimeout:
 		return "", true, fmt.Errorf("run %s timed out on ACR side: %w", runID, ErrACRRunFailed)
-	default:
+	case armcontainerregistry.RunStatusQueued,
+		armcontainerregistry.RunStatusRunning,
+		armcontainerregistry.RunStatusStarted:
 		return "", false, nil
 	}
+	return "", false, nil
 }
 
 // buildImageURI constructs the image URI from the run's output images.

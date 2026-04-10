@@ -27,7 +27,7 @@ type LLMInfra struct {
 //
 // Model availability varies by region. text-embedding-ada-002 is used for embeddings
 // because it has broad regional availability (text-embedding-3-small is limited).
-func azureModelForAlias(alias string) (name, format string) {
+func azureModelForAlias(alias string) (string, string) {
 	switch alias {
 	case "embedding-default":
 		return "text-embedding-ada-002", "OpenAI"
