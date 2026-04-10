@@ -57,7 +57,6 @@ only_build: build
 .PHONY: ensure
 ensure:
 	go mod tidy
-	cd tests && go mod tidy
 
 GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
