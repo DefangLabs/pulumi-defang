@@ -1,0 +1,461 @@
+{
+  "name": "defang-azure",
+  "version": "2.1.0-alpha+dirty",
+  "description": "Deploy containerized services to Azure with Pulumi.",
+  "keywords": [
+    "category/cloud",
+    "category/infrastructure",
+    "kind/native",
+    "defang",
+    "docker",
+    "cloud",
+    "azure",
+    "containerapp"
+  ],
+  "homepage": "https://github.com/DefangLabs/pulumi-defang",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/DefangLabs/pulumi-defang",
+  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
+  "pluginDownloadURL": "github://api.github.com/DefangLabs",
+  "publisher": "Defang",
+  "language": {
+    "csharp": {
+      "rootNamespace": "DefangLabs"
+    },
+    "nodejs": {
+      "packageName": "@defang-io/pulumi-defang-azure"
+    },
+    "python": {
+      "pyproject": {}
+    }
+  },
+  "config": {},
+  "types": {
+    "defang-azure:shared:BuildConfig": {
+      "properties": {
+        "args": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "context": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "shmSize": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "context"
+      ]
+    },
+    "defang-azure:shared:DependsOnConfig": {
+      "properties": {
+        "condition": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:DeployConfig": {
+      "properties": {
+        "replicas": {
+          "type": "integer"
+        },
+        "resources": {
+          "$ref": "#/types/defang-azure:shared:Resources"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:HealthCheckConfig": {
+      "properties": {
+        "intervalSeconds": {
+          "type": "integer"
+        },
+        "retries": {
+          "type": "integer"
+        },
+        "startPeriodSeconds": {
+          "type": "integer"
+        },
+        "test": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:NetworkConfigInput": {
+      "properties": {
+        "internal": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:PostgresInput": {
+      "properties": {
+        "allowDowntime": {
+          "type": "boolean"
+        },
+        "fromSnapshot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:RedisInput": {
+      "properties": {
+        "allowDowntime": {
+          "type": "boolean"
+        },
+        "fromSnapshot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:ResourceConfig": {
+      "properties": {
+        "cpus": {
+          "type": "number"
+        },
+        "memory": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:Resources": {
+      "properties": {
+        "reservations": {
+          "$ref": "#/types/defang-azure:shared:ResourceConfig"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:ServiceInput": {
+      "properties": {
+        "build": {
+          "$ref": "#/types/defang-azure:shared:BuildConfig"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependsOn": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-azure:shared:DependsOnConfig"
+          }
+        },
+        "deploy": {
+          "$ref": "#/types/defang-azure:shared:DeployConfig"
+        },
+        "domainName": {
+          "type": "string"
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "healthCheck": {
+          "$ref": "#/types/defang-azure:shared:HealthCheckConfig"
+        },
+        "image": {
+          "type": "string"
+        },
+        "networks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-azure:shared:ServiceNetworkConfig"
+          }
+        },
+        "platform": {
+          "type": "string"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-azure:shared:ServicePortConfig"
+          }
+        },
+        "postgres": {
+          "$ref": "#/types/defang-azure:shared:PostgresInput"
+        },
+        "redis": {
+          "$ref": "#/types/defang-azure:shared:RedisInput"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:shared:ServiceNetworkConfig": {
+      "type": "object"
+    },
+    "defang-azure:shared:ServicePortConfig": {
+      "properties": {
+        "appProtocol": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "target": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "target"
+      ]
+    }
+  },
+  "provider": {},
+  "resources": {
+    "defang-azure:defangazure:AzureACRBuild": {
+      "properties": {
+        "contextUrl": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "imageName": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "registryName": {
+          "type": "string"
+        },
+        "resourceGroup": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "resourceGroup",
+        "registryName",
+        "imageName",
+        "contextUrl",
+        "runId",
+        "image"
+      ],
+      "inputProperties": {
+        "contextUrl": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "imageName": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "registryName": {
+          "type": "string"
+        },
+        "resourceGroup": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "requiredInputs": [
+        "subscriptionId",
+        "resourceGroup",
+        "registryName",
+        "imageName",
+        "contextUrl"
+      ]
+    },
+    "defang-azure:defangazure:AzureContainerApp": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "inputProperties": {
+        "build": {
+          "$ref": "#/types/defang-azure:shared:BuildConfig"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "deploy": {
+          "$ref": "#/types/defang-azure:shared:DeployConfig"
+        },
+        "domainName": {
+          "type": "string",
+          "plain": true
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "healthCheck": {
+          "$ref": "#/types/defang-azure:shared:HealthCheckConfig"
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "platform": {
+          "type": "string",
+          "plain": true
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-azure:shared:ServicePortConfig"
+          }
+        }
+      },
+      "isComponent": true
+    },
+    "defang-azure:defangazure:AzurePostgres": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "inputProperties": {
+        "deploy": {
+          "$ref": "#/types/defang-azure:shared:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "postgres": {
+          "$ref": "#/types/defang-azure:shared:PostgresInput"
+        },
+        "project_name": {
+          "type": "string",
+          "plain": true
+        }
+      },
+      "requiredInputs": [
+        "project_name"
+      ],
+      "isComponent": true
+    },
+    "defang-azure:defangazure:Project": {
+      "properties": {
+        "endpoints": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "loadBalancerDns": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoints"
+      ],
+      "inputProperties": {
+        "networks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-azure:shared:NetworkConfigInput"
+          }
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-azure:shared:ServiceInput"
+          }
+        }
+      },
+      "requiredInputs": [
+        "services"
+      ],
+      "isComponent": true
+    }
+  }
+}

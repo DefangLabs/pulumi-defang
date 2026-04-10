@@ -208,7 +208,10 @@ func buildServiceImage(
 	platform := svc.GetPlatform()
 	imageName := serviceName
 
-	taskYAML := generateTaskYAML(imageName, svc.Build.GetDockerfile(), svc.Build.Args, platform)
+	taskYAML, err := generateTaskYAML(imageName, svc.Build.GetDockerfile(), svc.Build.Args, platform)
+	if err != nil {
+		return nil, fmt.Errorf("generating ACR task YAML for %s: %w", serviceName, err)
+	}
 	encodedYAML := base64.StdEncoding.EncodeToString([]byte(taskYAML))
 
 	task, err := createACRTask(

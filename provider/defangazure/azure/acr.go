@@ -7,11 +7,23 @@ import (
 
 	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"gopkg.in/yaml.v3"
 )
+
+type acrTaskStep struct {
+	Build string   `yaml:"build,omitempty"`
+	Env   []string `yaml:"env,omitempty"`
+	Push  []string `yaml:"push,omitempty"`
+}
+
+type acrTaskSpec struct {
+	Version string        `yaml:"version"`
+	Steps   []acrTaskStep `yaml:"steps"`
+}
 
 // generateTaskYAML creates the ACR task YAML for building and pushing a Docker image.
 // Uses BuildKit layer cache stored in the registry (type=registry).
-func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]string, platform string) string {
+func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]string, platform string) (string, error) {
 	var flags []string
 
 	if platform != "" {
@@ -39,21 +51,30 @@ func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]str
 		".",
 	)
 
-	buildLine := strings.Join(flags, "\n      ")
-
 	// Use build: shorthand (docker build) with DOCKER_BUILDKIT=1.
 	// docker buildx is not available on ACR Tasks agents, but DOCKER_BUILDKIT=1
 	// enables BuildKit in docker build, which supports inline cache.
-	return fmt.Sprintf(`version: v1.1.0
-steps:
-  - build: >-
-      %s
-    env:
-      - DOCKER_BUILDKIT=1
-  - push:
-      - {{.Run.Registry}}/%s:{{.Run.ID}}
-      - {{.Run.Registry}}/%s:latest
-`, buildLine, imageName, imageName)
+	spec := acrTaskSpec{
+		Version: "v1.1.0",
+		Steps: []acrTaskStep{
+			{
+				Build: strings.Join(flags, " "),
+				Env:   []string{"DOCKER_BUILDKIT=1"},
+			},
+			{
+				Push: []string{
+					fmt.Sprintf("{{.Run.Registry}}/%s:{{.Run.ID}}", imageName),
+					fmt.Sprintf("{{.Run.Registry}}/%s:latest", imageName),
+				},
+			},
+		},
+	}
+
+	out, err := yaml.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("marshaling ACR task YAML: %w", err)
+	}
+	return string(out), nil
 }
 
 // createACRTask creates an ACR task that builds and pushes a Docker image.
