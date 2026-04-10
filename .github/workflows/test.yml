@@ -145,7 +145,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Generate Go SDK
-        run: make go_sdk VERSION=2.0.0-dev # exact version doesn't matter; Dockerfile builds its own binaries
+        run: make go_sdk
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

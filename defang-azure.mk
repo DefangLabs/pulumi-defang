@@ -8,7 +8,7 @@ PROVIDER        := pulumi-resource-${PACK}
 LATEST_TAG  		:= $(shell git tag --sort=creatordate | tail -n1)
 VERSION_PREFIX  := $(shell echo $(LATEST_TAG) | sed -E 's/v?([^-]+).*/\1/')
 IS_PRERELEASE   := $(shell echo $(LATEST_TAG) | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
-VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
+VERSION         ?= $(shell pulumictl get version --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
 PROVIDER_PATH   := provider
 VERSION_PATH    := ${PROVIDER_PATH}/defangazure.Version
 
