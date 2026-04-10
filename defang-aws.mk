@@ -8,7 +8,7 @@ PROVIDER        := pulumi-resource-${PACK}
 LATEST_TAG  		:= $(shell git tag --sort=creatordate | tail -n1)
 VERSION_PREFIX  := $(shell echo $(LATEST_TAG) | sed -E 's/v?([^-]+).*/\1/')
 IS_PRERELEASE   := $(shell echo $(LATEST_TAG) | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
-VERSION         ?= $(shell pulumictl get version $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
+VERSION         ?= $(shell pulumictl get version --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
 PROVIDER_PATH   := provider
 VERSION_PATH    := ${PROVIDER_PATH}/defangaws.Version
 
@@ -16,12 +16,8 @@ GOPATH		:= $(shell go env GOPATH)
 
 WORKING_DIR     := $(shell pwd)
 
-# Derive the major version to construct a Go-conventions-compliant module path.
-# Go requires /vN suffix for major versions > 1 (e.g. sdk/v2/go/defang-aws).
-MAJOR_VERSION    := $(shell echo "$(VERSION)" | sed -E 's/v?([0-9]+)\..*/\1/')
-SDK_VERSION_INFIX := $(if $(filter-out 1,$(MAJOR_VERSION)),v$(MAJOR_VERSION)/,)
-SDK_GO_DIR       := sdk/$(SDK_VERSION_INFIX)go/$(PACK)
-SDK_MODULE       := $(PROJECT)/sdk/$(SDK_VERSION_INFIX)go/$(PACK)
+SDK_GO_DIR       := sdk/v2/go/$(PACK)
+SDK_MODULE       := $(PROJECT)/sdk/v2/go/$(PACK)
 
 OS    := $(shell uname)
 SHELL := /bin/bash
