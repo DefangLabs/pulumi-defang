@@ -26,7 +26,8 @@
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "Bash(which:*)"
+      "Bash(which:*)",
+      "Bash(xxd:*)"
     ]
   }
 }
