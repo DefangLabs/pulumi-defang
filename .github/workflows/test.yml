@@ -150,7 +150,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Generate Go SDK
-        run: make go_sdk
+        run: make go_sdk VERSION=2.0.0-dev # override version; pulumictl resolves to v1.x on feature branches
 
       - name: Verify SDK exists
         run: |
