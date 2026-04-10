@@ -134,7 +134,7 @@ jobs:
           fetch-depth: 0 # pulumictl needs full history to compute version
 
       - name: Fetch all tags
-        run: git fetch --tags # tags on other branches aren't included in fetch-depth: 0
+        run: git fetch origin 'refs/tags/*:refs/tags/*' # fetch tags from all branches, not just current
 
       - name: Install Go
         uses: actions/setup-go@v6
