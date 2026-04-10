@@ -17,9 +17,9 @@ jobs:
       cancel-in-progress: true
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
         go-version-file: go.mod
     - name: Install pulumictl
@@ -34,7 +34,7 @@ jobs:
     - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
     - run: make test
     - name: golangci-lint
-      uses: golangci/golangci-lint-action@v9
+      uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
       with:
         version: v2.7.2
         args: --timeout=5m --config=.golangci.yaml ./provider/...
@@ -55,7 +55,7 @@ jobs:
 
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
     - name: Setup and build SDK
       uses: ./.github/actions/build-sdk

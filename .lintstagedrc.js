@@ -44,5 +44,5 @@ function goHook(files) {
 
 module.exports = {
   '**/*.go': goHook,
-  '.github/{workflows,actions}/**/*.{yml,yaml}': 'actionlint',
+  '.github/workflows/**/*.{yml,yaml}': 'actionlint',
 };
