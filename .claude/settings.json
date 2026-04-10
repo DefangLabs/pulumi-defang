@@ -1,20 +1,32 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh pr diff:*)",
-      "Bash(gh pr view:*)",
-      "Bash(gh run view:*)",
       "Bash(aws * describe*)",
       "Bash(aws * get*)",
       "Bash(aws * list*)",
+      "Bash(cat:*)",
+      "Bash(diff:*)",
+      "Bash(docker build:*)",
+      "Bash(docker buildx:*)",
+      "Bash(docker pull:*)",
+      "Bash(du:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh run:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git push:*)",
+      "Bash(git show:*)",
       "Bash(go build:*)",
+      "Bash(go get:*)",
       "Bash(go list:*)",
-      "Bash(go test:*)",
+      "Bash(go mod:*)",
+      "Bash(go vet:*)",
       "Bash(golangci-lint:*)",
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "Bash(git log:*)"
+      "Bash(which:*)"
     ]
   }
 }
