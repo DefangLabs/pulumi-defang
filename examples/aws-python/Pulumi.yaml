@@ -1,6 +1,6 @@
 name: defang-aws
 runtime: python
-description: Example using defang-aws to deploy services to AWS (Pulumi YAML)
+description: Example using defang-aws to deploy services to AWS
 plugins:
   providers:
     - name: defang-aws

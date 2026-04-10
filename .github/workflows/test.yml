@@ -45,6 +45,9 @@ jobs:
     - name: Unshallow clone for tags
       run: git fetch --prune --unshallow --tags
 
+    - name: Check README examples are in sync
+      run: scripts/check-readme-examples.sh
+
     - run: make provider
 
     - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
