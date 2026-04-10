@@ -78,9 +78,10 @@ func projectConfig() map[string]workspace.ProjectConfigType {
 					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
 					// The default pattern includes hyphens from project/stack names, so override it.
 					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
+					// ${stack} is safe to include: stacks are lowercase with no hyphens.
 					"azure-native": map[string]any{
 						"resources": map[string]any{
-							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${hex(7)}"},
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"},
 						},
 					},
 				},
