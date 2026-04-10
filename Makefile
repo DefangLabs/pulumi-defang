@@ -57,7 +57,6 @@ only_build: build
 .PHONY: ensure
 ensure:
 	go mod tidy
-	cd tests && go mod tidy
 
 GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
@@ -94,6 +93,20 @@ clean: $(foreach p,$(PACKS),clean_$(p))
 
 .PHONY: release
 release: clean build
+
+# Docker images
+DOCKER_BUILDX  := docker buildx build
+IMAGE_REPO     := defangio/cd
+CD_VERSION     := $(shell git describe --tags --always --dirty)
+PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
+
+.PHONY: images
+images: image_aws image_gcp image_azure image_all
+
+image_%:
+	$(DOCKER_BUILDX) --build-arg CLOUDS=$* \
+	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) \
+	  -t $(IMAGE_REPO):$(CD_VERSION)-$* .
 
 .PHONY: install-git-hooks
 install-git-hooks: node_modules

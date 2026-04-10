@@ -338,6 +338,10 @@ func collectEvents() (chan events.EngineEvent, *[]events.EngineEvent) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
 	if stack == "" {
 		log.Fatal("missing required environment variable: STACK")
 	}

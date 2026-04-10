@@ -188,6 +188,9 @@ func GetConfigOrEnvValue(
 
 // ToPulumiStringArray converts a plain []string to a pulumi.StringArray.
 func ToPulumiStringArray(ss []string) pulumi.StringArray {
+	if len(ss) == 0 {
+		return nil
+	}
 	arr := make(pulumi.StringArray, len(ss))
 	for i, s := range ss {
 		arr[i] = pulumi.String(s)

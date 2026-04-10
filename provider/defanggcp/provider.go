@@ -18,10 +18,14 @@ const Name string = "defang-gcp"
 
 func Provider() p.Provider {
 	return infer.Provider(infer.Options{
+		Resources: []infer.InferredResource{
+			infer.Resource[*Build, BuildArgs, BuildState](&Build{}),
+		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
-			infer.Component[*Service, GcpCloudRunServiceInputs, *GcpCloudRunServiceOutputs](&Service{}),
-			infer.Component[*Postgres, GcpCloudSqlInputs, *GcpCloudSqlOutputs](&Postgres{}),
+			infer.Component[*Service, ServiceInputs, *ServiceOutputs](&Service{}),
+			infer.Component[*Postgres, PostgresInputs, *PostgresOutputs](&Postgres{}),
+			infer.Component[*Redis, RedisInputs, *RedisOutputs](&Redis{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider":  "index",

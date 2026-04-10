@@ -65,6 +65,9 @@ type ServiceConfig struct {
 	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
 	Redis *RedisConfig `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
 
+	// Restart policy (e.g. "no" for Cloud Run jobs)
+	Restart string `pulumi:"restart,optional" yaml:"restart,omitempty"`
+
 	// Health check configuration
 	HealthCheck *HealthCheckConfig `pulumi:"healthCheck,optional" yaml:"healthcheck,omitempty"`
 
@@ -363,6 +366,13 @@ func (s ServiceConfig) GetReplicas() int32 {
 		return *s.Deploy.Replicas
 	}
 	return 1
+}
+
+// HasResourceReservations returns true if the service has explicit CPU or memory reservations.
+func (s ServiceConfig) HasResourceReservations() bool {
+	return s.Deploy != nil &&
+		s.Deploy.Resources != nil &&
+		s.Deploy.Resources.Reservations != nil
 }
 
 // GetCPUs returns the CPU reservation, defaulting to 0.25.
