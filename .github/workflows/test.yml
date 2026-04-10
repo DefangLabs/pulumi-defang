@@ -131,10 +131,7 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # pulumictl needs full history to compute version
-
-      - name: Fetch all tags
-        run: git fetch origin 'refs/tags/*:refs/tags/*' # fetch tags from all branches, not just current
+          fetch-tags: true
 
       - name: Install Go
         uses: actions/setup-go@v6
@@ -150,14 +147,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Generate Go SDK
-        run: make go_sdk VERSION=2.0.0-dev # override version; pulumictl resolves to v1.x on feature branches
-
-      - name: Verify SDK exists
-        run: |
-          echo "=== git tags ==="
-          git tag | tail -5
-          echo "=== find sdk ==="
-          find sdk -type d 2>/dev/null || echo "sdk/ does not exist"
+        run: make go_sdk
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
