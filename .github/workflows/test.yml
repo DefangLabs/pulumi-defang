@@ -131,7 +131,7 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v6
         with:
-          fetch-tags: true
+          fetch-depth: 0 # pulumictl needs full history to find v2.x tags
 
       - name: Install Go
         uses: actions/setup-go@v6
