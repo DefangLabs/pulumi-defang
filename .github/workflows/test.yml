@@ -4,10 +4,15 @@ on:
     branches:
       - main
   pull_request:
-    paths-ignore:
-      - docs
-      - .devcontainer
-      - examples
+    paths:
+      - "provider/**"
+      - "tests/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "Dockerfile"
+      - ".github/actions/build-sdk/**"
+      - ".github/workflows/test.yml"
 
 env:
   IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/cd
