@@ -130,8 +130,6 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # pulumictl needs full history to find v2.x tags
 
       - name: Install Go
         uses: actions/setup-go@v6
@@ -147,7 +145,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Generate Go SDK
-        run: make go_sdk
+        run: make go_sdk VERSION=2.0.0-dev # exact version doesn't matter; Dockerfile builds its own binaries
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
