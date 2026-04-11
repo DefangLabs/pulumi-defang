@@ -27,12 +27,12 @@ type LLMInfra struct {
 //
 // Model availability varies by region. text-embedding-ada-002 is used for embeddings
 // because it has broad regional availability (text-embedding-3-small is limited).
-func azureModelForAlias(alias string) (string, string) {
+func azureModelForAlias(alias string) string {
 	switch alias {
 	case "embedding-default":
-		return "text-embedding-ada-002", "OpenAI"
+		return "text-embedding-ada-002"
 	default: // "chat-default" and any unrecognised alias
-		return "gpt-4o", "OpenAI"
+		return "gpt-4o"
 	}
 }
 
@@ -114,16 +114,14 @@ func CreateLLMDeployment(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
-	azModelName, azFormat := azureModelForAlias(modelAlias)
-
 	_, err := cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
 		AccountName:       llmInfra.Account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
 		DeploymentName:    pulumi.String(deploymentName),
 		Properties: &cognitiveservices.DeploymentPropertiesArgs{
 			Model: &cognitiveservices.DeploymentModelArgs{
-				Format: pulumi.String(azFormat),
-				Name:   pulumi.String(azModelName),
+				Format: pulumi.String("OpenAI"),
+				Name:   pulumi.String(azureModelForAlias(modelAlias)),
 			},
 		},
 		Sku: &cognitiveservices.SkuArgs{
@@ -132,7 +130,7 @@ func CreateLLMDeployment(
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return fmt.Errorf("creating Azure AI Foundry deployment %s (%s): %w", deploymentName, azModelName, err)
+		return fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
 	return nil
 }

@@ -38,10 +38,12 @@ type ProjectOutputs struct {
 	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
 }
 
-// detectServiceTypes scans all services and returns feature flags + llmModels map.
-func detectServiceTypes(
-	services compose.Services,
-) (hasPostgres, hasRedis, hasBuild, hasLLM bool, llmModels map[string]string) {
+// detectServiceTypes scans all services and returns feature flags and an llmModels map.
+// llmModels maps each LLM service name to its model alias (e.g. "llm" → "chat-default").
+// The CLI injects {UPPER(svcName)}_MODEL into dependent services; we reverse-look that up here.
+func detectServiceTypes(services compose.Services) (bool, bool, bool, bool, map[string]string) {
+	var hasPostgres, hasRedis, hasBuild, hasLLM bool
+	llmModels := make(map[string]string)
 	for svcName, svc := range services {
 		if svc.Postgres != nil {
 			hasPostgres = true
@@ -54,18 +56,10 @@ func detectServiceTypes(
 		}
 		if svc.LLM != nil {
 			hasLLM = true
-			// llmModels maps each LLM service name to its model alias (e.g. "llm" → "chat-default").
-			// The CLI injects {UPPER(svcName)}_MODEL into dependent services; we reverse-look that up here.
-			if llmModels == nil {
-				llmModels = make(map[string]string)
-			}
 			llmModels[svcName] = llmModelAlias(svcName, services)
 		}
 	}
-	if llmModels == nil {
-		llmModels = make(map[string]string)
-	}
-	return
+	return hasPostgres, hasRedis, hasBuild, hasLLM, llmModels
 }
 
 // createServiceResources creates the component resource and underlying cloud resources
@@ -104,9 +98,8 @@ func createServiceResources(
 			}
 		}
 
-		ep := pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
-		managedEndpoints[svcName] = ep
-		endpoint = ep
+		endpoint = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
+		managedEndpoints[svcName] = endpoint
 
 	case svc.Redis != nil:
 		if err := ctx.RegisterComponentResource("defang-azure:index:Redis", svcName, comp, childOpts...); err != nil {
@@ -169,12 +162,7 @@ func createServiceResources(
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("creating Container App %s: %w", svcName, err)
 		}
-		endpoint = caResult.App.LatestRevisionFqdn.ApplyT(func(fqdn string) string {
-			if fqdn != "" {
-				return "https://" + fqdn
-			}
-			return ""
-		}).(pulumi.StringOutput)
+		endpoint = caResult.App.LatestRevisionFqdn.ApplyT(fqdnToHTTPS).(pulumi.StringOutput)
 	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
@@ -195,8 +183,7 @@ func (*Project) Construct(
 		return nil, err
 	}
 
-	childOpt := pulumi.Parent(comp)
-	childOpts := []pulumi.ResourceOption{childOpt}
+	childOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
 	location := providerazure.Location(ctx)
 
@@ -243,7 +230,7 @@ func (*Project) Construct(
 	}
 
 	// VnetConfiguration is immutable on Azure — adding/changing it requires replacement.
-	envOpts := append(childOpts[:len(childOpts):len(childOpts)], pulumi.ReplaceOnChanges([]string{"vnetConfiguration"}))
+	envOpts := append([]pulumi.ResourceOption{pulumi.ReplaceOnChanges([]string{"vnetConfiguration"})}, childOpts...)
 	env, err := app.NewManagedEnvironment(ctx, name, envArgs, envOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
@@ -307,4 +294,13 @@ func llmModelAlias(svcName string, services compose.Services) string {
 		}
 	}
 	return svcName // fallback: use service name as deployment name
+}
+
+// fqdnToHTTPS converts a Container App FQDN to an https:// URL, or returns "" for empty FQDNs.
+// Used as an ApplyT callback for LatestRevisionFqdn.
+func fqdnToHTTPS(fqdn string) string {
+	if fqdn == "" {
+		return ""
+	}
+	return "https://" + fqdn
 }

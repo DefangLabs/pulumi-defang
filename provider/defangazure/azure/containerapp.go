@@ -177,46 +177,8 @@ func CreateContainerApp(
 		maxReplicas = mr
 	}
 
-	// Ingress config
-	var ingress *app.IngressArgs
-	if len(svc.Ports) > 0 {
-		external := false
-		for _, p := range svc.Ports {
-			if p.Mode == "ingress" {
-				external = true
-				break
-			}
-		}
-		ingress = &app.IngressArgs{
-			External:   pulumi.Bool(external),
-			TargetPort: pulumi.Int(svc.Ports[0].Target),
-		}
-	}
-
-	// Health check probes
-	var probes app.ContainerAppProbeArray
-	if svc.HealthCheck != nil && len(svc.HealthCheck.Test) > 0 && len(svc.Ports) > 0 {
-		probe := app.ContainerAppProbeArgs{
-			Type: pulumi.String("Liveness"),
-			HttpGet: &app.ContainerAppProbeHttpGetArgs{
-				Port: pulumi.Int(svc.Ports[0].Target),
-				Path: pulumi.String("/"),
-			},
-		}
-		if svc.HealthCheck.IntervalSeconds != 0 {
-			probe.PeriodSeconds = pulumi.Int(svc.HealthCheck.IntervalSeconds)
-		}
-		if svc.HealthCheck.TimeoutSeconds != 0 {
-			probe.TimeoutSeconds = pulumi.Int(svc.HealthCheck.TimeoutSeconds)
-		}
-		if svc.HealthCheck.Retries != 0 {
-			probe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
-		}
-		if svc.HealthCheck.StartPeriodSeconds != 0 {
-			probe.InitialDelaySeconds = pulumi.Int(svc.HealthCheck.StartPeriodSeconds)
-		}
-		probes = append(probes, probe)
-	}
+	ingress := buildIngress(svc)
+	probes := buildProbes(svc)
 
 	// If there's a build infra (ACR), configure the Container App to pull images
 	// using the pre-created user-assigned managed identity (AcrPull role).
@@ -289,6 +251,49 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 		return ep, true
 	}
 	return pulumi.StringOutput{}, false
+}
+
+func buildIngress(svc compose.ServiceConfig) *app.IngressArgs {
+	if len(svc.Ports) == 0 {
+		return nil
+	}
+	external := false
+	for _, p := range svc.Ports {
+		if p.Mode == "ingress" {
+			external = true
+			break
+		}
+	}
+	return &app.IngressArgs{
+		External:   pulumi.Bool(external),
+		TargetPort: pulumi.Int(svc.Ports[0].Target),
+	}
+}
+
+func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
+	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 || len(svc.Ports) == 0 {
+		return nil
+	}
+	probe := app.ContainerAppProbeArgs{
+		Type: pulumi.String("Liveness"),
+		HttpGet: &app.ContainerAppProbeHttpGetArgs{
+			Port: pulumi.Int(svc.Ports[0].Target),
+			Path: pulumi.String("/"),
+		},
+	}
+	if svc.HealthCheck.IntervalSeconds != 0 {
+		probe.PeriodSeconds = pulumi.Int(svc.HealthCheck.IntervalSeconds)
+	}
+	if svc.HealthCheck.TimeoutSeconds != 0 {
+		probe.TimeoutSeconds = pulumi.Int(svc.HealthCheck.TimeoutSeconds)
+	}
+	if svc.HealthCheck.Retries != 0 {
+		probe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
+	}
+	if svc.HealthCheck.StartPeriodSeconds != 0 {
+		probe.InitialDelaySeconds = pulumi.Int(svc.HealthCheck.StartPeriodSeconds)
+	}
+	return app.ContainerAppProbeArray{probe}
 }
 
 // redisURLEndpoint checks whether v is a Redis URL ("redis://<name>...") whose host matches

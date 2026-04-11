@@ -136,42 +136,8 @@ func CreateRedisEnterprise(
 	})
 
 	if useVNet {
-		// VNet is available: create a private endpoint so traffic stays off the public internet.
-		// Use Plaintext protocol — the VNet provides network isolation so TLS adds no security
-		// benefit, and plain redis:// URLs avoid ssl_cert_reqs complications in client libraries.
-		pe, err := network.NewPrivateEndpoint(ctx, serviceName+"-pe", &network.PrivateEndpointArgs{
-			ResourceGroupName: infra.ResourceGroup.Name,
-			Location:          pulumi.StringPtr(location),
-			Subnet: &network.SubnetTypeArgs{
-				Id: infra.Networking.PrivateEndpointsSubnet.ID().ToStringOutput(),
-			},
-			PrivateLinkServiceConnections: network.PrivateLinkServiceConnectionArray{
-				&network.PrivateLinkServiceConnectionArgs{
-					Name:                 pulumi.String(serviceName),
-					PrivateLinkServiceId: cluster.ID().ToStringOutput(),
-					GroupIds:             pulumi.StringArray{pulumi.String("redisEnterprise")},
-				},
-			},
-		}, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating Redis private endpoint: %w", err)
-		}
-
-		// Zone group auto-registers an A record in privatelink.redis.azure.net mapping
-		// the cluster's private-link FQDN to the private endpoint IP.
-		_, err = network.NewPrivateDnsZoneGroup(ctx, serviceName+"-pdzg", &network.PrivateDnsZoneGroupArgs{
-			ResourceGroupName:       infra.ResourceGroup.Name,
-			PrivateEndpointName:     pe.Name,
-			PrivateDnsZoneGroupName: pulumi.String("default"),
-			PrivateDnsZoneConfigs: network.PrivateDnsZoneConfigArray{
-				&network.PrivateDnsZoneConfigArgs{
-					Name:             pulumi.String("redis"),
-					PrivateDnsZoneId: infra.DNS.RedisPrivateZone.ID().ToStringOutput(),
-				},
-			},
-		}, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating Redis private DNS zone group: %w", err)
+		if err := createRedisVNetEndpoint(ctx, serviceName, location, cluster, infra, opts...); err != nil {
+			return nil, err
 		}
 	}
 
@@ -185,4 +151,50 @@ func CreateRedisEnterprise(
 	).(pulumi.StringOutput)
 
 	return &RedisResult{Cluster: cluster, Database: db, ConnectionURL: connectionURL}, nil
+}
+
+// createRedisVNetEndpoint creates a private endpoint and DNS zone group so that traffic to
+// the Redis cluster stays within the VNet (Plaintext protocol, plain redis:// URL).
+func createRedisVNetEndpoint(
+	ctx *pulumi.Context,
+	serviceName, location string,
+	cluster *redis.RedisEnterprise,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) error {
+	pe, err := network.NewPrivateEndpoint(ctx, serviceName+"-pe", &network.PrivateEndpointArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		Location:          pulumi.StringPtr(location),
+		Subnet: &network.SubnetTypeArgs{
+			Id: infra.Networking.PrivateEndpointsSubnet.ID().ToStringOutput(),
+		},
+		PrivateLinkServiceConnections: network.PrivateLinkServiceConnectionArray{
+			&network.PrivateLinkServiceConnectionArgs{
+				Name:                 pulumi.String(serviceName),
+				PrivateLinkServiceId: cluster.ID().ToStringOutput(),
+				GroupIds:             pulumi.StringArray{pulumi.String("redisEnterprise")},
+			},
+		},
+	}, opts...)
+	if err != nil {
+		return fmt.Errorf("creating Redis private endpoint: %w", err)
+	}
+
+	// Zone group auto-registers an A record in privatelink.redis.azure.net mapping
+	// the cluster's private-link FQDN to the private endpoint IP.
+	_, err = network.NewPrivateDnsZoneGroup(ctx, serviceName+"-pdzg", &network.PrivateDnsZoneGroupArgs{
+		ResourceGroupName:       infra.ResourceGroup.Name,
+		PrivateEndpointName:     pe.Name,
+		PrivateDnsZoneGroupName: pulumi.String("default"),
+		PrivateDnsZoneConfigs: network.PrivateDnsZoneConfigArray{
+			&network.PrivateDnsZoneConfigArgs{
+				Name:             pulumi.String("redis"),
+				PrivateDnsZoneId: infra.DNS.RedisPrivateZone.ID().ToStringOutput(),
+			},
+		},
+	}, opts...)
+	if err != nil {
+		return fmt.Errorf("creating Redis private DNS zone group: %w", err)
+	}
+	return nil
 }
