@@ -102,7 +102,7 @@ func createBuildInfra(
 	gcpProject := gcpProjectId(ctx)
 
 	bsa, err := serviceaccount.NewAccount(ctx, projectName+"-build", &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(sanitizeAccountId(projectName + "-build")),
+		AccountId:   pulumi.String(SanitizeAccountId(projectName + "-build")),
 		DisplayName: pulumi.String("Image build service account for " + projectName),
 	}, opts...)
 	if err != nil {
@@ -111,7 +111,7 @@ func createBuildInfra(
 
 	ar, err := artifactregistry.NewRepository(ctx, projectName+"-repo", &artifactregistry.RepositoryArgs{
 		Location:     pulumi.String(region),
-		RepositoryId: pulumi.String(sanitizeAccountId(projectName) + "-repo"),
+		RepositoryId: pulumi.String(SanitizeAccountId(projectName) + "-repo"),
 		Description:  pulumi.String("Docker images for " + projectName),
 		Format:       pulumi.String("DOCKER"),
 	}, opts...)

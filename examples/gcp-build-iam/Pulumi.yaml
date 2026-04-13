@@ -1,0 +1,10 @@
+name: defang-gcp-build-iam
+runtime: go
+description: Reproduction case for GCP CD user IAM policy DeletedWith issue (defang-mvp#2773)
+plugins:
+  providers:
+    - name: defang-gcp
+      path: ../../bin
+config:
+  gcp:project: my-project-123456
+  domain: gcp-build-iam.example.defang.app
