@@ -1,9 +1,12 @@
 package gcp
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
@@ -22,6 +25,25 @@ func (testMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.Pro
 }
 
 func (testMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
+
+// buildDepsSpy records the Pulumi dependency URNs of the Build custom resource.
+type buildDepsSpy struct {
+	mu        sync.Mutex
+	buildDeps []string
+}
+
+func (m *buildDepsSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if args.TypeToken == "defang-gcp:defanggcp:Build" && args.RegisterRPC != nil {
+		m.mu.Lock()
+		m.buildDeps = args.RegisterRPC.GetDependencies()
+		m.mu.Unlock()
+	}
+	return args.Name + "_id", args.Inputs, nil
+}
+
+func (m *buildDepsSpy) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	return args.Args, nil
 }
 
@@ -322,4 +344,64 @@ func TestBuildSourceDigest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildServiceImageDependsOnBucketIAMMember verifies that the Build custom
+// resource has an explicit Pulumi dependency on the BucketIAMMember that grants
+// the build service account read access to the artifacts bucket. Without this
+// dependency Cloud Build can be submitted before GCP IAM has propagated the
+// binding (~60 s window), causing a 403 on first deploy.
+func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
+	spy := &buildDepsSpy{}
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		iamMember, err := storage.NewBucketIAMMember(ctx, "artifacts-viewer", &storage.BucketIAMMemberArgs{
+			Bucket: pulumi.String("my-artifacts-bucket"),
+			Role:   pulumi.String("roles/storage.objectViewer"),
+			Member: pulumi.String("serviceAccount:build@proj.iam.gserviceaccount.com"),
+		})
+		if err != nil {
+			return err
+		}
+
+		sa, err := serviceaccount.NewAccount(ctx, "build-sa", &serviceaccount.AccountArgs{
+			AccountId: pulumi.String("build-sa"),
+		})
+		if err != nil {
+			return err
+		}
+
+		infra := &BuildInfra{
+			ServiceAccount:  sa,
+			BucketIAMMember: iamMember,
+			RepositoryURL:   pulumi.String("us-central1-docker.pkg.dev/proj/repo").ToStringOutput(),
+			Region:          "us-central1",
+			GcpProject:      "proj",
+		}
+
+		svc := compose.ServiceConfig{
+			Build: &compose.BuildConfig{
+				// Use a gs:// URI so resolveSourceURI skips the BucketObject creation
+				// and we don't need a real BuildBucket in infra.
+				Context: pulumi.String("gs://my-artifacts-bucket/context.zip"),
+			},
+		}
+
+		_, err = buildServiceImage(ctx, "my-svc", svc, infra)
+		return err
+	}, pulumi.WithMocks("proj", "stack", spy))
+
+	require.NoError(t, err)
+
+	// The Build resource must list the BucketIAMMember as a dependency so that
+	// Pulumi waits for the IAM binding before submitting the Cloud Build job.
+	var hasBucketIAMDep bool
+	for _, dep := range spy.buildDeps {
+		if strings.Contains(dep, "BucketIAMMember") {
+			hasBucketIAMDep = true
+			break
+		}
+	}
+	assert.True(t, hasBucketIAMDep,
+		"Build resource must depend on BucketIAMMember (got deps: %v)", spy.buildDeps)
 }

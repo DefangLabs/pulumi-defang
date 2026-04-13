@@ -16,12 +16,13 @@ import (
 // BuildInfra holds GCP infrastructure shared across all services with build configs.
 // Created once per project when at least one service defines a build context.
 type BuildInfra struct {
-	Repository     *artifactregistry.Repository
-	ServiceAccount *serviceaccount.Account
-	BuildBucket    *storage.Bucket     // GCS bucket for uploading local build contexts
-	RepositoryURL  pulumi.StringOutput // e.g. "us-central1-docker.pkg.dev/project/repo"
-	Region         string
-	GcpProject     string
+	Repository      *artifactregistry.Repository
+	ServiceAccount  *serviceaccount.Account
+	BuildBucket     *storage.Bucket       // GCS bucket for uploading local build contexts
+	BucketIAMMember *storage.BucketIAMMember // grants build SA objectViewer on BuildBucket
+	RepositoryURL   pulumi.StringOutput   // e.g. "us-central1-docker.pkg.dev/project/repo"
+	Region          string
+	GcpProject      string
 }
 
 // hasBuildConfig reports whether any service in the map defines a build context.
@@ -145,11 +146,12 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding artifact registry admin role: %w", err)
 	}
 
-	if _, err := storage.NewBucketIAMMember(ctx, projectName+"-artifacts-viewer", &storage.BucketIAMMemberArgs{
+	artifactsViewer, err := storage.NewBucketIAMMember(ctx, projectName+"-artifacts-viewer", &storage.BucketIAMMemberArgs{
 		Bucket: bucket.Name,
 		Role:   pulumi.String("roles/storage.objectViewer"),
 		Member: pulumi.Sprintf("serviceAccount:%v", bsa.Email),
-	}, saOpts...); err != nil {
+	}, saOpts...)
+	if err != nil {
 		return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
 	}
 
@@ -172,11 +174,12 @@ func createBuildInfra(
 	repoURL := pulumi.Sprintf("%s-docker.pkg.dev/%s/%s", region, gcpProject, ar.Name)
 
 	return &BuildInfra{
-		Repository:     ar,
-		ServiceAccount: bsa,
-		BuildBucket:    bucket,
-		RepositoryURL:  repoURL,
-		Region:         region,
-		GcpProject:     gcpProject,
+		Repository:      ar,
+		ServiceAccount:  bsa,
+		BuildBucket:     bucket,
+		BucketIAMMember: artifactsViewer,
+		RepositoryURL:   repoURL,
+		Region:          region,
+		GcpProject:      gcpProject,
 	}, nil
 }
