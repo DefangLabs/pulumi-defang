@@ -62,6 +62,73 @@ func detectServiceTypes(services compose.Services) (bool, bool, bool, bool, map[
 	return hasPostgres, hasRedis, hasBuild, hasLLM, llmModels
 }
 
+func createPostgresResources(
+	ctx *pulumi.Context,
+	svcName string,
+	svc compose.ServiceConfig,
+	infra *providerazure.SharedInfra,
+	managedEndpoints map[string]pulumi.StringOutput,
+	comp *serviceComponent,
+	childOpts []pulumi.ResourceOption,
+) (pulumi.StringOutput, error) {
+	if err := ctx.RegisterComponentResource("defang-azure:index:Postgres", svcName, comp, childOpts...); err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("registering Azure Postgres component %s: %w", svcName, err)
+	}
+	svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+	pgResult, err := providerazure.CreatePostgresFlexible(ctx, infra.ConfigProvider, svcName, svc, infra, svcOpts...)
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
+	}
+
+	if infra.DNS != nil {
+		if err := providerazure.AddPostgresDNSRecord(
+			ctx, svcName, pgResult.Server.FullyQualifiedDomainName,
+			infra.DNS, infra, svcOpts...,
+		); err != nil {
+			return pulumi.StringOutput{}, fmt.Errorf("adding DNS record for %s: %w", svcName, err)
+		}
+	}
+
+	endpoint := pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
+	managedEndpoints[svcName] = endpoint
+	return endpoint, nil
+}
+
+func createRedisResources(
+	ctx *pulumi.Context,
+	svcName string,
+	svc compose.ServiceConfig,
+	infra *providerazure.SharedInfra,
+	managedEndpoints map[string]pulumi.StringOutput,
+	comp *serviceComponent,
+	childOpts []pulumi.ResourceOption,
+) (pulumi.StringOutput, error) {
+	if err := ctx.RegisterComponentResource("defang-azure:index:Redis", svcName, comp, childOpts...); err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("registering Azure Redis component %s: %w", svcName, err)
+	}
+	svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+	redisResult, err := providerazure.CreateRedisEnterprise(ctx, svcName, svc, infra, svcOpts...)
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", svcName, err)
+	}
+
+	if infra.DNS != nil {
+		if err := providerazure.AddRedisDNSRecord(
+			ctx, svcName, redisResult.Cluster.HostName,
+			infra.DNS, infra, svcOpts...,
+		); err != nil {
+			return pulumi.StringOutput{}, fmt.Errorf("adding Redis DNS record for %s: %w", svcName, err)
+		}
+	}
+
+	// ConnectionURL is the full redis:// or rediss:// URL including auth.
+	// The Compose service name resolves via svc.internal CNAME → private endpoint.
+	managedEndpoints[svcName] = redisResult.ConnectionURL
+	return pulumi.Sprintf("%s:10000", redisResult.Cluster.HostName), nil
+}
+
 // createServiceResources creates the component resource and underlying cloud resources
 // for a single service. It updates managedEndpoints in-place for managed services and
 // returns the service endpoint.
@@ -79,52 +146,18 @@ func createServiceResources(
 
 	switch {
 	case svc.Postgres != nil:
-		if err := ctx.RegisterComponentResource("defang-azure:index:Postgres", svcName, comp, childOpts...); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("registering Azure Postgres component %s: %w", svcName, err)
-		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-		pgResult, err := providerazure.CreatePostgresFlexible(ctx, infra.ConfigProvider, svcName, svc, infra, svcOpts...)
+		var err error
+		endpoint, err = createPostgresResources(ctx, svcName, svc, infra, managedEndpoints, comp, childOpts)
 		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
+			return pulumi.StringOutput{}, err
 		}
-
-		if infra.DNS != nil {
-			if err := providerazure.AddPostgresDNSRecord(
-				ctx, svcName, pgResult.Server.FullyQualifiedDomainName,
-				infra.DNS, infra, svcOpts...,
-			); err != nil {
-				return pulumi.StringOutput{}, fmt.Errorf("adding DNS record for %s: %w", svcName, err)
-			}
-		}
-
-		endpoint = pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
-		managedEndpoints[svcName] = endpoint
 
 	case svc.Redis != nil:
-		if err := ctx.RegisterComponentResource("defang-azure:index:Redis", svcName, comp, childOpts...); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("registering Azure Redis component %s: %w", svcName, err)
-		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-		redisResult, err := providerazure.CreateRedisEnterprise(ctx, svcName, svc, infra, svcOpts...)
+		var err error
+		endpoint, err = createRedisResources(ctx, svcName, svc, infra, managedEndpoints, comp, childOpts)
 		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", svcName, err)
+			return pulumi.StringOutput{}, err
 		}
-
-		if infra.DNS != nil {
-			if err := providerazure.AddRedisDNSRecord(
-				ctx, svcName, redisResult.Cluster.HostName,
-				infra.DNS, infra, svcOpts...,
-			); err != nil {
-				return pulumi.StringOutput{}, fmt.Errorf("adding Redis DNS record for %s: %w", svcName, err)
-			}
-		}
-
-		// ConnectionURL is the full redis:// or rediss:// URL including auth.
-		// The Compose service name resolves via svc.internal CNAME → private endpoint.
-		managedEndpoints[svcName] = redisResult.ConnectionURL
-		endpoint = pulumi.Sprintf("%s:10000", redisResult.Cluster.HostName)
 
 	case svc.LLM != nil:
 		if infra.LLMInfra == nil {

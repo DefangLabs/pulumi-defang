@@ -94,6 +94,9 @@ RUN case ",${CLOUDS}," in *,all,*|*,azure,*) ;; *) exit 0;; esac && \
 FROM ${CDBASE} AS cd
 # CA certs for HTTPS
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# /tmp is required by Pulumi for workspace temp files; scratch has no filesystem.
+# Copy the /tmp directory from the build stage (created with sticky bit by alpine).
+COPY --link --from=build --chown=0:0 /tmp /tmp
 # Pulumi CLI only (no language runtimes)
 COPY --link --from=plugins /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}"
