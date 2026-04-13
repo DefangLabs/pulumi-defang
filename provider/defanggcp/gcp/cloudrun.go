@@ -13,8 +13,8 @@ import (
 
 var nonLowerAlphaNumericOrDash = regexp.MustCompile(`[^a-z0-9-]`)
 
-// sanitizeAccountId returns a GCP service account ID (6-30 chars, lowercase alphanumeric + hyphens).
-func sanitizeAccountId(name string) string {
+// SanitizeAccountId returns a GCP service account ID (6-30 chars, lowercase alphanumeric + hyphens).
+func SanitizeAccountId(name string) string {
 	id := strings.ToLower(name)
 	id = nonLowerAlphaNumericOrDash.ReplaceAllLiteralString(id, "-")
 	id = strings.Trim(id, "-")
