@@ -18,10 +18,14 @@ const Name string = "defang-azure"
 
 func Provider() p.Provider {
 	return infer.Provider(infer.Options{
+		Resources: []infer.InferredResource{
+			infer.Resource[*ACRImageBuild, ACRImageBuildInputs, ACRImageBuildState](&ACRImageBuild{}),
+		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
 			infer.Component[*Service, AzureContainerAppInputs, *AzureContainerAppOutputs](&Service{}),
 			infer.Component[*Postgres, AzurePostgresInputs, *AzurePostgresOutputs](&Postgres{}),
+			infer.Component[*Redis, AzureRedisInputs, *AzureRedisOutputs](&Redis{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider":    "index",

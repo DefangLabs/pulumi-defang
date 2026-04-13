@@ -171,12 +171,19 @@ func GetConfigOrEnvValue(
 ) pulumi.StringOutput {
 	// Reading from a nil map in Go returns "" without panicking, so a
 	// nil Environment is equivalent to an empty one: missing keys fall through to
-	// the default value.
-	v, ok := s.Environment[key]
-	if !ok {
-		v = defaultValue
+	// the config provider.
+	if v, ok := s.Environment[key]; ok && v != "" {
+		// Resolve any ${VAR} interpolations in the env value via the config provider.
+		return InterpolateEnvironmentVariable(ctx, configProvider, v, opts...)
 	}
-	return pulumi.String(v).ToStringOutput()
+	// Not in environment (or empty): ask the config provider directly, then fall
+	// back to defaultValue.
+	return configProvider.GetConfig(ctx, key, opts...).ApplyT(func(v string) string {
+		if v != "" {
+			return v
+		}
+		return defaultValue
+	}).(pulumi.StringOutput)
 }
 
 // ToPulumiStringArray converts a plain []string to a pulumi.StringArray.

@@ -6,7 +6,7 @@ import (
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
 	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
-	pulumiazurenative "github.com/pulumi/pulumi-azure-native-sdk/v2"
+	pulumiazurenative "github.com/pulumi/pulumi-azure-native-sdk/v3"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )

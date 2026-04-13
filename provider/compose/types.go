@@ -4,6 +4,7 @@ package compose
 
 import (
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -295,6 +296,7 @@ type ConfigProvider interface {
 type PostgresConfigArgs struct {
 	Version       pulumi.StringPtrInput // Major version (derived from image tag, e.g. postgres:16 → 16)
 	DBName        pulumi.StringInput    // From POSTGRES_DB env or default "postgres"
+	DBNameStr     string                // Plain string for conditional resource creation (no resources inside ApplyT)
 	Username      pulumi.StringInput    // From POSTGRES_USER env or default "postgres"
 	Password      pulumi.StringInput    // From POSTGRES_PASSWORD env
 	AllowDowntime bool                  // From x-defang-postgres "allow-downtime"
@@ -307,9 +309,12 @@ const DEFAULT_POSTGRES_DB = "postgres"
 
 var rePostgresVersion = regexp.MustCompile(`^(?:[\d.-]*pg)?([\d.]+(?:-rds\.\d+)?)`)
 
-func getPostgresVersion(tag string) string {
-	// If the tag starts with a pgvector version, cut if off
-	matches := rePostgresVersion.FindStringSubmatch(tag)
+func getPostgresVersion(image string) string {
+	// Strip image name prefix (e.g. "postgres:14.22" → "14.22")
+	if i := strings.LastIndex(image, ":"); i >= 0 {
+		image = image[i+1:]
+	}
+	matches := rePostgresVersion.FindStringSubmatch(image)
 	if len(matches) > 1 {
 		return matches[1]
 	}
@@ -327,6 +332,10 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 		version = pulumi.StringPtr(getPostgresVersion(*s.Image))
 	}
 
+	dbNameStr, ok := s.Environment["POSTGRES_DB"]
+	if !ok || dbNameStr == "" {
+		dbNameStr = DEFAULT_POSTGRES_DB
+	}
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
 	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
 	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "")
@@ -343,6 +352,7 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	return &PostgresConfigArgs{
 		Version:       version,
 		DBName:        dbName,
+		DBNameStr:     dbNameStr,
 		Username:      username,
 		Password:      password,
 		AllowDowntime: allowDowntime,

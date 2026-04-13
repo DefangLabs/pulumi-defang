@@ -1,14 +1,17 @@
 package defangazure
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
-	azureapp "github.com/pulumi/pulumi-azure-native-sdk/app/v2"
-	"github.com/pulumi/pulumi-azure-native-sdk/resources/v2"
+	azureapp "github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var ErrBuildInfraNotConfigured = errors.New("build infrastructure is not set up")
 
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
@@ -75,7 +78,16 @@ func (*Service) Construct(
 
 	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
 
-	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, childOpt)
+	if svc.Build != nil && infra.BuildInfra == nil {
+		return nil, fmt.Errorf("service %s: %w", name, ErrBuildInfraNotConfigured)
+	}
+
+	imageURI, err := azure.GetServiceImage(ctx, name, svc, infra.BuildInfra, infra, childOpt)
+	if err != nil {
+		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
+	}
+
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}

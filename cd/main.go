@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -73,6 +75,15 @@ func projectConfig() map[string]workspace.ProjectConfigType {
 							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
 						},
 					},
+					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
+					// The default pattern includes hyphens from project/stack names, so override it.
+					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
+					// ${stack} is safe to include: stacks are lowercase with no hyphens.
+					"azure-native": map[string]any{
+						"resources": map[string]any{
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"},
+						},
+					},
 				},
 			},
 		},
@@ -89,6 +100,8 @@ func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 		return fetchS3(ctx, uri)
 	case strings.HasPrefix(uri, "gs://"):
 		return fetchGCS(ctx, uri)
+	case strings.Contains(uri, ".blob.core.windows.net"):
+		return fetchAzureBlob(ctx, uri)
 	case strings.HasPrefix(uri, "http://"), strings.HasPrefix(uri, "https://"):
 		return fetchHTTP(ctx, uri)
 	default:
@@ -132,6 +145,23 @@ func fetchGCS(ctx context.Context, uri string) ([]byte, error) {
 	}
 	defer rc.Close()
 	return io.ReadAll(rc)
+}
+
+func fetchAzureBlob(ctx context.Context, uri string) ([]byte, error) {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating Azure credential: %w", err)
+	}
+	client, err := blob.NewClient(uri, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating Azure blob client: %w", err)
+	}
+	resp, err := client.DownloadStream(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("downloading Azure blob: %w", err)
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
@@ -215,6 +245,10 @@ func stackConfig() auto.ConfigMap {
 			log.Fatal("missing required environment variable: AZURE_LOCATION")
 		}
 		cfg["azure-native:location"] = auto.ConfigValue{Value: azureLocation}
+		cfg["azure-native:useMsi"] = auto.ConfigValue{Value: "true"}
+		if azureSubscription != "" {
+			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
+		}
 	}
 
 	// Defang recipe config
@@ -376,8 +410,20 @@ func main() {
 		log.Fatalf("failed to save project settings: %v", err)
 	}
 
-	// Set stack-level config (provider settings, defang config)
-	if err := stack.SetAllConfig(ctx, stackConfig()); err != nil {
+	// Set stack-level config (provider settings, defang config, user secrets)
+	cfg := stackConfig()
+	if provider() == "azure" {
+		userCfg, err := fetchAzureUserConfig(ctx)
+		if err != nil {
+			log.Printf("warning: failed to read Azure user config from App Configuration: %v", err)
+		}
+		for k, v := range userCfg {
+			// Store under the project namespace so the provider's ConfigProvider can
+			// read it via config.New(ctx, "").GetSecret(key).
+			cfg[project+":"+k] = auto.ConfigValue{Value: v, Secret: true}
+		}
+	}
+	if err := stack.SetAllConfig(ctx, cfg); err != nil {
 		log.Fatalf("failed to set config: %v", err)
 	}
 

@@ -3,7 +3,7 @@
 # Build context must be the repo root (because cd/go.mod has replace directives to ../).
 # Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 .
 #
-ARG GOVERSION=1.25
+ARG GOVERSION=1.26
 ARG PULUMI_VERSION=latest
 ARG BUILDBASE=golang:${GOVERSION}-alpine
 ARG CDBASE=scratch
@@ -79,7 +79,7 @@ RUN case ",${CLOUDS}," in *,all,*|*,aws,*) ;; *) exit 0;; esac && \
 RUN case ",${CLOUDS}," in *,all,*|*,gcp,*) ;; *) exit 0;; esac && \
     pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' go.mod | awk '{print $2}')
 RUN case ",${CLOUDS}," in *,all,*|*,azure,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/v2 ' go.mod | awk '{print $2}')
+    pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/v3' go.mod | awk '{print $2}')
 
 ARG PROVIDER_VERSION
 COPY --link --from=build /out/pulumi-resource-defang-* /tmp/
@@ -94,6 +94,9 @@ RUN case ",${CLOUDS}," in *,all,*|*,azure,*) ;; *) exit 0;; esac && \
 FROM ${CDBASE} AS cd
 # CA certs for HTTPS
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# /tmp is required by Pulumi for workspace temp files; scratch has no filesystem.
+# Copy the /tmp directory from the build stage (created with sticky bit by alpine).
+COPY --link --from=build --chown=0:0 /tmp /tmp
 # Pulumi CLI only (no language runtimes)
 COPY --link --from=plugins /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}"
