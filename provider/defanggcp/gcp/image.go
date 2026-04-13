@@ -224,6 +224,17 @@ func buildServiceImage(
 		return nil, err
 	}
 
+	// The Build resource must depend on the BucketIAMMember so Pulumi waits for
+	// the IAM binding before submitting the Cloud Build job. GCP IAM changes can
+	// take ~60 s to propagate globally; without this explicit edge the build SA
+	// may not yet have objectViewer access when Cloud Build attempts to read the
+	// source archive, causing a 403 on first deploy.
+	buildOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
+	buildOpts = append(buildOpts, opts...)
+	if infra.BucketIAMMember != nil {
+		buildOpts = append(buildOpts, pulumi.DependsOn([]pulumi.Resource{infra.BucketIAMMember}))
+	}
+
 	var buildRes gcpBuildResource
 	if err := ctx.RegisterResource(
 		"defang-gcp:defanggcp:Build",
@@ -240,7 +251,7 @@ func buildServiceImage(
 			"diskSizeGb":     pulumi.Int(cloudBuildDiskSizeGb(shmBytes)),
 		},
 		&buildRes,
-		opts...,
+		buildOpts...,
 	); err != nil {
 		return nil, fmt.Errorf("creating Build resource for %s: %w", serviceName, err)
 	}
