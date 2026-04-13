@@ -1,6 +1,6 @@
 name: defang-gcp
 runtime: nodejs
-description: Example using defang-gcp to deploy services to GCP (Pulumi YAML)
+description: Example using defang-gcp to deploy services to GCP
 plugins:
   providers:
     - name: defang-gcp

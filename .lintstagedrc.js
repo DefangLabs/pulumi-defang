@@ -44,5 +44,7 @@ function goHook(files) {
 
 module.exports = {
   '**/*.go': goHook,
+  'README.md': 'scripts/check-readme-examples.sh',
+  'examples/aws-*/{index.ts,__main__.py,main.go,Program.cs,Pulumi.yaml}': 'scripts/check-readme-examples.sh',
   '.github/workflows/**/*.{yml,yaml}': 'actionlint',
 };

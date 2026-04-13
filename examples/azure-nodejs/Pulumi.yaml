@@ -1,6 +1,6 @@
 name: defang-azure
 runtime: nodejs
-description: Example using defang-azure to deploy services to Azure (Pulumi YAML)
+description: Example using defang-azure to deploy services to Azure
 plugins:
   providers:
     - name: defang-azure

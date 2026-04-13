@@ -92,6 +92,10 @@ lint: ## Run linter with --fix
 .PHONY: install
 install: $(foreach p,$(PACKS),install_$(p)) ## Install providers to $GOPATH/bin
 
+README_SOURCES := examples/aws-nodejs/index.ts examples/aws-python/__main__.py examples/aws-go/main.go examples/aws-dotnet/Program.cs examples/aws-yaml/Pulumi.yaml
+README.md: $(README_SOURCES) scripts/check-readme-examples.sh ## Regenerate README.md code blocks from examples/
+	scripts/check-readme-examples.sh --update
+
 .PHONY: clean
 clean: $(foreach p,$(PACKS),clean_$(p))
 
@@ -139,6 +143,7 @@ EXAMPLE_LANGUAGES  := go nodejs python dotnet
 
 .PHONY: examples
 examples: $(foreach p,$(EXAMPLE_PROVIDERS),gen_examples_$(p)) ## Generate language examples from YAML
+	$(MAKE) README.md
 
 define example_target
 .PHONY: example_$(1)_$(2)
