@@ -2,7 +2,7 @@ name: release
 on:
   push:
     tags:
-      - '*.*.*'
+      - 'v*.*.*'
       # - '!*.*.*-**'
 permissions:
   contents: write # Allows writing releases
@@ -207,6 +207,7 @@ jobs:
     name: Publish Docker Images
     runs-on: ubuntu-latest
     needs: build_images_arm
+    environment: publish
     strategy:
       fail-fast: false
       matrix:
@@ -246,6 +247,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1 # ECR Public is always us-east-1
+
+      - name: Log in to Amazon ECR Public
+        uses: aws-actions/amazon-ecr-login@f2e9fc6c2b355c1890b65e6f6f0e2ac3e6e22f78 # v2
+        with:
+          registry-type: public
+
+      - name: Log in to Azure
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to Azure ACR
+        run: az acr login --name defang
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+
+      - name: Configure Docker for GCP Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
       - name: Lowercase image repo
         run: echo "IMAGE_REPO=${IMAGE_REPO,,}" >> "$GITHUB_ENV"
 
@@ -259,6 +289,10 @@ jobs:
             CLOUDS=${{ matrix.clouds }}
             CD_VERSION=${{ github.ref_name }}
             PROVIDER_VERSION=${{ github.ref_name }}
-          tags: ${{ env.IMAGE_REPO }}:${{ github.ref_name }}-${{ matrix.clouds }}
+          tags: |
+            ${{ env.IMAGE_REPO }}:${{ github.ref_name }}-${{ matrix.clouds }}
+            public.ecr.aws/defang-io/cd:${{ github.ref_name }}-${{ matrix.clouds }}
+            defang.azurecr.io/cd:${{ github.ref_name }}-${{ matrix.clouds }}
+            us-central1-docker.pkg.dev/defang-io/public/cd:${{ github.ref_name }}-${{ matrix.clouds }}
           cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.clouds }}
           cache-to: type=gha,scope=${{ github.workflow }}-${{ matrix.clouds }},mode=max
