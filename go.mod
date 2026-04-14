@@ -17,6 +17,7 @@ require (
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/appconfiguration/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0

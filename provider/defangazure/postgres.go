@@ -54,7 +54,8 @@ func (*Postgres) Construct(
 	}
 
 	infra := &azure.SharedInfra{ResourceGroup: rg}
-	configProvider := azure.NewConfigProvider(inputs.ProjectName)
+	appConfigStore, appConfigRG := azure.AppConfigStore(ctx)
+	configProvider := azure.NewConfigProvider(appConfigStore, appConfigRG, inputs.ProjectName)
 
 	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, childOpt)
 	if err != nil {

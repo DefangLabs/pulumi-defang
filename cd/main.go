@@ -249,6 +249,10 @@ func stackConfig() auto.ConfigMap {
 		if azureSubscription != "" {
 			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
 		}
+		if azureResourceGroup != "" {
+			// When set, the provider imports this existing resource group instead of creating one.
+			cfg["defang-azure:resourceGroup"] = auto.ConfigValue{Value: azureResourceGroup}
+		}
 	}
 
 	// Defang recipe config

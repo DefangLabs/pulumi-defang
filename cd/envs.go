@@ -10,8 +10,9 @@ import (
 var (
 	awsProfile        = os.Getenv("AWS_PROFILE")           // AWS only
 	awsRegion         = Getenv("AWS_REGION", region)       // AWS only
-	azureLocation     = os.Getenv("AZURE_LOCATION")        // Azure only
-	azureSubscription = os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only
+	azureLocation      = os.Getenv("AZURE_LOCATION")        // Azure only
+	azureResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")  // Azure only; import existing RG when set
+	azureSubscription  = os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only
 	cdImage           = os.Getenv("DEFANG_CD_IMAGE")       // GCP only; for cleanup
 	delegationSetId   = os.Getenv("DELEGATION_SET_ID")     // AWS only
 	domain            = os.Getenv("DOMAIN")

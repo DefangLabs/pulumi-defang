@@ -29,4 +29,23 @@ func Location(ctx *pulumi.Context) string {
 	return defaultAzureLocation
 }
 
+// AppConfigStore reads the Azure App Configuration store name and resource group
+// from Pulumi stack config keys defang-azure:appConfigStore and
+// defang-azure:appConfigResourceGroup.
+func AppConfigStore(ctx *pulumi.Context) (storeName, resourceGroupName string) {
+	cfg := config.New(ctx, "defang-azure")
+	return cfg.Get("appConfigStore"), cfg.Get("appConfigResourceGroup")
+}
+
+// ExistingResourceGroup returns the name of an existing Azure resource group to import,
+// read from Pulumi stack config defang-azure:resourceGroup. Empty if unset (create new).
+func ExistingResourceGroup(ctx *pulumi.Context) string {
+	return config.New(ctx, "defang-azure").Get("resourceGroup")
+}
+
+// SubscriptionID returns the Azure subscription ID from azure-native:subscriptionId config.
+func SubscriptionID(ctx *pulumi.Context) string {
+	return config.New(ctx, "azure-native").Get("subscriptionId")
+}
+
 

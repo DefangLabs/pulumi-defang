@@ -220,9 +220,19 @@ func (*Project) Construct(
 
 	location := providerazure.Location(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
+	rgArgs := &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
-	}, childOpts...)
+	}
+	rgOpts := childOpts
+	if existingRG := providerazure.ExistingResourceGroup(ctx); existingRG != "" {
+		// Import the existing RG: ResourceGroupName must match so Pulumi doesn't
+		// propose a replacement on subsequent refreshes.
+		rgArgs.ResourceGroupName = pulumi.String(existingRG)
+		subID := providerazure.SubscriptionID(ctx)
+		rgID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subID, existingRG)
+		rgOpts = append(rgOpts, pulumi.Import(pulumi.ID(rgID)))
+	}
+	rg, err := resources.NewResourceGroup(ctx, name, rgArgs, rgOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
@@ -232,9 +242,10 @@ func (*Project) Construct(
 	hasPostgres, hasRedis, hasBuild, hasLLM, llmModels := detectServiceTypes(inputs.Services)
 
 	// Bootstrap a minimal SharedInfra (without Environment) so CreateNetworking can reference the RG.
+	appConfigStore, appConfigRG := providerazure.AppConfigStore(ctx)
 	infra := &providerazure.SharedInfra{
 		ResourceGroup:  rg,
-		ConfigProvider: providerazure.NewConfigProvider(name),
+		ConfigProvider: providerazure.NewConfigProvider(appConfigStore, appConfigRG, name),
 	}
 
 	if hasPostgres || hasRedis {
