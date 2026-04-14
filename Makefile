@@ -17,9 +17,6 @@ export GOTOOLCHAIN := go1.25.6
 WORKING_DIR     := $(shell pwd)
 TESTPARALLELISM := 4
 
-OS    := $(shell uname)
-SHELL := /bin/bash
-
 # Delegate to per-plugin Makefiles
 define pack_rule
 %_$(1):
