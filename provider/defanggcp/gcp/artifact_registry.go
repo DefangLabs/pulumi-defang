@@ -128,9 +128,8 @@ func createBuildInfra(
 		return nil, fmt.Errorf("creating build artifacts bucket: %w", err)
 	}
 
-	saOpts := make([]pulumi.ResourceOption, 0, len(opts)+2)
-	saOpts = append(saOpts, opts...)
-	saOpts = append(saOpts, pulumi.DeletedWith(bsa), pulumi.DeleteBeforeReplace(true))
+	saOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
+	saOpts = append(append(saOpts, opts...), pulumi.DeleteBeforeReplace(true))
 
 	repoIAMArgs := &artifactregistry.RepositoryIamBindingArgs{
 		Location:   pulumi.String(region),
