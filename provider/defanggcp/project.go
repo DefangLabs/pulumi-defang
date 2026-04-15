@@ -292,8 +292,7 @@ func createServiceAccount(
 		infra.Stack,
 	)
 	// Create a service account for the services running in cloudrun or compute engine
-	sa, err := serviceaccount.NewAccount(ctx, projectName+"-"+svcName+"-service-account", &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(providergcp.SanitizeAccountId(projectName + "-" + svcName)),
+	sa, err := serviceaccount.NewAccount(ctx, projectName+"-"+svcName, &serviceaccount.AccountArgs{
 		DisplayName: pulumi.String(displayName),
 		Description: pulumi.String(description),
 	}, svcChildOpts...)
