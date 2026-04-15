@@ -61,7 +61,7 @@ func (*Service) Construct(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
-	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.BuildInfra, childOpt)
+	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.Repos, infra.BuildInfra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
 	}

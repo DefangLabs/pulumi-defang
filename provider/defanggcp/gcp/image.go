@@ -4,16 +4,20 @@ import (
 	"crypto/sha1" //nolint:gosec
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
 )
+
+var errNoRemoteRepoConfigured = errors.New("no remote repository configured for registry")
 
 // Based on Cloud Run error:
 // "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
@@ -101,6 +105,7 @@ func GetServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
+	repos map[string]*artifactregistry.Repository,
 	infra *BuildInfra,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringInput, error) {
@@ -121,10 +126,23 @@ func GetServiceImage(
 		}
 		originalRegistry := info.Registry
 		info.Registry = region + "-docker.pkg.dev"
-		info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, sanitizeRepoName(originalRegistry), info.Repo)
-		msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
-			serviceName, *svc.Image, info.FullImage())
-		_ = ctx.Log.Info(msg, nil)
+
+		repo, ok := repos[originalRegistry]
+		if !ok {
+			return pulumi.String(""), fmt.Errorf(
+				"%w %s (referenced by service %s)",
+				errNoRemoteRepoConfigured, originalRegistry, serviceName,
+			)
+		}
+
+		image := repo.Name.ApplyT(func(name string) string {
+			info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, name, info.Repo)
+			msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
+				serviceName, *svc.Image, info.FullImage())
+			_ = ctx.Log.Info(msg, nil)
+			return info.FullImage()
+		}).(pulumi.StringOutput)
+		return image, nil
 	}
 	return pulumi.String(info.FullImage()), nil
 }

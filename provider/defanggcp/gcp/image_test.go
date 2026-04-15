@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -147,6 +148,7 @@ func TestGetServiceImage(t *testing.T) {
 		name      string
 		svc       compose.ServiceConfig
 		infra     *BuildInfra
+		repos     map[string]*artifactregistry.Repository
 		wantImage string
 		wantErr   bool
 	}{
@@ -180,15 +182,21 @@ func TestGetServiceImage(t *testing.T) {
 			wantImage: "us-central1-docker.pkg.dev/proj/repo/app:v1",
 		},
 		{
-			name:      "quay.io image rewritten to artifact registry",
-			svc:       compose.ServiceConfig{Image: strPtr("quay.io/prometheus/node-exporter:v1.8.0")},
-			infra:     fakeInfra,
+			name:  "quay.io image rewritten to artifact registry",
+			svc:   compose.ServiceConfig{Image: strPtr("quay.io/prometheus/node-exporter:v1.8.0")},
+			infra: fakeInfra,
+			repos: map[string]*artifactregistry.Repository{
+				"quay.io": {Name: pulumi.String("quay-io").ToStringOutput()},
+			},
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/quay-io/prometheus/node-exporter:v1.8.0",
 		},
 		{
-			name:      "ghcr.io image rewritten to artifact registry",
-			svc:       compose.ServiceConfig{Image: strPtr("ghcr.io/owner/image:sha-abc123")},
-			infra:     fakeInfra,
+			name:  "ghcr.io image rewritten to artifact registry",
+			svc:   compose.ServiceConfig{Image: strPtr("ghcr.io/owner/image:sha-abc123")},
+			infra: fakeInfra,
+			repos: map[string]*artifactregistry.Repository{
+				"ghcr.io": {Name: pulumi.String("ghcr-io").ToStringOutput()},
+			},
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/ghcr-io/owner/image:sha-abc123",
 		},
 	}
@@ -198,7 +206,7 @@ func TestGetServiceImage(t *testing.T) {
 			var gotImage string
 			var wg sync.WaitGroup
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.infra)
+				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.repos, tt.infra)
 				if tt.wantErr {
 					assert.Error(t, err)
 					return nil

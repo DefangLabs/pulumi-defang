@@ -64,10 +64,11 @@ func createRemoteRepos(
 	registries []string,
 	projectName, region string,
 	opts ...pulumi.ResourceOption,
-) error {
+) (map[string]*artifactregistry.Repository, error) {
+	repos := make(map[string]*artifactregistry.Repository, len(registries))
 	for _, registry := range registries {
 		repoId := sanitizeRepoName(registry)
-		if _, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId+"-remote", &artifactregistry.RepositoryArgs{
+		repo, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId+"-remote", &artifactregistry.RepositoryArgs{
 			Location:     pulumi.String(region),
 			RepositoryId: pulumi.String(repoId),
 			Description:  pulumi.String("Remote pull-through cache for " + registry),
@@ -78,11 +79,13 @@ func createRemoteRepos(
 					Uri: pulumi.String("https://" + registry),
 				},
 			},
-		}, append(opts, pulumi.RetainOnDelete(true))...); err != nil {
-			return fmt.Errorf("creating remote repository for %s: %w", registry, err)
+		}, append(opts, pulumi.RetainOnDelete(true))...)
+		if err != nil {
+			return nil, fmt.Errorf("creating remote repository for %s: %w", registry, err)
 		}
+		repos[registry] = repo
 	}
-	return nil
+	return repos, nil
 }
 
 // gcpProjectId reads the GCP project ID from Pulumi stack config.

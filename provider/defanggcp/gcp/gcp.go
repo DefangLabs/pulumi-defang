@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
@@ -28,11 +29,12 @@ type GlobalConfig struct {
 	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
 	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
 	ProxySubnetId     string
-	BuildInfra        *BuildInfra                   // non-nil when at least one service has a build config
-	ServiceConnection *servicenetworking.Connection // non-nil when any service uses managed Postgres or Redis
-	PrivateZone       pulumi.StringOutput           // managed zone name for the private google.internal. zone
-	Prefix            string                        // prefix for all resource names (e.g. "myproject")
-	Stack             string                        // Pulumi stack name (e.g. "dev")
+	BuildInfra        *BuildInfra                             // non-nil when at least one service has a build config
+	ServiceConnection *servicenetworking.Connection           // non-nil when any service uses managed Postgres or Redis
+	PrivateZone       pulumi.StringOutput                     // managed zone name for the private google.internal. zone
+	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
+	Stack             string                                  // Pulumi stack name (e.g. "dev")
+	Repos             map[string]*artifactregistry.Repository // non-empty when services reference external registries
 }
 
 // EnableGcpAPIs enables the GCP APIs required by the project.
@@ -189,9 +191,11 @@ func buildOptionalInfra(
 	}
 
 	if externalRegistries := collectExternalRegistries(services); len(externalRegistries) > 0 {
-		if err := createRemoteRepos(ctx, externalRegistries, projectName, cfg.Region, opts...); err != nil {
+		repos, err := createRemoteRepos(ctx, externalRegistries, projectName, cfg.Region, opts...)
+		if err != nil {
 			return err
 		}
+		cfg.Repos = repos
 	}
 
 	if needsVpcPeering(services) {
