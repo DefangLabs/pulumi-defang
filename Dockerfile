@@ -99,7 +99,7 @@ COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --link --from=build --chown=0:0 /tmp /tmp
 # Pulumi CLI only (no language runtimes)
 COPY --link --from=plugins /pulumi/bin/pulumi /pulumi/bin/pulumi
-ENV PATH="/pulumi/bin:${PATH}"
+ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
 # Plugins
 COPY --link --from=plugins /root/.pulumi/plugins /root/.pulumi/plugins
 # App
