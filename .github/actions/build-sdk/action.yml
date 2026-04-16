@@ -12,24 +12,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Unshallow clone for tags
-      shell: bash
-      run: git fetch --prune --unshallow --tags
-
-    - name: Install Go
-      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-      with:
-        go-version-file: go.mod
-        cache-dependency-path: go.sum
-
-    - name: Install pulumictl
-      shell: bash
-      run: |
-        arch=${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}
-        gh release download --repo pulumi/pulumictl --pattern "pulumictl-*-linux-${arch}.tar.gz" --dir /tmp
-        tar -xzf "/tmp/pulumictl-*-linux-${arch}.tar.gz" -C /usr/local/bin pulumictl
-      env:
-        GH_TOKEN: ${{ github.token }}
+    - name: Setup Go build environment
+      uses: ./.github/actions/setup-go
 
     - name: Install Pulumi CLI
       uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6
