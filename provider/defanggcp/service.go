@@ -55,17 +55,21 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
+	projectName := inputs.ProjectName
+	if projectName == "" {
+		projectName = name
+	}
+	configProvider := providergcp.NewConfigProvider(projectName)
 	services := map[string]compose.ServiceConfig{name: svc}
-	infra, err := providergcp.BuildGlobalConfig(ctx, inputs.ProjectName, "", services, childOpt)
+	infra, err := providergcp.BuildGlobalConfig(ctx, projectName, "", services, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
-	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.BuildInfra, childOpt)
+	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.Repos, infra.BuildInfra, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
 	}
-	sa, err := createServiceAccount(ctx, inputs.ProjectName, name, infra, []pulumi.ResourceOption{childOpt})
+	sa, err := createServiceAccount(ctx, projectName, name, infra, []pulumi.ResourceOption{childOpt})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create service account: %w", err)
 	}

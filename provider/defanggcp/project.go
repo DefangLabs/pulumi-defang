@@ -198,7 +198,7 @@ func buildService(
 		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
-		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, svcChildOpts...)
+		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.Repos, infra.BuildInfra, svcChildOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
@@ -292,7 +292,7 @@ func createServiceAccount(
 		infra.Stack,
 	)
 	// Create a service account for the services running in cloudrun or compute engine
-	sa, err := serviceaccount.NewAccount(ctx, projectName+"-"+svcName+"-service-account", &serviceaccount.AccountArgs{
+	sa, err := serviceaccount.NewAccount(ctx, projectName+"-"+svcName, &serviceaccount.AccountArgs{
 		DisplayName: pulumi.String(displayName),
 		Description: pulumi.String(description),
 	}, svcChildOpts...)

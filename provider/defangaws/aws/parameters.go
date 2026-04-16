@@ -43,7 +43,7 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pul
 		return val
 	}
 
-	return pulumi.StringOutput{}
+	return pulumi.String("").ToStringOutput()
 }
 
 func getParametersByPath(
