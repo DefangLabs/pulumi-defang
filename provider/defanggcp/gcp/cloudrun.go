@@ -2,30 +2,12 @@ package gcp
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
-
-var nonLowerAlphaNumericOrDash = regexp.MustCompile(`[^a-z0-9-]`)
-
-// sanitizeAccountId returns a GCP service account ID (6-30 chars, lowercase alphanumeric + hyphens).
-func sanitizeAccountId(name string) string {
-	id := strings.ToLower(name)
-	id = nonLowerAlphaNumericOrDash.ReplaceAllLiteralString(id, "-")
-	id = strings.Trim(id, "-")
-	if len(id) < 6 {
-		id += "-svcacc"
-	}
-	if len(id) > 30 {
-		id = id[:30]
-	}
-	return strings.TrimRight(id, "-")
-}
 
 type CloudRunResult struct {
 	Service *cloudrunv2.Service

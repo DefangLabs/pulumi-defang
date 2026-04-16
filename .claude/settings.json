@@ -15,6 +15,7 @@
       "Bash(gh run:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
+      "Bash(git ls-remote:*)",
       "Bash(git push:*)",
       "Bash(git show:*)",
       "Bash(go build:*)",
@@ -26,7 +27,8 @@
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "Bash(which:*)"
+      "Bash(which:*)",
+      "Bash(xxd:*)"
     ]
   }
 }

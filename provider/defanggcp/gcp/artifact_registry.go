@@ -16,12 +16,13 @@ import (
 // BuildInfra holds GCP infrastructure shared across all services with build configs.
 // Created once per project when at least one service defines a build context.
 type BuildInfra struct {
-	Repository     *artifactregistry.Repository
-	ServiceAccount *serviceaccount.Account
-	BuildBucket    *storage.Bucket     // GCS bucket for uploading local build contexts
-	RepositoryURL  pulumi.StringOutput // e.g. "us-central1-docker.pkg.dev/project/repo"
-	Region         string
-	GcpProject     string
+	Repository      *artifactregistry.Repository
+	ServiceAccount  *serviceaccount.Account
+	BuildBucket     *storage.Bucket          // GCS bucket for uploading local build contexts
+	BucketIAMMember *storage.BucketIAMMember // grants build SA objectViewer on BuildBucket
+	RepositoryURL   pulumi.StringOutput      // e.g. "us-central1-docker.pkg.dev/project/repo"
+	Region          string
+	GcpProject      string
 }
 
 // hasBuildConfig reports whether any service in the map defines a build context.
@@ -63,12 +64,17 @@ func createRemoteRepos(
 	registries []string,
 	projectName, region string,
 	opts ...pulumi.ResourceOption,
-) error {
+) (map[string]*artifactregistry.Repository, error) {
+	repos := make(map[string]*artifactregistry.Repository, len(registries))
 	for _, registry := range registries {
 		repoId := sanitizeRepoName(registry)
-		if _, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId+"-remote", &artifactregistry.RepositoryArgs{
-			Location:     pulumi.String(region),
+		repo, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId, &artifactregistry.RepositoryArgs{
+			// RepositoryId must be set explicitly. Some AWS resources say "if omitted, the provider
+			// will assign a random, unique name" (e.g. https://www.pulumi.com/registry/packages/aws/api-docs/s3/bucket/),
+			// but the GCP Artifact Registry docs make no such promise:
+			// https://www.pulumi.com/registry/packages/gcp/api-docs/artifactregistry/repository/
 			RepositoryId: pulumi.String(repoId),
+			Location:     pulumi.String(region),
 			Description:  pulumi.String("Remote pull-through cache for " + registry),
 			Format:       pulumi.String("DOCKER"),
 			Mode:         pulumi.String("REMOTE_REPOSITORY"),
@@ -77,11 +83,13 @@ func createRemoteRepos(
 					Uri: pulumi.String("https://" + registry),
 				},
 			},
-		}, append(opts, pulumi.RetainOnDelete(true))...); err != nil {
-			return fmt.Errorf("creating remote repository for %s: %w", registry, err)
+		}, append(opts, pulumi.RetainOnDelete(true))...)
+		if err != nil {
+			return nil, fmt.Errorf("creating remote repository for %s: %w", registry, err)
 		}
+		repos[registry] = repo
 	}
-	return nil
+	return repos, nil
 }
 
 // gcpProjectId reads the GCP project ID from Pulumi stack config.
@@ -101,17 +109,17 @@ func createBuildInfra(
 	region := GcpRegion(ctx)
 	gcpProject := gcpProjectId(ctx)
 
-	bsa, err := serviceaccount.NewAccount(ctx, projectName+"-build", &serviceaccount.AccountArgs{
-		AccountId:   pulumi.String(sanitizeAccountId(projectName + "-build")),
+	bsa, err := serviceaccount.NewAccount(ctx, projectName, &serviceaccount.AccountArgs{
 		DisplayName: pulumi.String("Image build service account for " + projectName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating build service account: %w", err)
 	}
 
-	ar, err := artifactregistry.NewRepository(ctx, projectName+"-repo", &artifactregistry.RepositoryArgs{
+	ar, err := artifactregistry.NewRepository(ctx, projectName, &artifactregistry.RepositoryArgs{
+		// RepositoryId is required by the GCP API; unlike AWS, GCP does not auto-generate resource IDs.
+		RepositoryId: pulumi.String(sanitizeRepoName(projectName)),
 		Location:     pulumi.String(region),
-		RepositoryId: pulumi.String(sanitizeAccountId(projectName) + "-repo"),
 		Description:  pulumi.String("Docker images for " + projectName),
 		Format:       pulumi.String("DOCKER"),
 	}, opts...)
@@ -119,7 +127,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)
 	}
 
-	bucket, err := storage.NewBucket(ctx, projectName+"-artifacts", &storage.BucketArgs{
+	bucket, err := storage.NewBucket(ctx, projectName, &storage.BucketArgs{
 		Location:                 pulumi.String(region),
 		ForceDestroy:             pulumi.Bool(true),
 		UniformBucketLevelAccess: pulumi.Bool(true),
@@ -128,9 +136,8 @@ func createBuildInfra(
 		return nil, fmt.Errorf("creating build artifacts bucket: %w", err)
 	}
 
-	saOpts := make([]pulumi.ResourceOption, 0, len(opts)+2)
-	saOpts = append(saOpts, opts...)
-	saOpts = append(saOpts, pulumi.DeletedWith(bsa), pulumi.DeleteBeforeReplace(true))
+	saOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
+	saOpts = append(append(saOpts, opts...), pulumi.DeleteBeforeReplace(true))
 
 	repoIAMArgs := &artifactregistry.RepositoryIamBindingArgs{
 		Location:   pulumi.String(region),
@@ -140,20 +147,21 @@ func createBuildInfra(
 		Members:    pulumi.StringArray{pulumi.Sprintf("serviceAccount:%v", bsa.Email)},
 	}
 	if _, err := artifactregistry.NewRepositoryIamBinding(
-		ctx, projectName+"-repo-writer", repoIAMArgs, saOpts...,
+		ctx, projectName, repoIAMArgs, saOpts...,
 	); err != nil {
 		return nil, fmt.Errorf("binding artifact registry admin role: %w", err)
 	}
 
-	if _, err := storage.NewBucketIAMMember(ctx, projectName+"-artifacts-viewer", &storage.BucketIAMMemberArgs{
+	artifactsViewer, err := storage.NewBucketIAMMember(ctx, projectName+"-artifacts-viewer", &storage.BucketIAMMemberArgs{
 		Bucket: bucket.Name,
 		Role:   pulumi.String("roles/storage.objectViewer"),
 		Member: pulumi.Sprintf("serviceAccount:%v", bsa.Email),
-	}, saOpts...); err != nil {
+	}, saOpts...)
+	if err != nil {
 		return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
 	}
 
-	if _, err := projects.NewIAMMember(ctx, projectName+"-log-writer", &projects.IAMMemberArgs{
+	if _, err := projects.NewIAMMember(ctx, projectName+"-logWriter", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.logWriter"),
 		Member:  pulumi.Sprintf("serviceAccount:%v", bsa.Email),
@@ -161,7 +169,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding logging.logWriter role: %w", err)
 	}
 
-	if _, err := projects.NewIAMMember(ctx, projectName+"-log-bucket-writer", &projects.IAMMemberArgs{
+	if _, err := projects.NewIAMMember(ctx, projectName+"-bucketWriter", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.bucketWriter"),
 		Member:  pulumi.Sprintf("serviceAccount:%v", bsa.Email),
@@ -172,11 +180,12 @@ func createBuildInfra(
 	repoURL := pulumi.Sprintf("%s-docker.pkg.dev/%s/%s", region, gcpProject, ar.Name)
 
 	return &BuildInfra{
-		Repository:     ar,
-		ServiceAccount: bsa,
-		BuildBucket:    bucket,
-		RepositoryURL:  repoURL,
-		Region:         region,
-		GcpProject:     gcpProject,
+		Repository:      ar,
+		ServiceAccount:  bsa,
+		BuildBucket:     bucket,
+		BucketIAMMember: artifactsViewer,
+		RepositoryURL:   repoURL,
+		Region:          region,
+		GcpProject:      gcpProject,
 	}, nil
 }

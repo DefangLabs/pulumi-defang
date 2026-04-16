@@ -6,79 +6,83 @@ The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docke
 
 ## Example usage
 
-You can find complete working TypeScript, Python, Go, .NET, and Yaml code samples in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory, and some example snippets below:
+The examples below use AWS. GCP and Azure follow the same pattern — just swap the package name (e.g. `defang-aws` → `defang-gcp`).
+Complete working samples for all clouds and languages are in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory.
 
 {{< chooser language "typescript,python,go,dotnet,yaml" >}}
 {{% choosable language typescript %}}
+<!-- source: examples/aws-nodejs/index.ts -->
 ```typescript
-import * as defangaws from "@defang-io/pulumi-defang-aws";
+import * as pulumi from "@pulumi/pulumi";
+import * as defang_aws from "@defang-io/pulumi-defang-aws";
 
-const project = new defangaws.Project("aws-nodejs", {
-    services: {
-        app: {
-            image: "nginx",
-            ports: [{
-                target: 80,
-                mode: "ingress",
-                appProtocol: "http",
-            }],
-        },
+const awsDemo = new defang_aws.Project("aws-demo", {services: {
+    app: {
+        image: "nginx",
+        ports: [{
+            target: 80,
+            mode: "ingress",
+            appProtocol: "http",
+        }],
     },
-});
-
-export const endpoints = project.endpoints;
+}});
+export const endpoints = awsDemo.endpoints;
 ```
 
 {{% /choosable %}}
 
 {{% choosable language python %}}
+<!-- source: examples/aws-python/__main__.py -->
 ```python
 import pulumi
-import pulumi_defang as defang
+import pulumi_defang_aws as defang_aws
 
-my_project = defang.Project("myProject",
-    provider_id="aws",
-    config_paths=["compose.yaml"])
-pulumi.export("output", {
-    "albArn": my_project.alb_arn,
-    "etag": my_project.etag,
+aws_demo = defang_aws.Project("aws-demo", services={
+    "app": {
+        "image": "nginx",
+        "ports": [{
+            "target": 80,
+            "mode": "ingress",
+            "app_protocol": "http",
+        }],
+    },
 })
+pulumi.export("endpoints", aws_demo.endpoints)
 ```
 
 {{% /choosable %}}
 
 {{% choosable language go %}}
+<!-- source: examples/aws-go/main.go -->
 ```go
 package main
 
 import (
 	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
-	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/shared"
+	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		proj, err := defangaws.NewProject(ctx, "aws-go", &defangaws.ProjectArgs{
-			Services: shared.ServiceInputMap{
-				"app": shared.ServiceInputArgs{
-					Image: pulumi.String("nginx:latest"),
-					Ports: shared.PortConfigArray{
-						shared.PortConfigArgs{
+		awsDemo, err := defangaws.NewProject(ctx, "aws-demo", &defangaws.ProjectArgs{
+			Services: compose.ServiceConfigMap{
+				"app": &compose.ServiceConfigArgs{
+					Image: pulumi.String("nginx"),
+					Ports: compose.ServicePortConfigArray{
+						&compose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
-							Mode:        pulumi.StringPtr("ingress"),
-							AppProtocol: pulumi.StringPtr("http"),
+							Mode:        pulumi.String("ingress"),
+							AppProtocol: pulumi.String("http"),
 						},
 					},
-
 				},
+			},
 		})
 		if err != nil {
 			return err
 		}
-
-		ctx.Export("endpoints", proj.Endpoints)
-
+		ctx.Export("endpoints", awsDemo.Endpoints)
 		return nil
 	})
 }
@@ -87,48 +91,71 @@ func main() {
 {{% /choosable %}}
 
 {{% choosable language dotnet %}}
-```dotnet
+<!-- source: examples/aws-dotnet/Program.cs -->
+```csharp
 using System.Collections.Generic;
+using System.Linq;
 using Pulumi;
-using DefangLabs.DefangAws;
-using DefangLabs.DefangAws.Shared.Inputs;
+using DefangAws = DefangLabs.DefangAws;
 
-return await Deployment.RunAsync(() =>
+return await Deployment.RunAsync(() => 
 {
-    var project = new Project("aws-dotnet", new ProjectArgs
+    var awsDemo = new DefangAws.Project("aws-demo", new()
     {
-        Services =
+        Services = 
         {
-            ["app"] = new ServiceInputArgs
+            { "app", new DefangAws.Compose.Inputs.ServiceConfigArgs
             {
                 Image = "nginx",
-                Ports =
+                Ports = new[]
                 {
-                    new PortConfigArgs { Target = 80, Mode = "ingress", AppProtocol = "http" },
+                    new DefangAws.Compose.Inputs.ServicePortConfigArgs
+                    {
+                        Target = 80,
+                        Mode = "ingress",
+                        AppProtocol = "http",
+                    },
                 },
-            },
+            } },
         },
     });
 
     return new Dictionary<string, object?>
     {
-        ["endpoints"] = project.Endpoints,
+        ["endpoints"] = awsDemo.Endpoints,
     };
 });
+
 ```
 
 {{% /choosable %}}
 
 {{% choosable language yaml %}}
+<!-- source: examples/aws-yaml/Pulumi.yaml -->
 ```yaml
-# Pulumi.yaml provider configuration file
-name: configuration-example
+name: defang-aws
 runtime: yaml
-config:
-    defang:Project:
-        providerID: aws
-        configPaths:
-            - ./compose.yaml
+description: Example using defang-aws to deploy services to AWS
+
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
+
+resources:
+  aws-demo:
+    type: defang-aws:index:Project
+    properties:
+      services:
+        app:
+          image: nginx
+          ports:
+            - target: 80
+              mode: ingress
+              appProtocol: http
+
+outputs:
+  endpoints: ${aws-demo.endpoints}
 ```
 
 {{% /choosable %}}

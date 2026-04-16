@@ -2,9 +2,11 @@
 pkgs.mkShell {
   VERSION_PREFIX = "2.0.0";
   buildInputs = [
+    pkgs.actionlint
     pkgs.azure-cli
     pkgs.dotnet-sdk
     pkgs.git
+    pkgs.github-cli
     pkgs.gnumake
     pkgs.gnused
     pkgs.go_1_26

@@ -1,0 +1,22 @@
+# Prune old GHCR images to prevent the package registry from growing perpetually
+name: Cleanup GHCR
+
+on:
+  schedule:
+    - cron: "0 3 * * 0" # weekly, Sunday 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old container versions
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
+        with:
+          package-name: cd
+          package-type: container
+          owner: DefangLabs
+          min-versions-to-keep: 10

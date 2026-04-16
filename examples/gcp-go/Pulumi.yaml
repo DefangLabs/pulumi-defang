@@ -1,10 +1,7 @@
-name: defang-gcp-go
+name: defang-gcp
 runtime: go
-description: Example using defang-gcp to deploy services to GCP (Pulumi Go)
+description: Example using defang-gcp to deploy services to GCP
 plugins:
   providers:
     - name: defang-gcp
       path: ../../bin
-config:
-  gcp:project: my-project-123456
-  domain: gcp-go-my-project.example.defang.app
