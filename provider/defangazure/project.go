@@ -8,6 +8,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -68,6 +69,7 @@ func createPostgresResources(
 	svc compose.ServiceConfig,
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
+	serviceHosts map[string]pulumi.StringOutput,
 	comp *serviceComponent,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -81,17 +83,9 @@ func createPostgresResources(
 		return pulumi.StringOutput{}, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 	}
 
-	if infra.DNS != nil {
-		if err := providerazure.AddPostgresDNSRecord(
-			ctx, svcName, pgResult.Server.FullyQualifiedDomainName,
-			infra.DNS, infra, svcOpts...,
-		); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("adding DNS record for %s: %w", svcName, err)
-		}
-	}
-
 	endpoint := pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
 	managedEndpoints[svcName] = endpoint
+	serviceHosts[svcName] = pgResult.Server.FullyQualifiedDomainName
 	return endpoint, nil
 }
 
@@ -101,6 +95,7 @@ func createRedisResources(
 	svc compose.ServiceConfig,
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
+	serviceHosts map[string]pulumi.StringOutput,
 	comp *serviceComponent,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -114,18 +109,9 @@ func createRedisResources(
 		return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", svcName, err)
 	}
 
-	if infra.DNS != nil {
-		if err := providerazure.AddRedisDNSRecord(
-			ctx, svcName, redisResult.Cluster.HostName,
-			infra.DNS, infra, svcOpts...,
-		); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("adding Redis DNS record for %s: %w", svcName, err)
-		}
-	}
-
 	// ConnectionURL is the full redis:// or rediss:// URL including auth.
-	// The Compose service name resolves via svc.internal CNAME → private endpoint.
 	managedEndpoints[svcName] = redisResult.ConnectionURL
+	serviceHosts[svcName] = redisResult.Cluster.HostName
 	return pulumi.Sprintf("%s:10000", redisResult.Cluster.HostName), nil
 }
 
@@ -138,6 +124,7 @@ func createServiceResources(
 	svc compose.ServiceConfig,
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
+	serviceHosts map[string]pulumi.StringOutput,
 	llmModels map[string]string,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -147,14 +134,14 @@ func createServiceResources(
 	switch {
 	case svc.Postgres != nil:
 		var err error
-		endpoint, err = createPostgresResources(ctx, svcName, svc, infra, managedEndpoints, comp, childOpts)
+		endpoint, err = createPostgresResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, comp, childOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
 
 	case svc.Redis != nil:
 		var err error
-		endpoint, err = createRedisResources(ctx, svcName, svc, infra, managedEndpoints, comp, childOpts)
+		endpoint, err = createRedisResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, comp, childOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -191,7 +178,7 @@ func createServiceResources(
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
 
-		caResult, err := providerazure.CreateContainerApp(ctx, svcName, svc, infra, imageURI, managedEndpoints, svcOpts...)
+		caResult, err := providerazure.CreateContainerApp(ctx, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, svcOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("creating Container App %s: %w", svcName, err)
 		}
@@ -262,10 +249,34 @@ func (*Project) Construct(
 		infra.DNS = dns
 	}
 
+	// Log Analytics workspace for Container App logs.
+	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name+"-logs", &operationalinsights.WorkspaceArgs{
+		ResourceGroupName: rg.Name,
+		Location:          pulumi.String(location),
+		Sku: &operationalinsights.WorkspaceSkuArgs{
+			Name: pulumi.String("PerGB2018"),
+		},
+		RetentionInDays: pulumi.Int(30),
+	}, childOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
+	}
+	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
+		ResourceGroupName: rg.Name,
+		WorkspaceName:     logWorkspace.Name,
+	})
+
 	// Build managed environment args; attach VNet infra subnet when networking is configured.
 	envArgs := &app.ManagedEnvironmentArgs{
 		ResourceGroupName: rg.Name,
 		Location:          pulumi.String(location),
+		AppLogsConfiguration: &app.AppLogsConfigurationArgs{
+			Destination: pulumi.String("log-analytics"),
+			LogAnalyticsConfiguration: &app.LogAnalyticsConfigurationArgs{
+				CustomerId: logWorkspace.CustomerId,
+				SharedKey:  logKeys.PrimarySharedKey(),
+			},
+		},
 	}
 	if infra.Networking != nil {
 		envArgs.VnetConfiguration = &app.VnetConfigurationArgs{
@@ -297,15 +308,45 @@ func (*Project) Construct(
 		infra.BuildInfra = buildInfra
 	}
 
+	// Set up Key Vault identity for Container App secret references.
+	if kvName := providerazure.KeyVaultName(ctx); kvName != "" {
+		infra.KeyVaultURL = "https://" + kvName + ".vault.azure.net"
+		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, name, kvName, infra, location, childOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating Key Vault identity: %w", err)
+		}
+		infra.KeyVaultIdentityID = kvIdentityID
+	}
+
 	endpoints := pulumi.StringMap{}
 
-	// managedEndpoints accumulates connection URLs for managed services (Postgres, Redis, LLM)
-	// as they are created. The CLI guarantees that a service appears before any service that
-	// depends on it, so container apps will always find their managed endpoints already populated.
+	// managedEndpoints accumulates connection URLs for managed services (Postgres, Redis, LLM).
 	managedEndpoints := make(map[string]pulumi.StringOutput, len(inputs.Services))
 
+	// serviceHosts maps managed-service Compose names (Postgres, Redis) to their bare
+	// hostname (e.g. "srv123.postgres.database.azure.com"). Used by buildEnvVars to
+	// rewrite env values that reference a service by its Compose name.
+	serviceHosts := make(map[string]pulumi.StringOutput, len(inputs.Services))
+
+	// Two-pass creation: managed services first (Postgres, Redis, LLM) to populate
+	// managedEndpoints/serviceHosts, then container apps that reference them. Go maps
+	// iterate in random order, so a single pass can process container apps before
+	// managed services, leaving endpoints unresolved.
 	for svcName, svc := range inputs.Services {
-		endpoint, err := createServiceResources(ctx, svcName, svc, infra, managedEndpoints, llmModels, childOpts)
+		if svc.Postgres == nil && svc.Redis == nil && svc.LLM == nil {
+			continue
+		}
+		endpoint, err := createServiceResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts)
+		if err != nil {
+			return nil, err
+		}
+		endpoints[svcName] = endpoint
+	}
+	for svcName, svc := range inputs.Services {
+		if svc.Postgres != nil || svc.Redis != nil || svc.LLM != nil {
+			continue
+		}
+		endpoint, err := createServiceResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts)
 		if err != nil {
 			return nil, err
 		}

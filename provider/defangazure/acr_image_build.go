@@ -176,8 +176,7 @@ func scheduleAndWaitACRRun(
 	if scheduled.Properties.Status != nil {
 		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, runID); done {
 			if runErr != nil {
-				log := fetchRunLog(ctx, runsClient, rgName, registryName, runID)
-				return runID, image, fmt.Errorf("%w\n--- ACR run log ---\n%s", runErr, log)
+				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
 			return runID, image, nil
 		}
@@ -206,8 +205,7 @@ func scheduleAndWaitACRRun(
 		}
 		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, runID); done {
 			if runErr != nil {
-				log := fetchRunLog(ctx, runsClient, rgName, registryName, runID)
-				return runID, image, fmt.Errorf("%w\n--- ACR run log ---\n%s", runErr, log)
+				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
 			return runID, image, nil
 		}

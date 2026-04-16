@@ -250,7 +250,10 @@ func stackConfig() auto.ConfigMap {
 			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
 		}
 		if azureResourceGroup != "" {
-			// When set, the provider imports this existing resource group instead of creating one.
+			// The project resource group: the provider imports this RG instead of creating
+			// one, and it also holds the App Configuration store for this project. The
+			// store's name is derived deterministically from the RG + subscription ID by
+			// the provider (see azure.AppConfigStoreName), so we don't pass it here.
 			cfg["defang-azure:resourceGroup"] = auto.ConfigValue{Value: azureResourceGroup}
 		}
 	}
@@ -417,14 +420,26 @@ func main() {
 	// Set stack-level config (provider settings, defang config, user secrets)
 	cfg := stackConfig()
 	if provider() == "azure" {
-		userCfg, err := fetchAzureUserConfig(ctx)
+		// Try Key Vault first (new path), fall back to App Config (legacy).
+		userCfg, err := fetchAzureUserConfigFromKeyVault(ctx)
 		if err != nil {
-			log.Printf("warning: failed to read Azure user config from App Configuration: %v", err)
+			log.Printf("warning: failed to read Azure user config from Key Vault: %v", err)
+		}
+		if len(userCfg) == 0 {
+			userCfg, err = fetchAzureUserConfig(ctx)
+			if err != nil {
+				log.Printf("warning: failed to read Azure user config from App Configuration: %v", err)
+			}
 		}
 		for k, v := range userCfg {
 			// Store under the project namespace so the provider's ConfigProvider can
 			// read it via config.New(ctx, "").GetSecret(key).
 			cfg[project+":"+k] = auto.ConfigValue{Value: v, Secret: true}
+		}
+		// Pass the Key Vault name to the provider so it can create KV-backed
+		// secret references on Container Apps.
+		if azureKeyVaultName != "" {
+			cfg["defang-azure:keyVaultName"] = auto.ConfigValue{Value: azureKeyVaultName}
 		}
 	}
 	if err := stack.SetAllConfig(ctx, cfg); err != nil {

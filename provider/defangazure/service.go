@@ -87,7 +87,7 @@ func (*Service) Construct(
 		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
 	}
 
-	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, childOpt)
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}

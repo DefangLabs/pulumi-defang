@@ -77,8 +77,13 @@ func buildPostgresServerArgs(
 			BackupRetentionDays: pulumi.Int(backupRetention),
 			GeoRedundantBackup:  pulumi.String(string(geoBackup)),
 		},
-		AdministratorLogin:         pg.Username,
-		AdministratorLoginPassword: pg.Password,
+		AdministratorLogin: pg.Username,
+		AdministratorLoginPassword: pg.Password.ToStringOutput().ApplyT(func(p string) (string, error) {
+			if p == "" {
+				return "", fmt.Errorf("POSTGRES_PASSWORD is required for Azure PostgreSQL Flexible Server; set it with `defang config set POSTGRES_PASSWORD`")
+			}
+			return p, nil
+		}).(pulumi.StringOutput),
 	}
 
 	if HighAvailability.Get(ctx) {

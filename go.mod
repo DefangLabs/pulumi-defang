@@ -7,7 +7,8 @@ replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 require (
 	cloud.google.com/go/cloudbuild v1.18.1
 	cloud.google.com/go/longrunning v0.6.2
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.2
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.11
@@ -17,13 +18,13 @@ require (
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/appconfiguration/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0
@@ -46,9 +47,9 @@ require (
 	cloud.google.com/go/logging v1.12.0 // indirect
 	cloud.google.com/go/storage v1.46.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
-	github.com/AzureAD/microsoft-authentication-library-for-go v1.3.3 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.1 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.1 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect

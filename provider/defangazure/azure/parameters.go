@@ -3,8 +3,8 @@ package azure
 import (
 	"sync"
 
-	"github.com/pulumi/pulumi-azure-native-sdk/appconfiguration/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 type ConfigProvider struct {
@@ -24,19 +24,22 @@ func NewConfigProvider(storeName, resourceGroupName, projectName string) *Config
 	}
 }
 
-// GetConfig reads a secret config value from Azure App Configuration.
-// The defang CLI stores user-defined config (e.g. POSTGRES_PASSWORD) as key-value
-// entries in the store, labelled with the Pulumi stack name.
+// GetConfig returns a user-defined config value (e.g. POSTGRES_PASSWORD) as a
+// pulumi.StringOutput.
 //
-// Returns a resolved-empty-string Output on error or miss. Never returns a
-// zero-value pulumi.StringOutput{} because that has a nil internal state, which
-// causes a nil-pointer dereference inside Pulumi's reflection walk (gatherJoinSet)
-// when the output is embedded in a resource's args.
-func (p *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
-	if ctx.DryRun() {
-		return pulumi.Sprintf("dry-run-%s", key).ToStringOutput()
-	}
-
+// The defang CLI stores these in Azure App Configuration under the key
+// "/{prefix}/{project}/{stack}/{name}"; at deploy time, the CD container reads
+// them via fetchAzureUserConfig and forwards them into the Pulumi stack config
+// under the "{project}:" namespace (see cd/main.go). This function reads them
+// back from that namespace. Going through Pulumi config — instead of an ARM
+// LookupKeyValue invoke — avoids data-plane permission issues on the App
+// Configuration store and treats the values as Pulumi secrets end-to-end.
+//
+// Returns a resolved-empty-string Output when unset. Never returns a zero-value
+// pulumi.StringOutput{} because that has a nil internal state, which causes a
+// nil-pointer dereference inside Pulumi's reflection walk (gatherJoinSet) when
+// the output is embedded in a resource's args.
+func (p *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, _ ...pulumi.InvokeOption) pulumi.StringOutput {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -44,19 +47,7 @@ func (p *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pulu
 		return val
 	}
 
-	empty := pulumi.String("").ToStringOutput()
-
-	result, err := appconfiguration.LookupKeyValue(ctx, &appconfiguration.LookupKeyValueArgs{
-		ConfigStoreName:   p.storeName,
-		ResourceGroupName: p.resourceGroupName,
-		// KeyValueName mirrors the AWS SSM path convention: /Defang/{project}/{stack}/{key}
-		KeyValueName: "/Defang/" + p.projectName + "/" + ctx.Stack() + "/" + key,
-	}, opts...)
-	if err != nil || result == nil || result.Value == nil {
-		return empty
-	}
-
-	out := pulumi.String(*result.Value).ToStringOutput()
+	out := config.New(ctx, p.projectName).GetSecret(key)
 	p.cache[key] = out
 	return out
 }

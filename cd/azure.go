@@ -3,32 +3,26 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
+	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 )
-
-// cdResourceGroup returns the resource group name where the defang CD infrastructure lives.
-// The naming convention (from ByocBaseClient / ContainerInstance.SetLocation) is:
-//
-//	"defang-cd" + location   e.g. "defang-cdwestus3"
-func cdResourceGroup() string {
-	return "defang-cd" + azureLocation
-}
 
 // fetchAzureUserConfig reads user-defined config secrets from the Azure App Configuration store
 // that the defang CLI manages for this deployment.
 //
 // The defang CLI stores config values (e.g. from "defang config set POSTGRES_PASSWORD=…")
-// under keys with the format "/{prefix}/{project}/{stack}/{name}" in a store whose name starts
-// with "defangcfg" inside the CD resource group ("defang-cd{location}").
+// under keys with the format "/{prefix}/{project}/{stack}/{name}". The CLI passes the project
+// resource group via AZURE_RESOURCE_GROUP; the store name is derived deterministically from
+// the RG + subscription ID.
 //
 // Returns nil, nil when no store exists yet (first deploy with no config values).
 func fetchAzureUserConfig(ctx context.Context) (map[string]string, error) {
-	if azureSubscription == "" || azureLocation == "" {
+	if azureSubscription == "" || azureResourceGroup == "" {
 		return nil, nil
 	}
 
@@ -42,28 +36,8 @@ func fetchAzureUserConfig(ctx context.Context) (map[string]string, error) {
 		return nil, fmt.Errorf("creating App Configuration management client: %w", err)
 	}
 
-	rg := cdResourceGroup()
-
-	// Find the App Configuration store in the CD resource group.
-	var storeName string
-	storePager := storesClient.NewListByResourceGroupPager(rg, nil)
-	for storePager.More() && storeName == "" {
-		page, err := storePager.NextPage(ctx)
-		if err != nil {
-			// Resource group may not exist on a brand-new deployment.
-			log.Printf("App Configuration store not found in %q (resource group may not exist yet): %v", rg, err)
-			return nil, nil
-		}
-		for _, store := range page.Value {
-			if store.Name != nil && strings.HasPrefix(*store.Name, "defangcfg") {
-				storeName = *store.Name
-				break
-			}
-		}
-	}
-	if storeName == "" {
-		return nil, nil // No store yet; nothing to inject.
-	}
+	rg := azureResourceGroup
+	storeName := azure.AppConfigStoreName(rg, azureSubscription)
 
 	// Retrieve a connection string to access the data plane.
 	// The MSI has Contributor on the subscription, so it can call ListKeys.
@@ -122,6 +96,81 @@ func fetchAzureUserConfig(ctx context.Context) (map[string]string, error) {
 			name := strings.TrimPrefix(*setting.Key, keyPrefix)
 			if name != "" {
 				result[name] = *setting.Value
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// fetchAzureUserConfigFromKeyVault reads user-defined config secrets from the Azure Key Vault
+// that the defang CLI manages for this deployment.
+//
+// The defang CLI stores config values (from "defang config set KEY=val") as Key Vault secrets.
+// The secret name is the StackDir key with slashes replaced by "--" and underscores by "-",
+// and the original key is stored in the "original-key" tag.
+//
+// Returns nil, nil when no vault name is set (backward compatibility).
+func fetchAzureUserConfigFromKeyVault(ctx context.Context) (map[string]string, error) {
+	if azureKeyVaultName == "" {
+		return nil, nil
+	}
+
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating Azure credential: %w", err)
+	}
+
+	vaultURL := "https://" + azureKeyVaultName + ".vault.azure.net"
+	client, err := azsecrets.NewClient(vaultURL, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating Key Vault client: %w", err)
+	}
+
+	// Build the expected secret name prefix matching the StackDir convention:
+	// "/Defang/project/stack/" -> "Defang--project--stack--"
+	var keyPrefix string
+	if prefix != "" {
+		keyPrefix = prefix
+	}
+	keyPrefix += "--" + project + "--" + stack + "--"
+
+	result := make(map[string]string)
+
+	// List secrets and filter by prefix.
+	pager := client.NewListSecretPropertiesPager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing Key Vault secrets: %w", err)
+		}
+		for _, props := range page.Value {
+			if props.ID == nil {
+				continue
+			}
+			secretName := props.ID.Name()
+			if !strings.HasPrefix(secretName, keyPrefix) {
+				continue
+			}
+			// Recover the original key name from the tag.
+			var originalKey string
+			if props.Tags != nil {
+				if orig, ok := props.Tags["original-key"]; ok && orig != nil {
+					// The tag stores the full StackDir path; extract just the key name.
+					parts := strings.Split(*orig, "/")
+					originalKey = parts[len(parts)-1]
+				}
+			}
+			if originalKey == "" {
+				continue
+			}
+			// Fetch the actual secret value.
+			resp, err := client.GetSecret(ctx, secretName, "", nil)
+			if err != nil {
+				return nil, fmt.Errorf("getting Key Vault secret %s: %w", secretName, err)
+			}
+			if resp.Value != nil {
+				result[originalKey] = *resp.Value
 			}
 		}
 	}
