@@ -186,7 +186,7 @@ func TestGetServiceImage(t *testing.T) {
 			svc:   compose.ServiceConfig{Image: strPtr("quay.io/prometheus/node-exporter:v1.8.0")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
-				"quay.io": {Name: pulumi.String("quay-io").ToStringOutput()},
+				"quay.io": {RepositoryId: pulumi.String("quay-io").ToStringOutput()},
 			},
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/quay-io/prometheus/node-exporter:v1.8.0",
 		},
@@ -195,7 +195,7 @@ func TestGetServiceImage(t *testing.T) {
 			svc:   compose.ServiceConfig{Image: strPtr("ghcr.io/owner/image:sha-abc123")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
-				"ghcr.io": {Name: pulumi.String("ghcr-io").ToStringOutput()},
+				"ghcr.io": {RepositoryId: pulumi.String("ghcr-io").ToStringOutput()},
 			},
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/ghcr-io/owner/image:sha-abc123",
 		},

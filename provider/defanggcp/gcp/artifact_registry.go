@@ -69,10 +69,15 @@ func createRemoteRepos(
 	for _, registry := range registries {
 		repoId := sanitizeRepoName(registry)
 		repo, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId, &artifactregistry.RepositoryArgs{
-			Location:    pulumi.String(region),
-			Description: pulumi.String("Remote pull-through cache for " + registry),
-			Format:      pulumi.String("DOCKER"),
-			Mode:        pulumi.String("REMOTE_REPOSITORY"),
+			// RepositoryId must be set explicitly. Some AWS resources say "if omitted, the provider
+			// will assign a random, unique name" (e.g. https://www.pulumi.com/registry/packages/aws/api-docs/s3/bucket/),
+			// but the GCP Artifact Registry docs make no such promise:
+			// https://www.pulumi.com/registry/packages/gcp/api-docs/artifactregistry/repository/
+			RepositoryId: pulumi.String(repoId),
+			Location:     pulumi.String(region),
+			Description:  pulumi.String("Remote pull-through cache for " + registry),
+			Format:       pulumi.String("DOCKER"),
+			Mode:         pulumi.String("REMOTE_REPOSITORY"),
 			RemoteRepositoryConfig: &artifactregistry.RepositoryRemoteRepositoryConfigArgs{
 				CommonRepository: &artifactregistry.RepositoryRemoteRepositoryConfigCommonRepositoryArgs{
 					Uri: pulumi.String("https://" + registry),
@@ -112,9 +117,11 @@ func createBuildInfra(
 	}
 
 	ar, err := artifactregistry.NewRepository(ctx, projectName, &artifactregistry.RepositoryArgs{
-		Location:    pulumi.String(region),
-		Description: pulumi.String("Docker images for " + projectName),
-		Format:      pulumi.String("DOCKER"),
+		// RepositoryId is required by the GCP API; unlike AWS, GCP does not auto-generate resource IDs.
+		RepositoryId: pulumi.String(sanitizeRepoName(projectName)),
+		Location:     pulumi.String(region),
+		Description:  pulumi.String("Docker images for " + projectName),
+		Format:       pulumi.String("DOCKER"),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)

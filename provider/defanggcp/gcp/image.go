@@ -135,8 +135,9 @@ func GetServiceImage(
 			)
 		}
 
-		image := repo.Name.ApplyT(func(name string) string {
-			info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, name, info.Repo)
+		// RepositoryId is the short ID (e.g. "ghcr-io"); repo.Name is the full GCP resource path.
+		image := repo.RepositoryId.ApplyT(func(repoId string) string {
+			info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, repoId, info.Repo)
 			msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
 				serviceName, *svc.Image, info.FullImage())
 			_ = ctx.Log.Info(msg, nil)
