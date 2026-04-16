@@ -154,7 +154,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
 	}
 
-	if _, err := projects.NewIAMMember(ctx, projectName, &projects.IAMMemberArgs{
+	if _, err := projects.NewIAMMember(ctx, projectName+"-logWriter", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.logWriter"),
 		Member:  pulumi.Sprintf("serviceAccount:%v", bsa.Email),
@@ -162,7 +162,7 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding logging.logWriter role: %w", err)
 	}
 
-	if _, err := projects.NewIAMMember(ctx, projectName, &projects.IAMMemberArgs{
+	if _, err := projects.NewIAMMember(ctx, projectName+"-bucketWriter", &projects.IAMMemberArgs{
 		Project: pulumi.String(gcpProject),
 		Role:    pulumi.String("roles/logging.bucketWriter"),
 		Member:  pulumi.Sprintf("serviceAccount:%v", bsa.Email),
