@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.4
 #
 # Build context must be the repo root (because cd/go.mod has replace directives to ../).
-# Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 .
+# Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 --target aws .
 #
 ARG GOVERSION=1.26
 ARG PULUMI_VERSION=latest
@@ -11,17 +11,12 @@ ARG PULUMIBASE=pulumi/pulumi-base:${PULUMI_VERSION}
 ARG CD_VERSION=0.0.1
 ARG PROVIDER_VERSION=0.0.1
 
-# CLOUDS controls which cloud providers to include (default: all).
-# Use any combination: "aws", "gcp,azure", "aws,gcp,azure", or "all".
-ARG CLOUDS=all
-
-# Build stage runs on the host (e.g. ARM Mac) and cross-compiles for the target platform
-FROM --platform=${BUILDPLATFORM} ${BUILDBASE} AS build
+# Shared build stage: downloads modules, copies source, builds the cd binary
+FROM --platform=${BUILDPLATFORM} ${BUILDBASE} AS build-base
 
 # These two are automatically set by docker buildx
 ARG TARGETOS
 ARG TARGETARCH
-ARG CLOUDS
 
 WORKDIR /repo
 # ADD gocache.tgz* /root/.cache/
@@ -45,22 +40,26 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     -ldflags="-w -s -X main.version=${CD_VERSION}" \
     -o /out/cd .
 
-# Build the defang provider binaries
+# Per-cloud provider builds (BuildKit runs these in parallel when building 'all')
+FROM build-base AS build-aws
 ARG PROVIDER_VERSION
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    case ",${CLOUDS}," in *,all,*|*,aws,*) ;; *) exit 0;; esac && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false \
     -ldflags="-w -s -X github.com/DefangLabs/pulumi-defang/provider/defangaws.Version=${PROVIDER_VERSION}" \
     -o /out/pulumi-resource-defang-aws ./provider/cmd/pulumi-resource-defang-aws
+
+FROM build-base AS build-gcp
+ARG PROVIDER_VERSION
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    case ",${CLOUDS}," in *,all,*|*,gcp,*) ;; *) exit 0;; esac && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false \
     -ldflags="-w -s -X github.com/DefangLabs/pulumi-defang/provider/defanggcp.Version=${PROVIDER_VERSION}" \
     -o /out/pulumi-resource-defang-gcp ./provider/cmd/pulumi-resource-defang-gcp
+
+FROM build-base AS build-azure
+ARG PROVIDER_VERSION
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    case ",${CLOUDS}," in *,all,*|*,azure,*) ;; *) exit 0;; esac && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -buildvcs=false \
     -ldflags="-w -s -X github.com/DefangLabs/pulumi-defang/provider/defangazure.Version=${PROVIDER_VERSION}" \
@@ -68,41 +67,52 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 # Install Pulumi cloud-provider plugins (versions extracted from go.mod)
 # This stage runs on the target platform so pulumi downloads the correct plugin binaries
-FROM --platform=${TARGETPLATFORM} ${PULUMIBASE} AS plugins
-ARG CLOUDS
+FROM --platform=${TARGETPLATFORM} ${PULUMIBASE} AS plugins-base
 COPY --link go.mod go.mod
 # GITHUB_TOKEN will be used by pulumi to access github releases when downloading plugins
 ARG GITHUB_TOKEN
-RUN case ",${CLOUDS}," in *,all,*|*,aws,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource aws $(grep 'pulumi-aws/sdk/v7' go.mod | awk '{print $2}') && \
-    pulumi plugin install resource awsx $(grep 'pulumi-awsx/sdk/v3' go.mod | awk '{print $2}')
-RUN case ",${CLOUDS}," in *,all,*|*,gcp,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' go.mod | awk '{print $2}')
-RUN case ",${CLOUDS}," in *,all,*|*,azure,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/v3' go.mod | awk '{print $2}')
-
 ARG PROVIDER_VERSION
-COPY --link --from=build /out/pulumi-resource-defang-* /tmp/
-RUN case ",${CLOUDS}," in *,all,*|*,aws,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource defang-aws ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-aws
-RUN case ",${CLOUDS}," in *,all,*|*,gcp,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource defang-gcp ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-gcp
-RUN case ",${CLOUDS}," in *,all,*|*,azure,*) ;; *) exit 0;; esac && \
-    pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
+
+FROM plugins-base AS plugins-aws
+COPY --link --from=build-aws /out/pulumi-resource-defang-aws /tmp/
+RUN pulumi plugin install resource aws $(grep 'pulumi-aws/sdk/v7' go.mod | awk '{print $2}') && \
+    pulumi plugin install resource awsx $(grep 'pulumi-awsx/sdk/v3' go.mod | awk '{print $2}')
+RUN pulumi plugin install resource defang-aws ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-aws
+
+FROM plugins-base AS plugins-gcp
+COPY --link --from=build-gcp /out/pulumi-resource-defang-gcp /tmp/
+RUN pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' go.mod | awk '{print $2}')
+RUN pulumi plugin install resource defang-gcp ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-gcp
+
+FROM plugins-base AS plugins-azure
+COPY --link --from=build-azure /out/pulumi-resource-defang-azure /tmp/
+RUN pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/v3' go.mod | awk '{print $2}')
+RUN pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
 
 # Final minimal image — no OS, no language runtimes
-FROM ${CDBASE} AS cd
+FROM ${CDBASE} AS cd-base
 # CA certs for HTTPS
-COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-# /tmp is required by Pulumi for workspace temp files; scratch has no filesystem.
-# Copy the /tmp directory from the build stage (created with sticky bit by alpine).
-COPY --link --from=build --chown=0:0 /tmp /tmp
+COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Pulumi CLI only (no language runtimes)
-COPY --link --from=plugins /pulumi/bin/pulumi /pulumi/bin/pulumi
+COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
-# Plugins
-COPY --link --from=plugins /root/.pulumi/plugins /root/.pulumi/plugins
+# /tmp is required by Pulumi for workspace temp files; scratch has no filesystem.
+WORKDIR /tmp
 # App
 WORKDIR /app
-COPY --link --from=build /out/cd ./
+COPY --link --from=build-base /out/cd ./
 ENTRYPOINT [ "/app/cd" ]
+
+FROM cd-base AS aws
+COPY --link --from=plugins-aws /root/.pulumi/plugins /root/.pulumi/plugins
+
+FROM cd-base AS gcp
+COPY --link --from=plugins-gcp /root/.pulumi/plugins /root/.pulumi/plugins
+
+FROM cd-base AS azure
+COPY --link --from=plugins-azure /root/.pulumi/plugins /root/.pulumi/plugins
+
+FROM cd-base AS all
+COPY --link --from=plugins-aws /root/.pulumi/plugins /root/.pulumi/plugins
+COPY --link --from=plugins-gcp /root/.pulumi/plugins /root/.pulumi/plugins
+COPY --link --from=plugins-azure /root/.pulumi/plugins /root/.pulumi/plugins

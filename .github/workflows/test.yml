@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - "provider/**"
+      - "sdk/v2/**"
       - "tests/**"
       - "go.mod"
       - "go.sum"
@@ -26,39 +27,39 @@ jobs:
       group: test-${{ github.ref }}
       cancel-in-progress: true
     steps:
-    - name: Checkout Repo
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-    - name: Install Go
-      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-      with:
-        go-version-file: go.mod
-        cache-dependency-path: go.sum
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
-    - name: Install pulumictl
-      run: |
-        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
-        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
-      env:
-        GH_TOKEN: ${{ github.token }}
+      - name: Install pulumictl
+        run: |
+          gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
+          tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-    - name: Unshallow clone for tags
-      run: git fetch --prune --unshallow --tags
+      - name: Unshallow clone for tags
+        run: git fetch --prune --unshallow --tags
 
-    - name: Check README examples are in sync
-      run: scripts/check-readme-examples.sh
+      - name: Check README examples are in sync
+        run: scripts/check-readme-examples.sh
 
-    - run: make provider
+      - run: make provider
 
-    - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
+      - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
 
-    - run: make test
+      - run: make test
 
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
-      with:
-        version: v2.7.2
-        args: --timeout=5m --config=.golangci.yaml ./provider/...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+        with:
+          version: v2.7.2
+          args: --timeout=5m --config=.golangci.yaml ./provider/...
 
   build_sdks:
     name: Build SDKs
@@ -84,13 +85,13 @@ jobs:
           language: ${{ matrix.language }}
           provider: defang-${{ matrix.provider }}
 
-      - name: Check clean sdks working tree
+      - name: Check Go SDK is up to date
+        if: matrix.language == 'go'
         run: |
           git update-index -q --refresh
-          if ! git diff-index --quiet HEAD -- sdks/; then
-            >&2 echo "error: sdks directory is not clean, aborting!"
-            git status sdks/
-            git diff sdks/
+          if ! git diff-index --quiet HEAD -- sdk/v2/; then
+            >&2 echo "error: Go SDK is out of date. Run 'make go_sdk' and commit the result."
+            git diff --stat sdk/v2/
             exit 1
           fi
 
@@ -144,9 +145,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Generate Go SDK
-        run: make go_sdk
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
@@ -171,7 +169,7 @@ jobs:
         with:
           context: . # build context must be repo root to include generated Go SDK
           push: true
-          build-args: CLOUDS=all
+          target: all
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=${{ github.workflow }}
           cache-to: type=gha,scope=${{ github.workflow }},mode=max
