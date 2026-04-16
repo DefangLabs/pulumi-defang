@@ -4,7 +4,9 @@ node_modules/
 .pulumi-state
 .pulumi
 bin/
-/sdk/
+/sdk/dotnet/
+/sdk/nodejs/
+/sdk/python/
 examples/**/.defang
 examples/**/Pulumi.*.yaml
 schema-defang.json
