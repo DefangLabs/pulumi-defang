@@ -68,7 +68,7 @@ while IFS= read -r line; do
   printf '%s\n' "$line" >> "$tmp"
 done < "$README"
 
-if diff -q "$README" "$tmp" > /dev/null 2>&1; then
+if diff -b -q "$README" "$tmp" > /dev/null 2>&1; then
   echo "README.md is up to date."
   exit 0
 fi
