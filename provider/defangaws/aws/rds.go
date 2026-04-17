@@ -170,7 +170,7 @@ func CreateRDS(
 	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
-	privateSgID pulumi.IDPtrInput,
+	privateSgID pulumi.StringPtrInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
@@ -206,7 +206,7 @@ func CreateRDS(
 	// callers (e.g. unit tests) may omit it.
 	var ingressSGs pulumi.StringArray
 	if privateSgID != nil {
-		ingressSGs = pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()}
+		ingressSGs = pulumi.StringArray{privateSgID.ToStringPtrOutput().Elem()}
 	}
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),

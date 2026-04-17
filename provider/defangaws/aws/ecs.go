@@ -40,11 +40,11 @@ type SharedInfra struct {
 	ProjectDomain    string
 	ZoneId           pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
 	// shared "private SG" — attached to all services, no ingress rules
-	PrivateSgID    pulumi.IDPtrInput  `pulumi:"privateSgID,optional"`
-	AlbSG          *ec2.SecurityGroup // nil if no ALB
-	HttpListener   *lb.Listener       // nil if no ALB
-	HttpsListener  *lb.Listener       // nil if no ALB
-	Alb            *lb.LoadBalancer   // nil if no ALB
+	PrivateSgID    pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
+	AlbSG          *ec2.SecurityGroup    // nil if no ALB
+	HttpListener   *lb.Listener          // nil if no ALB
+	HttpsListener  *lb.Listener          // nil if no ALB
+	Alb            *lb.LoadBalancer      // nil if no ALB
 	Region         string
 	BuildInfra     *BuildInfra       // nil if no builds needed
 	PublicEcrCache *PullThroughCache // ECR public pull-through cache
@@ -197,7 +197,7 @@ func createServiceSG(
 			rule.SecurityGroups = pulumi.StringArray{infra.AlbSG.ID()}
 		case isPrivate && infra.PrivateSgID != nil:
 			// Private port: allow from privateSG as source SG
-			rule.SecurityGroups = pulumi.StringArray{infra.PrivateSgID.ToIDPtrOutput().Elem()}
+			rule.SecurityGroups = pulumi.StringArray{infra.PrivateSgID.ToStringPtrOutput().Elem()}
 		default:
 			// Public port: allow from anywhere
 			rule.CidrBlocks = pulumi.StringArray{pulumi.String("0.0.0.0/0")}
@@ -215,7 +215,7 @@ func createServiceSG(
 			Protocol:    pulumi.String("icmp"),
 		}
 		if isPrivate && infra.PrivateSgID != nil {
-			icmpRule.SecurityGroups = pulumi.StringArray{infra.PrivateSgID.ToIDPtrOutput().Elem()}
+			icmpRule.SecurityGroups = pulumi.StringArray{infra.PrivateSgID.ToStringPtrOutput().Elem()}
 		} else {
 			icmpRule.CidrBlocks = pulumi.StringArray{pulumi.String("0.0.0.0/0")}
 		}
@@ -529,7 +529,7 @@ func CreateECSService(
 	// Attach both per-service SG and shared privateSG (matches TS: [privateSg])
 	securityGroups := pulumi.StringArray{serviceSG.ID()}
 	if infra.PrivateSgID != nil {
-		securityGroups = append(securityGroups, infra.PrivateSgID.ToIDPtrOutput().Elem())
+		securityGroups = append(securityGroups, infra.PrivateSgID.ToStringPtrOutput().Elem())
 	}
 	ecsServiceArgs := &ecs.ServiceArgs{
 		Cluster:        clusterArn,
