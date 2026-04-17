@@ -50,7 +50,7 @@ func (*Postgres) Construct(
 
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 
-	sg, err := awssdk.NewSecurityGroup(ctx, name, &awssdk.SecurityGroupArgs{
+	sg, err := awssdk.NewSecurityGroup(ctx, name+"-access", &awssdk.SecurityGroupArgs{
 		VpcId:       inputs.Infra.VpcID,
 		Description: pulumi.String("Security group for Postgres"),
 		Egress: awssdk.SecurityGroupEgressArray{
