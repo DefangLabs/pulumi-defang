@@ -13,9 +13,6 @@ replace (
 require (
 	cloud.google.com/go/storage v1.61.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
-	github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig v1.2.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration v1.1.1
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/DefangLabs/pulumi-defang v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
@@ -42,8 +39,6 @@ require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
@@ -145,16 +140,6 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.23.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.16.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect

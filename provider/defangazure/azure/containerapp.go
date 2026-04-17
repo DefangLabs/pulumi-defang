@@ -7,7 +7,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	pulumiconfig "github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 // postgresURLEndpoint checks whether v is a postgres(ql):// URL whose host matches a managed
@@ -139,9 +138,10 @@ func buildEnvVars(
 		case v == "" && infra.ConfigProvider != nil:
 			// null/empty in compose means "read from config store" (set via `defang config set`).
 			configVal := infra.ConfigProvider.GetConfig(ctx, k)
-			// Check if the config value was set (non-empty in Pulumi config).
-			// Use synchronous Get to decide at program time whether to create a secret ref.
-			if pulumiconfig.New(ctx, ctx.Project()).Get(k) != "" {
+			// HasConfig is a synchronous lookup into the in-memory map populated
+			// at program start — lets us decide at program time whether to emit a
+			// secret reference vs. a plain env value.
+			if infra.ConfigProvider.HasConfig(k) {
 				secretName := ToContainerAppSecretName(k)
 				secrets = append(secrets, app.SecretArgs{
 					Name:  pulumi.String(secretName),

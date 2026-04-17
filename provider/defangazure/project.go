@@ -228,11 +228,18 @@ func (*Project) Construct(
 	// PostgreSQL requires VNet integration; Redis uses private endpoints within the VNet.
 	hasPostgres, hasRedis, hasBuild, hasLLM, llmModels := detectServiceTypes(inputs.Services)
 
+	// Fetch user config (set via `defang config set`) from Azure Key Vault (or
+	// legacy App Configuration). Happens once, at program start — downstream
+	// callers get values from an in-memory map via ConfigProvider.GetConfig.
+	userCfg, err := providerazure.FetchUserConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching user config: %w", err)
+	}
+
 	// Bootstrap a minimal SharedInfra (without Environment) so CreateNetworking can reference the RG.
-	appConfigStore, appConfigRG := providerazure.AppConfigStore(ctx)
 	infra := &providerazure.SharedInfra{
 		ResourceGroup:  rg,
-		ConfigProvider: providerazure.NewConfigProvider(appConfigStore, appConfigRG, name),
+		ConfigProvider: providerazure.NewConfigProvider(name, userCfg),
 	}
 
 	if hasPostgres || hasRedis {
