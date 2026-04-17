@@ -37,8 +37,6 @@ cd tests && go test -v -run TestName -short ./aws/...     # provider test
 
 Provider tests live in a separate `tests/` module with their own `go.mod`. They use a mock Pulumi server from `tests/testutil/`.
 
-> **SAM note:** Provider integration tests may require AWS credentials. When running inside SAM, use `get_credential_status` to verify credentials are available before running `make test_provider`.
-
 ## Git Hooks
 
 Run `make install-git-hooks` to set up:
