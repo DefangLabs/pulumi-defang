@@ -88,7 +88,6 @@ func buildEnvVars(
 	serviceName string,
 	svc compose.ServiceConfig,
 ) (cloudrunv2.ServiceTemplateContainerEnvArray, []string) {
-	srp, hasSecretRefs := configProvider.(compose.SecretRefProvider)
 	var secretIds []string
 
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
@@ -98,8 +97,8 @@ func buildEnvVars(
 		},
 	}
 	for k, v := range svc.Environment {
-		if hasSecretRefs && compose.IsSecretReference(k, v) {
-			secretId, _ := srp.GetSecretRef(ctx, k)
+		if secretVar, ok := compose.SecretRefVar(v); ok {
+			secretId, _ := configProvider.GetSecretRef(ctx, secretVar)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name: pulumi.String(k),
 				ValueSource: &cloudrunv2.ServiceTemplateContainerEnvValueSourceArgs{
@@ -130,7 +129,7 @@ func buildTemplate(
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
-	gcpConfig *GlobalConfig,
+	gcpConfig *SharedInfra,
 ) (*cloudrunv2.ServiceTemplateArgs, []string) {
 	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, svc)
 

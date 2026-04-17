@@ -355,9 +355,8 @@ func CreateECSService(
 		allInputs = append(allInputs, infra.PrivateZoneID)
 	}
 
-	// Split env vars: self-referencing KEY=${KEY} goes to ECS Secrets (SSM ARN),
+	// Split env vars: bare ${VAR} references go to ECS Secrets (SSM ARN),
 	// all others go to Environment (resolved plaintext).
-	srp, hasSecretRefs := configProvider.(compose.SecretRefProvider)
 	var secretEntries []Secret
 
 	envKeys := make([]string, 0, len(svc.Environment))
@@ -367,8 +366,8 @@ func CreateECSService(
 	slices.Sort(envKeys) // deterministic order
 	for _, k := range envKeys {
 		v := svc.Environment[k]
-		if hasSecretRefs && compose.IsSecretReference(k, v) {
-			ref, err := srp.GetSecretRef(ctx, k, opt)
+		if secretVar, ok := compose.SecretRefVar(v); ok {
+			ref, err := configProvider.GetSecretRef(ctx, secretVar, opt)
 			if err != nil {
 				return nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
 			}

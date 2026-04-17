@@ -23,6 +23,12 @@ func (m *mockConfigProvider) GetConfigValue(
 	return ConfigNotFoundOutput(key)
 }
 
+func (m *mockConfigProvider) GetSecretRef(
+	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
+) (string, error) {
+	return "mock-secret-ref-" + key, nil
+}
+
 // testMocks is a no-op Pulumi mock runtime required by pulumi.WithMocks.
 type testMocks struct{}
 
@@ -110,21 +116,25 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 	}
 }
 
-func TestIsSecretReference(t *testing.T) {
+func TestSecretRefVar(t *testing.T) {
 	tests := []struct {
-		key, value string
-		expected   bool
+		value    string
+		wantVar  string
+		wantOk   bool
 	}{
-		{"MY_KEY", "${MY_KEY}", true},
-		{"MY_KEY", "${OTHER}", false},
-		{"MY_KEY", "prefix_${MY_KEY}", false},
-		{"MY_KEY", "literal", false},
-		{"MY_KEY", "", false},
-		{"MY_KEY", "${MY_KEY}_suffix", false},
+		{"${MY_KEY}", "MY_KEY", true},      // bare self-reference
+		{"${OTHER}", "OTHER", true},         // bare cross-reference
+		{"prefix_${MY_KEY}", "", false},     // text before var
+		{"${MY_KEY}_suffix", "", false},     // text after var
+		{"${A}_${B}", "", false},            // multiple vars
+		{"literal", "", false},              // no interpolation
+		{"", "", false},                     // empty
 	}
 	for _, tt := range tests {
-		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
-			assert.Equal(t, tt.expected, IsSecretReference(tt.key, tt.value))
+		t.Run(tt.value, func(t *testing.T) {
+			v, ok := SecretRefVar(tt.value)
+			assert.Equal(t, tt.wantOk, ok)
+			assert.Equal(t, tt.wantVar, v)
 		})
 	}
 }

@@ -3,6 +3,8 @@ package azure
 import (
 	"sync"
 
+	"errors"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -56,4 +58,12 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 	out := pulumi.ToSecret(pulumi.String(v).ToStringOutput()).(pulumi.StringOutput)
 	p.cache[key] = out
 	return out
+}
+
+// GetSecretRef returns a secret reference for Azure Key Vault.
+func (p *ConfigProvider) GetSecretRef(
+	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
+) (string, error) {
+	// TODO: return Azure Key Vault secret reference
+	return "", errors.ErrUnsupported
 }

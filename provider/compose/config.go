@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -9,13 +10,9 @@ import (
 
 type ConfigProvider interface {
 	GetConfigValue(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput
-}
-
-// SecretRefProvider is an optional interface that ConfigProviders can implement
-// to return native secret references (e.g. SSM parameter ARN, GCP Secret Manager
-// resource name) so container runtimes resolve the secret at startup instead of
-// receiving the decrypted value in the task definition.
-type SecretRefProvider interface {
+	// GetSecretRef returns a native secret reference (e.g. SSM parameter ARN, GCP
+	// Secret Manager ID) so container runtimes resolve the secret at startup instead
+	// of receiving the decrypted value in the task definition.
 	GetSecretRef(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) (string, error)
 }
 
@@ -59,4 +56,11 @@ func (p *PulumiConfigProvider) GetConfigValue(
 	ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
 	return config.New(ctx, "").GetSecret(key)
+}
+
+// GetSecretRef is not supported by PulumiConfigProvider.
+func (p *PulumiConfigProvider) GetSecretRef(
+	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
+) (string, error) {
+	return "", errors.ErrUnsupported
 }

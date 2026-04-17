@@ -132,11 +132,16 @@ type Match struct {
 func Literal(s string) Match  { return Match{Literal: s} }
 func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
 
-// IsSecretReference returns true when value is exactly "${KEY}" where KEY matches
-// the env var name. This signals that the variable should be passed as a native
-// secret reference (e.g. SSM parameter ARN) instead of being interpolated to plaintext.
-func IsSecretReference(key, value string) bool {
-	return value == "${"+key+"}"
+// SecretRefVar returns the config variable name if value is a bare secret reference
+// (exactly "${VARNAME}" with no surrounding text), signaling that it should be passed
+// as a native secret reference (e.g. SSM parameter ARN) rather than interpolated.
+// Returns ("", false) for literals, multi-var interpolations, or mixed text.
+func SecretRefVar(value string) (string, bool) {
+	parsed := ParseInterpolatedString(value)
+	if len(parsed) == 1 && parsed[0].IsVar {
+		return parsed[0].Variable, true
+	}
+	return "", false
 }
 
 var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
