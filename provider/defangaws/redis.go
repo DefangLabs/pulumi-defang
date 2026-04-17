@@ -29,7 +29,14 @@ type RedisInputs struct {
 type RedisOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	// Dependency is an internal-only handle (CNAME record when a private zone
+	// exists, otherwise nil) used by downstream services for ordering. Untagged —
+	// not part of the SDK schema.
+	Dependency pulumi.Resource
 }
+
+// RedisComponentType is the Pulumi resource type token for the Redis component.
+const RedisComponentType = "defang-aws:index:Redis"
 
 // Construct implements the ComponentResource interface for Redis.
 func (*Redis) Construct(
@@ -39,8 +46,6 @@ func (*Redis) Construct(
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
-
-	childOpt := pulumi.Parent(comp)
 
 	redis := inputs.Redis
 	if redis == nil {
@@ -55,88 +60,57 @@ func (*Redis) Construct(
 		Environment: inputs.Environment,
 	}
 
-	redisResult, err := provideraws.CreateElasticache(
-		ctx, name, svc, inputs.AWS.VpcID, inputs.AWS.PrivateSubnetIDs, inputs.AWS.PrivateSgID, nil, childOpt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating ElastiCache: %w", err)
-	}
-
-	port := int32(6379)
-	if len(svc.Ports) > 0 {
-		port = svc.Ports[0].Target
-	}
-	endpoint := pulumi.StringOutput(pulumix.Apply(redisResult.Address, func(addr string) string {
-		return fmt.Sprintf("%s:%d", addr, port)
-	}))
-
-	comp.Endpoint = endpoint
-
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": endpoint,
-	}); err != nil {
+	if err := createRedis(ctx, comp, name, svc, inputs.AWS, nil); err != nil {
 		return nil, err
 	}
-
 	return comp, nil
 }
 
-type RedisResult struct {
-	Endpoint   pulumi.StringOutput
-	Dependency pulumi.Resource
-}
-
-// newRedisComponent registers a component resource for a managed Redis service,
-// creates its ElastiCache children, registers outputs, and returns the host:port endpoint.
-func newRedisComponent(
+// createRedis creates the ElastiCache cluster (plus optional private-zone CNAME)
+// under an already-registered Redis component, sets its Endpoint/Dependency, and
+// registers its outputs. Shared between Construct and the project-level dispatcher.
+func createRedis(
 	ctx *pulumi.Context,
-	_ compose.ConfigProvider,
+	comp *RedisOutputs,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *provideraws.SharedInfra,
 	deps []pulumi.Resource,
-	parentOpt pulumi.ResourceOption,
-) (*RedisResult, error) {
-	comp := &serviceComponent{}
-	if err := ctx.RegisterComponentResource("defang-aws:index:Redis", serviceName, comp, parentOpt); err != nil {
-		return nil, fmt.Errorf("registering redis component %s: %w", serviceName, err)
-	}
-	opts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+) error {
+	childOpt := pulumi.Parent(comp)
 
 	redisResult, err := provideraws.CreateElasticache(
-		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, opts...,
+		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, childOpt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating Redis for %s: %w", serviceName, err)
+		return fmt.Errorf("creating Redis for %s: %w", serviceName, err)
 	}
 
-	var dependency pulumi.Resource // = redisResult.Address
+	var dependency pulumi.Resource // stays nil when no CNAME and no explicit cluster handle
 	if infra.PrivateZoneID != nil {
 		privateFqdn := common.SafeLabel(serviceName) //+ "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{redisResult.Address},
 			Ttl:     pulumi.Int(300),
-		}, opts...)
+		}, childOpt)
 		if cnameErr != nil {
-			return nil, fmt.Errorf("creating CNAME for %s: %w", serviceName, cnameErr)
+			return fmt.Errorf("creating CNAME for %s: %w", serviceName, cnameErr)
 		}
 		dependency = record
 	}
+	comp.Dependency = dependency
 
 	port := int32(6379)
 	if len(svc.Ports) > 0 {
 		port = svc.Ports[0].Target
 	}
-	endpoint := pulumi.StringOutput(pulumix.Apply(redisResult.Address, func(addr string) string {
+	comp.Endpoint = pulumi.StringOutput(pulumix.Apply(redisResult.Address, func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, port)
 	}))
 
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": endpoint}); err != nil {
-		return nil, fmt.Errorf("registering outputs for %s: %w", serviceName, err)
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": comp.Endpoint}); err != nil {
+		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
-	return &RedisResult{
-		Endpoint:   endpoint,
-		Dependency: dependency,
-	}, nil
+	return nil
 }

@@ -188,7 +188,9 @@ func CreateRDS(
 		"defang:service": pulumi.String(serviceName),
 	}
 
-	// Create DB subnet group
+	// Create DB subnet group. AWS rejects uppercase in the name, so use a
+	// lowercased Pulumi resource name — autoname will then produce a valid
+	// "<safe>-<hex>" value. Rely on Pulumi's autoname for uniqueness across stacks.
 	var subnetGroupName pulumi.StringPtrOutput
 	if privateSubnetIDs != nil {
 		subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{

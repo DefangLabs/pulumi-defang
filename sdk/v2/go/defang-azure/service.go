@@ -7,6 +7,7 @@ import (
 	"context"
 	"reflect"
 
+	"errors"
 	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
 	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/internal"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -22,7 +23,7 @@ type Service struct {
 func NewService(ctx *pulumi.Context,
 	name string, args *ServiceArgs, opts ...pulumi.ResourceOption) (*Service, error) {
 	if args == nil {
-		args = &ServiceArgs{}
+		return nil, errors.New("missing one or more required arguments")
 	}
 
 	opts = internal.PkgResourceDefaultOpts(opts)
@@ -35,28 +36,26 @@ func NewService(ctx *pulumi.Context,
 }
 
 type serviceArgs struct {
-	Build       *compose.BuildConfig        `pulumi:"build"`
 	Command     []string                    `pulumi:"command"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
 	DomainName  *string                     `pulumi:"domainName"`
 	Entrypoint  []string                    `pulumi:"entrypoint"`
 	Environment map[string]string           `pulumi:"environment"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck"`
-	Image       *string                     `pulumi:"image"`
+	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports"`
 }
 
 // The set of arguments for constructing a Service resource.
 type ServiceArgs struct {
-	Build       compose.BuildConfigPtrInput
 	Command     pulumi.StringArrayInput
 	Deploy      compose.DeployConfigPtrInput
 	DomainName  *string
 	Entrypoint  pulumi.StringArrayInput
 	Environment pulumi.StringMapInput
 	HealthCheck compose.HealthCheckConfigPtrInput
-	Image       *string
+	Image       string
 	Platform    *string
 	Ports       compose.ServicePortConfigArrayInput
 }

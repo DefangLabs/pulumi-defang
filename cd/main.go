@@ -56,8 +56,7 @@ func color() string {
 }
 
 // projectConfig returns config for Pulumi.yaml (project-level settings).
-func projectConfig() map[string]workspace.ProjectConfigType {
-	prefix := prefix
+func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 	if prefix != "" {
 		prefix += "-"
 	}
@@ -73,6 +72,7 @@ func projectConfig() map[string]workspace.ProjectConfigType {
 							"aws:lb/targetGroup:TargetGroup":          map[string]string{"pattern": "${name}-${hex(4)}"},
 							"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
 							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
+							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
 						},
 					},
 					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
@@ -405,7 +405,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to get project settings: %v", err)
 	}
-	ps.Config = projectConfig()
+	ps.Config = projectConfig(prefix)
 	if err := stack.Workspace().SaveProjectSettings(ctx, ps); err != nil {
 		log.Fatalf("failed to save project settings: %v", err)
 	}

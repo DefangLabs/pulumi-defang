@@ -50,12 +50,30 @@ The lint-staged config (`.lintstagedrc.js`) is smart: changes to `provider/compo
 Each cloud (AWS/GCP/Azure) follows the same structure:
 - `provider/defang{aws,gcp,azure}/provider.go` — registers components via `pulumi-go-provider`'s `infer.Provider()`
 - `provider/defang{aws,gcp,azure}/project.go` — top-level Project component
-- `provider/defang{aws,gcp,azure}/service.go` — individual Service component
+- `provider/defang{aws,gcp,azure}/build.go` — image build component
+- `provider/defang{aws,gcp,azure}/service.go` — individual container Service component (requires image)
 - `provider/defang{aws,gcp,azure}/postgres.go` — Postgres-compatible managed database component
 - `provider/defang{aws,gcp,azure}/redis.go` — Redis-compatible managed cache component
 - `provider/defang{aws,gcp,azure}/{aws,gcp,azure}/` — cloud-specific resource creation
 
-Components: **Project** (orchestrator), **Service** (container), **Postgres** (managed DB), **Redis** (AWS only), **Build** (AWS only, resource not component).
+Components: **Project** (orchestrator), **Service** (container), **Postgres** (managed DB), **Redis** (managed cache), **Build** (AWS only, resource not component).
+
+### Component Scopes: Project vs. Standalone
+
+Each managed-resource component has **one implementation**, invoked two ways:
+
+- **Standalone** — user instantiates `Service` / `Postgres` / `Redis` directly via the generated SDK. The component's `Construct` method runs with no shared project infrastructure by default. For GCP it builds a minimal `GlobalConfig` (region + project only) via `NewStandaloneGlobalConfig`; for AWS a nil `SharedInfra` is used. Callers in Go code may pass a richer `Infra` (AWS: `*SharedInfra`, GCP: `*GlobalConfig`) — these fields carry resource pointers and are **not** part of the SDK schema.
+- **Project-owned** — `Project.Construct` runs `buildProject` / `newService`, which provisions shared infra (VPC, NAT, Artifact Registry, ALB/LB, DNS zones), then dispatches each service by registering the typed `*Outputs` component and calling the same internal worker (`createPostgres` / `createRedis` / `createECSService` / `createService`). Each component must be registered under the exact type token defined by the `<Component>ComponentType` constant so the SDK schema matches the runtime registration.
+
+**Build is a Project-only concern.** `Service` standalone is image-only — `ServiceInputs` does not carry a `Build` field. Build-from-source requires project-scope `BuildInfra` (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS). Don't re-add `Build` to standalone Service inputs.
+
+**VPC-dependent features require infra** in GCP: Compute Engine (CE), VpcAccess on Cloud Run, and LLM bindings that cross VPC boundaries. Standalone Cloud Run skips `VpcAccess` when `infra.PublicIP == nil`; standalone routing forces Cloud Run regardless of port configuration since CE cannot run without a VPC.
+
+**Dependency handles on outputs.** Each managed `*Outputs` struct carries an internal, untagged handle used by the project dispatcher for ordering and load-balancer wiring:
+- AWS: `PostgresOutputs.Dependency`, `RedisOutputs.Dependency`, `ServiceOutputs.Dependency` — all `pulumi.Resource` (either the backing instance or a private-zone CNAME record).
+- GCP: `PostgresOutputs.Instance`, `RedisOutputs.Instance` (typed), `ServiceOutputs.LBEntry` (built inside the worker).
+
+Untagged fields are ignored by the Pulumi infer framework (`introspect.ParseTag` treats them as `Internal: true`), so they don't need `pulumi:"-"`.
 
 ### Pulumi inputs and outputs
 

@@ -53,7 +53,7 @@ func CreateMemoryStore(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
-	infra *GlobalConfig,
+	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*MemorystoreResult, error) {
 	var transitEncryptionMode pulumi.StringPtrInput
