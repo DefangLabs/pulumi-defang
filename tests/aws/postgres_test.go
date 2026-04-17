@@ -1,14 +1,49 @@
 package aws
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
+	"github.com/pulumi/pulumi-go-provider/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
+
+func TestConstructAwsPostgresHasNoDuplicateResourceNames(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			key := fmt.Sprintf("%s::%s", args.TypeToken, args.Name)
+			mu.Lock()
+			defer mu.Unlock()
+			assert.False(t, seen[key], "duplicate resource %s", key)
+			seen[key] = true
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MustNewServer(defangaws.Name, defangaws.Provider(), integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Postgres"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"project_name": property.New("myproject"),
+			"image":        property.New("postgres:16"),
+			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"vpcID": property.New("vpc-12345"),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+}
 
 func TestConstructAwsPostgres(t *testing.T) {
 	server := testutil.MakeTestServer()
