@@ -75,7 +75,7 @@ func PkgVersion() (semver.Version, error) {
 	}
 	type sentinal struct{}
 	pkgPath := reflect.TypeOf(sentinal{}).PkgPath()
-	re := regexp.MustCompile("^.*/pulumi-defang-aws/sdk(/v\\d+)?")
+	re := regexp.MustCompile("^.*/pulumi-defang-gcp/sdk(/v\\d+)?")
 	if match := re.FindStringSubmatch(pkgPath); match != nil {
 		vStr := match[1]
 		if len(vStr) == 0 { // If the version capture group was empty, default to v1.
@@ -164,7 +164,7 @@ func callPlainInner(
 // PkgResourceDefaultOpts provides package level defaults to pulumi.OptionResource.
 func PkgResourceDefaultOpts(opts []pulumi.ResourceOption) []pulumi.ResourceOption {
 	defaults := []pulumi.ResourceOption{}
-	defaults = append(defaults, pulumi.PluginDownloadURL("github://api.github.com/DefangLabs/pulumi-defang"))
+	defaults = append(defaults, pulumi.PluginDownloadURL("github://api.github.com/DefangLabs"))
 	version := SdkVersion
 	if !version.Equals(semver.Version{}) {
 		defaults = append(defaults, pulumi.Version(version.String()))
@@ -175,7 +175,7 @@ func PkgResourceDefaultOpts(opts []pulumi.ResourceOption) []pulumi.ResourceOptio
 // PkgInvokeDefaultOpts provides package level defaults to pulumi.OptionInvoke.
 func PkgInvokeDefaultOpts(opts []pulumi.InvokeOption) []pulumi.InvokeOption {
 	defaults := []pulumi.InvokeOption{}
-	defaults = append(defaults, pulumi.PluginDownloadURL("github://api.github.com/DefangLabs/pulumi-defang"))
+	defaults = append(defaults, pulumi.PluginDownloadURL("github://api.github.com/DefangLabs"))
 	version := SdkVersion
 	if !version.Equals(semver.Version{}) {
 		defaults = append(defaults, pulumi.Version(version.String()))
