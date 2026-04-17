@@ -46,7 +46,7 @@ jobs:
         uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7
         with:
           distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
-          args: -p 3 release
+          args: -p 4 release
           version: v2
 
   publish_sdk:
