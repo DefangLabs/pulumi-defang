@@ -6,7 +6,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
-	awsec2 "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
@@ -56,24 +55,8 @@ func (*Redis) Construct(
 		Environment: inputs.Environment,
 	}
 
-	sg, err := awsec2.NewSecurityGroup(ctx, name, &awsec2.SecurityGroupArgs{
-		VpcId:       inputs.AWS.VpcID,
-		Description: pulumi.String("Security group for Redis"),
-		Egress: awsec2.SecurityGroupEgressArray{
-			&awsec2.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, childOpt)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
 	redisResult, err := provideraws.CreateElasticache(
-		ctx, name, svc, inputs.AWS.VpcID, inputs.AWS.PrivateSubnetIDs, sg.ID(), nil, childOpt,
+		ctx, name, svc, inputs.AWS.VpcID, inputs.AWS.PrivateSubnetIDs, inputs.AWS.PrivateSgID, nil, childOpt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache: %w", err)

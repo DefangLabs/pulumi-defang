@@ -39,16 +39,15 @@ type SharedInfra struct {
 	PrivateDomain    string
 	ProjectDomain    string
 	ZoneId           pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
-	// shared "private SG" — attached to all services, no ingress rules
-	PrivateSgID    pulumi.IDPtrInput
-	AlbSG          *ec2.SecurityGroup // nil if no ALB
-	HttpListener   *lb.Listener       // nil if no ALB
-	HttpsListener  *lb.Listener       // nil if no ALB
-	Alb            *lb.LoadBalancer   // nil if no ALB
-	Region         string
-	BuildInfra     *BuildInfra       // nil if no builds needed
-	PublicEcrCache *PullThroughCache // ECR public pull-through cache
-	SkipNatGW      bool
+	PrivateSgID      pulumi.IDPtrInput     // shared "private SG" — attached to all services, no ingress rules
+	AlbSG            *ec2.SecurityGroup    // nil if no ALB
+	HttpListener     *lb.Listener          // nil if no ALB
+	HttpsListener    *lb.Listener          // nil if no ALB
+	Alb              *lb.LoadBalancer      // nil if no ALB
+	Region           string
+	BuildInfra       *BuildInfra       // nil if no builds needed
+	PublicEcrCache   *PullThroughCache // ECR public pull-through cache
+	SkipNatGW        bool
 	Policies
 }
 
@@ -222,7 +221,7 @@ func createServiceSG(
 		ingress = append(ingress, icmpRule)
 	}
 
-	sg, err := ec2.NewSecurityGroup(ctx, serviceName+"-sg", &ec2.SecurityGroupArgs{
+	sg, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       infra.VpcID,
 		Description: pulumi.String("Security group for " + serviceName),
 		Ingress:     ingress,

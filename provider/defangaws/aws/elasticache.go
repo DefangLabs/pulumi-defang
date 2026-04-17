@@ -243,17 +243,22 @@ func CreateElasticache(
 		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
-	// Create security group allowing ingress only from the service SG.
+	// The service SG is only referenced when supplied; standalone Construct
+	// callers (e.g. unit tests) may omit it.
+	var ingressSGs pulumi.StringArray
+	if privateSgID != nil {
+		ingressSGs = pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()}
+	}
 	cacheSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String("ElastiCache security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
-				Description:    pulumi.String("Redis"),
+				Description:    pulumi.String("Allow incoming Redis traffic"),
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
-				SecurityGroups: pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()},
+				SecurityGroups: ingressSGs,
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{
