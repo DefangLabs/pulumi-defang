@@ -14,6 +14,7 @@ import (
 var _ = internal.GetEnvOrDefault
 
 type SharedInfra struct {
+	PrivateSgID      *string  `pulumi:"privateSgID"`
 	PrivateSubnetIDs []string `pulumi:"privateSubnetIDs"`
 	PrivateZoneID    *string  `pulumi:"privateZoneID"`
 	PublicSubnetIDs  []string `pulumi:"publicSubnetIDs"`
@@ -32,6 +33,7 @@ type SharedInfraInput interface {
 }
 
 type SharedInfraArgs struct {
+	PrivateSgID      pulumi.StringPtrInput   `pulumi:"privateSgID"`
 	PrivateSubnetIDs pulumi.StringArrayInput `pulumi:"privateSubnetIDs"`
 	PrivateZoneID    pulumi.StringPtrInput   `pulumi:"privateZoneID"`
 	PublicSubnetIDs  pulumi.StringArrayInput `pulumi:"publicSubnetIDs"`
@@ -115,6 +117,10 @@ func (o SharedInfraOutput) ToSharedInfraPtrOutputWithContext(ctx context.Context
 	}).(SharedInfraPtrOutput)
 }
 
+func (o SharedInfraOutput) PrivateSgID() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.PrivateSgID }).(pulumi.StringPtrOutput)
+}
+
 func (o SharedInfraOutput) PrivateSubnetIDs() pulumi.StringArrayOutput {
 	return o.ApplyT(func(v SharedInfra) []string { return v.PrivateSubnetIDs }).(pulumi.StringArrayOutput)
 }
@@ -153,6 +159,15 @@ func (o SharedInfraPtrOutput) Elem() SharedInfraOutput {
 		var ret SharedInfra
 		return ret
 	}).(SharedInfraOutput)
+}
+
+func (o SharedInfraPtrOutput) PrivateSgID() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.PrivateSgID
+	}).(pulumi.StringPtrOutput)
 }
 
 func (o SharedInfraPtrOutput) PrivateSubnetIDs() pulumi.StringArrayOutput {
