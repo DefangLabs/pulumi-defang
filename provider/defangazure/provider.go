@@ -43,7 +43,7 @@ func Provider() p.Provider {
 			Publisher:         "Defang",
 			LogoURL:           "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
 			License:           "Apache-2.0",
-			PluginDownloadURL: "github://api.github.com/DefangLabs",
+			PluginDownloadURL: "github://api.github.com/DefangLabs/pulumi-defang",
 			LanguageMap: map[string]any{
 				"csharp": csharpGen.CSharpPackageInfo{
 					RootNamespace: "DefangLabs",
