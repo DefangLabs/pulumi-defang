@@ -81,3 +81,54 @@ Per-provider build logic is in `defang-{aws,gcp,azure}.mk`.
 
 Tools are managed by `flake.nix`, which imports `shell.nix`, loaded by DirEnv's `.envrc`.
 
+---
+
+## SAM Workflows
+
+When running inside SAM (detected by `$SAM_WORKSPACE_ID` being set), follow these additional guidelines.
+
+### Ephemeral Environment
+
+SAM VMs are ephemeral — **unpushed work is lost** when the VM shuts down. Push frequently, especially after:
+- Schema changes (`make schema`)
+- SDK generation (`make sdks`)
+- Any provider code changes that pass tests
+
+### Progress Reporting
+
+Use `update_task_status` at key milestones:
+- Schema generated successfully
+- Provider binaries built
+- Tests passing
+- SDKs generated
+
+
+### Coordination with Other Repos
+
+Pulumi provider changes often require corresponding updates in the CLI or the Fabric backend. Use `dispatch_task` to coordinate cross-repo work rather than trying to make changes across multiple repositories directly.
+
+### Context and Ideas
+
+- Use `search_tasks` to find prior context and decisions related to this repo
+- Use `create_idea` for improvements discovered but out of scope for the current task
+- Use `search_messages` to find context from prior conversations
+
+### Knowledge Graph
+
+SAM maintains a persistent knowledge graph across sessions. Use it to preserve non-obvious context:
+
+- **`add_knowledge`** — Store observations about:
+  - User preferences and work style (entityType: `preference`)
+  - Code conventions not captured in CLAUDE.md (entityType: `style`)
+  - Architecture decisions and their rationale (entityType: `context`)
+  - Project context: ongoing initiatives, deadlines, blockers (entityType: `context`)
+- **`search_knowledge`** — Query before key decisions (e.g., search "Architecture" before changing provider structure, search "AzureSupport" before touching Azure provider code)
+- **`update_knowledge`** / **`remove_knowledge`** — Fix stale or incorrect observations
+- **`confirm_knowledge`** — When you verify an existing observation is still accurate
+
+Do NOT store: code patterns derivable from the codebase, git history, ephemeral task details, or anything already in CLAUDE.md.
+
+### Subprocess Restriction
+
+Do NOT launch `claude` as a subprocess — use SAM's `dispatch_task` instead.
+

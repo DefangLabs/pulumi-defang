@@ -12,23 +12,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Unshallow clone for tags
-      shell: bash
-      run: git fetch --prune --unshallow --tags
-
-    - name: Install Go
-      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-      with:
-        go-version-file: go.mod
-        cache-dependency-path: go.sum
-
-    - name: Install pulumictl
-      shell: bash
-      run: |
-        gh release download --repo pulumi/pulumictl --pattern 'pulumictl-*-linux-amd64.tar.gz' --dir /tmp
-        tar -xzf /tmp/pulumictl-*-linux-amd64.tar.gz -C /usr/local/bin pulumictl
-      env:
-        GH_TOKEN: ${{ github.token }}
+    - name: Setup Go build environment
+      uses: ./.github/actions/setup-go
 
     - name: Install Pulumi CLI
       uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6
@@ -43,20 +28,25 @@ runs:
         # tree), which causes `npm install -g` to fail. Node 24 avoids this entirely.
         # See: https://github.com/actions/runner-images/issues/13883
         #      https://github.com/nodejs/node/pull/62463
-        node-version: 24.x
+        node-version: 24.x # should match the version in shell.nix
         registry-url: https://registry.npmjs.org
 
     - if: ${{ inputs.language == 'dotnet' }}
       name: Setup DotNet
       uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 8.0.x # should match the version in shell.nix
 
     - if: ${{ inputs.language == 'python' }}
       name: Setup Python
       uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
       with:
-        python-version: "3.9"
+        python-version: "3.12" # should match the version in shell.nix
+
+    - if: ${{ inputs.language == 'python' }}
+      name: Install Python build dependencies
+      shell: bash
+      run: pip install setuptools
 
     - name: Build SDK
       shell: bash

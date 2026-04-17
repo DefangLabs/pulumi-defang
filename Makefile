@@ -17,8 +17,6 @@ export GOTOOLCHAIN := go1.25.6
 WORKING_DIR     := $(shell pwd)
 TESTPARALLELISM := 4
 
-OS    := $(shell uname)
-
 # Delegate to per-plugin Makefiles
 define pack_rule
 %_$(1):
@@ -111,7 +109,7 @@ PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
 images: image_aws image_gcp image_azure image_all
 
 image_%:
-	$(DOCKER_BUILDX) --build-arg CLOUDS=$* \
+	$(DOCKER_BUILDX) --target $* \
 	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) \
 	  -t $(IMAGE_REPO):$(CD_VERSION)-$* .
 
@@ -134,6 +132,10 @@ pre-commit: node_modules
 # Full build + test run before push (or for CI).
 .PHONY: pre-push
 pre-push: provider test go_sdk
+	@if ! git diff --quiet -- sdk/v2/ || ! git diff --cached --quiet -- sdk/v2/; then \
+		echo "error: Go SDK has uncommitted changes. Commit sdk/v2/ before pushing." >&2; \
+		exit 1; \
+	fi
 
 # Generate language examples from YAML sources
 # Requires providers to be built first: make install

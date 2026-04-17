@@ -19,7 +19,7 @@ var (
 	domain            = os.Getenv("DOMAIN")
 	etag              = Getenv("DEFANG_ETAG", org)
 	eventsUploadUrl   = os.Getenv("DEFANG_EVENTS_UPLOAD_URL")
-	gcpProject        = os.Getenv("GCP_PROJECT") // GCP only
+	gcpProject        = Getenv("GCP_PROJECT", os.Getenv("GCP_PROJECT_ID")) // GCP only
 	jsonOutput        = GetenvBool("DEFANG_JSON")
 	mode              = Getenv("DEFANG_MODE", "development")
 	_, noColor        = os.LookupEnv("NO_COLOR")
