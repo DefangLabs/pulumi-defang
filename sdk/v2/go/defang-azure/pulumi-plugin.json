@@ -1,5 +1,5 @@
 {
   "resource": true,
   "name": "defang-azure",
-  "server": "github://api.github.com/DefangLabs"
+  "server": "github://api.github.com/DefangLabs/pulumi-defang"
 }
