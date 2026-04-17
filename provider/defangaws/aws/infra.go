@@ -83,7 +83,7 @@ func CreateProjectInfra(
 	}
 
 	// Create public ECR pull-through cache for faster image pulls (matches TS initializeStack)
-	publicEcrCache, err := createEcrPullThroughCache(ctx, "ecr-public", "public.ecr.aws", "ecr-public", opt)
+	publicEcrCache, err := createEcrPullThroughCache(ctx, "ecr-public", pulumi.String("public.ecr.aws"), opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECR pull-through cache: %w", err)
 	}

@@ -98,11 +98,11 @@ using System.Linq;
 using Pulumi;
 using DefangAws = DefangLabs.DefangAws;
 
-return await Deployment.RunAsync(() => 
+return await Deployment.RunAsync(() =>
 {
     var awsDemo = new DefangAws.Project("aws-demo", new()
     {
-        Services = 
+        Services =
         {
             { "app", new DefangAws.Compose.Inputs.ServiceConfigArgs
             {
@@ -171,6 +171,12 @@ Each provider (`defang-aws`, `defang-gcp`, `defang-azure`) exposes the same comp
 - **`Build`** (AWS only) — an image-build resource used internally by `Project`.
 
 Managed components (`Service`, `Postgres`, `Redis`) share one implementation between standalone and project-scoped use. Standalone instantiations skip the shared-infra provisioning and therefore don't support features that depend on it (VPC access, build-from-source, external load-balancer wiring).
+
+### Resource naming
+
+When creating Pulumi resources, these Pulumi components will only specify the **logical** name, which is either the service name (e.g. `app`) or a name to describe the resource's role (e.g. `shared-vpc`, `ecr-public`).
+The **physical** name of the underlying cloud resource is determined by the Pulumi engine. By default, this will be the logical name followed by a hyphen and 7 random hex characters (e.g. `app-abc1234`).
+To control the physical name, configure `autonaming` rules in the Pulumi configuration files, either globally or per resource type. See the [Pulumi autonaming docs](https://www.pulumi.com/docs/intro/concepts/resources/#autonaming) for details. See the [CD code](cd/main.go) for examples of how autonaming is used in Defang.
 
 ## Installation and Configuration
 

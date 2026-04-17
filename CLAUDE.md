@@ -50,7 +50,8 @@ The lint-staged config (`.lintstagedrc.js`) is smart: changes to `provider/compo
 Each cloud (AWS/GCP/Azure) follows the same structure:
 - `provider/defang{aws,gcp,azure}/provider.go` — registers components via `pulumi-go-provider`'s `infer.Provider()`
 - `provider/defang{aws,gcp,azure}/project.go` — top-level Project component
-- `provider/defang{aws,gcp,azure}/service.go` — individual Service component
+- `provider/defang{aws,gcp,azure}/build.go` — image build component
+- `provider/defang{aws,gcp,azure}/service.go` — individual container Service component (requires image)
 - `provider/defang{aws,gcp,azure}/postgres.go` — Postgres-compatible managed database component
 - `provider/defang{aws,gcp,azure}/redis.go` — Redis-compatible managed cache component
 - `provider/defang{aws,gcp,azure}/{aws,gcp,azure}/` — cloud-specific resource creation

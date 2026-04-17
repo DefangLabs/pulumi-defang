@@ -2,6 +2,7 @@ package aws
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
@@ -46,13 +47,19 @@ type PullThroughCache struct {
 func createEcrPullThroughCache(
 	ctx *pulumi.Context,
 	name string,
-	upstreamRegistryURL string,
-	prefix string,
+	upstreamRegistryURL pulumi.StringInput,
 	opts ...pulumi.ResourceOption,
 ) (*PullThroughCache, error) {
+	const maxCacheRepoLength = 30 // was 20 https://github.com/hashicorp/terraform-provider-aws/pull/34716
+	// PullThroughCacheRule does not support autonaming, so we need to generate a unique and compliant prefix ourselves.
+	prefix := strings.ToLower(common.AutonamingPrefix(ctx, name))
+	if len(prefix) > maxCacheRepoLength {
+		// 	TODO: hashTrim/truncate prefix smartly
+		prefix = prefix[:maxCacheRepoLength]
+	}
 	rule, err := ecr.NewPullThroughCacheRule(ctx, name, &ecr.PullThroughCacheRuleArgs{
 		EcrRepositoryPrefix: pulumi.String(prefix),
-		UpstreamRegistryUrl: pulumi.String(upstreamRegistryURL),
+		UpstreamRegistryUrl: upstreamRegistryURL,
 	}, common.MergeOptions(opts,
 		pulumi.IgnoreChanges([]string{"ecrRepositoryPrefix"}),
 	)...)

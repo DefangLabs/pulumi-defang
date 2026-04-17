@@ -585,15 +585,12 @@ func buildURLMap(
 		if err != nil {
 			return nil, err
 		}
-		if backendID == nil {
-			continue
-		}
 		pathMatchers = append(pathMatchers, matcher)
 		if hostRule != nil {
 			hostRules = append(hostRules, hostRule)
 		}
 		if firstBackendID == nil {
-			firstBackendID = backendID
+			firstBackendID = backendID.ToStringOutput()
 		}
 	}
 
@@ -612,14 +609,14 @@ func buildLBEntry(
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringPtrInput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
 	if entry.CloudRunService != nil {
 		return buildCloudRunLBEntry(ctx, entry, region, opts...)
 	}
 	if entry.InstanceGroup != nil {
 		return buildMIGLBEntry(ctx, entry, opts...)
 	}
-	return nil, nil, nil, nil
+	return pulumi.IDOutput{}, nil, nil, nil
 }
 
 func buildCloudRunLBEntry(
@@ -627,7 +624,7 @@ func buildCloudRunLBEntry(
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringPtrInput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
 	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-neg",
 		&compute.RegionNetworkEndpointGroupArgs{
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
@@ -637,7 +634,7 @@ func buildCloudRunLBEntry(
 			},
 		}, opts...)
 	if err != nil {
-		return nil, nil, nil, err
+		return pulumi.IDOutput{}, nil, nil, err
 	}
 
 	backend, err := compute.NewBackendService(ctx, entry.Name+"-backend",
@@ -649,7 +646,7 @@ func buildCloudRunLBEntry(
 			},
 		}, opts...)
 	if err != nil {
-		return nil, nil, nil, err
+		return pulumi.IDOutput{}, nil, nil, err
 	}
 
 	matcher := &compute.URLMapPathMatcherArgs{
@@ -670,7 +667,7 @@ func buildMIGLBEntry(
 	ctx *pulumi.Context,
 	entry LBServiceEntry,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringPtrInput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
 	for _, port := range entry.Config.Ports {
 		if port.Mode != portModeIngress {
 			continue
@@ -685,7 +682,7 @@ func buildMIGLBEntry(
 				},
 			}, opts...)
 		if err != nil {
-			return nil, nil, nil, err
+			return pulumi.IDOutput{}, nil, nil, err
 		}
 
 		backend, err := compute.NewBackendService(ctx, entry.Name+"-"+portStr+"-gce-backend",
@@ -698,7 +695,7 @@ func buildMIGLBEntry(
 				HealthChecks: hc.ID(),
 			}, append(opts, pulumi.DependsOn([]pulumi.Resource{entry.InstanceGroup}))...)
 		if err != nil {
-			return nil, nil, nil, err
+			return pulumi.IDOutput{}, nil, nil, err
 		}
 
 		matcher := &compute.URLMapPathMatcherArgs{
@@ -713,7 +710,7 @@ func buildMIGLBEntry(
 		}
 		return backend.ID(), matcher, hostRule, nil
 	}
-	return nil, nil, nil, nil
+	return pulumi.IDOutput{}, nil, nil, nil
 }
 
 func createHTTPSForwardingRule(

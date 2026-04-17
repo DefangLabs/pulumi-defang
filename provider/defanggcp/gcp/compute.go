@@ -321,7 +321,7 @@ func getCloudInitConfig(
 	svc compose.ServiceConfig,
 	region string,
 	addHealthCheckSidecar bool,
-) pulumi.StringInput {
+) pulumi.StringOutput {
 	var buf strings.Builder
 	buf.WriteString("#cloud-config\n\nwrite_files:")
 

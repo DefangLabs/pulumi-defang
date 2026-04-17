@@ -229,7 +229,9 @@ func CreateElasticache(
 		"defang:service": pulumi.String(serviceName),
 	}
 
-	// Create ElastiCache subnet group (always private).
+	// Create ElastiCache subnet group (always private). AWS rejects uppercase in
+	// the name; pass a lowercased Pulumi resource name so autoname produces a
+	// valid "<safe>-<hex>" value.
 	var subnetGroupName pulumi.StringPtrOutput
 	if privateSubnetIDs != nil {
 		subnetGroup, err := awselasticache.NewSubnetGroup(ctx, serviceName, &awselasticache.SubnetGroupArgs{
