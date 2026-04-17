@@ -35,7 +35,7 @@ func CreateLLMInfra(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*LLMInfra, error) {
-	account, err := cognitiveservices.NewAccount(ctx, name+"-foundry", &cognitiveservices.AccountArgs{
+	account, err := cognitiveservices.NewAccount(ctx, name, &cognitiveservices.AccountArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.StringPtr(Location(ctx)),
 		Kind:              pulumi.String("AIServices"),

@@ -61,14 +61,14 @@ func (*Service) Construct(
 
 	location := azure.Location(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
 
-	env, err := azureapp.NewManagedEnvironment(ctx, name+"-env", &azureapp.ManagedEnvironmentArgs{
+	env, err := azureapp.NewManagedEnvironment(ctx, name, &azureapp.ManagedEnvironmentArgs{
 		ResourceGroupName: rg.Name,
 		Location:          pulumi.String(location),
 	}, childOpt)

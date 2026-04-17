@@ -33,14 +33,13 @@ func KeyVaultSecretURL(vaultURL, project, stack, envKey string) string {
 // (with an implicit dependency on the role assignment completing).
 func CreateKeyVaultIdentity(
 	ctx *pulumi.Context,
-	name string,
 	vaultName string,
 	infra *SharedInfra,
 	location string,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	identity, err := managedidentity.NewUserAssignedIdentity(
-		ctx, name+"-kv-identity", &managedidentity.UserAssignedIdentityArgs{
+		ctx, "kv", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String(location),
 		}, opts...)
@@ -57,12 +56,12 @@ func CreateKeyVaultIdentity(
 		return rgID + "/providers/Microsoft.KeyVault/vaults/" + vaultName
 	}).(pulumi.StringOutput)
 
-	roleAssignment, err := authorization.NewRoleAssignment(ctx, name+"-kv-secrets-user", &authorization.RoleAssignmentArgs{
+	roleAssignment, err := authorization.NewRoleAssignment(ctx, "kv-secrets-user", &authorization.RoleAssignmentArgs{
 		Scope:            vaultScope,
 		RoleDefinitionId: pulumi.String(roleDefID),
 		PrincipalId:      identity.PrincipalId,
 		PrincipalType:    pulumi.String("ServicePrincipal"),
-	}, opts...)
+	}, append(opts, pulumi.Parent(identity))...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating KV role assignment: %w", err)
 	}

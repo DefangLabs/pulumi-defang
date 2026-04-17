@@ -105,7 +105,7 @@ func CreateBuildInfra(
 
 	// User-assigned managed identity for Container Apps to pull built images.
 	identity, err := managedidentity.NewUserAssignedIdentity(
-		ctx, name+"-acr-identity", &managedidentity.UserAssignedIdentityArgs{
+		ctx, "acr", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String(location),
 		}, opts...)
@@ -118,12 +118,12 @@ func CreateBuildInfra(
 		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
 		subID, acrPullRoleDefinitionID,
 	)
-	roleAssignment, err := authorization.NewRoleAssignment(ctx, name+"-acr-pull", &authorization.RoleAssignmentArgs{
+	roleAssignment, err := authorization.NewRoleAssignment(ctx, "acr-pull", &authorization.RoleAssignmentArgs{
 		Scope:            registry.ID(),
 		RoleDefinitionId: roleDefID,
 		PrincipalId:      identity.PrincipalId,
 		PrincipalType:    pulumi.String("ServicePrincipal"),
-	}, opts...)
+	}, append(opts, pulumi.Parent(identity))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating AcrPull role assignment: %w", err)
 	}
@@ -231,6 +231,11 @@ func buildServiceImage(
 	triggerHash := buildTriggerHash(svc.Build)
 
 	var buildResource acrImageBuildResource
+	// IgnoreChanges on contextPath: the defang CLI hands us a fresh SAS URL every
+	// deploy (same blob, new signature/expiry), so a literal diff would trigger a
+	// rebuild even when source is unchanged. Real source changes propagate via
+	// triggers (buildTriggerHash strips the SAS before hashing).
+	buildOpts := append([]pulumi.ResourceOption{pulumi.IgnoreChanges([]string{"contextPath"})}, opts...)
 	err = ctx.RegisterResource("defang-azure:index:ACRImageBuild", serviceName+"-build", pulumi.Map{
 		"subscriptionId":     infra.subscriptionID,
 		"resourceGroupName":  sharedInfra.ResourceGroup.Name,
@@ -241,7 +246,7 @@ func buildServiceImage(
 		"contextPath":        svc.Build.Context,
 		"encodedTaskContent": pulumi.String(encodedYAML),
 		"triggers":           pulumi.StringArray{triggerHash},
-	}, &buildResource, opts...)
+	}, &buildResource, buildOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACRImageBuild resource for %s: %w", serviceName, err)
 	}

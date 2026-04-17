@@ -3,6 +3,7 @@ package defangazure
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -39,28 +40,49 @@ type ProjectOutputs struct {
 	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
 }
 
-// detectServiceTypes scans all services and returns feature flags and an llmModels map.
+// serviceTypes summarises which kinds of services are present in a project.
+// pgServiceName / redisServiceName hold the first (alphabetically) service of each
+// kind, used as Pulumi logical names for project-shared DNS zones. Empty when
+// that kind has no services.
+type serviceTypes struct {
+	hasBuild         bool
+	hasLLM           bool
+	pgServiceName    string
+	redisServiceName string
+	llmModels        map[string]string // LLM service name → model alias
+}
+
+// detectServiceTypes scans all services and summarises feature flags, per-kind
+// service names, and an LLM model alias map.
 // llmModels maps each LLM service name to its model alias (e.g. "llm" → "chat-default").
 // The CLI injects {UPPER(svcName)}_MODEL into dependent services; we reverse-look that up here.
-func detectServiceTypes(services compose.Services) (bool, bool, bool, bool, map[string]string) {
-	var hasPostgres, hasRedis, hasBuild, hasLLM bool
-	llmModels := make(map[string]string)
-	for svcName, svc := range services {
-		if svc.Postgres != nil {
-			hasPostgres = true
+func detectServiceTypes(services compose.Services) serviceTypes {
+	result := serviceTypes{llmModels: make(map[string]string)}
+
+	// Sort service names so the "first" pg/redis pick is deterministic across runs.
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, svcName := range names {
+		svc := services[svcName]
+		if svc.Postgres != nil && result.pgServiceName == "" {
+			result.pgServiceName = svcName
 		}
-		if svc.Redis != nil {
-			hasRedis = true
+		if svc.Redis != nil && result.redisServiceName == "" {
+			result.redisServiceName = svcName
 		}
 		if svc.Build != nil {
-			hasBuild = true
+			result.hasBuild = true
 		}
 		if svc.LLM != nil {
-			hasLLM = true
-			llmModels[svcName] = llmModelAlias(svcName, services)
+			result.hasLLM = true
+			result.llmModels[svcName] = llmModelAlias(svcName, services)
 		}
 	}
-	return hasPostgres, hasRedis, hasBuild, hasLLM, llmModels
+	return result
 }
 
 func createPostgresResources(
@@ -229,7 +251,7 @@ func createManagedEnvironment(
 	infra *providerazure.SharedInfra,
 	childOpts []pulumi.ResourceOption,
 ) (*app.ManagedEnvironment, error) {
-	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name+"-logs", &operationalinsights.WorkspaceArgs{
+	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
@@ -287,7 +309,7 @@ func setupSharedInfra(
 		return nil, nil, err
 	}
 
-	hasPostgres, hasRedis, hasBuild, hasLLM, llmModels := detectServiceTypes(inputs.Services)
+	types := detectServiceTypes(inputs.Services)
 
 	userCfg, err := providerazure.FetchUserConfig(ctx)
 	if err != nil {
@@ -299,14 +321,16 @@ func setupSharedInfra(
 		ConfigProvider: providerazure.NewConfigProvider(name, userCfg),
 	}
 
-	if hasPostgres || hasRedis {
+	if types.pgServiceName != "" || types.redisServiceName != "" {
 		networking, err := providerazure.CreateNetworking(ctx, name, infra, location, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating networking: %w", err)
 		}
 		infra.Networking = networking
 
-		dns, err := providerazure.CreateDNSZones(ctx, name, infra, networking, childOpts...)
+		dns, err := providerazure.CreateDNSZones(
+			ctx, name, types.pgServiceName, types.redisServiceName, infra, networking, childOpts...,
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating DNS zones: %w", err)
 		}
@@ -319,7 +343,7 @@ func setupSharedInfra(
 	}
 	infra.Environment = env
 
-	if hasLLM {
+	if types.hasLLM {
 		llmInfra, err := providerazure.CreateLLMInfra(ctx, name, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating LLM infra: %w", err)
@@ -327,7 +351,7 @@ func setupSharedInfra(
 		infra.LLMInfra = llmInfra
 	}
 
-	if hasBuild {
+	if types.hasBuild {
 		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, location, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating build infrastructure: %w", err)
@@ -337,14 +361,14 @@ func setupSharedInfra(
 
 	if kvName := providerazure.KeyVaultName(ctx); kvName != "" {
 		infra.KeyVaultURL = "https://" + kvName + ".vault.azure.net"
-		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, name, kvName, infra, location, childOpts...)
+		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, infra, location, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating Key Vault identity: %w", err)
 		}
 		infra.KeyVaultIdentityID = kvIdentityID
 	}
 
-	return infra, llmModels, nil
+	return infra, types.llmModels, nil
 }
 
 // Construct implements the ComponentResource interface for Project.

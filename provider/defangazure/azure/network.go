@@ -37,7 +37,9 @@ func CreateNetworking(
 		return nil, fmt.Errorf("creating VNet: %w", err)
 	}
 
-	appsSubnet, err := network.NewSubnet(ctx, name+"-apps", &network.SubnetArgs{
+	subnetOpts := append([]pulumi.ResourceOption{pulumi.Parent(vnet)}, opts...)
+
+	appsSubnet, err := network.NewSubnet(ctx, "apps", &network.SubnetArgs{
 		ResourceGroupName:  infra.ResourceGroup.Name,
 		VirtualNetworkName: vnet.Name,
 		AddressPrefix:      pulumi.String("10.0.0.0/23"),
@@ -47,12 +49,12 @@ func CreateNetworking(
 				ServiceName: pulumi.String("Microsoft.App/environments"),
 			},
 		},
-	}, opts...)
+	}, subnetOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating apps subnet: %w", err)
 	}
 
-	pgSubnet, err := network.NewSubnet(ctx, name+"-postgres", &network.SubnetArgs{
+	pgSubnet, err := network.NewSubnet(ctx, "postgres", &network.SubnetArgs{
 		ResourceGroupName:  infra.ResourceGroup.Name,
 		VirtualNetworkName: vnet.Name,
 		AddressPrefix:      pulumi.String("10.0.2.0/24"),
@@ -62,17 +64,17 @@ func CreateNetworking(
 				ServiceName: pulumi.String("Microsoft.DBforPostgreSQL/flexibleServers"),
 			},
 		},
-	}, opts...)
+	}, subnetOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating postgres subnet: %w", err)
 	}
 
-	peSubnet, err := network.NewSubnet(ctx, name+"-endpoints", &network.SubnetArgs{
+	peSubnet, err := network.NewSubnet(ctx, "endpoints", &network.SubnetArgs{
 		ResourceGroupName:              infra.ResourceGroup.Name,
 		VirtualNetworkName:             vnet.Name,
 		AddressPrefix:                  pulumi.String("10.0.3.0/24"),
 		PrivateEndpointNetworkPolicies: pulumi.String("Disabled"),
-	}, opts...)
+	}, subnetOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating private endpoints subnet: %w", err)
 	}
