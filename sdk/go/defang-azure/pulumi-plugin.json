@@ -1,5 +1,0 @@
-{
-  "resource": true,
-  "name": "defang-azure",
-  "server": "github://api.github.com/DefangLabs"
-}
