@@ -26,8 +26,8 @@ var (
 // BuildInfra holds the shared Azure Container Registry used across all builds in a project.
 // Created once per project when at least one service requires a build.
 type BuildInfra struct {
-	registry          *containerregistry.Registry
-	subscriptionID    pulumi.StringOutput
+	registry       *containerregistry.Registry
+	subscriptionID pulumi.StringOutput
 	// managedIdentityID is the resource ID of the user-assigned managed identity
 	// granted AcrPull on the registry. Container Apps use it for image pull auth.
 	managedIdentityID pulumi.StringOutput

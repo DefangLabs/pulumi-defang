@@ -140,14 +140,29 @@ func CreatePostgresFlexible(
 	// Allowlist the pgvector extension. Azure Postgres Flexible Server blocks CREATE EXTENSION
 	// unless the extension is listed in the azure.extensions server parameter first.
 	_, err = dbforpostgresql.NewConfiguration(ctx, sanitized+"-pgvector", &dbforpostgresql.ConfigurationArgs{
-		ResourceGroupName:  infra.ResourceGroup.Name,
-		ServerName:         server.Name,
-		ConfigurationName:  pulumi.String("azure.extensions"),
-		Value:              pulumi.String("VECTOR"),
-		Source:             pulumi.String("user-override"),
+		ResourceGroupName: infra.ResourceGroup.Name,
+		ServerName:        server.Name,
+		ConfigurationName: pulumi.String("azure.extensions"),
+		Value:             pulumi.String("VECTOR"),
+		Source:            pulumi.String("user-override"),
 	}, append(opts, pulumi.Parent(server))...)
 	if err != nil {
 		return nil, fmt.Errorf("enabling pgvector extension: %w", err)
+	}
+
+	// Allow non-TLS connections. Azure defaults require_secure_transport=ON, which
+	// rejects non-SSL clients with "no pg_hba.conf entry ... no encryption". AWS/GCP
+	// managed Postgres allow both, and samples (e.g. nextjs-postgres with
+	// POSTGRES_SSL=disable) expect the same here. Clients can still negotiate TLS.
+	_, err = dbforpostgresql.NewConfiguration(ctx, sanitized+"-no-tls", &dbforpostgresql.ConfigurationArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		ServerName:        server.Name,
+		ConfigurationName: pulumi.String("require_secure_transport"),
+		Value:             pulumi.String("OFF"),
+		Source:            pulumi.String("user-override"),
+	}, append(opts, pulumi.Parent(server))...)
+	if err != nil {
+		return nil, fmt.Errorf("disabling require_secure_transport: %w", err)
 	}
 
 	// Create database if non-default; "postgres" already exists on every new Flexible Server.

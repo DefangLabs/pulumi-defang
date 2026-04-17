@@ -45,11 +45,11 @@ func CreateDNSZones(
 	}
 
 	_, err = privatedns.NewVirtualNetworkLink(ctx, name+"-pg-dns-link", &privatedns.VirtualNetworkLinkArgs{
-		ResourceGroupName:    infra.ResourceGroup.Name,
-		PrivateZoneName:      pgZone.Name,
-		Location:             pulumi.String("global"),
-		RegistrationEnabled:  pulumi.Bool(false),
-		VirtualNetwork:       &privatedns.SubResourceArgs{Id: networking.VNet.ID().ToStringOutput()},
+		ResourceGroupName:   infra.ResourceGroup.Name,
+		PrivateZoneName:     pgZone.Name,
+		Location:            pulumi.String("global"),
+		RegistrationEnabled: pulumi.Bool(false),
+		VirtualNetwork:      &privatedns.SubResourceArgs{Id: networking.VNet.ID().ToStringOutput()},
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating postgres DNS VNet link: %w", err)

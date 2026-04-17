@@ -68,10 +68,10 @@ func CreateNetworking(
 	}
 
 	peSubnet, err := network.NewSubnet(ctx, name+"-endpoints", &network.SubnetArgs{
-		ResourceGroupName:                    infra.ResourceGroup.Name,
-		VirtualNetworkName:                   vnet.Name,
-		AddressPrefix:                        pulumi.String("10.0.3.0/24"),
-		PrivateEndpointNetworkPolicies:       pulumi.String("Disabled"),
+		ResourceGroupName:              infra.ResourceGroup.Name,
+		VirtualNetworkName:             vnet.Name,
+		AddressPrefix:                  pulumi.String("10.0.3.0/24"),
+		PrivateEndpointNetworkPolicies: pulumi.String("Disabled"),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating private endpoints subnet: %w", err)
