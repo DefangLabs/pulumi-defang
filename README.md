@@ -161,6 +161,17 @@ outputs:
 {{% /choosable %}}
 {{< /chooser >}}
 
+## Components
+
+Each provider (`defang-aws`, `defang-gcp`, `defang-azure`) exposes the same component palette:
+
+- **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure (VPC, networking, DNS, load balancers, build pipelines) alongside each service.
+- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure).
+- **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
+- **`Build`** (AWS only) — an image-build resource used internally by `Project`.
+
+Managed components (`Service`, `Postgres`, `Redis`) share one implementation between standalone and project-scoped use. Standalone instantiations skip the shared-infra provisioning and therefore don't support features that depend on it (VPC access, build-from-source, external load-balancer wiring).
+
 ## Installation and Configuration
 
 See our [Installation and Configuration](https://pulumi.com/registry/packages/defang/installation-configuration/) docs

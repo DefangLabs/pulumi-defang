@@ -6,7 +6,7 @@ import (
 )
 
 func CreateNAT(
-	ctx *pulumi.Context, vpcId pulumi.StringInput, config GlobalConfig, opts ...pulumi.ResourceOption,
+	ctx *pulumi.Context, vpcId pulumi.StringInput, config SharedInfra, opts ...pulumi.ResourceOption,
 ) error {
 	router, err := compute.NewRouter(ctx, "nat-router", &compute.RouterArgs{
 		Region:  pulumi.String(config.Region),

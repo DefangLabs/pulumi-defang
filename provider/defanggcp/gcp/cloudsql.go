@@ -86,7 +86,7 @@ func CreateCloudSQL(
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
-	infra *GlobalConfig,
+	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*CloudSQLResult, error) {
 	pg := svc.ResolvePostgres(ctx, configProvider)

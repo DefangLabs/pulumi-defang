@@ -35,7 +35,6 @@ func NewService(ctx *pulumi.Context,
 }
 
 type serviceArgs struct {
-	Build       *compose.BuildConfig        `pulumi:"build"`
 	Command     []string                    `pulumi:"command"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
 	DomainName  *string                     `pulumi:"domainName"`
@@ -49,7 +48,6 @@ type serviceArgs struct {
 
 // The set of arguments for constructing a Service resource.
 type ServiceArgs struct {
-	Build       compose.BuildConfigPtrInput
 	Command     pulumi.StringArrayInput
 	Deploy      compose.DeployConfigPtrInput
 	DomainName  *string

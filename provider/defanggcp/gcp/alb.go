@@ -45,7 +45,7 @@ func CreateLoadBalancers(
 	ctx *pulumi.Context,
 	projectName string,
 	services []LBServiceEntry,
-	config *GlobalConfig,
+	config *SharedInfra,
 ) error {
 	if err := createInternalLoadBalancer(ctx, projectName, config, services); err != nil {
 		return err
@@ -63,7 +63,7 @@ func CreateLoadBalancers(
 func createExternalLoadBalancers(
 	ctx *pulumi.Context,
 	projectName string,
-	config *GlobalConfig,
+	config *SharedInfra,
 	entries []LBServiceEntry,
 	opts ...pulumi.ResourceOption,
 ) error {
@@ -134,7 +134,7 @@ func createExternalLoadBalancers(
 func createInternalLoadBalancer(
 	ctx *pulumi.Context,
 	projectName string,
-	config *GlobalConfig,
+	config *SharedInfra,
 	services []LBServiceEntry,
 ) error {
 	var internalAlbServices []string

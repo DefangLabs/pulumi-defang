@@ -38,7 +38,7 @@ func CreateCloudRunService(
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
-	gcpConfig *GlobalConfig,
+	gcpConfig *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*CloudRunResult, error) {
 	template := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig)
@@ -67,7 +67,7 @@ func buildTemplate(
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
-	gcpConfig *GlobalConfig,
+	gcpConfig *SharedInfra,
 ) *cloudrunv2.ServiceTemplateArgs {
 	// Build environment variables
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
@@ -149,14 +149,18 @@ func buildTemplate(
 		},
 	}
 
-	if gcpConfig != nil {
+	// Only attach VpcAccess when a full project VPC has been provisioned.
+	// Standalone GlobalConfig (NewStandaloneGlobalConfig) leaves PublicIP nil to
+	// signal "no VPC, skip VpcAccess" — passing a zero VpcId/SubnetId to Cloud
+	// Run would otherwise produce an invalid resource.
+	if gcpConfig != nil && gcpConfig.PublicIP != nil {
 		template.VpcAccess = buildVpcAccess(gcpConfig)
 	}
 
 	return template
 }
 
-func buildVpcAccess(gcpConfig *GlobalConfig) *cloudrunv2.ServiceTemplateVpcAccessArgs {
+func buildVpcAccess(gcpConfig *SharedInfra) *cloudrunv2.ServiceTemplateVpcAccessArgs {
 	return &cloudrunv2.ServiceTemplateVpcAccessArgs{
 		Egress: pulumi.String("PRIVATE_RANGES_ONLY"),
 		NetworkInterfaces: cloudrunv2.ServiceTemplateVpcAccessNetworkInterfaceArray{

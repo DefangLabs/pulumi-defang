@@ -1,7 +1,6 @@
 package defangazure
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -11,14 +10,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var ErrBuildInfraNotConfigured = errors.New("build infrastructure is not set up")
-
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
 
 // AzureContainerAppInputs defines the inputs for a standalone Azure Container App.
+// Build-from-source is deliberately unsupported — images must be pre-built and supplied
+// via Image. Build orchestration belongs to the Project component.
 type AzureContainerAppInputs struct {
-	Build       *compose.BuildConfig        `pulumi:"build,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
@@ -47,7 +45,6 @@ func (*Service) Construct(
 
 	childOpt := pulumi.Parent(comp)
 	svc := compose.ServiceConfig{
-		Build:       inputs.Build,
 		Image:       inputs.Image,
 		Platform:    (inputs.Platform),
 		Ports:       inputs.Ports,
@@ -77,10 +74,6 @@ func (*Service) Construct(
 	}
 
 	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
-
-	if svc.Build != nil && infra.BuildInfra == nil {
-		return nil, fmt.Errorf("service %s: %w", name, ErrBuildInfraNotConfigured)
-	}
 
 	imageURI, err := azure.GetServiceImage(ctx, name, svc, infra.BuildInfra, infra, childOpt)
 	if err != nil {

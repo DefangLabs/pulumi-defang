@@ -29,7 +29,7 @@ func CreateComputeEngine(
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
-	gcpConfig *GlobalConfig,
+	gcpConfig *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*ComputeEngineResult, error) {
 	machineType := getComputeMachineType(svc)
@@ -108,7 +108,7 @@ func createInstanceTemplate(
 	serviceName, instanceTag, machineType string,
 	cloudInit pulumi.StringInput,
 	sa *serviceaccount.Account,
-	gcpConfig *GlobalConfig,
+	gcpConfig *SharedInfra,
 	iamDeps pulumi.ResourceArrayOutput,
 	opts ...pulumi.ResourceOption,
 ) (*compute.InstanceTemplate, error) {
@@ -243,7 +243,7 @@ func addRolesToServiceAccount(
 	ctx *pulumi.Context,
 	sa *serviceaccount.Account,
 	roles []string,
-	gcpConfig *GlobalConfig,
+	gcpConfig *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) pulumi.ResourceArrayOutput {
 	return sa.Email.ToStringOutput().ApplyT(func(email string) ([]pulumi.Resource, error) {

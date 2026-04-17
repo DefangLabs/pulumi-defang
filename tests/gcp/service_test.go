@@ -49,39 +49,6 @@ func TestConstructGcpCloudRunServiceWithIngressPort(t *testing.T) {
 	require.NoError(t, err)
 }
 
-const gcpBuildType = "defang-gcp:defanggcp:Build"
-
-func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
-	var capturedBuild property.Map
-	mocks := &integration.MockResourceMonitor{
-		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
-			if args.TypeToken == gcpBuildType {
-				capturedBuild = args.Inputs
-			}
-			return args.Name, args.Inputs, nil
-		},
-	}
-	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
-
-	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.GcpURN("Service"),
-		Inputs: property.NewMap(map[string]property.Value{
-			"build": property.New(property.NewMap(map[string]property.Value{
-				"context": property.New("./app"),
-			})),
-		}),
-	})
-
-	require.NoError(t, err)
-	require.NotEqual(t, 0, capturedBuild.Len(), "expected defang-gcp:defanggcp:Build to be registered")
-	// Local context paths are uploaded to GCS; source should be a gs:// URI
-	assert.True(t, strings.HasPrefix(capturedBuild.Get("source").AsString(), "gs://"),
-		"source should be a GCS URI, got: %s", capturedBuild.Get("source").AsString())
-	assert.NotEmpty(t, capturedBuild.Get("sourceDigest").AsString(), "sourceDigest should be set")
-	assert.NotEmpty(t, capturedBuild.Get("machineType").AsString(), "machineType should be set")
-	assert.NotEqual(t, float64(0), capturedBuild.Get("diskSizeGb").AsNumber(), "diskSizeGb should be set")
-}
-
 func TestConstructGcpCloudRunServiceWithEnvironment(t *testing.T) {
 	server := testutil.MakeGcpTestServer()
 
@@ -227,7 +194,10 @@ func TestConstructGcpCloudRunServiceWithReservationsSetsLimits(t *testing.T) {
 	assert.Equal(t, "512Mi", limits.Get("memory").AsString())
 }
 
-func TestConstructGcpCloudRunServiceSetsVpcAccess(t *testing.T) {
+// Standalone Service has no shared VPC (Infra is not passed from the SDK), so VpcAccess
+// must not be set on the Cloud Run template. VPC-backed deployments go through the
+// Project component, which provisions the full GlobalConfig.
+func TestConstructGcpCloudRunServiceSkipsVpcAccessWhenStandalone(t *testing.T) {
 	var capturedTemplate property.Map
 	mocks := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
@@ -249,10 +219,8 @@ func TestConstructGcpCloudRunServiceSetsVpcAccess(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
 	template := capturedTemplate.Get("template").AsMap()
-	vpcAccess := template.Get("vpcAccess").AsMap()
-	assert.Equal(t, "PRIVATE_RANGES_ONLY", vpcAccess.Get("egress").AsString())
-	networkInterfaces := vpcAccess.Get("networkInterfaces").AsArray()
-	assert.Equal(t, 1, networkInterfaces.Len())
+	assert.True(t, template.Get("vpcAccess").IsNull(),
+		"standalone Service should not attach VpcAccess; got %v", template.Get("vpcAccess"))
 }
 
 func TestConstructGcpServiceCreatesServiceAccount(t *testing.T) {
