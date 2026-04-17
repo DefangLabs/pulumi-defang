@@ -19,8 +19,6 @@ make lint              # golangci-lint with --fix
 make ensure            # go mod tidy for both root and tests/
 ```
 
-> **SAM note:** `make provider && make sdks` is expensive (builds 3 providers + 4 SDKs). When running inside SAM (`$SAM_WORKSPACE_ID` is set), check `get_remaining_budget` before kicking off a full build.
-
 ## Testing
 
 ```bash
