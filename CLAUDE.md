@@ -19,6 +19,8 @@ make lint              # golangci-lint with --fix
 make ensure            # go mod tidy for both root and tests/
 ```
 
+> **SAM note:** `make provider && make sdks` is expensive (builds 3 providers + 4 SDKs). When running inside SAM (`$SAM_WORKSPACE_ID` is set), check `get_remaining_budget` before kicking off a full build.
+
 ## Testing
 
 ```bash
@@ -34,6 +36,8 @@ cd tests && go test -v -run TestName -short ./aws/...     # provider test
 ```
 
 Provider tests live in a separate `tests/` module with their own `go.mod`. They use a mock Pulumi server from `tests/testutil/`.
+
+> **SAM note:** Provider integration tests may require AWS credentials. When running inside SAM, use `get_credential_status` to verify credentials are available before running `make test_provider`.
 
 ## Git Hooks
 
@@ -80,4 +84,47 @@ Per-provider build logic is in `defang-{aws,gcp,azure}.mk`.
 ### Tooling
 
 Tools are managed by `flake.nix`, which imports `shell.nix`, loaded by DirEnv's `.envrc`.
+
+---
+
+## SAM Workflows
+
+When running inside SAM (detected by `$SAM_WORKSPACE_ID` being set), follow these additional guidelines.
+
+### Ephemeral Environment
+
+SAM VMs are ephemeral — **unpushed work is lost** when the VM shuts down. Push frequently, especially after:
+- Schema changes (`make schema`)
+- SDK generation (`make sdks`)
+- Any provider code changes that pass tests
+
+### Progress Reporting
+
+Use `update_task_status` at key milestones:
+- Schema generated successfully
+- Provider binaries built
+- Tests passing
+- SDKs generated
+
+Use `get_ci_status` after pushing to monitor CI results.
+
+### Coordination with Other Repos
+
+Pulumi provider changes often require corresponding updates in the CLI (`projects/defang`) or backend (`projects/defang-mvp`). Use `dispatch_task` to coordinate cross-repo work rather than trying to make changes across submodules directly.
+
+Before modifying shared or high-impact files, use `list_project_agents` to check for concurrent work on:
+- Schema definition files (`provider/cmd/*/main.go`)
+- Provider core code (`provider/defang{aws,gcp,azure}/`)
+- Generated SDK code (`sdk/`)
+- Shared packages (`provider/compose/`, `provider/common/`)
+
+### Context and Ideas
+
+- Use `search_tasks` to find prior context and decisions related to this repo
+- Use `create_idea` for improvements discovered but out of scope for the current task
+- Use `search_messages` to find context from prior conversations
+
+### Subprocess Restriction
+
+Do NOT launch `claude` as a subprocess — use SAM's `dispatch_task` instead.
 
