@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -123,54 +124,26 @@ func ParseImageTag(image string) string {
 	return ""
 }
 
-type Match struct {
-	Literal  string
-	Variable string
-	IsVar    bool
-}
-
-func Literal(s string) Match  { return Match{Literal: s} }
-func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
-
-// SecretRefVar returns the config variable name if value is a bare secret reference
-// (exactly "${VARNAME}" with no surrounding text), signaling that it should be passed
-// as a native secret reference (e.g. SSM parameter ARN) rather than interpolated.
-// Returns ("", false) for literals, multi-var interpolations, or mixed text.
-func SecretRefVar(value string) (string, bool) {
-	parsed := ParseInterpolatedString(value)
-	if len(parsed) == 1 && parsed[0].IsVar {
-		return parsed[0].Variable, true
-	}
-	return "", false
-}
-
-var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
-
-func ParseInterpolatedString(s string) []Match {
-	matches := interpolationRegex.FindAllStringSubmatchIndex(s, -1)
-	result := make([]Match, 0, len(matches))
-	lastIndex := 0
-
-	for _, match := range matches {
-		fullStart, fullEnd := match[0], match[1]
-		varStart, varEnd := match[2], match[3]
-
-		// Skip escaped: preceding char is '$'
-		if fullStart > 0 && s[fullStart-1] == '$' {
-			continue
+// GetConfigName returns the config variable name if value is a bare secret reference
+// (exactly "${VARNAME}" or "$VARNAME" with no surrounding text or modifiers),
+// signaling that it should be passed as a native secret reference (e.g. SSM
+// parameter ARN) rather than interpolated.
+// Returns "" for literals, multi-var interpolations, mixed text, or
+// variables with default/presence modifiers like ${VAR:-default}.
+func GetConfigName(value string) string {
+	match := template.DefaultPattern.FindStringSubmatchIndex(value)
+	// Must match the entire string, with no extra text before/after
+	if match != nil && match[0] == 0 && match[1] == len(value) {
+		// Check for unbraced $VAR (group 2)
+		if match[4] >= 0 {
+			return value[match[4]:match[5]]
 		}
-
-		if lastIndex < fullStart {
-			result = append(result, Literal(s[lastIndex:fullStart]))
+		// Check for braced ${VAR} (group 3), with no modifiers (group 4)
+		if match[6] >= 0 && match[8] < 0 {
+			return value[match[6]:match[7]]
 		}
-		result = append(result, Variable(s[varStart:varEnd]))
-		lastIndex = fullEnd
 	}
-
-	if lastIndex < len(s) {
-		result = append(result, Literal(s[lastIndex:]))
-	}
-	return result
+	return ""
 }
 
 func GetConfigOrEnvValue(
@@ -182,13 +155,8 @@ func GetConfigOrEnvValue(
 	opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
 	if v, ok := s.Environment[key]; ok {
-		if v != "" {
-			// Resolve any ${VAR} interpolations in the env value via the config provider.
-			return InterpolateEnvironmentVariable(ctx, configProvider, v, opts...)
-		}
-		// Empty value in compose means "read from config store" (set via `defang config set`);
-		// the config provider is expected to fail if the config is not available.
-		return configProvider.GetConfigValue(ctx, key, opts...)
+		// Resolve any $VAR / ${VAR} interpolations; empty string passes through as-is.
+		return InterpolateEnvironmentVariable(ctx, configProvider, v, opts...)
 	}
 	// Key not in environment at all: use the provided default.
 	return pulumi.String(defaultValue).ToStringOutput()
@@ -212,30 +180,36 @@ func InterpolateEnvironmentVariable(
 	value string,
 	opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
-	parsed := ParseInterpolatedString(value)
-
-	if len(parsed) == 0 {
-		return pulumi.String("").ToStringOutput()
-	}
-
-	parts := make([]pulumi.StringOutput, len(parsed))
-	for i, match := range parsed {
-		if !match.IsVar {
-			parts[i] = pulumi.String(match.Literal).ToStringOutput()
-		} else {
-			parts[i] = configProvider.GetConfigValue(ctx, match.Variable, opts...)
+	// First pass: discover variables and set up config resolution.
+	// A second pass inside ApplyT is unavoidable because Pulumi outputs are async.
+	var names []string
+	var outputs []interface{}
+	seen := make(map[string]bool)
+	escaped, err := template.SubstituteWithOptions(value, func(key string) (string, bool) {
+		if !seen[key] {
+			seen[key] = true
+			names = append(names, key)
+			outputs = append(outputs, configProvider.GetConfigValue(ctx, key, opts...))
 		}
+		return "", true
+	}, template.WithoutLogging)
+
+	if len(names) == 0 {
+		if err != nil {
+			return pulumi.String(value).ToStringOutput()
+		}
+		return pulumi.String(escaped).ToStringOutput()
 	}
 
-	// Fold over parts, joining with ApplyT since pulumi.Concat doesn't exist in Go
-	result := parts[0]
-	for _, part := range parts[1:] {
-		p := part // capture loop var
-		result = result.ApplyT(func(acc string) pulumi.StringOutput {
-			return p.ApplyT(func(s string) string {
-				return acc + s
-			}).(pulumi.StringOutput)
-		}).(pulumi.StringOutput)
-	}
-	return result
+	// Wait for all resolutions, then let compose-go do the full substitution
+	return pulumi.All(outputs...).ApplyT(func(resolved []interface{}) (string, error) {
+		mapping := make(map[string]string, len(names))
+		for i, name := range names {
+			mapping[name] = resolved[i].(string)
+		}
+		return template.SubstituteWithOptions(value, func(key string) (string, bool) {
+			v, ok := mapping[key]
+			return v, ok
+		}, template.WithoutLogging)
+	}).(pulumi.StringOutput)
 }

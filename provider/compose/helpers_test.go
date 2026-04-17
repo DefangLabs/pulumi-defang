@@ -60,7 +60,7 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		key          string
 		defaultValue string
 		configs      map[string]string
-		expected string
+		expected     string
 	}{
 		{
 			name:         "nil environment uses default",
@@ -77,11 +77,10 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			expected:     "default",
 		},
 		{
-			name:        "empty string value reads from config provider",
+			name:        "empty string value is literal empty",
 			environment: map[string]string{"MY_KEY": ""},
 			key:         "MY_KEY",
-			configs:     map[string]string{"MY_KEY": "from-config"},
-			expected:    "from-config",
+			expected:    "",
 		},
 		{
 			name:        "plain string value returned as-is",
@@ -116,24 +115,26 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 	}
 }
 
-func TestSecretRefVar(t *testing.T) {
+func TestGetConfigName(t *testing.T) {
 	tests := []struct {
-		value    string
-		wantVar  string
-		wantOk   bool
+		value   string
+		wantVar string
 	}{
-		{"${MY_KEY}", "MY_KEY", true},      // bare self-reference
-		{"${OTHER}", "OTHER", true},         // bare cross-reference
-		{"prefix_${MY_KEY}", "", false},     // text before var
-		{"${MY_KEY}_suffix", "", false},     // text after var
-		{"${A}_${B}", "", false},            // multiple vars
-		{"literal", "", false},              // no interpolation
-		{"", "", false},                     // empty
+		{"${MY_KEY}", "MY_KEY"},  // bare braced reference
+		{"$OTHER", "OTHER"},      // bare unbraced reference
+		{"prefix_${MY_KEY}", ""}, // text before var
+		{"${MY_KEY}_suffix", ""}, // text after var
+		{"${A}_${B}", ""},        // multiple vars
+		{"${VAR:-default}", ""},  // has default modifier
+		{"${VAR:+alt}", ""},      // has presence modifier
+		{"${VAR:?err}", ""},      // has required modifier
+		{"${VAR+}", ""},          // has empty modifier
+		{"literal", ""},          // no interpolation
+		{"", ""},                 // empty
 	}
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
-			v, ok := SecretRefVar(tt.value)
-			assert.Equal(t, tt.wantOk, ok)
+			v := GetConfigName(tt.value)
 			assert.Equal(t, tt.wantVar, v)
 		})
 	}
@@ -170,9 +171,15 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "hello_world",
 		},
 		{
-			name:     "escaped variable treated as literal",
+			name:     "unbraced variable",
+			value:    "$MY_VAR",
+			configs:  map[string]string{"MY_VAR": "secret"},
+			expected: "secret",
+		},
+		{
+			name:     "escaped dollar produces literal dollar",
 			value:    "$${NOT_A_VAR}",
-			expected: "$${NOT_A_VAR}",
+			expected: "${NOT_A_VAR}",
 		},
 		{
 			name:     "missing variable resolves from config",

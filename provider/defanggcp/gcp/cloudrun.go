@@ -97,7 +97,7 @@ func buildEnvVars(
 		},
 	}
 	for k, v := range svc.Environment {
-		if secretVar, ok := compose.SecretRefVar(v); ok {
+		if secretVar := compose.GetConfigName(v); secretVar != "" {
 			secretId, _ := configProvider.GetSecretRef(ctx, secretVar)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name: pulumi.String(k),

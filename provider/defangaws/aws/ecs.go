@@ -366,7 +366,7 @@ func CreateECSService(
 	slices.Sort(envKeys) // deterministic order
 	for _, k := range envKeys {
 		v := svc.Environment[k]
-		if secretVar, ok := compose.SecretRefVar(v); ok {
+		if secretVar := compose.GetConfigName(v); secretVar != "" {
 			ref, err := configProvider.GetSecretRef(ctx, secretVar, opt)
 			if err != nil {
 				return nil, fmt.Errorf("getting secret ref for %q: %w", k, err)

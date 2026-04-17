@@ -5,6 +5,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 ## Refactoring
 
 - [ ] **Migrate `BuildResult` to `pulumix` types** — `common.BuildResult.LoadBalancerDNS` uses `pulumi.StringPtrOutput`; switching to `pulumix.Output[*string]` would simplify nil-output initialization (e.g. `pulumix.Val[*string](nil)` instead of `.Untyped()` cast)
+- [ ] **Support `${VAR:-default}` with soft-fail config lookup** — `ConfigProvider.GetConfigValue` errors on missing keys, so `pulumi.All()` fails before compose-go's `:-` default can kick in. Needs a `TryGetConfigValue` (or similar) that returns empty instead of erroring. Would also enable `${VAR:?msg}` to produce custom error messages for missing keys. Expressions that already work: `$VAR`/`${VAR}`, `${VAR:+repl}`, `${VAR+repl}`, `$$` escaping.
 
 ## Bugs in Go code
 
