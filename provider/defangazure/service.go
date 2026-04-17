@@ -63,14 +63,14 @@ func (*Service) Construct(
 
 	location := azure.Location(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
 
-	env, err := azureapp.NewManagedEnvironment(ctx, name+"-env", &azureapp.ManagedEnvironmentArgs{
+	env, err := azureapp.NewManagedEnvironment(ctx, name, &azureapp.ManagedEnvironmentArgs{
 		ResourceGroupName: rg.Name,
 		Location:          pulumi.String(location),
 	}, childOpt)
@@ -82,7 +82,7 @@ func (*Service) Construct(
 
 	imageURI := pulumi.String(inputs.Image).ToStringOutput()
 
-	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, childOpt)
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}

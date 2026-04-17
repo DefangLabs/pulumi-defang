@@ -112,7 +112,7 @@ func CreateRedisEnterprise(
 		urlScheme = "rediss"
 	}
 
-	db, err := redis.NewDatabase(ctx, serviceName+"-db", &redis.DatabaseArgs{
+	db, err := redis.NewDatabase(ctx, serviceName, &redis.DatabaseArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ClusterName:       cluster.Name,
 		DatabaseName:      pulumi.String("default"),
@@ -120,6 +120,7 @@ func CreateRedisEnterprise(
 		ClusteringPolicy:  pulumi.String("EnterpriseCluster"),
 		Port:              pulumi.Int(10000),
 	}, append(opts,
+		pulumi.Parent(cluster),
 		pulumi.ReplaceOnChanges([]string{"clusteringPolicy", "clientProtocol"}),
 		pulumi.DeleteBeforeReplace(true),
 	)...)
@@ -162,7 +163,7 @@ func createRedisVNetEndpoint(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
-	pe, err := network.NewPrivateEndpoint(ctx, serviceName+"-pe", &network.PrivateEndpointArgs{
+	pe, err := network.NewPrivateEndpoint(ctx, serviceName, &network.PrivateEndpointArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.StringPtr(location),
 		Subnet: &network.SubnetTypeArgs{
@@ -182,7 +183,7 @@ func createRedisVNetEndpoint(
 
 	// Zone group auto-registers an A record in privatelink.redis.azure.net mapping
 	// the cluster's private-link FQDN to the private endpoint IP.
-	_, err = network.NewPrivateDnsZoneGroup(ctx, serviceName+"-pdzg", &network.PrivateDnsZoneGroupArgs{
+	_, err = network.NewPrivateDnsZoneGroup(ctx, serviceName, &network.PrivateDnsZoneGroupArgs{
 		ResourceGroupName:       infra.ResourceGroup.Name,
 		PrivateEndpointName:     pe.Name,
 		PrivateDnsZoneGroupName: pulumi.String("default"),
@@ -192,7 +193,7 @@ func createRedisVNetEndpoint(
 				PrivateDnsZoneId: infra.DNS.RedisPrivateZone.ID().ToStringOutput(),
 			},
 		},
-	}, opts...)
+	}, append(opts, pulumi.Parent(pe))...)
 	if err != nil {
 		return fmt.Errorf("creating Redis private DNS zone group: %w", err)
 	}

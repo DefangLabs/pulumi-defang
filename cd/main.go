@@ -249,6 +249,15 @@ func stackConfig() auto.ConfigMap {
 		if azureSubscription != "" {
 			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
 		}
+		if azureResourceGroup != "" {
+			// The project resource group: the provider imports this RG instead
+			// of creating a new one.
+			cfg["defang-azure:resourceGroup"] = auto.ConfigValue{Value: azureResourceGroup}
+		}
+		if azureKeyVaultName != "" {
+			// Key Vault name to be passed in by cli as config can be set before deployment
+			cfg["defang-azure:keyVaultName"] = auto.ConfigValue{Value: azureKeyVaultName}
+		}
 	}
 
 	// Defang recipe config
@@ -410,19 +419,8 @@ func main() {
 		log.Fatalf("failed to save project settings: %v", err)
 	}
 
-	// Set stack-level config (provider settings, defang config, user secrets)
+	// Set stack-level config (provider settings, defang config)
 	cfg := stackConfig()
-	if provider() == "azure" {
-		userCfg, err := fetchAzureUserConfig(ctx)
-		if err != nil {
-			log.Printf("warning: failed to read Azure user config from App Configuration: %v", err)
-		}
-		for k, v := range userCfg {
-			// Store under the project namespace so the provider's ConfigProvider can
-			// read it via config.New(ctx, "").GetSecret(key).
-			cfg[project+":"+k] = auto.ConfigValue{Value: v, Secret: true}
-		}
-	}
 	if err := stack.SetAllConfig(ctx, cfg); err != nil {
 		log.Fatalf("failed to set config: %v", err)
 	}
