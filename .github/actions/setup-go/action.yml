@@ -1,0 +1,32 @@
+name: Setup Go build environment
+description: Fetches tags, installs Go, and installs pulumictl.
+
+runs:
+  using: composite
+  steps:
+    - name: Unshallow clone for tags
+      shell: bash
+      run: git fetch --prune --unshallow --tags # pulumictl needs tags to compute v2.x version
+
+    - name: Install Go
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: go.sum
+
+    - name: Install pulumictl
+      shell: bash
+      run: |
+        arch=${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}
+        tarball="pulumictl-${version}-linux-${arch}.tar.gz"
+        checksums="pulumictl_${version#v}_checksums.txt"
+        gh release download "${version}" --repo pulumi/pulumictl --pattern "${tarball}" --pattern "${checksums}" --dir /tmp
+        echo "${checksums_sha256}  /tmp/${checksums}" | sha256sum -c
+        cd /tmp && sha256sum -c --ignore-missing "${checksums}"
+        tar -xzf "/tmp/${tarball}" -C /usr/local/bin pulumictl
+      env:
+        GH_TOKEN: ${{ github.token }}
+        # To update: change version and update checksums_sha256 from
+        # https://github.com/pulumi/pulumictl/releases (checksums.txt)
+        version: v0.0.50
+        checksums_sha256: bdd0cbaa7a502c75fd659977e8c519d307dbeadd05c0ebbbecb485a778804009
