@@ -202,16 +202,22 @@ func CreateRDS(
 		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
-	// Create security group for RDS
+	// The service SG is only referenced when supplied; standalone Construct
+	// callers (e.g. unit tests) may omit it.
+	var ingressSGs pulumi.StringArray
+	if privateSgID != nil {
+		ingressSGs = pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()}
+	}
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String("RDS security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
+				Description:    pulumi.String("Allow incoming Postgres traffic"),
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
-				SecurityGroups: pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()},
+				SecurityGroups: ingressSGs,
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{

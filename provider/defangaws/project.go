@@ -117,7 +117,7 @@ func buildProject(
 		}
 
 		waitForHealthy := waitForSteady[svcName]
-		endpoint, dependency, err := buildService(
+		endpoint, dependency, err := newService(
 			ctx, configProvider, svcName, svc, args.Networks, infra, waitForHealthy, deps, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
@@ -135,7 +135,7 @@ func buildProject(
 	}, nil
 }
 
-func buildService(
+func newService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
 	svcName string,

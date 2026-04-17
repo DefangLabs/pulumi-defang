@@ -6,7 +6,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
-	awssdk "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
@@ -50,24 +49,16 @@ func (*Postgres) Construct(
 
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 
-	sg, err := awssdk.NewSecurityGroup(ctx, name+"-access", &awssdk.SecurityGroupArgs{
-		VpcId:       inputs.Infra.VpcID,
-		Description: pulumi.String("Security group for Postgres"),
-		Egress: awssdk.SecurityGroupEgressArray{
-			&awssdk.SecurityGroupEgressArgs{
-				Protocol:   pulumi.String("-1"),
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-			},
-		},
-	}, childOpt)
-	if err != nil {
-		return nil, fmt.Errorf("creating security group: %w", err)
-	}
-
 	rdsResult, err := provideraws.CreateRDS(
-		ctx, configProvider, name, svc, inputs.Infra.VpcID, inputs.Infra.PrivateSubnetIDs, sg.ID(), nil, childOpt,
+		ctx,
+		configProvider,
+		name,
+		svc,
+		inputs.Infra.VpcID,
+		inputs.Infra.PrivateSubnetIDs,
+		inputs.Infra.PrivateSgID,
+		nil,
+		childOpt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS: %w", err)
