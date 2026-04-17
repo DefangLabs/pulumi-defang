@@ -3,6 +3,7 @@ package defanggcp
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -16,7 +17,7 @@ type Service struct{}
 // via Image. Build orchestration belongs to the Project component, which provisions the
 // shared BuildInfra (Artifact Registry + Cloud Build) needed to produce the image.
 type ServiceInputs struct {
-	Image       *string                     `pulumi:"image,optional"`
+	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"project_name"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
@@ -57,8 +58,11 @@ func (*Service) Construct(
 		return nil, err
 	}
 
+	if inputs.Image == "" {
+		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
+	}
 	svc := compose.ServiceConfig{
-		Image:       inputs.Image,
+		Image:       &inputs.Image,
 		Platform:    inputs.Platform,
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
@@ -81,10 +85,7 @@ func (*Service) Construct(
 		infra = providergcp.NewStandaloneGlobalConfig(ctx)
 	}
 
-	image, err := providergcp.GetServiceImage(ctx, name, svc, infra.Repos, infra.BuildInfra, pulumi.Parent(comp))
-	if err != nil {
-		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
-	}
+	image := pulumi.String(inputs.Image)
 
 	if err := createService(ctx, comp, projectName, configProvider, name, image, svc, infra); err != nil {
 		return nil, err

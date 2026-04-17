@@ -3,6 +3,7 @@ package defangaws
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	provideraws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -16,7 +17,7 @@ type Service struct{}
 // Scalar fields use pulumi.String / *pulumi.String so the generated SDK
 // wraps them in pulumi.Input (matching the Node.js SDK behaviour).
 type ServiceInputs struct {
-	Image       *string                     `pulumi:"image,optional"`
+	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"project_name"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
@@ -51,8 +52,12 @@ func (*Service) Construct(
 		return nil, err
 	}
 
+	// Standalone Service is image-only — build belongs to Project.
+	if inputs.Image == "" {
+		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
+	}
 	svc := compose.ServiceConfig{
-		Image:       inputs.Image,
+		Image:       &inputs.Image,
 		Platform:    inputs.Platform,
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
@@ -65,15 +70,7 @@ func (*Service) Construct(
 
 	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
 	infra := inputs.AWS
-
-	var buildInfra *provideraws.BuildInfra
-	if infra != nil {
-		buildInfra = infra.BuildInfra
-	}
-	imageURI, err := provideraws.GetServiceImage(ctx, name, svc, buildInfra, pulumi.Parent(comp))
-	if err != nil {
-		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
-	}
+	imageURI := pulumi.String(inputs.Image).ToStringOutput()
 
 	args := &provideraws.ECSServiceArgs{
 		Infra:    infra,
