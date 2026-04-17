@@ -106,17 +106,10 @@ Use `update_task_status` at key milestones:
 - Tests passing
 - SDKs generated
 
-Use `get_ci_status` after pushing to monitor CI results.
 
 ### Coordination with Other Repos
 
 Pulumi provider changes often require corresponding updates in the CLI or the Fabric backend. Use `dispatch_task` to coordinate cross-repo work rather than trying to make changes across multiple repositories directly.
-
-Before modifying shared or high-impact files, use `list_project_agents` to check for concurrent work on:
-- Schema definition files (`provider/cmd/*/main.go`)
-- Provider core code (`provider/defang{aws,gcp,azure}/`)
-- Generated SDK code (`sdk/`)
-- Shared packages (`provider/compose/`, `provider/common/`)
 
 ### Context and Ideas
 
