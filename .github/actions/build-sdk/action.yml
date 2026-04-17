@@ -43,6 +43,11 @@ runs:
       with:
         python-version: "3.12" # should match the version in shell.nix
 
+    - if: ${{ inputs.language == 'python' }}
+      name: Install Python build dependencies
+      shell: bash
+      run: pip install setuptools
+
     - name: Build SDK
       shell: bash
       run: make ${{ inputs.language }}_sdk_${{ inputs.provider }}
