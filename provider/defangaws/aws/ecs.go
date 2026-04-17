@@ -326,22 +326,21 @@ func CreateECSService(
 		}
 	}
 
-	// Build environment variables (plain strings, resolved before JSON marshaling)
-	envVars := []KeyValuePair{
-		{Name: ptr.String("DEFANG_SERVICE"), Value: ptr.String(serviceName)},
+	// Build environment variable names and resolve values via ConfigProvider interpolation
+	// (matches GCP's use of compose.GetConfigOrEnvValue)
+	type envEntry struct {
+		name string
+		idx  int // index into allInputs where the resolved value will be
+	}
+	var envEntries []envEntry
+	staticEnvVars := []KeyValuePair{
+		{Name: "DEFANG_SERVICE", Value: serviceName},
 	}
 	if svc.DomainName != "" {
-		envVars = append(envVars, KeyValuePair{Name: ptr.String("DEFANG_FQDN"), Value: ptr.String(svc.DomainName)})
+		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: svc.DomainName})
 	}
-	for k, v := range svc.Environment {
-		envVars = append(envVars, KeyValuePair{Name: ptr.String(k), Value: ptr.String(v)})
-	}
-	// Sort environment variables for deterministic JSON output (map iteration order is random)
-	slices.SortFunc(envVars, func(a, b KeyValuePair) int {
-		return cmp.Compare(*a.Name, *b.Name)
-	})
 
-	// Resolve outputs (image URI, log group name) before building the container
+	// Resolve outputs (image URI, log group name, env vars) before building the container
 	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
 	// so all values must be concrete before marshaling.
 	containerName := serviceName
@@ -356,18 +355,54 @@ func CreateECSService(
 		allInputs = append(allInputs, infra.PrivateZoneID)
 	}
 
+	// Split env vars: self-referencing KEY=${KEY} goes to ECS Secrets (SSM ARN),
+	// all others go to Environment (resolved plaintext).
+	srp, hasSecretRefs := configProvider.(compose.SecretRefProvider)
+	var secretEntries []Secret
+
+	envKeys := make([]string, 0, len(svc.Environment))
+	for k := range svc.Environment {
+		envKeys = append(envKeys, k)
+	}
+	slices.Sort(envKeys) // deterministic order
+	for _, k := range envKeys {
+		v := svc.Environment[k]
+		if hasSecretRefs && compose.IsSecretReference(k, v) {
+			ref, err := srp.GetSecretRef(ctx, k, opt)
+			if err != nil {
+				return nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
+			}
+			secretEntries = append(secretEntries, Secret{Name: k, ValueFrom: ref})
+		} else {
+			resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, v)
+			entry := envEntry{name: k, idx: len(allInputs)}
+			envEntries = append(envEntries, entry)
+			allInputs = append(allInputs, resolved)
+		}
+	}
+
 	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []any) (string, error) {
 		imageUri := all[0].(string)
+
+		// Build env vars from resolved outputs
+		envVars := append([]KeyValuePair{}, staticEnvVars...)
+		for _, e := range envEntries {
+			val := all[e.idx].(string)
+			envVars = append(envVars, KeyValuePair{Name: e.name, Value: val})
+		}
+		slices.SortFunc(envVars, func(a, b KeyValuePair) int {
+			return cmp.Compare(a.Name, b.Name)
+		})
 
 		var logConfiguration *LogConfiguration
 		if hasLogGroup {
 			logGroupName := all[1].(string)
 			logConfiguration = &LogConfiguration{
 				LogDriver: awsecs.LogDriverAwslogs,
-				Options: map[string]string{
-					"awslogs-group":         logGroupName,
-					"awslogs-region":        infra.Region,
-					"awslogs-stream-prefix": containerName,
+				Options: map[LogOption]string{
+					LogOptionAwslogsGroup:        logGroupName,
+					LogOptionAwslogsRegion:       infra.Region,
+					LogOptionAwslogsStreamPrefix: containerName,
 				},
 			}
 		}
@@ -376,14 +411,15 @@ func CreateECSService(
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
 
 		containerDefs := []ContainerDefinition{{
-			Name:             &containerName,
+			Name:             containerName,
 			Essential:        ptr.Bool(true),
 			PortMappings:     portMappings,
 			Environment:      envVars,
+			Secrets:          secretEntries,
 			Command:          svc.Command,
 			EntryPoint:       svc.Entrypoint,
 			HealthCheck:      healthCheck,
-			Image:            &imageUri,
+			Image:            imageUri,
 			LogConfiguration: logConfiguration,
 			// AWS normalizes these to [] on read; use empty slices to avoid null vs [] diffs
 			MountPoints:    []MountPoint{},
@@ -395,15 +431,15 @@ func CreateECSService(
 			privateZoneID := all[2].(string)                                         // FIXME: this is [1] if there's no loggroup
 			privateFqdn := common.SafeLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
 			sidecarDef := ContainerDefinition{
-				Name:      ptr.String("route53-sidecar"),
-				Image:     ptr.String("public.ecr.aws/defang-io/route53-sidecar:65e431c"),
+				Name:      "route53-sidecar",
+				Image:     "public.ecr.aws/defang-io/route53-sidecar:65e431c",
 				Essential: ptr.Bool(false),
 				Environment: []KeyValuePair{
-					{Name: ptr.String("HOSTEDZONE"), Value: ptr.String(privateZoneID)},
-					{Name: ptr.String("DNS"), Value: ptr.String(privateFqdn)},
-					{Name: ptr.String("IPADDRESS"), Value: ptr.String("ecs")},
+					{Name: ("HOSTEDZONE"), Value: (privateZoneID)},
+					{Name: ("DNS"), Value: (privateFqdn)},
+					{Name: ("IPADDRESS"), Value: ("ecs")},
 					// not (always?) set by the ECS agent; https://github.com/aws/containers-roadmap/issues/1611
-					{Name: ptr.String("AWS_REGION"), Value: ptr.String(infra.Region)},
+					{Name: ("AWS_REGION"), Value: (infra.Region)},
 				},
 				DependsOn: []ContainerDependency{{
 					ContainerName: &containerName,
@@ -413,10 +449,10 @@ func CreateECSService(
 			if Route53SidecarLogs.Get(ctx) && logConfiguration != nil {
 				sidecarDef.LogConfiguration = &LogConfiguration{
 					LogDriver: awsecs.LogDriverAwslogs,
-					Options: map[string]string{
-						"awslogs-group":         logConfiguration.Options["awslogs-group"],
-						"awslogs-region":        infra.Region,
-						"awslogs-stream-prefix": "route53-sidecar",
+					Options: map[LogOption]string{
+						LogOptionAwslogsGroup:        logConfiguration.Options[LogOptionAwslogsGroup],
+						LogOptionAwslogsRegion:       infra.Region,
+						LogOptionAwslogsStreamPrefix: "route53-sidecar",
 					},
 				}
 			}
@@ -489,7 +525,16 @@ func CreateECSService(
 				firstIngress = false
 			}
 
-			tg, lr, err := createTgLrPair(ctx, serviceName, infra.VpcID, listener, port, svc.HealthCheck, endpoints, opt)
+			tg, lr, err := createTgLrPair(
+				ctx,
+				serviceName,
+				infra.VpcID,
+				listener,
+				port,
+				svc.HealthCheck,
+				endpoints,
+				infra.Alb.DnsName,
+				opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
 			}

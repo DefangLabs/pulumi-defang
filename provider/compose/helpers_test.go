@@ -9,16 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockConfigProvider returns pre-seeded values; missing keys resolve to "".
+// mockConfigProvider returns pre-seeded values; missing keys fail.
 type mockConfigProvider struct {
 	values map[string]string
 }
 
-func (m *mockConfigProvider) GetConfig(_ *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
+func (m *mockConfigProvider) GetConfigValue(
+	_ *pulumi.Context, key string, opts ...pulumi.InvokeOption,
+) pulumi.StringOutput {
 	if v, ok := m.values[key]; ok {
 		return pulumi.String(v).ToStringOutput()
 	}
-	return pulumi.String("").ToStringOutput()
+	return ConfigNotFoundOutput(key)
 }
 
 // testMocks is a no-op Pulumi mock runtime required by pulumi.WithMocks.
@@ -52,9 +54,7 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		key          string
 		defaultValue string
 		configs      map[string]string
-		// wantUnknown skips value assertion (zero output returned for nil env map)
-		wantUnknown bool
-		expected    string
+		expected string
 	}{
 		{
 			name:         "nil environment uses default",
@@ -71,10 +71,11 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			expected:     "default",
 		},
 		{
-			name:        "empty string value returns empty",
+			name:        "empty string value reads from config provider",
 			environment: map[string]string{"MY_KEY": ""},
 			key:         "MY_KEY",
-			expected:    "",
+			configs:     map[string]string{"MY_KEY": "from-config"},
+			expected:    "from-config",
 		},
 		{
 			name:        "plain string value returned as-is",
@@ -98,15 +99,32 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 				provider := &mockConfigProvider{values: tt.configs}
 				out := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
 
-				if !tt.wantUnknown {
-					out.ApplyT(func(got string) string {
-						assert.Equal(t, tt.expected, got)
-						return got
-					})
-				}
+				out.ApplyT(func(got string) string {
+					assert.Equal(t, tt.expected, got)
+					return got
+				})
 				return nil
 			}, pulumi.WithMocks("proj", "stack", testMocks{}))
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestIsSecretReference(t *testing.T) {
+	tests := []struct {
+		key, value string
+		expected   bool
+	}{
+		{"MY_KEY", "${MY_KEY}", true},
+		{"MY_KEY", "${OTHER}", false},
+		{"MY_KEY", "prefix_${MY_KEY}", false},
+		{"MY_KEY", "literal", false},
+		{"MY_KEY", "", false},
+		{"MY_KEY", "${MY_KEY}_suffix", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
+			assert.Equal(t, tt.expected, IsSecretReference(tt.key, tt.value))
 		})
 	}
 }
@@ -147,10 +165,10 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "$${NOT_A_VAR}",
 		},
 		{
-			name:     "missing variable resolves to empty string",
-			value:    "${MISSING}",
-			configs:  map[string]string{},
-			expected: "",
+			name:     "missing variable resolves from config",
+			value:    "${SECRET}",
+			configs:  map[string]string{"SECRET": "found"},
+			expected: "found",
 		},
 		{
 			name:     "empty string",

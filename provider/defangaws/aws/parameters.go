@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -20,12 +21,9 @@ func NewConfigProvider(projectName string) *ConfigProvider {
 	return &ConfigProvider{projectName: projectName, cache: make(map[string]pulumi.StringOutput)}
 }
 
-func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
-	// In dry-run mode, return a placeholder value
-	if ctx.DryRun() {
-		return pulumi.Sprintf("dry-run-%s", key).ToStringOutput()
-	}
-
+func (cp *ConfigProvider) GetConfigValue(
+	ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption,
+) pulumi.StringOutput {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 
@@ -43,7 +41,7 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pul
 		return val
 	}
 
-	return pulumi.String("").ToStringOutput()
+	return compose.ConfigNotFoundOutput(key)
 }
 
 func getParametersByPath(
@@ -73,4 +71,19 @@ func getParametersByPath(
 
 func getSecretPath(projectName, stackName string) string {
 	return fmt.Sprintf("/Defang/%s/%s/", projectName, stackName)
+}
+
+// GetSecretRef returns the full SSM parameter ARN for a config key, so ECS can
+// resolve the secret at task startup via the Secrets field (valueFrom).
+func (cp *ConfigProvider) GetSecretRef(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) (string, error) {
+	region, err := getCallerRegion(ctx, opts...)
+	if err != nil {
+		return "", fmt.Errorf("getting region for secret ARN: %w", err)
+	}
+	accountId, err := getCallerAccountId(ctx, opts...)
+	if err != nil {
+		return "", fmt.Errorf("getting account ID for secret ARN: %w", err)
+	}
+	path := getSecretPath(cp.projectName, ctx.Stack())
+	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s%s", region, accountId, path, key), nil
 }

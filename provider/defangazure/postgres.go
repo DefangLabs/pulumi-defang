@@ -58,7 +58,12 @@ func (*Postgres) Construct(
 		return nil, fmt.Errorf("fetching user config: %w", err)
 	}
 	infra := &azure.SharedInfra{ResourceGroup: rg}
-	configProvider := azure.NewConfigProvider(inputs.ProjectName, userCfg)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = azure.NewConfigProvider(inputs.ProjectName, userCfg)
+	}
 
 	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, childOpt)
 	if err != nil {

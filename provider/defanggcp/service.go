@@ -78,7 +78,12 @@ func (*Service) Construct(
 	if projectName == "" {
 		projectName = name
 	}
-	configProvider := providergcp.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = providergcp.NewConfigProvider(projectName)
+	}
 
 	infra := inputs.Infra
 	if infra == nil {

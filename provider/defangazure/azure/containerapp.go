@@ -17,7 +17,7 @@ func postgresURLEndpoint(
 	ctx *pulumi.Context,
 	v string,
 	serviceEndpoints map[string]pulumi.StringOutput,
-	configProvider *ConfigProvider,
+	configProvider compose.ConfigProvider,
 ) (pulumi.StringOutput, bool) {
 	var prefix string
 	switch {
@@ -137,7 +137,7 @@ func buildEnvVars(
 
 		case v == "" && infra.ConfigProvider != nil:
 			// null/empty in compose means "read from config store" (set via `defang config set`).
-			configVal := infra.ConfigProvider.GetConfig(ctx, k)
+			configVal := infra.ConfigProvider.GetConfigValue(ctx, k)
 			// HasConfig is a synchronous lookup into the in-memory map populated
 			// at program start — lets us decide at program time whether to emit a
 			// secret reference vs. a plain env value.

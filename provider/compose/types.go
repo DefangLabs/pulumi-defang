@@ -285,10 +285,6 @@ func parseDurationSeconds(s string) float64 {
 	return d.Seconds()
 }
 
-type ConfigProvider interface {
-	GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput
-}
-
 // PostgresConfigArgs holds resolved managed Postgres configuration.
 // Derived from PostgresConfig + image tag + environment variables.
 //

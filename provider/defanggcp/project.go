@@ -86,7 +86,12 @@ func buildProject(
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → component resource for dependees
-	configProvider := providergcp.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = providergcp.NewConfigProvider(projectName)
+	}
 	var lbEntries []providergcp.LBServiceEntry
 
 	if common.IsProjectUsingLLM(args.Services) {

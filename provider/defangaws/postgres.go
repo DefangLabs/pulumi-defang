@@ -52,7 +52,12 @@ func (*Postgres) Construct(
 		Environment: inputs.Environment,
 	}
 
-	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(inputs.ProjectName)
+	}
 	if err := createPostgres(ctx, comp, configProvider, name, svc, inputs.Infra, nil); err != nil {
 		return nil, err
 	}

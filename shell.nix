@@ -9,7 +9,7 @@ pkgs.mkShell {
     pkgs.github-cli
     pkgs.gnumake
     pkgs.gnused
-    pkgs.go_1_26
+    pkgs.go_1_25
     pkgs.golangci-lint
     pkgs.less
     pkgs.nixfmt-classic

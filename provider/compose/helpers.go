@@ -132,6 +132,13 @@ type Match struct {
 func Literal(s string) Match  { return Match{Literal: s} }
 func Variable(s string) Match { return Match{Variable: s, IsVar: true} }
 
+// IsSecretReference returns true when value is exactly "${KEY}" where KEY matches
+// the env var name. This signals that the variable should be passed as a native
+// secret reference (e.g. SSM parameter ARN) instead of being interpolated to plaintext.
+func IsSecretReference(key, value string) bool {
+	return value == "${"+key+"}"
+}
+
 var interpolationRegex = regexp.MustCompile(`(?i)\$\{([_a-z]\w*)\}`)
 
 func ParseInterpolatedString(s string) []Match {
@@ -169,21 +176,17 @@ func GetConfigOrEnvValue(
 	defaultValue string,
 	opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
-	// Reading from a nil map in Go returns "" without panicking, so a
-	// nil Environment is equivalent to an empty one: missing keys fall through to
-	// the config provider.
-	if v, ok := s.Environment[key]; ok && v != "" {
-		// Resolve any ${VAR} interpolations in the env value via the config provider.
-		return InterpolateEnvironmentVariable(ctx, configProvider, v, opts...)
-	}
-	// Not in environment (or empty): ask the config provider directly, then fall
-	// back to defaultValue.
-	return configProvider.GetConfig(ctx, key, opts...).ApplyT(func(v string) string {
+	if v, ok := s.Environment[key]; ok {
 		if v != "" {
-			return v
+			// Resolve any ${VAR} interpolations in the env value via the config provider.
+			return InterpolateEnvironmentVariable(ctx, configProvider, v, opts...)
 		}
-		return defaultValue
-	}).(pulumi.StringOutput)
+		// Empty value in compose means "read from config store" (set via `defang config set`);
+		// the config provider is expected to fail if the config is not available.
+		return configProvider.GetConfigValue(ctx, key, opts...)
+	}
+	// Key not in environment at all: use the provided default.
+	return pulumi.String(defaultValue).ToStringOutput()
 }
 
 // ToPulumiStringArray converts a plain []string to a pulumi.StringArray.
@@ -215,7 +218,7 @@ func InterpolateEnvironmentVariable(
 		if !match.IsVar {
 			parts[i] = pulumi.String(match.Literal).ToStringOutput()
 		} else {
-			parts[i] = configProvider.GetConfig(ctx, match.Variable, opts...)
+			parts[i] = configProvider.GetConfigValue(ctx, match.Variable, opts...)
 		}
 	}
 

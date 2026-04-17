@@ -68,7 +68,12 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(inputs.ProjectName)
+	}
 	infra := inputs.AWS
 	imageURI := pulumi.String(inputs.Image).ToStringOutput()
 

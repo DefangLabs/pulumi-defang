@@ -12,10 +12,10 @@ import (
 )
 
 func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	cfg := config.New(ctx, "aws")
+	awsCfg := config.New(ctx, "aws")
 
 	providerArgs := &aws.ProviderArgs{
-		Region: pulumi.StringPtr(cfg.Require("region")),
+		Region: pulumi.StringPtr(awsCfg.Require("region")),
 		DefaultTags: &aws.ProviderDefaultTagsArgs{
 			Tags: pulumi.StringMap{
 				"defang:org":     pulumi.String(ctx.Organization()),
@@ -25,7 +25,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 			},
 		},
 	}
-	if profile := cfg.Get("profile"); profile != "" {
+	if profile := awsCfg.Get("profile"); profile != "" {
 		providerArgs.Profile = pulumi.StringPtr(profile)
 	}
 

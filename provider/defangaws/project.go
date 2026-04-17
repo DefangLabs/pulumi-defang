@@ -89,7 +89,12 @@ func buildProject(
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
-	configProvider := provideraws.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(projectName)
+	}
 
 	// Pre-compute which services need waitForSteadyState: true if any other
 	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)

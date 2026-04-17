@@ -19,9 +19,9 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
 - [x] `aws:defaultTags` — `{defang:org, defang:project, defang:stack, defang:version}`
 - [ ] `buildRepo` — `${projectName}/${repoPrefix}-build`
-- [ ] `allowManaged` — always `"true"`
+- [x] `allowManaged` — always `"true"` - deprecated
 - [x] `createApexDnsRecord` — always `"true"`
-- [ ] `skipNetworkAcl` — always `"true"` (allow SMTP in BYOC)
+- [x] `skipNetworkAcl` — always `"true"` (allow SMTP in BYOC) - deprecated
 - [ ] `internalLogGroup` — `"true"` when debug is enabled
 - [ ] `serviceDomain` — same as `domain`
 - [ ] `dockerHubUsername` — from `DOCKERHUB_USERNAME`
@@ -34,11 +34,15 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 - [ ] `DOCKERHUB_USERNAME`
 - [ ] `DOCKERHUB_ACCESS_TOKEN`
 
+## Missing state bucket operations
+
+- [ ] **Upload protobuf project state after deploy** — old code wrote `ProjectUpdate` protobuf to `projects/{project}/{stack}/project.pb` in the state bucket after `up`; used by cleanup and the CLI to read deployment metadata
+
 ## Missing behavior
 
-- [ ] **Hook up `delegationSetId` for Route53 zone**
+- [ ] **Hook up `delegationSetId` for AWS Route53 zone**
 - [ ] **Refresh on `up` failure** — TS catches `up` errors and does a forced refresh before rethrowing (skipped if abort signal or `ConcurrentUpdateError`); old GCP code did the same in `up.go`
-- [ ] **Upload method** — TS uses `PUT`, Go uses `POST`; old GCP code used `PUT` with `retryablehttp`; verify which the portal expects
+- [x] **Upload method** — TS uses `PUT`, Go uses `POST`; old GCP code used `PUT` with `retryablehttp`; verify which the portal expects
 - [ ] **Retryable HTTP uploads** — old GCP code used `retryablehttp.NewClient()` with 30s timeout; new uses bare `http.Post` with no retries or timeout
 - [ ] **Deployment timeout** — TS has 58-min soft timeout (`SIGXCPU`) + 60-min hard kill (`process.exit(137)`)
 - [ ] **Output filtering** — TS suppresses Pulumi progress bars (`suppressProgress: true`) and filters noisy log lines containing: `` `node ``, `` `pulumi ``, `press ^C`, `grpc: the client connection is closing`, `will not show as a stack output`; old GCP code also used `SuppressProgress()` + `ErrorProgressStreams()`
@@ -46,16 +50,16 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 - [ ] **`previewOnly` on destroy/refresh** — TS passes `previewOnly` flag from `DEFANG_PREVIEW` env var
 - [ ] **Upload in `finally`** — TS always uploads events+state in a `finally` block (even on error); old GCP used deferred uploads in `RunCD()`; new Go only uploads on certain commands and not on error paths
 - [ ] **`down` uploads events+state** — TS uploads via `finally`; Go's `down` does upload but only after destroy, not if refresh fails
-- [ ] **Stack select vs upsert** — old GCP code used `selectStack()` (no program) for destroy/refresh/cancel, and `upsertStack()` (with program) only for up/preview; new always uses `UpsertStackInlineSource` for all commands
-- [ ] **Preview always shows diffs** — old GCP code had `optpreview.Diff()` unconditionally; new makes it conditional on `DEFANG_PULUMI_DIFF`
+- [x] **Stack select vs upsert** — old GCP code used `selectStack()` (no program) for destroy/refresh/cancel, and `upsertStack()` (with program) only for up/preview; new always uses `UpsertStackInlineSource` for all commands
+- [x] **Preview always shows diffs** — old GCP code had `optpreview.Diff()` unconditionally; new makes it conditional on `DEFANG_PULUMI_DIFF`
 - [ ] **Hook up `privateDomain`** - new AWS code ignores `privateDomain` config key
-- [ ] **Only `UpsertStackInlineSource` for up/preview** — old code used `selectStack()` (no program) for destroy/refresh/cancel, and `upsertStack()` (with program) only for up/preview; new always uses `UpsertStackInlineSource` for all commands
+- [x] **Only `UpsertStackInlineSource` for up/preview** — old code used `selectStack()` (no program) for destroy/refresh/cancel, and `upsertStack()` (with program) only for up/preview; new always uses `UpsertStackInlineSource` for all commands
 
 ## Missing Pulumi options on commands
 
 - [ ] **`TargetDependents` on destroy** — old GCP `getDestroyOptions()` included `optdestroy.TargetDependents()` and `optdestroy.Target(pulumiTargets)`; new destroy has neither
 - [ ] **`Target(pulumiTargets)` on refresh** — old GCP `getRefreshOptions()` passed targets; new refresh doesn't
-- [ ] **`UserAgent` on destroy/refresh** — old GCP set `UserAgent("defang/"+version)` on all commands; new only sets it on up/preview
+- [x] **`UserAgent` on destroy/refresh** — old GCP set `UserAgent("defang/"+version)` on all commands; new only sets it on up/preview
 
 ## Missing commands (from old GCP code)
 
@@ -63,7 +67,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
 ## Missing GCP-specific config
 
-- [ ] `gcp:defaultLabels` — old GCP `upsertStack()` set `{defang-org, defang-project, defang-stack, defang-version}` labels
+- [x] `gcp:defaultLabels` — old GCP `upsertStack()` set `{defang-org, defang-project, defang-stack, defang-version}` labels
 
 ## Missing env vars (from old GCP code)
 

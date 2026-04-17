@@ -23,10 +23,10 @@ func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 // NewRun returns a Pulumi inline program that deploys the given compose YAML.
 func NewRun(composeYaml []byte) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
-		cfg := config.New(ctx, "defang")
+		defangCfg := config.New(ctx, "defang")
 
-		provider := cfg.Require("provider") // "aws", "gcp", or "azure"
-		domain := cfg.Get("domain")         // optional project domain
+		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
+		domain := defangCfg.Get("domain")         // optional project domain
 
 		cf, err := parseCompose(composeYaml, ctx.Project())
 		if err != nil {

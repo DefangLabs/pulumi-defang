@@ -35,7 +35,7 @@ import (
 
 var version = "development" // overwritten by -ldflags "-X main.version=..."
 
-func provider() string {
+func detectProvider() string {
 	switch {
 	case awsRegion != "":
 		return "aws"
@@ -219,11 +219,11 @@ func extractComposeYaml(projectUpdate []byte) ([]byte, error) {
 func stackConfig() auto.ConfigMap {
 	cfg := auto.ConfigMap{
 		// Defang program config
-		"defang:provider": auto.ConfigValue{Value: provider()},
+		"defang:provider": auto.ConfigValue{Value: detectProvider()},
 	}
 
 	// Cloud provider config read by the explicit providers in the program
-	switch provider() {
+	switch detectProvider() {
 	case "aws":
 		if awsRegion == "" {
 			log.Fatal("missing required environment variable: AWS_REGION or REGION")
@@ -477,7 +477,7 @@ func main() {
 			log.Fatalf("failed to preview: %v", err)
 		}
 
-	case "destroy":
+	case "down", "destroy":
 		evtCh, evts := collectEvents()
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
@@ -487,39 +487,9 @@ func main() {
 			optdestroy.ContinueOnError(),
 			optdestroy.Remove(),
 		}
-		if pulumiDebug {
-			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
-		}
-		_, err := stack.Destroy(ctx, destroyOpts...)
-		uploadEvents(ctx, *evts)
-		uploadState(ctx, stack)
-		if err != nil {
-			log.Fatalf("failed to destroy: %v", err)
-		}
-
-	case "down":
 		// down = refresh + destroy (consistent with legacy behavior)
-		refreshOpts := []optrefresh.Option{
-			optrefresh.UserAgent(userAgent),
-			optrefresh.Color(color()),
-			optrefresh.ProgressStreams(os.Stderr),
-		}
-		if pulumiDebug {
-			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
-		}
-		_, err := stack.Refresh(ctx, refreshOpts...)
-		if err != nil {
-			log.Fatalf("failed to refresh: %v", err)
-		}
-
-		evtCh, evts := collectEvents()
-		destroyOpts := []optdestroy.Option{
-			optdestroy.UserAgent(userAgent),
-			optdestroy.Color(color()),
-			optdestroy.ProgressStreams(os.Stderr),
-			optdestroy.EventStreams(evtCh),
-			optdestroy.ContinueOnError(),
-			optdestroy.Remove(),
+		if command == "down" {
+			destroyOpts = append(destroyOpts, optdestroy.Refresh())
 		}
 		if pulumiDebug {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
@@ -532,15 +502,19 @@ func main() {
 		}
 
 	case "refresh":
+		evtCh, evts := collectEvents()
 		refreshOpts := []optrefresh.Option{
 			optrefresh.UserAgent(userAgent),
 			optrefresh.Color(color()),
 			optrefresh.ProgressStreams(os.Stderr),
+			optrefresh.EventStreams(evtCh),
 		}
 		if pulumiDebug {
 			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
 		}
 		_, err := stack.Refresh(ctx, refreshOpts...)
+		uploadEvents(ctx, *evts)
+		uploadState(ctx, stack)
 		if err != nil {
 			log.Fatalf("failed to refresh: %v", err)
 		}

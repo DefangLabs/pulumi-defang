@@ -52,7 +52,12 @@ func (*Postgres) Construct(
 		Ports:       inputs.Ports,
 	}
 
-	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = providergcp.NewConfigProvider(inputs.ProjectName)
+	}
 	// Standalone Construct runs without a shared GlobalConfig; the project-level
 	// dispatcher calls createPostgres with a non-nil infra.
 	return comp, createPostgres(ctx, comp, configProvider, name, svc, nil)

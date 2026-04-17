@@ -44,7 +44,7 @@ func (p *ConfigProvider) HasConfig(key string) bool {
 // secret. Unknown keys resolve to "" — same contract as the previous stack-config
 // backed implementation. Never returns a zero-value pulumi.StringOutput{}, which
 // would cause a nil-pointer dereference inside Pulumi's reflection walk.
-func (p *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, _ ...pulumi.InvokeOption) pulumi.StringOutput {
+func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pulumi.InvokeOption) pulumi.StringOutput {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
