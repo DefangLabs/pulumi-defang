@@ -1,11 +1,11 @@
 {
 	"name": "defang-aws",
 	"devDependencies": {
-		"@types/node": "^18"
+		"@types/node": "^20"
 	},
 	"dependencies": {
-		"typescript": "^4.0.0",
+		"typescript": "^4.7.0",
 		"@pulumi/pulumi": "^3.0.0",
-		"@defang-io/pulumi-defang-aws": "2.0.0-alpha+dirty"
+		"@defang-io/pulumi-defang-aws": "2.0.0-alpha"
 	}
 }

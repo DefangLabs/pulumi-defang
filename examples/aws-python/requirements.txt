@@ -1,2 +1,2 @@
-pulumi-defang-aws==2.0.0-alpha+dirty
+pulumi-defang-aws==2.0.0-alpha
 pulumi>=3.0.0,<4.0.0
