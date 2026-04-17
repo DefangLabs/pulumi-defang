@@ -6,46 +6,27 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 // FetchUserConfig reads user-defined config values for this project/stack from
-// Azure. Tries Key Vault (new path) first, falls back to App Configuration
-// (legacy path). Returns an empty map on first deploy when neither store has
-// been populated yet — not an error.
+// the project's Azure Key Vault. Returns an empty map when the vault is unset
+// or contains no matching secrets (first deploy) — not an error.
 //
-// The vault name and legacy App Config store are derived from Pulumi stack
-// config (defang-azure:keyVaultName, defang-azure:resourceGroup + the
-// subscription ID). Project/stack/prefix come from the running context.
+// The vault name comes from Pulumi stack config (defang-azure:keyVaultName);
+// project/stack/prefix come from the running context.
 func FetchUserConfig(ctx *pulumi.Context) (map[string]string, error) {
-	prefix := config.New(ctx, "defang").Get("prefix")
-	project := ctx.Project()
-	stack := ctx.Stack()
-
-	goCtx := ctx.Context()
-
-	if vaultName := KeyVaultName(ctx); vaultName != "" {
-		vals, err := fetchFromKeyVault(goCtx, vaultName, prefix, project, stack)
-		if err != nil {
-			return nil, fmt.Errorf("reading user config from Key Vault: %w", err)
-		}
-		if len(vals) > 0 {
-			return vals, nil
-		}
-	}
-
-	storeName, storeRG := AppConfigStore(ctx)
-	if storeName == "" {
+	vaultName := KeyVaultName(ctx)
+	if vaultName == "" {
 		return map[string]string{}, nil
 	}
-	subscriptionID := SubscriptionID(ctx)
-	vals, err := fetchFromAppConfig(goCtx, subscriptionID, storeRG, storeName, prefix, project, stack)
+
+	prefix := config.New(ctx, "defang").Get("prefix")
+	vals, err := fetchFromKeyVault(ctx.Context(), vaultName, prefix, ctx.Project(), ctx.Stack())
 	if err != nil {
-		return nil, fmt.Errorf("reading user config from App Configuration: %w", err)
+		return nil, fmt.Errorf("reading user config from Key Vault: %w", err)
 	}
 	return vals, nil
 }
@@ -106,85 +87,6 @@ func fetchFromKeyVault(ctx context.Context, vaultName, prefix, project, stack st
 			}
 			if resp.Value != nil {
 				result[originalKey] = *resp.Value
-			}
-		}
-	}
-
-	return result, nil
-}
-
-// fetchFromAppConfig reads user config from the legacy Azure App Configuration
-// store. The defang CLI stored config values (from "defang config set KEY=val")
-// under keys "/{prefix}/{project}/{stack}/{name}".
-func fetchFromAppConfig(ctx context.Context, subscriptionID, resourceGroup, storeName, prefix, project, stack string) (map[string]string, error) {
-	if subscriptionID == "" || resourceGroup == "" || storeName == "" {
-		return map[string]string{}, nil
-	}
-
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating Azure credential: %w", err)
-	}
-
-	storesClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionID, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating App Configuration management client: %w", err)
-	}
-
-	var connString string
-	keysPager := storesClient.NewListKeysPager(resourceGroup, storeName, nil)
-	for keysPager.More() && connString == "" {
-		page, err := keysPager.NextPage(ctx)
-		if err != nil {
-			// Store likely doesn't exist yet on first deploy — not an error.
-			return map[string]string{}, nil
-		}
-		for _, key := range page.Value {
-			if key.ConnectionString == nil {
-				continue
-			}
-			if connString == "" {
-				connString = *key.ConnectionString
-			}
-			if key.ReadOnly != nil && *key.ReadOnly {
-				connString = *key.ConnectionString
-				break
-			}
-		}
-	}
-	if connString == "" {
-		return map[string]string{}, nil
-	}
-
-	cfgClient, err := azappconfig.NewClientFromConnectionString(connString, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating App Configuration data client: %w", err)
-	}
-
-	var keyPrefix string
-	if prefix != "" {
-		keyPrefix = "/" + prefix
-	}
-	keyPrefix += "/" + project + "/" + stack + "/"
-
-	filter := keyPrefix + "*"
-	settingsPager := cfgClient.NewListSettingsPager(azappconfig.SettingSelector{
-		KeyFilter: &filter,
-	}, nil)
-
-	result := make(map[string]string)
-	for settingsPager.More() {
-		page, err := settingsPager.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("listing App Configuration settings: %w", err)
-		}
-		for _, setting := range page.Settings {
-			if setting.Key == nil || setting.Value == nil {
-				continue
-			}
-			name := strings.TrimPrefix(*setting.Key, keyPrefix)
-			if name != "" {
-				result[name] = *setting.Value
 			}
 		}
 	}

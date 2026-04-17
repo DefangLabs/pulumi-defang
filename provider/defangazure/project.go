@@ -178,7 +178,9 @@ func createServiceResources(
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
 
-		caResult, err := providerazure.CreateContainerApp(ctx, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, svcOpts...)
+		caResult, err := providerazure.CreateContainerApp(
+			ctx, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, svcOpts...,
+		)
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("creating Container App %s: %w", svcName, err)
 		}
@@ -194,19 +196,12 @@ func createServiceResources(
 	return endpoint, nil
 }
 
-// Construct implements the ComponentResource interface for Project.
-func (*Project) Construct(
-	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
-) (*ProjectOutputs, error) {
-	comp := &ProjectOutputs{}
-	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
-		return nil, err
-	}
-
-	childOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-	location := providerazure.Location(ctx)
-
+// createProjectResourceGroup creates (or imports) the project's resource group.
+func createProjectResourceGroup(
+	ctx *pulumi.Context,
+	name, location string,
+	childOpts []pulumi.ResourceOption,
+) (*resources.ResourceGroup, error) {
 	rgArgs := &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
 	}
@@ -223,42 +218,19 @@ func (*Project) Construct(
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
+	return rg, nil
+}
 
-	// Create VNet and private DNS zones when any service uses PostgreSQL or Redis.
-	// PostgreSQL requires VNet integration; Redis uses private endpoints within the VNet.
-	hasPostgres, hasRedis, hasBuild, hasLLM, llmModels := detectServiceTypes(inputs.Services)
-
-	// Fetch user config (set via `defang config set`) from Azure Key Vault (or
-	// legacy App Configuration). Happens once, at program start — downstream
-	// callers get values from an in-memory map via ConfigProvider.GetConfig.
-	userCfg, err := providerazure.FetchUserConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetching user config: %w", err)
-	}
-
-	// Bootstrap a minimal SharedInfra (without Environment) so CreateNetworking can reference the RG.
-	infra := &providerazure.SharedInfra{
-		ResourceGroup:  rg,
-		ConfigProvider: providerazure.NewConfigProvider(name, userCfg),
-	}
-
-	if hasPostgres || hasRedis {
-		networking, err := providerazure.CreateNetworking(ctx, name, infra, location, childOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating networking: %w", err)
-		}
-		infra.Networking = networking
-
-		dns, err := providerazure.CreateDNSZones(ctx, name, infra, networking, childOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating DNS zones: %w", err)
-		}
-		infra.DNS = dns
-	}
-
-	// Log Analytics workspace for Container App logs.
+// createManagedEnvironment provisions the Log Analytics workspace and Container
+// App managed environment, attaching VNet config when networking is present.
+func createManagedEnvironment(
+	ctx *pulumi.Context,
+	name, location string,
+	infra *providerazure.SharedInfra,
+	childOpts []pulumi.ResourceOption,
+) (*app.ManagedEnvironment, error) {
 	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name+"-logs", &operationalinsights.WorkspaceArgs{
-		ResourceGroupName: rg.Name,
+		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String("PerGB2018"),
@@ -269,13 +241,12 @@ func (*Project) Construct(
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
 	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
-		ResourceGroupName: rg.Name,
+		ResourceGroupName: infra.ResourceGroup.Name,
 		WorkspaceName:     logWorkspace.Name,
 	})
 
-	// Build managed environment args; attach VNet infra subnet when networking is configured.
 	envArgs := &app.ManagedEnvironmentArgs{
-		ResourceGroupName: rg.Name,
+		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.String(location),
 		AppLogsConfiguration: &app.AppLogsConfigurationArgs{
 			Destination: pulumi.String("log-analytics"),
@@ -297,12 +268,61 @@ func (*Project) Construct(
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
+	return env, nil
+}
+
+// setupSharedInfra creates the resource group and all shared infrastructure
+// (networking, DNS, log analytics, managed environment, LLM/build infra, KV
+// identity) used by the per-service resources.
+func setupSharedInfra(
+	ctx *pulumi.Context,
+	name string,
+	inputs ProjectInputs,
+	childOpts []pulumi.ResourceOption,
+) (*providerazure.SharedInfra, map[string]string, error) {
+	location := providerazure.Location(ctx)
+
+	rg, err := createProjectResourceGroup(ctx, name, location, childOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	hasPostgres, hasRedis, hasBuild, hasLLM, llmModels := detectServiceTypes(inputs.Services)
+
+	userCfg, err := providerazure.FetchUserConfig(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching user config: %w", err)
+	}
+
+	infra := &providerazure.SharedInfra{
+		ResourceGroup:  rg,
+		ConfigProvider: providerazure.NewConfigProvider(name, userCfg),
+	}
+
+	if hasPostgres || hasRedis {
+		networking, err := providerazure.CreateNetworking(ctx, name, infra, location, childOpts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("creating networking: %w", err)
+		}
+		infra.Networking = networking
+
+		dns, err := providerazure.CreateDNSZones(ctx, name, infra, networking, childOpts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("creating DNS zones: %w", err)
+		}
+		infra.DNS = dns
+	}
+
+	env, err := createManagedEnvironment(ctx, name, location, infra, childOpts)
+	if err != nil {
+		return nil, nil, err
+	}
 	infra.Environment = env
 
 	if hasLLM {
 		llmInfra, err := providerazure.CreateLLMInfra(ctx, name, infra, childOpts...)
 		if err != nil {
-			return nil, fmt.Errorf("creating LLM infra: %w", err)
+			return nil, nil, fmt.Errorf("creating LLM infra: %w", err)
 		}
 		infra.LLMInfra = llmInfra
 	}
@@ -310,19 +330,37 @@ func (*Project) Construct(
 	if hasBuild {
 		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, location, childOpts...)
 		if err != nil {
-			return nil, fmt.Errorf("creating build infrastructure: %w", err)
+			return nil, nil, fmt.Errorf("creating build infrastructure: %w", err)
 		}
 		infra.BuildInfra = buildInfra
 	}
 
-	// Set up Key Vault identity for Container App secret references.
 	if kvName := providerazure.KeyVaultName(ctx); kvName != "" {
 		infra.KeyVaultURL = "https://" + kvName + ".vault.azure.net"
 		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, name, kvName, infra, location, childOpts...)
 		if err != nil {
-			return nil, fmt.Errorf("creating Key Vault identity: %w", err)
+			return nil, nil, fmt.Errorf("creating Key Vault identity: %w", err)
 		}
 		infra.KeyVaultIdentityID = kvIdentityID
+	}
+
+	return infra, llmModels, nil
+}
+
+// Construct implements the ComponentResource interface for Project.
+func (*Project) Construct(
+	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
+) (*ProjectOutputs, error) {
+	comp := &ProjectOutputs{}
+	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
+		return nil, err
+	}
+
+	childOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+
+	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, childOpts)
+	if err != nil {
+		return nil, err
 	}
 
 	endpoints := pulumi.StringMap{}
@@ -343,7 +381,9 @@ func (*Project) Construct(
 		if svc.Postgres == nil && svc.Redis == nil && svc.LLM == nil {
 			continue
 		}
-		endpoint, err := createServiceResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts)
+		endpoint, err := createServiceResources(
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -353,7 +393,9 @@ func (*Project) Construct(
 		if svc.Postgres != nil || svc.Redis != nil || svc.LLM != nil {
 			continue
 		}
-		endpoint, err := createServiceResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts)
+		endpoint, err := createServiceResources(
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts,
+		)
 		if err != nil {
 			return nil, err
 		}

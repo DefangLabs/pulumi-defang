@@ -10,7 +10,11 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var ErrPostgresConfigNil = errors.New("postgres config is nil")
+var (
+	ErrPostgresConfigNil = errors.New("postgres config is nil")
+	// Hint rendered via %w wrapping; see CreatePostgresFlexible.
+	ErrPostgresPasswordMissing = errors.New("POSTGRES_PASSWORD is required for Azure PostgreSQL Flexible Server")
+)
 
 // sanitizePostgresName strips characters invalid in Azure PostgreSQL Flexible Server names
 // (only lowercase letters, digits, and hyphens are allowed; 3-63 chars).
@@ -80,7 +84,7 @@ func buildPostgresServerArgs(
 		AdministratorLogin: pg.Username,
 		AdministratorLoginPassword: pg.Password.ToStringOutput().ApplyT(func(p string) (string, error) {
 			if p == "" {
-				return "", fmt.Errorf("POSTGRES_PASSWORD is required for Azure PostgreSQL Flexible Server; set it with `defang config set POSTGRES_PASSWORD`")
+				return "", fmt.Errorf("%w; set it with `defang config set POSTGRES_PASSWORD`", ErrPostgresPasswordMissing)
 			}
 			return p, nil
 		}).(pulumi.StringOutput),

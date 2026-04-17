@@ -1,12 +1,15 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var ErrModelSelectorUnavailable = errors.New("model selector not available (preview mode?)")
 
 // LLMInfra holds a shared Azure AI Foundry account for all LLM services.
 type LLMInfra struct {
@@ -129,7 +132,10 @@ func CreateLLMDeployment(
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return fmt.Errorf("creating Azure AI Foundry deployment %s (%s/%s): %w", deploymentName, model.Format, model.Name, err)
+		return fmt.Errorf(
+			"creating Azure AI Foundry deployment %s (%s/%s): %w",
+			deploymentName, model.Format, model.Name, err,
+		)
 	}
 	return nil
 }
@@ -137,7 +143,7 @@ func CreateLLMDeployment(
 // selectModelForAlias maps a Defang model alias to a concrete ModelSpec.
 func selectModelForAlias(alias string, selector ModelSelector) (ModelSpec, error) {
 	if selector == nil {
-		return ModelSpec{}, fmt.Errorf("model selector not available (preview mode?)")
+		return ModelSpec{}, ErrModelSelectorUnavailable
 	}
 
 	var role ModelRole

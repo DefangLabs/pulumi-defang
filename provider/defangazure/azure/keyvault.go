@@ -9,6 +9,9 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// Azure built-in role definition ID for "Key Vault Secrets User" — not a credential.
+//
+//nolint:gosec // built-in role definition ID, not a secret
 const keyVaultSecretsUserRoleID = "4633458b-17de-408a-b874-0445c86b69e6"
 
 // ToContainerAppSecretName converts an env var name to a Container App secret

@@ -2,12 +2,19 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+)
+
+var (
+	ErrNoAIServicesAccount = errors.New("no AIServices account found")
+	ErrUnknownModelRole    = errors.New("unknown model role")
+	ErrNoSuitableModel     = errors.New("no suitable model available in this account/region")
 )
 
 // ModelSpec describes an Azure AI model to deploy.
@@ -108,7 +115,7 @@ func NewDynamicModelSelector(subscriptionID, resourceGroup, accountName string) 
 			}
 		}
 		if accountName == "" {
-			return nil, fmt.Errorf("no AIServices account found in resource group %s", resourceGroup)
+			return nil, fmt.Errorf("%w: resource group %s", ErrNoAIServicesAccount, resourceGroup)
 		}
 	}
 
@@ -153,7 +160,7 @@ func (s *DynamicModelSelector) SelectModel(role ModelRole) (ModelSpec, error) {
 	case ModelRoleEmbedding:
 		prefs = embeddingPreference
 	default:
-		return ModelSpec{}, fmt.Errorf("unknown model role: %s", role)
+		return ModelSpec{}, fmt.Errorf("%w: %s", ErrUnknownModelRole, role)
 	}
 
 	for _, pref := range prefs {
@@ -176,7 +183,7 @@ func (s *DynamicModelSelector) SelectModel(role ModelRole) (ModelSpec, error) {
 		}
 	}
 
-	return ModelSpec{}, fmt.Errorf("no suitable %s model available in this account/region", role)
+	return ModelSpec{}, fmt.Errorf("%w: %s role", ErrNoSuitableModel, role)
 }
 
 // findBest returns the model with the highest version matching the given name and format.
