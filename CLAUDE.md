@@ -117,6 +117,21 @@ Pulumi provider changes often require corresponding updates in the CLI or the Fa
 - Use `create_idea` for improvements discovered but out of scope for the current task
 - Use `search_messages` to find context from prior conversations
 
+### Knowledge Graph
+
+SAM maintains a persistent knowledge graph across sessions. Use it to preserve non-obvious context:
+
+- **`add_knowledge`** — Store observations about:
+  - User preferences and work style (entityType: `preference`)
+  - Code conventions not captured in CLAUDE.md (entityType: `style`)
+  - Architecture decisions and their rationale (entityType: `context`)
+  - Project context: ongoing initiatives, deadlines, blockers (entityType: `context`)
+- **`search_knowledge`** — Query before key decisions (e.g., search "Architecture" before changing provider structure, search "AzureSupport" before touching Azure provider code)
+- **`update_knowledge`** / **`remove_knowledge`** — Fix stale or incorrect observations
+- **`confirm_knowledge`** — When you verify an existing observation is still accurate
+
+Do NOT store: code patterns derivable from the codebase, git history, ephemeral task details, or anything already in CLAUDE.md.
+
 ### Subprocess Restriction
 
 Do NOT launch `claude` as a subprocess — use SAM's `dispatch_task` instead.
