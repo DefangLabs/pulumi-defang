@@ -5,8 +5,7 @@ archives:
     name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
 
 before:
-  hooks:
-    - make go_sdk
+  hooks: []
 
 builds:
   - id: pulumi-resource-defang-aws
