@@ -121,16 +121,22 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// SSH firewall rule
+	// SSH firewall rule — match on tcp/22 since several other TCP firewall
+	// rules (MIG health checks, per-service traffic/health-check) also exist.
 	ssh := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
 		allows := m.Get("allows").AsArray()
-		return allows.Len() == 1 && allows.Get(0).AsMap().Get("protocol").AsString() == "tcp"
+		if allows.Len() != 1 {
+			return false
+		}
+		allow := allows.Get(0).AsMap()
+		if allow.Get("protocol").AsString() != "tcp" {
+			return false
+		}
+		ports := allow.Get("ports").AsArray()
+		return ports.Len() == 1 && ports.Get(0).AsString() == "22"
 	})
 	require.NotNil(t, ssh, "expected an SSH firewall rule")
 	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
-	sshPorts := ssh.inputs.Get("allows").AsArray().Get(0).AsMap().Get("ports").AsArray()
-	assert.Equal(t, 1, sshPorts.Len())
-	assert.Equal(t, "22", sshPorts.Get(0).AsString())
 
 	// ICMP firewall rule
 	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
