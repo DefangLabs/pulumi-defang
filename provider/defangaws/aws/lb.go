@@ -181,10 +181,12 @@ func createTgLrPair(
 
 	// Set protocol version for http2/grpc (matches TS createTargetGroup)
 	switch appProto {
-	case "http2":
+	case compose.PortAppProtocolHTTP2:
 		tgArgs.ProtocolVersion = pulumi.String("HTTP2")
-	case "grpc":
+	case compose.PortAppProtocolGRPC:
 		tgArgs.ProtocolVersion = pulumi.String("GRPC")
+	case compose.PortAppProtocolHTTP, compose.PortAppProtocolUnknown:
+		// defaults to HTTP1
 	}
 
 	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opt)

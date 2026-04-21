@@ -11,23 +11,23 @@ import (
 
 // IsIngress returns true if the port mode is "ingress", defaulting to true.
 func (p ServicePortConfig) IsIngress() bool {
-	return p.Mode == "ingress" || p.Mode == "" // default to ingress
+	return p.Mode == PortModeIngress || p.Mode == "" // default to ingress
 }
 
 // GetProtocol returns the protocol, defaulting to "tcp".
-func (p ServicePortConfig) GetProtocol() string {
+func (p ServicePortConfig) GetProtocol() PortProtocol {
 	if p.Protocol != "" {
 		return p.Protocol
 	}
-	return "tcp"
+	return PortProtocolTCP
 }
 
 // GetAppProtocol returns the application protocol, defaulting to "http".
-func (p ServicePortConfig) GetAppProtocol() string {
+func (p ServicePortConfig) GetAppProtocol() PortAppProtocol {
 	if p.AppProtocol != "" {
 		return p.AppProtocol
 	}
-	return "http"
+	return PortAppProtocolHTTP
 }
 
 // ParseMemoryMiB parses a memory string into MiB.

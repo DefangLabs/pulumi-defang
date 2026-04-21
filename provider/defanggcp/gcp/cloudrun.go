@@ -88,6 +88,10 @@ func buildEnvVars(
 	serviceName string,
 	svc compose.ServiceConfig,
 ) (cloudrunv2.ServiceTemplateContainerEnvArray, []string) {
+	// Multiple env vars can reference the same secret (e.g. FOO=${X}, BAR=${X});
+	// the caller creates one SecretIamMember per ID so duplicates would cause a
+	// URN collision. Track seen IDs to return each only once.
+	seenSecretIds := make(map[string]struct{})
 	var secretIds []string
 
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
@@ -108,7 +112,10 @@ func buildEnvVars(
 					},
 				},
 			})
-			secretIds = append(secretIds, secretId)
+			if _, ok := seenSecretIds[secretId]; !ok {
+				seenSecretIds[secretId] = struct{}{}
+				secretIds = append(secretIds, secretId)
+			}
 		} else {
 			value := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, v)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{

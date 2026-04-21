@@ -81,7 +81,7 @@ networks:
 	assert.Equal(t, "nginx:latest", *web.Image)
 	require.Len(t, web.Ports, 1)
 	assert.Equal(t, int32(80), web.Ports[0].Target)
-	assert.Equal(t, "ingress", web.Ports[0].Mode)
+	assert.EqualValues(t, "ingress", web.Ports[0].Mode)
 	require.NotNil(t, web.Build)
 	assert.Implements(t, (*pulumi.StringInput)(nil), web.Build.Context)
 	assert.Equal(t, "Dockerfile", *web.Build.Dockerfile)

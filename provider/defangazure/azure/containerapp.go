@@ -2,6 +2,7 @@ package azure
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -134,20 +135,27 @@ func buildEnvVars(
 	}
 
 	var appSecrets app.SecretArray
+	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we
+	// need one Secret entry per unique secret but one EnvironmentVar per env
+	// var, so dedupe on the secret var name.
+	seenSecrets := make(map[string]struct{})
 	for k, v := range svc.Environment {
 		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:  pulumi.String(k),
 				Value: infra.LLMInfra.APIKey,
 			})
-		} else if k := compose.GetConfigName(v); k != "" && infra.ConfigProvider != nil {
-			secretRef, _ := infra.ConfigProvider.GetSecretRef(ctx, k, opts...)
+		} else if secretVar := compose.GetConfigName(v); secretVar != "" && infra.ConfigProvider != nil {
+			secretRef, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
 			// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
-			appSecretName := toContainerAppSecretName(k)
-			appSecrets = append(appSecrets, app.SecretArgs{
-				Name:        pulumi.String(appSecretName),
-				KeyVaultUrl: pulumi.String(infra.KeyVaultURL + secretRef),
-			})
+			appSecretName := toContainerAppSecretName(secretVar)
+			if _, ok := seenSecrets[appSecretName]; !ok {
+				seenSecrets[appSecretName] = struct{}{}
+				appSecrets = append(appSecrets, app.SecretArgs{
+					Name:        pulumi.String(appSecretName),
+					KeyVaultUrl: pulumi.String(path.Join(infra.KeyVaultURL, "secrets", secretRef)),
+				})
+			}
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:      pulumi.String(k),
 				SecretRef: pulumi.String(appSecretName),

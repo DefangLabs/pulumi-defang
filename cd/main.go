@@ -96,7 +96,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 	}
 }
 
-// fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, base64, or a local file.
+// fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, or base64.
 func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 	switch {
 	case strings.HasPrefix(uri, "s3://"):
@@ -266,7 +266,7 @@ func stackConfig() auto.ConfigMap {
 	// Defang recipe config
 	cfg["defang:org"] = auto.ConfigValue{Value: org}
 	cfg["defang:prefix"] = auto.ConfigValue{Value: prefix}
-	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode}
+	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode} // backwards compatible with legacy behavior; now using recipes
 	if domain != "" {
 		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
 	}
@@ -278,10 +278,6 @@ func stackConfig() auto.ConfigMap {
 	}
 	if registryCredsArn != "" {
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
-	}
-
-	switch mode {
-	case "development":
 	}
 
 	return cfg

@@ -113,19 +113,44 @@ type ServiceNetworkConfig struct {
 	Aliases []string `pulumi:"aliases,optional" yaml:"aliases,omitempty"`
 }
 
+type PortMode string
+
+const (
+	PortModeHost    PortMode = "host"
+	PortModeIngress PortMode = "ingress"
+)
+
+type PortProtocol string
+
+const (
+	PortProtocolAny  PortProtocol = ""
+	PortProtocolTCP  PortProtocol = "tcp"
+	PortProtocolUDP  PortProtocol = "udp"
+	PortProtocolSCTP PortProtocol = "sctp"
+)
+
+type PortAppProtocol string
+
+const (
+	PortAppProtocolUnknown PortAppProtocol = ""
+	PortAppProtocolHTTP    PortAppProtocol = "http"
+	PortAppProtocolHTTP2   PortAppProtocol = "http2"
+	PortAppProtocolGRPC    PortAppProtocol = "grpc"
+)
+
 // ServicePortConfig defines a port mapping for a service.
 type ServicePortConfig struct {
 	// Container port
 	Target int32 `pulumi:"target" yaml:"target"`
 
 	// Port mode: "host" or "ingress" (default: "ingress")
-	Mode string `pulumi:"mode,optional" yaml:"mode,omitempty"`
+	Mode PortMode `pulumi:"mode,optional" yaml:"mode,omitempty"`
 
 	// Transport protocol: "tcp" or "udp" (default: "tcp")
-	Protocol string `pulumi:"protocol,optional" yaml:"protocol,omitempty"`
+	Protocol PortProtocol `pulumi:"protocol,optional" yaml:"protocol,omitempty"`
 
 	// Application protocol: "http", "http2", "grpc" (default: "http")
-	AppProtocol string `pulumi:"appProtocol,optional" yaml:"app_protocol,omitempty"`
+	AppProtocol PortAppProtocol `pulumi:"appProtocol,optional" yaml:"app_protocol,omitempty"`
 }
 
 // DeployConfig defines deployment parameters.
