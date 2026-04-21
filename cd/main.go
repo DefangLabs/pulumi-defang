@@ -68,11 +68,14 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 				"providers": map[string]any{
 					"aws": map[string]any{
 						"resources": map[string]any{
-							"aws:lb/loadBalancer:LoadBalancer":        map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
-							"aws:lb/targetGroup:TargetGroup":          map[string]string{"pattern": "${name}-${hex(4)}"},
-							"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
-							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
-							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
+							"aws:lb/loadBalancer:LoadBalancer": map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
+							"aws:lb/targetGroup:TargetGroup":   map[string]string{"pattern": "${name}-${hex(4)}"},
+							// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
+							// full prefix already disambiguates it; no need to repeat it here.
+							"aws:ecs/service:Service":                 map[string]string{"pattern": "${name}-${hex(7)}"},
+							"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
+							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
+							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
 						},
 					},
 					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
