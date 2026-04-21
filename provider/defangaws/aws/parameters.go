@@ -49,7 +49,7 @@ func getParametersByPath(
 	projectName string,
 	opts ...pulumi.InvokeOption,
 ) (map[string]string, error) {
-	path := getSecretPath(projectName, ctx.Stack())
+	path := getSecretID(projectName, ctx.Stack(), "")
 	withDecryption := true
 
 	gpr, err := ssm.GetParametersByPath(ctx, &ssm.GetParametersByPathArgs{
@@ -69,8 +69,9 @@ func getParametersByPath(
 	return result, nil
 }
 
-func getSecretPath(projectName, stackName string) string {
-	return fmt.Sprintf("/Defang/%s/%s/", projectName, stackName)
+func getSecretID(projectName, stackName, service string) string {
+	// Same as CLI
+	return fmt.Sprintf("/Defang/%s/%s/%s", projectName, stackName, service) // TODO: customizable prefix
 }
 
 // GetSecretRef returns the full SSM parameter ARN for a config key, so ECS can
@@ -84,6 +85,6 @@ func (cp *ConfigProvider) GetSecretRef(ctx *pulumi.Context, key string, opts ...
 	if err != nil {
 		return "", fmt.Errorf("getting account ID for secret ARN: %w", err)
 	}
-	path := getSecretPath(cp.projectName, ctx.Stack())
-	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s%s", region, accountId, path, key), nil
+	id := getSecretID(cp.projectName, ctx.Stack(), key)
+	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s", region, accountId, id), nil
 }

@@ -1,7 +1,7 @@
 package gcp
 
 import (
-	"path"
+	"strings"
 	"sync"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -11,8 +11,8 @@ import (
 
 type ConfigProvider struct {
 	projectName string
-	cache map[string]pulumi.StringOutput
-	mu    sync.Mutex
+	cache       map[string]pulumi.StringOutput
+	mu          sync.Mutex
 }
 
 func NewConfigProvider(projectName string) *ConfigProvider {
@@ -56,5 +56,6 @@ func (p *ConfigProvider) GetSecretRef(
 // getSecretID returns the Secret Manager secret ID for a config key.
 // Matches the old naming convention: Defang_{project}_{stack}_{key}
 func getSecretID(project, stack, key string) string {
-	return path.Join("Defang", project, stack, key)
+	// Same as CLI
+	return strings.Join([]string{"Defang", project, stack, key}, "_") // TODO: customizable prefix
 }

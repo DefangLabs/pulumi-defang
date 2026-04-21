@@ -6,7 +6,6 @@ package gcp
 // service, Cloud SQL, etc.) lives in their own dedicated test files.
 
 import (
-	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -616,7 +615,7 @@ func TestConstructProjectDependencies(t *testing.T) {
 	}
 
 	server, err := integration.NewServer(
-		context.Background(),
+		t.Context(),
 		defanggcp.Name,
 		semver.MustParse("1.0.0"),
 		integration.WithProvider(defanggcp.Provider()),

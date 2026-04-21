@@ -1,9 +1,8 @@
 package azure
 
 import (
+	"strings"
 	"sync"
-
-	"errors"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -31,18 +30,7 @@ func NewConfigProvider(projectName string, values map[string]string) *ConfigProv
 	}
 }
 
-// HasConfig reports whether the given key was set by the user. Synchronous —
-// callers can use it to branch at program time (e.g., deciding whether to emit
-// a Container App secret reference vs. a plain environment value).
-func (p *ConfigProvider) HasConfig(key string) bool {
-	if p == nil {
-		return false
-	}
-	_, ok := p.values[key]
-	return ok
-}
-
-// GetConfig returns a user-defined config value as a pulumi.StringOutput marked
+// GetConfigValue returns a user-defined config value as a pulumi.StringOutput marked
 // secret. Unknown keys resolve to "" — same contract as the previous stack-config
 // backed implementation. Never returns a zero-value pulumi.StringOutput{}, which
 // would cause a nil-pointer dereference inside Pulumi's reflection walk.
@@ -62,8 +50,10 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 
 // GetSecretRef returns a secret reference for Azure Key Vault.
 func (p *ConfigProvider) GetSecretRef(
-	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
+	ctx *pulumi.Context, key string, _ ...pulumi.InvokeOption,
 ) (string, error) {
-	// TODO: return Azure Key Vault secret reference
-	return "", errors.ErrUnsupported
+	// Mirror the CLI's ToSecretName convention:
+	// "{prefix}/{project}/{stack}/{KEY}" with / -> -- and _ -> -
+	safeKey := strings.ReplaceAll(key, "_", "-")
+	return "Defang--" + ctx.Project() + "--" + ctx.Stack() + "--" + safeKey, nil // TODO: customizable prefix
 }

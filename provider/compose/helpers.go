@@ -180,6 +180,10 @@ func InterpolateEnvironmentVariable(
 	value string,
 	opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
+	if configProvider == nil {
+		// No config provider, so we can't resolve any variables. Return the raw string.
+		return pulumi.String(value).ToStringOutput()
+	}
 	// First pass: discover variables and set up config resolution.
 	// A second pass inside ApplyT is unavoidable because Pulumi outputs are async.
 	var names []string

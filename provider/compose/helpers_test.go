@@ -127,7 +127,7 @@ func TestGetConfigName(t *testing.T) {
 		{"${A}_${B}", ""},        // multiple vars
 		{"${VAR:-default}", ""},  // has default modifier
 		{"${VAR:+alt}", ""},      // has presence modifier
-		{"${VAR:?err}", ""},      // has required modifier
+		{"${VAR:?err}", ""},      // has required modifier; TODO: this could be made to work #159
 		{"${VAR+}", ""},          // has empty modifier
 		{"literal", ""},          // no interpolation
 		{"", ""},                 // empty
@@ -215,4 +215,17 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+
+	t.Run("nil config provider returns raw string", func(t *testing.T) {
+		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+			out := InterpolateEnvironmentVariable(ctx, nil, "value with ${VAR}")
+
+			out.ApplyT(func(got string) string {
+				assert.Equal(t, "value with ${VAR}", got)
+				return got
+			})
+			return nil
+		}, pulumi.WithMocks("proj", "stack", testMocks{}))
+		require.NoError(t, err)
+	})
 }

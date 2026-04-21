@@ -5,3 +5,6 @@ plugins:
   providers:
     - name: defang-aws
       path: ../../bin
+config:
+  pulimi:disable-default-providers:
+    - "*"

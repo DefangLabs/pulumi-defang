@@ -2,7 +2,6 @@ package azure
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
@@ -13,20 +12,6 @@ import (
 //
 //nolint:gosec // built-in role definition ID, not a secret
 const keyVaultSecretsUserRoleID = "4633458b-17de-408a-b874-0445c86b69e6"
-
-// ToContainerAppSecretName converts an env var name to a Container App secret
-// name (lowercase, hyphens instead of underscores).
-func ToContainerAppSecretName(envKey string) string {
-	return strings.ToLower(strings.ReplaceAll(envKey, "_", "-"))
-}
-
-// KeyVaultSecretURL returns the Key Vault URL for a specific secret.
-func KeyVaultSecretURL(vaultURL, project, stack, envKey string) string {
-	// Mirror the CLI's ToSecretName convention:
-	// "/{prefix}/{project}/{stack}/{KEY}" with / -> -- and _ -> -
-	secretName := "Defang--" + project + "--" + stack + "--" + strings.ReplaceAll(envKey, "_", "-")
-	return vaultURL + "/secrets/" + secretName
-}
 
 // CreateKeyVaultIdentity creates a user-assigned managed identity with
 // Key Vault Secrets User role on the vault. Returns the identity resource ID

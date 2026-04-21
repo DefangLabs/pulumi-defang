@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -88,7 +87,7 @@ func TestFetchPayloadBase64(t *testing.T) {
 	original := []byte("hello world")
 	encoded := base64.StdEncoding.EncodeToString(original)
 
-	got, err := fetchPayload(context.Background(), encoded)
+	got, err := fetchPayload(t.Context(), encoded)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -99,7 +98,7 @@ func TestFetchPayloadBase64(t *testing.T) {
 
 func TestFetchPayloadBase64Invalid(t *testing.T) {
 	// "not-base64!!!" is not valid base64 and not a recognized URI scheme
-	_, err := fetchPayload(context.Background(), "not-base64!!!")
+	_, err := fetchPayload(t.Context(), "not-base64!!!")
 	if err == nil {
 		t.Fatal("expected error for invalid base64")
 	}
@@ -113,9 +112,9 @@ func TestFetchHTTP(t *testing.T) {
 		}
 		w.Write(body)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	got, err := fetchHTTP(context.Background(), srv.URL)
+	got, err := fetchHTTP(t.Context(), srv.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,9 +127,9 @@ func TestFetchHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	_, err := fetchHTTP(context.Background(), srv.URL)
+	_, err := fetchHTTP(t.Context(), srv.URL)
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
@@ -141,9 +140,9 @@ func TestFetchPayloadHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(body)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	got, err := fetchPayload(context.Background(), srv.URL)
+	got, err := fetchPayload(t.Context(), srv.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -163,10 +162,10 @@ func TestUpload(t *testing.T) {
 		receivedBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	payload := map[string]string{"key": "value"}
-	upload(context.Background(), srv.URL, payload)
+	upload(t.Context(), srv.URL, payload)
 
 	if receivedContentType != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", receivedContentType)
@@ -187,14 +186,14 @@ func TestUploadEventsEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	saved := eventsUploadUrl
 	eventsUploadUrl = srv.URL
-	defer func() { eventsUploadUrl = saved }()
+	t.Cleanup(func() { eventsUploadUrl = saved })
 
-	uploadEvents(context.Background(), nil)
-	uploadEvents(context.Background(), []events.EngineEvent{})
+	uploadEvents(t.Context(), nil)
+	uploadEvents(t.Context(), []events.EngineEvent{})
 
 	if called {
 		t.Error("expected no HTTP request for empty events")
@@ -207,13 +206,13 @@ func TestUploadEventsNoUrl(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	saved := eventsUploadUrl
 	eventsUploadUrl = ""
-	defer func() { eventsUploadUrl = saved }()
+	t.Cleanup(func() { eventsUploadUrl = saved })
 
-	uploadEvents(context.Background(), []events.EngineEvent{{}})
+	uploadEvents(t.Context(), []events.EngineEvent{{}})
 
 	if called {
 		t.Error("expected no HTTP request when URL is empty")
@@ -226,13 +225,13 @@ func TestUploadEventsSendsPayload(t *testing.T) {
 		receivedBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	saved := eventsUploadUrl
 	eventsUploadUrl = srv.URL
-	defer func() { eventsUploadUrl = saved }()
+	t.Cleanup(func() { eventsUploadUrl = saved })
 
-	uploadEvents(context.Background(), []events.EngineEvent{{}})
+	uploadEvents(t.Context(), []events.EngineEvent{{}})
 
 	var got map[string]any
 	if err := json.Unmarshal(receivedBody, &got); err != nil {
@@ -269,7 +268,7 @@ func TestCollectEvents(t *testing.T) {
 
 func TestColor(t *testing.T) {
 	saved := noColor
-	defer func() { noColor = saved }()
+	t.Cleanup(func() { noColor = saved })
 
 	noColor = false
 	if got := color(); got != "always" {
@@ -283,11 +282,7 @@ func TestColor(t *testing.T) {
 }
 
 func TestProjectConfig(t *testing.T) {
-	saved := prefix
-	defer func() { prefix = saved }()
-
-	prefix = "TestPrefix"
-	cfg := projectConfig(prefix)
+	cfg := projectConfig("TestPrefix")
 
 	autonaming, ok := cfg["pulumi:autonaming"]
 	if !ok {
@@ -313,17 +308,16 @@ func TestProjectConfig(t *testing.T) {
 	if !ok {
 		t.Fatal("disable-default-providers value is not []string")
 	}
-	if len(disabledList) != 3 {
-		t.Errorf("expected 3 disabled providers, got %d", len(disabledList))
+	if len(disabledList) != 1 {
+		t.Errorf("expected 1 disabled provider, got %d", len(disabledList))
+	}
+	if disabledList[0] != "*" {
+		t.Errorf("expected disabled provider '*', got %q", disabledList[0])
 	}
 }
 
 func TestProjectConfigEmptyPrefix(t *testing.T) {
-	saved := prefix
-	defer func() { prefix = saved }()
-
-	prefix = ""
-	cfg := projectConfig(prefix)
+	cfg := projectConfig("")
 
 	autonaming := cfg["pulumi:autonaming"]
 	autonamingMap := autonaming.Value.(map[string]any)
@@ -428,7 +422,7 @@ func TestStackConfigAWS(t *testing.T) {
 	savedDelegationSetId := delegationSetId
 	savedRegistryCredsArn := registryCredsArn
 	savedAwsProfile := awsProfile
-	defer func() {
+	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
 		gcpProject = savedGcpProject
 		azureSubscription = savedAzureSubscription
@@ -440,7 +434,7 @@ func TestStackConfigAWS(t *testing.T) {
 		delegationSetId = savedDelegationSetId
 		registryCredsArn = savedRegistryCredsArn
 		awsProfile = savedAwsProfile
-	}()
+	})
 
 	awsRegion = "us-east-1"
 	gcpProject = ""
@@ -494,7 +488,7 @@ func TestStackConfigGCP(t *testing.T) {
 	savedPrivateDomain := privateDomain
 	savedDelegationSetId := delegationSetId
 	savedRegistryCredsArn := registryCredsArn
-	defer func() {
+	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
 		gcpProject = savedGcpProject
 		azureSubscription = savedAzureSubscription
@@ -506,7 +500,7 @@ func TestStackConfigGCP(t *testing.T) {
 		privateDomain = savedPrivateDomain
 		delegationSetId = savedDelegationSetId
 		registryCredsArn = savedRegistryCredsArn
-	}()
+	})
 
 	awsRegion = ""
 	gcpProject = "my-gcp-project"
@@ -552,7 +546,7 @@ func TestStackConfigAzure(t *testing.T) {
 	savedPrivateDomain := privateDomain
 	savedDelegationSetId := delegationSetId
 	savedRegistryCredsArn := registryCredsArn
-	defer func() {
+	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
 		gcpProject = savedGcpProject
 		azureSubscription = savedAzureSubscription
@@ -564,7 +558,7 @@ func TestStackConfigAzure(t *testing.T) {
 		privateDomain = savedPrivateDomain
 		delegationSetId = savedDelegationSetId
 		registryCredsArn = savedRegistryCredsArn
-	}()
+	})
 
 	awsRegion = ""
 	gcpProject = ""

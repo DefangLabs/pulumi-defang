@@ -91,7 +91,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 			},
 		},
 		"pulumi:disable-default-providers": {
-			Value: []string{"eks", "kubernetes", "aws"},
+			Value: []string{"*"}, // ensure we create one provider per cloud
 		},
 	}
 }

@@ -38,7 +38,7 @@ func (m ssmMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	}, nil
 }
 
-func TestGetConfig(t *testing.T) {
+func TestGetConfigValue(t *testing.T) {
 	tests := []struct {
 		name     string
 		params   map[string]string
@@ -85,7 +85,7 @@ func TestGetConfig(t *testing.T) {
 	}
 }
 
-func TestGetConfig_CachesAfterFirstFetch(t *testing.T) {
+func TestGetConfigValue_CachesAfterFirstFetch(t *testing.T) {
 	callCount := 0
 	mocks := &countingMocks{params: map[string]string{"K": "v"}, calls: &callCount}
 
