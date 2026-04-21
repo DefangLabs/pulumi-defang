@@ -54,6 +54,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 - [x] **Stack select vs upsert** — old GCP code used `selectStack()` (no program) for destroy/refresh/cancel, and `upsertStack()` (with program) only for up/preview; new always uses `UpsertStackInlineSource` for all commands
 - [x] **Preview always shows diffs** — old GCP code had `optpreview.Diff()` unconditionally; new makes it conditional on `DEFANG_PULUMI_DIFF`
 - [ ] **Hook up `privateDomain`** - new AWS code ignores `privateDomain` config key
+- [ ] **Azure Key Vault client scoping** — `fetchFromKeyVault` in `provider/defangazure/azure/userconfig.go` uses `azidentity.DefaultAzureCredential` + string-built vault URL, ignoring Pulumi's configured `azure-native:tenantId`/`subscriptionId`. Silent divergence if the vault lives in a different subscription than the Pulumi provider. Fix: pass `TenantID` from Pulumi config to the credential, and derive the vault URL via `keyvault.LookupVault` (parented) so mismatches fail loudly.
 - [x] **Only `UpsertStackInlineSource` for up/preview** — old code used `selectStack()` (no program) for destroy/refresh/cancel, and `upsertStack()` (with program) only for up/preview; new always uses `UpsertStackInlineSource` for all commands
 
 ## Missing Pulumi options on commands

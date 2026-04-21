@@ -40,7 +40,9 @@ func (p *ConfigProvider) GetConfigValue(
 		return out
 	}
 
-	out := pulumi.String(sv.SecretData).ToStringOutput()
+	// Mark as secret so downstream consumers (env vars, Cloud Run services)
+	// don't leak the value into Pulumi state or logs.
+	out := pulumi.ToSecret(pulumi.String(sv.SecretData).ToStringOutput()).(pulumi.StringOutput)
 	p.cache[key] = out
 	return out
 }

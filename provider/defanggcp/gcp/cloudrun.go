@@ -65,9 +65,10 @@ func CreateCloudRunService(
 	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
 		Location:           pulumi.String(gcpConfig.Region),
 		Ingress:            pulumi.String(Ingress.Get(ctx)),
-		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)),
+		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)), // TODO: results in diff
 		InvokerIamDisabled: pulumi.Bool(true),
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
+		Scaling:            &cloudrunv2.ServiceScalingArgs{},
 		Template:           template,
 	}, append(opts, pulumi.DependsOn(iamDeps))...)
 	if err != nil {

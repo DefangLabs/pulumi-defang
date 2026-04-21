@@ -11,7 +11,7 @@ import (
 )
 
 func TestProjectSchemaRegistered(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)
@@ -21,7 +21,7 @@ func TestProjectSchemaRegistered(t *testing.T) {
 }
 
 func TestServiceSchemaRegistered(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	schema, err := server.GetSchema(p.GetSchemaRequest{})
 	require.NoError(t, err)

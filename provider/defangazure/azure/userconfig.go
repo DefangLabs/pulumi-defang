@@ -7,8 +7,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 // FetchUserConfig reads user-defined config values for this project/stack from
@@ -23,7 +23,7 @@ func FetchUserConfig(ctx *pulumi.Context) (map[string]string, error) {
 		return map[string]string{}, nil
 	}
 
-	prefix := config.New(ctx, "defang").Get("prefix")
+	prefix := common.Prefix.Get(ctx)
 	vals, err := fetchFromKeyVault(ctx.Context(), vaultName, prefix, ctx.Project(), ctx.Stack())
 	if err != nil {
 		return nil, fmt.Errorf("reading user config from Key Vault: %w", err)
@@ -81,6 +81,11 @@ func fetchFromKeyVault(ctx context.Context, vaultName, prefix, project, stack st
 			if originalKey == "" {
 				continue
 			}
+			// Uses the raw azsecrets data-plane client rather than Pulumi's
+			// keyvault.LookupSecret invoke because the latter hits ARM's
+			// management plane, which per the SDK comment on SecretProperties.Value
+			// will never return the secret value. Authentication flows through the
+			// Azure credential chain, independent of any Pulumi provider.
 			resp, err := client.GetSecret(ctx, secretName, "", nil)
 			if err != nil {
 				return nil, fmt.Errorf("getting Key Vault secret %s: %w", secretName, err)

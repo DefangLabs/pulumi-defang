@@ -245,10 +245,14 @@ func createProjectResourceGroup(
 
 // createManagedEnvironment provisions the Log Analytics workspace and Container
 // App managed environment, attaching VNet config when networking is present.
+// parentOpt carries the parent (and its provider) for the GetSharedKeys invoke,
+// which ResourceOption slices can't express because InvokeOption is a sibling
+// interface to ResourceOption.
 func createManagedEnvironment(
 	ctx *pulumi.Context,
 	name, location string,
 	infra *providerazure.SharedInfra,
+	parentOpt pulumi.ResourceOrInvokeOption,
 	childOpts []pulumi.ResourceOption,
 ) (*app.ManagedEnvironment, error) {
 	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
@@ -265,7 +269,7 @@ func createManagedEnvironment(
 	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		WorkspaceName:     logWorkspace.Name,
-	})
+	}, parentOpt)
 
 	envArgs := &app.ManagedEnvironmentArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
@@ -300,6 +304,7 @@ func setupSharedInfra(
 	ctx *pulumi.Context,
 	name string,
 	inputs ProjectInputs,
+	parentOpt pulumi.ResourceOrInvokeOption,
 	childOpts []pulumi.ResourceOption,
 ) (*providerazure.SharedInfra, map[string]string, error) {
 	location := providerazure.Location(ctx)
@@ -337,7 +342,7 @@ func setupSharedInfra(
 		infra.DNS = dns
 	}
 
-	env, err := createManagedEnvironment(ctx, name, location, infra, childOpts)
+	env, err := createManagedEnvironment(ctx, name, location, infra, parentOpt, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -380,9 +385,12 @@ func (*Project) Construct(
 		return nil, err
 	}
 
-	childOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
+	// parentOpt retains the ResourceOrInvokeOption form so it can flow into
+	// Pulumi invokes (data-source lookups), where the ResourceOption slice can't.
+	parentOpt := pulumi.Parent(comp)
+	childOpts := []pulumi.ResourceOption{parentOpt}
 
-	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, childOpts)
+	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, parentOpt, childOpts)
 	if err != nil {
 		return nil, err
 	}

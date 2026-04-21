@@ -30,7 +30,7 @@ func CreateComputeEngine(
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*ComputeEngineResult, error) {
 	machineType := getComputeMachineType(svc)
 
@@ -39,7 +39,7 @@ func CreateComputeEngine(
 		"roles/logging.logWriter",
 		"roles/monitoring.metricWriter",
 		"roles/cloudtrace.agent",
-	}, gcpConfig, opts...)
+	}, gcpConfig, parentOpt)
 
 	var namedPorts compute.RegionInstanceGroupManagerNamedPortArray
 	var healthCheckPort *int
@@ -63,18 +63,21 @@ func CreateComputeEngine(
 	cloudInit := getCloudInitConfig(serviceName, image, svc, gcpConfig.Region, addHealthCheckSidecar)
 
 	instanceTemplate, err := createInstanceTemplate(
-		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
+		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, parentOpt)
 	if err != nil {
 		return nil, err
 	}
 
 	autoHealing, err := createMIGAutoHealing(
-		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, opts...)
+		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, parentOpt)
 	if err != nil {
 		return nil, err
 	}
 
-	zones, err := compute.GetZones(ctx, &compute.GetZonesArgs{Region: pulumi.StringRef(gcpConfig.Region)})
+	// parentOpt is a ResourceOrInvokeOption so it satisfies pulumi.InvokeOption here
+	// and flows the parent (and its provider) into the zones lookup — required for
+	// correctness when the stack uses a non-default GCP provider.
+	zones, err := compute.GetZones(ctx, &compute.GetZonesArgs{Region: pulumi.StringRef(gcpConfig.Region)}, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("getting zones in region %s: %w", gcpConfig.Region, err)
 	}
@@ -95,7 +98,7 @@ func CreateComputeEngine(
 			NamedPorts:             namedPorts,
 			WaitForInstances:       pulumi.Bool(true),
 			WaitForInstancesStatus: pulumi.String("STABLE"),
-		}, append(opts, pulumi.DependsOn([]pulumi.Resource{instanceTemplate}))...)
+		}, parentOpt, pulumi.DependsOn([]pulumi.Resource{instanceTemplate}))
 	if err != nil {
 		return nil, fmt.Errorf("creating instance group for %s: %w", serviceName, err)
 	}

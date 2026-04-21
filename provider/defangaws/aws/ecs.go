@@ -629,7 +629,16 @@ func CreateECSService(
 	serviceLabel := common.SafeLabel(serviceName)
 	switch {
 	case hasIngress && infra.ProjectDomain != "":
-		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain))
+		// HTTP listener redirects to HTTPS when a cert is bound, so advertise https://.
+		endpointOutput = pulumix.Val(fmt.Sprintf("https://%s.%s", serviceLabel, infra.ProjectDomain))
+	case hasIngress:
+		// No ProjectDomain: reach the service via the raw ALB DNS. createTgLrPair
+		// sets the listener-rule HostHeader to infra.Alb.DnsName when no hostnames
+		// are configured, so routing works for http://<alb-dns-name>.
+		endpointOutput = pulumix.Apply(
+			pulumix.Output[string](infra.Alb.DnsName),
+			func(dns string) string { return "http://" + dns },
+		)
 	case svc.HasHostPorts() && infra.PrivateDomain != "":
 		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
 	default:

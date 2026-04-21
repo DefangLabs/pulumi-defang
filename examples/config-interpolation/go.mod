@@ -4,12 +4,21 @@ go 1.25.6
 
 replace (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../../sdk/v2/go/defang-aws
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure => ../../sdk/v2/go/defang-azure
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp => ../../sdk/v2/go/defang-gcp
 	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 )
 
 require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.15.0
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.16.0
+	github.com/pulumi/pulumi-gcp/sdk/v8 v8.30.1
 	github.com/pulumi/pulumi/sdk/v3 v3.227.0
 )
 

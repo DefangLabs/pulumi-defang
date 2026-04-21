@@ -5,6 +5,10 @@ plugins:
   providers:
     - name: defang-aws
       path: ../../bin
+    - name: defang-gcp
+      path: ../../bin
+    - name: defang-azure
+      path: ../../bin
 config:
   pulimi:disable-default-providers:
     - "*"

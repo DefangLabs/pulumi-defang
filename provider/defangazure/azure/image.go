@@ -118,12 +118,15 @@ func CreateBuildInfra(
 		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
 		subID, acrPullRoleDefinitionID,
 	)
+	// Parent defaults to the surrounding component (via opts). Pulumi's SDK
+	// discourages using custom resources as parents — destruction order here is
+	// already enforced by the implicit data dependency on identity.PrincipalId.
 	roleAssignment, err := authorization.NewRoleAssignment(ctx, "acr-pull", &authorization.RoleAssignmentArgs{
 		Scope:            registry.ID(),
 		RoleDefinitionId: roleDefID,
 		PrincipalId:      identity.PrincipalId,
 		PrincipalType:    pulumi.String("ServicePrincipal"),
-	}, append(opts, pulumi.Parent(identity))...)
+	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating AcrPull role assignment: %w", err)
 	}

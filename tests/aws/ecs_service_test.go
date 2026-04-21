@@ -15,7 +15,7 @@ import (
 )
 
 func TestConstructAwsEcsServiceWithImage(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -29,7 +29,7 @@ func TestConstructAwsEcsServiceWithImage(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithIngressPort(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -46,7 +46,7 @@ func TestConstructAwsEcsServiceWithIngressPort(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithMultiplePorts(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -68,7 +68,7 @@ func TestConstructAwsEcsServiceWithMultiplePorts(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithBuild(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -85,7 +85,7 @@ func TestConstructAwsEcsServiceWithBuild(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithBuildAndDockerfile(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -104,7 +104,7 @@ func TestConstructAwsEcsServiceWithBuildAndDockerfile(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithVPC(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -129,7 +129,7 @@ func TestConstructAwsEcsServiceWithVPC(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithHealthCheck(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -157,7 +157,7 @@ func TestConstructAwsEcsServiceWithHealthCheck(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithEnvironment(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
@@ -175,7 +175,7 @@ func TestConstructAwsEcsServiceWithEnvironment(t *testing.T) {
 }
 
 func TestConstructAwsEcsServiceWithDeploy(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),

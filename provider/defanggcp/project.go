@@ -139,6 +139,7 @@ func buildProject(
 		projectName,
 		lbEntries,
 		config,
+		childOpts...,
 	)
 	if err != nil {
 		return nil, err

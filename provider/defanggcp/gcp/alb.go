@@ -43,12 +43,13 @@ func CreateLoadBalancers(
 	projectName string,
 	services []LBServiceEntry,
 	config *SharedInfra,
+	opts ...pulumi.ResourceOption,
 ) error {
-	if err := createInternalLoadBalancer(ctx, projectName, config, services); err != nil {
+	if err := createInternalLoadBalancer(ctx, projectName, config, services, opts...); err != nil {
 		return err
 	}
 
-	if err := createExternalLoadBalancers(ctx, projectName, config, services); err != nil {
+	if err := createExternalLoadBalancers(ctx, projectName, config, services, opts...); err != nil {
 		return err
 	}
 
@@ -133,6 +134,7 @@ func createInternalLoadBalancer(
 	projectName string,
 	config *SharedInfra,
 	services []LBServiceEntry,
+	opts ...pulumi.ResourceOption,
 ) error {
 	var internalAlbServices []string
 	var firstPrivateBackendID pulumi.StringPtrInput
@@ -148,7 +150,7 @@ func createInternalLoadBalancer(
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{service.PostgresInstance.PrivateIpAddress},
-			}); err != nil {
+			}, opts...); err != nil {
 				return err
 			}
 			continue
@@ -159,7 +161,7 @@ func createInternalLoadBalancer(
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{service.RedisInstance.Host},
-			}); err != nil {
+			}, opts...); err != nil {
 				return err
 			}
 			continue
@@ -478,7 +480,7 @@ func createInternalLoadBalancer(
 		if config.ProxySubnetId != "" {
 			regionalManagedProxySubnet, err = compute.GetSubnetwork(ctx,
 				"managed-proxy-subnet",
-				pulumi.ID(config.ProxySubnetId), nil,
+				pulumi.ID(config.ProxySubnetId), nil, opts...,
 			)
 		} else {
 			regionalManagedProxySubnet, err = compute.NewSubnetwork(ctx,

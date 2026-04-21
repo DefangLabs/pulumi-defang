@@ -31,7 +31,10 @@
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(which:*)",
-      "Bash(xxd:*)"
+      "Bash(xxd:*)",
+      "Bash(pulumi preview *)",
+      "Bash(pulumi stack *)",
+      "WebSearch"
     ]
   }
 }

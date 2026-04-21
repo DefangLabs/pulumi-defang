@@ -5,6 +5,7 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/internals"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,10 +55,12 @@ func TestGetConfigValue(t *testing.T) {
 				cp := NewConfigProvider("myproject", tt.values)
 				out := cp.GetConfigValue(ctx, tt.key)
 
-				out.ApplyT(func(got string) string {
-					assert.Equal(t, tt.expected, got)
-					return got
-				})
+				// Await instead of ApplyT so we can inspect the secret bit,
+				// which ApplyT does not expose.
+				res, err := internals.UnsafeAwaitOutput(ctx.Context(), out)
+				require.NoError(t, err)
+				assert.Equal(t, tt.expected, res.Value)
+				assert.True(t, res.Secret, "GetConfigValue output must be marked secret")
 				return nil
 			}, pulumi.WithMocks("myproject", "mystack", azureNoopMocks{}))
 			require.NoError(t, err)
