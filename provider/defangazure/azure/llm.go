@@ -1,15 +1,12 @@
 package azure
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
-
-var ErrModelSelectorUnavailable = errors.New("model selector not available (preview mode?)")
 
 // LLMInfra holds a shared Azure AI Foundry account for all LLM services.
 type LLMInfra struct {
@@ -24,11 +21,14 @@ type LLMInfra struct {
 	BaseURL pulumi.StringOutput
 
 	// ModelSelector picks models at deploy time based on region availability.
+	// Listing is deferred until the Account's Name output resolves, so the
+	// ARM list call only runs after Azure has finished creating the account.
 	ModelSelector ModelSelector
 }
 
 // CreateLLMInfra creates an Azure AI Foundry hub (Account with Kind "AIServices") and
-// initializes a ModelSelector that queries the account for available models.
+// builds a lazy ModelSelector that will query the account for available models
+// after it has been created.
 func CreateLLMInfra(
 	ctx *pulumi.Context,
 	name string,
@@ -80,16 +80,11 @@ func CreateLLMInfra(
 		return strings.TrimRight(ep, "/") + "/openai/v1/"
 	}).(pulumi.StringOutput)
 
-	// Query available models for this account. This runs at deploy time (not preview).
-	// Pass empty account name — the selector discovers it from the resource group.
-	var selector ModelSelector
-	if !ctx.DryRun() {
-		rgName := ExistingResourceGroup(ctx)
-		selector, err = NewDynamicModelSelector(SubscriptionID(ctx), rgName, "")
-		if err != nil {
-			return nil, fmt.Errorf("initializing model selector: %w", err)
-		}
-	}
+	selector := NewDynamicModelSelector(
+		SubscriptionID(ctx),
+		infra.ResourceGroup.Name.ToStringOutput(),
+		account.Name.ToStringOutput(),
+	)
 
 	return &LLMInfra{
 		Account:       account,
@@ -110,42 +105,46 @@ func CreateLLMDeployment(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
-	model, err := selectModelForAlias(modelAlias, llmInfra.ModelSelector)
-	if err != nil {
-		return fmt.Errorf("selecting model for %s: %w", modelAlias, err)
-	}
+	specOutput := selectModelForAlias(modelAlias, llmInfra.ModelSelector)
 
-	_, err = cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
+	// Chained ApplyT over an AnyOutput requires `any` as the applier's input —
+	// pulumi's reflection reads the Output's inner type as `interface{}` when
+	// the source was produced via `pulumi.All(...).ApplyT(...)`.
+	pickField := func(get func(ModelSpec) string) pulumi.StringOutput {
+		return specOutput.ApplyT(func(raw any) (string, error) {
+			spec, _ := raw.(ModelSpec)
+			return get(spec), nil
+		}).(pulumi.StringOutput)
+	}
+	modelFormat := pickField(func(s ModelSpec) string { return s.Format })
+	modelName := pickField(func(s ModelSpec) string { return s.Name })
+	modelVersion := pickField(func(s ModelSpec) string { return s.Version })
+	modelSKU := pickField(func(s ModelSpec) string { return s.SKU })
+
+	_, err := cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
 		AccountName:       llmInfra.Account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
 		DeploymentName:    pulumi.String(deploymentName),
 		Properties: &cognitiveservices.DeploymentPropertiesArgs{
 			Model: &cognitiveservices.DeploymentModelArgs{
-				Format:  pulumi.String(model.Format),
-				Name:    pulumi.String(model.Name),
-				Version: pulumi.String(model.Version),
+				Format:  modelFormat.ToStringPtrOutput(),
+				Name:    modelName.ToStringPtrOutput(),
+				Version: modelVersion.ToStringPtrOutput(),
 			},
 		},
 		Sku: &cognitiveservices.SkuArgs{
-			Name:     pulumi.String(model.SKU),
+			Name:     modelSKU,
 			Capacity: pulumi.Int(1),
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return fmt.Errorf(
-			"creating Azure AI Foundry deployment %s (%s/%s): %w",
-			deploymentName, model.Format, model.Name, err,
-		)
+		return fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
 	return nil
 }
 
-// selectModelForAlias maps a Defang model alias to a concrete ModelSpec.
-func selectModelForAlias(alias string, selector ModelSelector) (ModelSpec, error) {
-	if selector == nil {
-		return ModelSpec{}, ErrModelSelectorUnavailable
-	}
-
+// selectModelForAlias maps a Defang model alias to an Output of ModelSpec.
+func selectModelForAlias(alias string, selector ModelSelector) pulumi.Output {
 	var role ModelRole
 	switch {
 	case strings.Contains(alias, "embedding"):

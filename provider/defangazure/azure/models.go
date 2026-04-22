@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 var (
@@ -33,12 +35,11 @@ const (
 	ModelRoleEmbedding ModelRole = "embedding"
 )
 
-// ModelSelector picks the best available model for a given role.
-// Implementations can query Azure at deploy time or use a static mapping.
+// ModelSelector picks the best available model for a given role. Returns a
+// pulumi Output so the ARM "list models" call is deferred until the underlying
+// AIServices account has actually been created.
 type ModelSelector interface {
-	// SelectModel returns the best available model for the given role,
-	// or an error if no suitable model is found.
-	SelectModel(role ModelRole) (ModelSpec, error)
+	SelectModel(role ModelRole) pulumi.Output
 }
 
 // chatPreference and embeddingPreference define model preference order.
@@ -76,15 +77,58 @@ type availableModel struct {
 }
 
 // DynamicModelSelector queries the Azure AI account for available models
-// at deploy time and picks the best one based on preference order.
+// at deploy time (not preview) after the account has been created.
+//
+// Model listing runs inside a pulumi ApplyT gated on rgName+accountName, so
+// it blocks until the account's Name output is known — i.e. after Azure has
+// finished creating it. The result is cached via sync.Once so every
+// SelectModel call shares the same ARM round-trip.
 type DynamicModelSelector struct {
-	models []availableModel
+	subscriptionID string
+	rgName         pulumi.StringOutput
+	accountName    pulumi.StringOutput
+
+	once   sync.Once
+	models pulumi.Output // cached []availableModel
 }
 
-// NewDynamicModelSelector queries the Foundry account's available models
-// and returns a selector that picks the best match at deploy time.
-// If accountName is empty, the first AIServices account in the resource group is used.
-func NewDynamicModelSelector(subscriptionID, resourceGroup, accountName string) (*DynamicModelSelector, error) {
+// NewDynamicModelSelector builds a selector that lists models lazily, after
+// the Account represented by accountName has been created.
+func NewDynamicModelSelector(subscriptionID string, rgName, accountName pulumi.StringOutput) *DynamicModelSelector {
+	return &DynamicModelSelector{
+		subscriptionID: subscriptionID,
+		rgName:         rgName,
+		accountName:    accountName,
+	}
+}
+
+// modelsOutput returns a lazily-computed pulumi.Output wrapping []availableModel.
+// The ARM list call runs at most once per selector.
+func (s *DynamicModelSelector) modelsOutput() pulumi.Output {
+	s.once.Do(func() {
+		s.models = pulumi.All(s.rgName, s.accountName).ApplyT(
+			func(args []interface{}) ([]availableModel, error) {
+				rg, _ := args[0].(string)
+				acct, _ := args[1].(string)
+				return listModels(s.subscriptionID, rg, acct)
+			},
+		)
+	})
+	return s.models
+}
+
+// SelectModel returns a pulumi.Output that resolves to a ModelSpec for the
+// given role. The resolution depends on the Account's Name output, so it
+// runs only after Azure has created the AIServices account.
+func (s *DynamicModelSelector) SelectModel(role ModelRole) pulumi.Output {
+	return s.modelsOutput().ApplyT(func(raw any) (ModelSpec, error) {
+		models, _ := raw.([]availableModel)
+		return pickModel(models, role)
+	})
+}
+
+// listModels lists the models available for a specific Azure AI Foundry account.
+func listModels(subscriptionID, resourceGroup, accountName string) ([]availableModel, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential for model listing: %w", err)
@@ -98,25 +142,7 @@ func NewDynamicModelSelector(subscriptionID, resourceGroup, accountName string) 
 	ctx := context.Background()
 
 	if accountName == "" {
-		rgPager := client.NewListByResourceGroupPager(resourceGroup, nil)
-		for rgPager.More() {
-			page, err := rgPager.NextPage(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("listing accounts in RG: %w", err)
-			}
-			for _, acct := range page.Value {
-				if acct.Kind != nil && *acct.Kind == "AIServices" && acct.Name != nil {
-					accountName = *acct.Name
-					break
-				}
-			}
-			if accountName != "" {
-				break
-			}
-		}
-		if accountName == "" {
-			return nil, fmt.Errorf("%w: resource group %s", ErrNoAIServicesAccount, resourceGroup)
-		}
+		return nil, fmt.Errorf("%w: resource group %s", ErrNoAIServicesAccount, resourceGroup)
 	}
 
 	pager := client.NewListModelsPager(resourceGroup, accountName, nil)
@@ -148,11 +174,11 @@ func NewDynamicModelSelector(subscriptionID, resourceGroup, accountName string) 
 	}
 
 	log.Printf("DynamicModelSelector: found %d models in account %s", len(models), accountName)
-	return &DynamicModelSelector{models: models}, nil
+	return models, nil
 }
 
-// SelectModel picks the best available model for the given role.
-func (s *DynamicModelSelector) SelectModel(role ModelRole) (ModelSpec, error) {
+// pickModel selects the best available model for the given role from a list.
+func pickModel(models []availableModel, role ModelRole) (ModelSpec, error) {
 	var prefs []struct{ name, format string }
 	switch role {
 	case ModelRoleChat:
@@ -164,7 +190,7 @@ func (s *DynamicModelSelector) SelectModel(role ModelRole) (ModelSpec, error) {
 	}
 
 	for _, pref := range prefs {
-		best := s.findBest(pref.name, pref.format)
+		best := findBest(models, pref.name, pref.format)
 		if best != nil {
 			sku := "GlobalStandard"
 			for _, sk := range best.skus {
@@ -186,11 +212,11 @@ func (s *DynamicModelSelector) SelectModel(role ModelRole) (ModelSpec, error) {
 	return ModelSpec{}, fmt.Errorf("%w: %s role", ErrNoSuitableModel, role)
 }
 
-// findBest returns the model with the highest version matching the given name and format.
-func (s *DynamicModelSelector) findBest(name, format string) *availableModel {
+// findBest returns the highest-version model matching name and format.
+func findBest(models []availableModel, name, format string) *availableModel {
 	var best *availableModel
-	for i := range s.models {
-		m := &s.models[i]
+	for i := range models {
+		m := &models[i]
 		if !strings.EqualFold(m.name, name) || !strings.EqualFold(m.format, format) {
 			continue
 		}

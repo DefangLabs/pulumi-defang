@@ -85,6 +85,27 @@ func detectServiceTypes(services compose.Services) serviceTypes {
 	return result
 }
 
+// withResourceDeps returns val as a StringOutput whose Pulumi dependency graph
+// also includes the URNs of deps. Downstream resources that read this output
+// (e.g. via ApplyT or as a field input) transitively DependOn the deps —
+// without the caller having to thread explicit DependsOn options through.
+// Useful for attaching invisible readiness signals (e.g. server parameter
+// configurations) to an endpoint string that apps consume.
+func withResourceDeps(val pulumi.StringOutput, deps []pulumi.Resource) pulumi.StringOutput {
+	if len(deps) == 0 {
+		return val
+	}
+	ins := make([]interface{}, 0, len(deps)+1)
+	ins = append(ins, val)
+	for _, d := range deps {
+		ins = append(ins, d.URN())
+	}
+	return pulumi.All(ins...).ApplyT(func(parts []interface{}) string {
+		s, _ := parts[0].(string)
+		return s
+	}).(pulumi.StringOutput)
+}
+
 func createPostgresResources(
 	ctx *pulumi.Context,
 	svcName string,
@@ -105,9 +126,17 @@ func createPostgresResources(
 		return pulumi.StringOutput{}, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 	}
 
-	endpoint := pulumi.Sprintf("%s:5432", pgResult.Server.FullyQualifiedDomainName)
+	// Downstream Container Apps read managedEndpoints/serviceHosts to build env
+	// vars (e.g. DATABASE_URL). The Server's FQDN is available as soon as the
+	// server exists, but running migrations that rely on server parameters
+	// (`azure.extensions=VECTOR`, `require_secure_transport=OFF`) requires the
+	// Configurations to be applied first. Thread those through as hidden deps
+	// on the outputs apps consume, so Pulumi won't start the apps until the
+	// server is actually ready for queries that need those settings.
+	fqdn := withResourceDeps(pgResult.Server.FullyQualifiedDomainName, pgResult.Readiness)
+	endpoint := pulumi.Sprintf("%s:5432", fqdn)
 	managedEndpoints[svcName] = endpoint
-	serviceHosts[svcName] = pgResult.Server.FullyQualifiedDomainName
+	serviceHosts[svcName] = fqdn
 	return endpoint, nil
 }
 
