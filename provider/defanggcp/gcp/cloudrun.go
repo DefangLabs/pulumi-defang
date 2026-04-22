@@ -8,6 +8,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 type CloudRunResult struct {
@@ -62,15 +63,17 @@ func CreateCloudRunService(
 	}
 
 	// Create Cloud Run service (depends on IAM bindings)
-	crService, err := cloudrunv2.NewService(ctx, serviceName, &cloudrunv2.ServiceArgs{
+	serviceArgs := &cloudrunv2.ServiceArgs{
 		Location:           pulumi.String(gcpConfig.Region),
 		Ingress:            pulumi.String(Ingress.Get(ctx)),
-		LaunchStage:        pulumi.String(LaunchStage.Get(ctx)), // TODO: results in diff
 		InvokerIamDisabled: pulumi.Bool(true),
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-		Scaling:            &cloudrunv2.ServiceScalingArgs{},
 		Template:           template,
-	}, append(opts, pulumi.DependsOn(iamDeps))...)
+	}
+	if launchStage, err := config.New(ctx, "defang").Try("launch-stage"); err == nil && launchStage != "" {
+		serviceArgs.LaunchStage = pulumi.String(launchStage)
+	}
+	crService, err := cloudrunv2.NewService(ctx, serviceName, serviceArgs, append(opts, pulumi.DependsOn(iamDeps))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
 	}
@@ -159,8 +162,9 @@ func buildTemplate(
 		maxInstances = mr
 	}
 
-	resourceLimits := pulumi.StringMap{}
+	var resourceLimits pulumi.StringMap
 	if svc.HasResourceReservations() {
+		resourceLimits = make(pulumi.StringMap)
 		cpuLimit, memLimit := cloudRunLimits(svc.GetCPUs(), svc.GetMemoryMiB())
 		resourceLimits["cpu"] = pulumi.String(cpuLimit)
 		resourceLimits["memory"] = pulumi.String(memLimit)

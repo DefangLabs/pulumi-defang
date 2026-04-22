@@ -48,33 +48,36 @@ func runAzure(ctx *pulumi.Context) error {
 	// Construct time to find where to look for user config.
 	vaultName := defangAzureCfg.Require("keyVaultName")
 
+	// RBAC (not access policies), because defang-azure's CreateKeyVaultIdentity
+	// grants vault access via a role assignment — access policies would ignore
+	// that grant and the Container App's managed identity can't read secrets.
 	vault, err := keyvault.NewVault(ctx, "config-example", &keyvault.VaultArgs{
 		ResourceGroupName: rg.Name,
 		VaultName:         pulumi.String(vaultName),
 		Location:          pulumi.String(location),
 		Properties: &keyvault.VaultPropertiesArgs{
-			TenantId: pulumi.String(clientConfig.TenantId),
+			TenantId:                  pulumi.String(clientConfig.TenantId),
+			EnableRbacAuthorization:   pulumi.Bool(true),
+			EnableSoftDelete:          pulumi.Bool(true),
+			SoftDeleteRetentionInDays: pulumi.Int(7),
 			Sku: &keyvault.SkuArgs{
 				Family: pulumi.String("A"),
 				Name:   keyvault.SkuNameStandard,
 			},
-			// Access policies are simpler than RBAC here: no role assignment
-			// required, just list the object IDs and the operations allowed.
-			AccessPolicies: keyvault.AccessPolicyEntryArray{
-				&keyvault.AccessPolicyEntryArgs{
-					TenantId: pulumi.String(clientConfig.TenantId),
-					ObjectId: pulumi.String(clientConfig.ObjectId),
-					Permissions: &keyvault.PermissionsArgs{
-						Secrets: pulumi.StringArray{
-							pulumi.String("get"),
-							pulumi.String("list"),
-							pulumi.String("set"),
-							pulumi.String("delete"),
-						},
-					},
-				},
-			},
 		},
+	}, pulumi.Provider(azureProvider))
+	if err != nil {
+		return err
+	}
+
+	// With RBAC, the caller running `pulumi up` needs write perms on the vault
+	// to create the secret below. "Key Vault Administrator" covers data plane
+	// read+write. Built-in role ID 00482a5a-887f-4fb3-b363-3b7fe8e74483.
+	vaultAdminRole, err := authorization.NewRoleAssignment(ctx, "kv-admin", &authorization.RoleAssignmentArgs{
+		Scope:            vault.ID(),
+		RoleDefinitionId: pulumi.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/00482a5a-887f-4fb3-b363-3b7fe8e74483", config.New(ctx, "azure-native").Require("subscriptionId")),
+		PrincipalId:      pulumi.String(clientConfig.ObjectId),
+		PrincipalType:    pulumi.String("User"),
 	}, pulumi.Provider(azureProvider))
 	if err != nil {
 		return err
@@ -88,6 +91,8 @@ func runAzure(ctx *pulumi.Context) error {
 
 	// FetchUserConfig lists vault secrets and recovers the original key name
 	// from the "original-key" tag — the secret name itself is ignored.
+	// DependsOn the role assignment so secret creation waits for the caller's
+	// write permission to be in place (otherwise ARM can 403 on propagation lag).
 	secret, err := keyvault.NewSecret(ctx, "config", &keyvault.SecretArgs{
 		ResourceGroupName: rg.Name,
 		VaultName:         vault.Name,
@@ -98,7 +103,7 @@ func runAzure(ctx *pulumi.Context) error {
 		Tags: pulumi.StringMap{
 			"original-key": pulumi.String(stackPath),
 		},
-	}, pulumi.Provider(azureProvider))
+	}, pulumi.Provider(azureProvider), pulumi.DependsOn([]pulumi.Resource{vaultAdminRole}))
 	if err != nil {
 		return err
 	}

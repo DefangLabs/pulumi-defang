@@ -2,7 +2,6 @@ package azure
 
 import (
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -151,9 +150,16 @@ func buildEnvVars(
 			appSecretName := toContainerAppSecretName(secretVar)
 			if _, ok := seenSecrets[appSecretName]; !ok {
 				seenSecrets[appSecretName] = struct{}{}
+				// Container Apps requires both KeyVaultUrl and Identity when
+				// referencing a Key Vault secret — the identity is what the
+				// runtime uses to authenticate the vault fetch.
+				// Build the URL by concatenation (not path.Join) — path.Join
+				// collapses the "//" after https:, producing "https:/…" which
+				// Container Apps rejects.
 				appSecrets = append(appSecrets, app.SecretArgs{
 					Name:        pulumi.String(appSecretName),
-					KeyVaultUrl: pulumi.String(path.Join(infra.KeyVaultURL, "secrets", secretRef)),
+					KeyVaultUrl: pulumi.String(strings.TrimRight(infra.KeyVaultURL, "/") + "/secrets/" + secretRef),
+					Identity:    infra.KeyVaultIdentityID,
 				})
 			}
 			envs = append(envs, app.EnvironmentVarArgs{
@@ -215,7 +221,11 @@ func CreateContainerApp(
 	probes := buildProbes(svc)
 
 	var registries app.RegistryCredentialsArray
-	var identity *app.ManagedServiceIdentityArgs
+	// Collect user-assigned identities the app needs: one for ACR pull (when
+	// BuildInfra is present) and one for Key Vault reads (when secrets are
+	// referenced by KeyVaultUrl). Every identity referenced by a secret or
+	// registry must be declared here, or Container Apps rejects the spec.
+	var userIdentities pulumi.StringArray
 	if infra.BuildInfra != nil {
 		identityID := infra.BuildInfra.ManagedIdentityID()
 		registries = app.RegistryCredentialsArray{
@@ -224,9 +234,16 @@ func CreateContainerApp(
 				Identity: identityID,
 			},
 		}
+		userIdentities = append(userIdentities, identityID)
+	}
+	if len(result.Secrets) > 0 && infra.KeyVaultURL != "" {
+		userIdentities = append(userIdentities, infra.KeyVaultIdentityID)
+	}
+	var identity *app.ManagedServiceIdentityArgs
+	if len(userIdentities) > 0 {
 		identity = &app.ManagedServiceIdentityArgs{
 			Type:                   pulumi.String("UserAssigned"),
-			UserAssignedIdentities: pulumi.StringArray{identityID},
+			UserAssignedIdentities: userIdentities,
 		}
 	}
 

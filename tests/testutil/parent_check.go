@@ -69,6 +69,15 @@ func (pt *ParentTracker) Records() []ParentRecord {
 // "<projectType>$". Resources whose own type token equals the project's type
 // are treated as the root Project component and skipped.
 //
+// It does NOT enforce that every immediate parent is a component. Pulumi's
+// SDK caution against parenting to custom resources (see the __childResources
+// comment in pulumi/sdk/nodejs/resource.ts) is really about dependency-walk
+// cycles, not a blanket ban — and ecosystem patterns like ARM-hierarchy
+// children (VirtualNetworkLink→PrivateZone, RedisEnterpriseDatabase→cluster,
+// PrivateDnsZoneGroup→PrivateEndpoint) and awsx's internal topology
+// legitimately parent custom-to-custom. Keeping this check here as a strict
+// invariant produced false positives on those patterns.
+//
 // Failures are reported as test errors (not fatals) so a single run surfaces
 // every orphan resource at once.
 func (pt *ParentTracker) AssertAllDescendFrom(t *testing.T, projectURN resource.URN) {
