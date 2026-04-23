@@ -86,7 +86,12 @@ func buildProject(
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → component resource for dependees
-	configProvider := providergcp.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = providergcp.NewConfigProvider(projectName)
+	}
 	var lbEntries []providergcp.LBServiceEntry
 
 	if common.IsProjectUsingLLM(args.Services) {
@@ -134,6 +139,7 @@ func buildProject(
 		projectName,
 		lbEntries,
 		config,
+		childOpts...,
 	)
 	if err != nil {
 		return nil, err
@@ -151,14 +157,13 @@ func buildService(
 	configProvider compose.ConfigProvider,
 	svcName string,
 	svc compose.ServiceConfig,
-	infra *providergcp.GlobalConfig,
+	infra *providergcp.SharedInfra,
 	deps []pulumi.Resource,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, pulumi.Resource, *providergcp.LBServiceEntry, error) {
-	svcComp := &struct{ pulumi.ResourceState }{}
-
 	var endpoint pulumi.StringOutput
 	var lbEntry *providergcp.LBServiceEntry
+	var svcComp pulumi.Resource
 
 	svcChildOpts := childOpts
 	if len(deps) > 0 {
@@ -168,120 +173,59 @@ func buildService(
 	switch {
 	case svc.Postgres != nil:
 		// Managed Postgres → Cloud SQL
-		if err := ctx.RegisterComponentResource("defang-gcp:index:Postgres", svcName, svcComp, svcChildOpts...); err != nil {
+		pgComp := &PostgresOutputs{}
+		if err := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
 		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
-
-		sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, svcName, svc, infra, svcOpts...)
-		if err != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Cloud SQL for %s: %w", svcName, err)
+		if err := createPostgres(ctx, pgComp, configProvider, svcName, svc, infra); err != nil {
+			return pulumi.StringOutput{}, nil, nil, err
 		}
-
-		lbEntry = &providergcp.LBServiceEntry{Name: svcName, PostgresInstance: sqlResult.Instance, Config: svc}
-		port := firstPort(svc.Ports, defaultPostgresPort)
-		endpoint = pulumi.Sprintf("%s:%d", sqlResult.Instance.PublicIpAddress, port)
+		endpoint = pgComp.Endpoint
+		lbEntry = &providergcp.LBServiceEntry{Name: svcName, PostgresInstance: pgComp.Instance, Config: svc}
+		svcComp = pgComp
 	case svc.Redis != nil:
 		// Managed Redis → Memorystore
-		if err := ctx.RegisterComponentResource("defang-gcp:index:Redis", svcName, svcComp, svcChildOpts...); err != nil {
+		redisComp := &RedisOutputs{}
+		if err := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Memorystore component %s: %w", svcName, err)
 		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(svcComp)}
-
-		redisResult, err := providergcp.CreateMemoryStore(ctx, svcName, svc, infra, svcOpts...)
-		if err != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("creating Memorystore for %s: %w", svcName, err)
+		if err := createRedis(ctx, redisComp, svcName, svc, infra); err != nil {
+			return pulumi.StringOutput{}, nil, nil, err
 		}
-		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisResult.Instance, Config: svc}
-		endpoint = pulumi.Sprintf("%s:%d", redisResult.Instance.Host, firstPort(svc.Ports, defaultRedisPort))
+		endpoint = redisComp.Endpoint
+		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisComp.Instance, Config: svc}
+		svcComp = redisComp
 	default:
-		if err := ctx.RegisterComponentResource("defang-gcp:index:Service", svcName, svcComp, svcChildOpts...); err != nil {
+		svcCompTyped := &ServiceOutputs{}
+		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcCompTyped, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
 		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.Repos, infra.BuildInfra, svcChildOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-
-		var extraDeps []pulumi.ResourceOption
-		if len(deps) > 0 {
-			extraDeps = []pulumi.ResourceOption{pulumi.DependsOn(deps)}
-		}
-		endpoint, lbEntry, err = BuildContainerService(
-			ctx, projectName, configProvider, svcName, image, svc, infra, svcComp, extraDeps...)
-		if err != nil {
+		if err := createService(ctx, svcCompTyped, projectName, configProvider, svcName, image, svc, infra); err != nil {
 			return pulumi.StringOutput{}, nil, nil, err
 		}
+		endpoint = svcCompTyped.Endpoint
+		lbEntry = svcCompTyped.LBEntry
+		svcComp = svcCompTyped
 	}
-	if lbEntry != nil && svc.HasHostPorts() {
+	// Managed Postgres/Redis still need the PrivateFqdn wired here because their
+	// createX workers don't build the LBEntry themselves. createService sets
+	// PrivateFqdn internally for the Service case.
+	if lbEntry != nil && svc.HasHostPorts() && lbEntry.PrivateFqdn == "" {
 		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", svcName, "google.internal")
 	}
 
-	if err := ctx.RegisterResourceOutputs(svcComp, pulumi.Map{
-		"endpoint": endpoint,
-	}); err != nil {
-		return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering outputs for %s: %w", svcName, err)
-	}
-
 	return endpoint, svcComp, lbEntry, nil
-}
-
-// BuildContainerService creates Cloud Run or Compute Engine resources for a service.
-// svcComp must already be registered as a component resource before calling this function.
-func BuildContainerService(
-	ctx *pulumi.Context,
-	projectName string,
-	configProvider compose.ConfigProvider,
-	svcName string,
-	image pulumi.StringInput,
-	svc compose.ServiceConfig,
-	infra *providergcp.GlobalConfig,
-	svcComp pulumi.Resource,
-	extraOpts ...pulumi.ResourceOption,
-) (pulumi.StringOutput, *providergcp.LBServiceEntry, error) {
-	childOpts := append([]pulumi.ResourceOption{pulumi.Parent(svcComp)}, extraOpts...)
-
-	sa, err := createServiceAccount(ctx, projectName, svcName, infra, childOpts)
-	if err != nil {
-		return pulumi.StringOutput{}, nil, err
-	}
-
-	if svc.LLM != nil {
-		if err := enableLLM(ctx, svcName, &svc, sa, infra, childOpts); err != nil {
-			return pulumi.StringOutput{}, nil, err
-		}
-	}
-
-	if providergcp.IsCloudRunService(&svc) {
-		// Cloud Run: single ingress port
-		crResult, err := providergcp.CreateCloudRunService(
-			ctx, configProvider, svcName, image, svc, sa, infra, pulumi.Parent(svcComp))
-		if err != nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("creating Cloud Run service %s: %w", svcName, err)
-		}
-		lbEntry := &providergcp.LBServiceEntry{Name: svcName, CloudRunService: crResult.Service, Config: svc}
-		return crResult.Service.Uri, lbEntry, nil
-	}
-
-	// Compute Engine: portless workers or services with host-mode ports
-	ceResult, err := providergcp.CreateComputeEngine(
-		ctx, projectName, svcName, image, svc, sa, infra, pulumi.Parent(svcComp),
-	)
-	if err != nil {
-		return pulumi.StringOutput{}, nil, fmt.Errorf("creating Compute Engine service %s: %w", svcName, err)
-	}
-	var lbEntry *providergcp.LBServiceEntry
-	if svc.HasIngressPorts() || svc.HasHostPorts() {
-		lbEntry = &providergcp.LBServiceEntry{Name: svcName, InstanceGroup: ceResult.InstanceGroup, Config: svc}
-	}
-	return infra.PublicIP.Address.ToStringOutput(), lbEntry, nil
 }
 
 func createServiceAccount(
 	ctx *pulumi.Context,
 	projectName,
 	svcName string,
-	infra *providergcp.GlobalConfig,
+	infra *providergcp.SharedInfra,
 	svcChildOpts []pulumi.ResourceOption,
 ) (*serviceaccount.Account, error) {
 	displayName := fmt.Sprintf("%v service %v stack %v Service Account", projectName, infra.Stack, svcName)
@@ -307,7 +251,7 @@ func enableLLM(
 	svcName string,
 	svc *compose.ServiceConfig,
 	sa *serviceaccount.Account,
-	infra *providergcp.GlobalConfig,
+	infra *providergcp.SharedInfra,
 	svcChildOpts []pulumi.ResourceOption,
 ) error {
 	// TODO: add dependency to the member resource
@@ -328,34 +272,30 @@ func enableLLM(
 	}
 
 	if svc.Environment == nil {
-		svc.Environment = make(map[string]string)
+		svc.Environment = make(map[string]*string)
+	}
+
+	// setDefault fills an env var with a default only when absent or empty-literal.
+	// A nil *string value (YAML "KEY:" with no value) means "resolve at runtime from
+	// config" — leave it alone.
+	setDefault := func(key, defaultVal string) {
+		val, ok := svc.Environment[key]
+		if ok && (val == nil || *val != "") {
+			return
+		}
+		v := defaultVal
+		svc.Environment[key] = &v
 	}
 
 	// Inject environment variables for Vercel routing for GCP Vertex AI access
 	// https://ai-sdk.dev/providers/ai-sdk-providers/google-vertex
-	if val, ok := svc.Environment["GOOGLE_VERTEX_PROJECT"]; !ok || val == "" {
-		svc.Environment["GOOGLE_VERTEX_PROJECT"] = infra.GcpProject
-	}
-
-	if val, ok := svc.Environment["GOOGLE_VERTEX_LOCATION"]; !ok || val == "" {
-		svc.Environment["GOOGLE_VERTEX_LOCATION"] = infra.Region
-	}
-
-	if val, ok := svc.Environment["VERTEX_PROJECT"]; !ok || val == "" {
-		svc.Environment["VERTEX_PROJECT"] = infra.GcpProject
-	}
-
-	if val, ok := svc.Environment["VERTEX_LOCATION"]; !ok || val == "" {
-		svc.Environment["VERTEX_LOCATION"] = infra.Region
-	}
+	setDefault("GOOGLE_VERTEX_PROJECT", infra.GcpProject)
+	setDefault("GOOGLE_VERTEX_LOCATION", infra.Region)
+	setDefault("VERTEX_PROJECT", infra.GcpProject)
+	setDefault("VERTEX_LOCATION", infra.Region)
 
 	// Inject environment variables for Google ADK to have access to GCP Vertex AI
-	if val, ok := svc.Environment["GOOGLE_CLOUD_PROJECT"]; !ok || val == "" {
-		svc.Environment["GOOGLE_CLOUD_PROJECT"] = infra.GcpProject
-	}
-
-	if val, ok := svc.Environment["GOOGLE_CLOUD_LOCATION"]; !ok || val == "" {
-		svc.Environment["GOOGLE_CLOUD_LOCATION"] = infra.Region
-	}
+	setDefault("GOOGLE_CLOUD_PROJECT", infra.GcpProject)
+	setDefault("GOOGLE_CLOUD_LOCATION", infra.Region)
 	return nil
 }

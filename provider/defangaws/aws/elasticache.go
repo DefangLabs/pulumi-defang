@@ -187,7 +187,7 @@ func CreateElasticache(
 	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
-	privateSgID pulumi.IDPtrInput,
+	privateSgID pulumi.StringPtrInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -229,7 +229,9 @@ func CreateElasticache(
 		"defang:service": pulumi.String(serviceName),
 	}
 
-	// Create ElastiCache subnet group (always private).
+	// Create ElastiCache subnet group (always private). AWS rejects uppercase in
+	// the name; pass a lowercased Pulumi resource name so autoname produces a
+	// valid "<safe>-<hex>" value.
 	var subnetGroupName pulumi.StringPtrOutput
 	if privateSubnetIDs != nil {
 		subnetGroup, err := awselasticache.NewSubnetGroup(ctx, serviceName, &awselasticache.SubnetGroupArgs{
@@ -243,17 +245,22 @@ func CreateElasticache(
 		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
-	// Create security group allowing ingress only from the service SG.
+	// The service SG is only referenced when supplied; standalone Construct
+	// callers (e.g. unit tests) may omit it.
+	var ingressSGs pulumi.StringArray
+	if privateSgID != nil {
+		ingressSGs = pulumi.StringArray{privateSgID.ToStringPtrOutput().Elem()}
+	}
 	cacheSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String("ElastiCache security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
-				Description:    pulumi.String("Redis"),
+				Description:    pulumi.String("Allow incoming Redis traffic"),
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
-				SecurityGroups: pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()},
+				SecurityGroups: ingressSGs,
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{

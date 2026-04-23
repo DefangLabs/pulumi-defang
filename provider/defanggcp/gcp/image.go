@@ -108,12 +108,12 @@ func GetServiceImage(
 	repos map[string]*artifactregistry.Repository,
 	infra *BuildInfra,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringInput, error) {
+) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {
 		return buildServiceImage(ctx, serviceName, svc, infra, opts...)
 	}
 	if svc.Image == nil {
-		return nil, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
+		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
 	}
 
 	info := common.ParseImage(*svc.Image)
@@ -129,7 +129,7 @@ func GetServiceImage(
 
 		repo, ok := repos[originalRegistry]
 		if !ok {
-			return pulumi.String(""), fmt.Errorf(
+			return pulumi.StringOutput{}, fmt.Errorf(
 				"%w %s (referenced by service %s)",
 				errNoRemoteRepoConfigured, originalRegistry, serviceName,
 			)
@@ -145,7 +145,7 @@ func GetServiceImage(
 		}).(pulumi.StringOutput)
 		return image, nil
 	}
-	return pulumi.String(info.FullImage()), nil
+	return pulumi.String(info.FullImage()).ToStringOutput(), nil
 }
 
 // cloudBuildMachineType returns the Cloud Build machine type string for a given
@@ -208,7 +208,7 @@ func resolveSourceURI(
 	build *compose.BuildConfig,
 	infra *BuildInfra,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringInput, error) {
+) (pulumi.StringOutput, error) {
 	ps, ok := build.Context.(pulumi.String)
 	if ok && !strings.HasPrefix(string(ps), "gs://") {
 		obj, err := storage.NewBucketObject(ctx, serviceName+"-context", &storage.BucketObjectArgs{
@@ -217,12 +217,12 @@ func resolveSourceURI(
 			Source: pulumi.NewFileArchive(string(ps)),
 		}, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
+			return pulumi.StringOutput{}, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
 		}
 		return pulumi.Sprintf("gs://%s/%s", infra.BuildBucket.Name, obj.Name), nil
 	}
 	// Already a GCS URI (or an unresolved output) — use as-is.
-	return build.Context, nil
+	return build.Context.ToStringOutput(), nil
 }
 
 // buildServiceImage creates a defang-gcp:defanggcp:Build custom resource that
@@ -233,14 +233,14 @@ func buildServiceImage(
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
 	opts ...pulumi.ResourceOption,
-) (pulumi.StringInput, error) {
+) (pulumi.StringOutput, error) {
 	dest := pulumi.Sprintf("%s/%s:latest", infra.RepositoryURL, serviceName)
 	steps := generateBuildSteps(dest)
 	shmBytes := svc.Build.GetShmSizeBytes()
 
 	sourceURI, err := resolveSourceURI(ctx, serviceName, svc.Build, infra, opts...)
 	if err != nil {
-		return nil, err
+		return pulumi.StringOutput{}, err
 	}
 
 	// The Build resource must depend on the BucketIAMMember so Pulumi waits for
@@ -272,7 +272,7 @@ func buildServiceImage(
 		&buildRes,
 		buildOpts...,
 	); err != nil {
-		return nil, fmt.Errorf("creating Build resource for %s: %w", serviceName, err)
+		return pulumi.StringOutput{}, fmt.Errorf("creating Build resource for %s: %w", serviceName, err)
 	}
 
 	return pulumi.Sprintf("%s@%s", dest, buildRes.ImageDigest), nil

@@ -35,7 +35,7 @@ import (
 
 var version = "development" // overwritten by -ldflags "-X main.version=..."
 
-func provider() string {
+func detectProvider() string {
 	switch {
 	case awsRegion != "":
 		return "aws"
@@ -56,8 +56,7 @@ func color() string {
 }
 
 // projectConfig returns config for Pulumi.yaml (project-level settings).
-func projectConfig() map[string]workspace.ProjectConfigType {
-	prefix := prefix
+func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 	if prefix != "" {
 		prefix += "-"
 	}
@@ -69,10 +68,14 @@ func projectConfig() map[string]workspace.ProjectConfigType {
 				"providers": map[string]any{
 					"aws": map[string]any{
 						"resources": map[string]any{
-							"aws:lb/loadBalancer:LoadBalancer":        map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
-							"aws:lb/targetGroup:TargetGroup":          map[string]string{"pattern": "${name}-${hex(4)}"},
-							"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
-							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"},
+							"aws:lb/loadBalancer:LoadBalancer": map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
+							"aws:lb/targetGroup:TargetGroup":   map[string]string{"pattern": "${name}-${hex(4)}"},
+							// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
+							// full prefix already disambiguates it; no need to repeat it here.
+							"aws:ecs/service:Service":                 map[string]string{"pattern": "${name}-${hex(7)}"},
+							"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
+							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
+							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
 						},
 					},
 					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
@@ -88,12 +91,13 @@ func projectConfig() map[string]workspace.ProjectConfigType {
 			},
 		},
 		"pulumi:disable-default-providers": {
-			Value: []string{"eks", "kubernetes", "aws"},
+			// Ensure we create one provider per cloud by disabling the automatic default providers
+			Value: []string{"eks", "kubernetes", "aws", "aws-native", "gcp", "google-native", "azure", "azure-native"},
 		},
 	}
 }
 
-// fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, base64, or a local file.
+// fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, or base64.
 func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 	switch {
 	case strings.HasPrefix(uri, "s3://"):
@@ -216,11 +220,11 @@ func extractComposeYaml(projectUpdate []byte) ([]byte, error) {
 func stackConfig() auto.ConfigMap {
 	cfg := auto.ConfigMap{
 		// Defang program config
-		"defang:provider": auto.ConfigValue{Value: provider()},
+		"defang:provider": auto.ConfigValue{Value: detectProvider()},
 	}
 
 	// Cloud provider config read by the explicit providers in the program
-	switch provider() {
+	switch detectProvider() {
 	case "aws":
 		if awsRegion == "" {
 			log.Fatal("missing required environment variable: AWS_REGION or REGION")
@@ -249,12 +253,21 @@ func stackConfig() auto.ConfigMap {
 		if azureSubscription != "" {
 			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
 		}
+		if azureResourceGroup != "" {
+			// The project resource group: the provider imports this RG instead
+			// of creating a new one.
+			cfg["defang-azure:resourceGroup"] = auto.ConfigValue{Value: azureResourceGroup}
+		}
+		if azureKeyVaultName != "" {
+			// Key Vault name to be passed in by cli as config can be set before deployment
+			cfg["defang-azure:keyVaultName"] = auto.ConfigValue{Value: azureKeyVaultName}
+		}
 	}
 
 	// Defang recipe config
 	cfg["defang:org"] = auto.ConfigValue{Value: org}
 	cfg["defang:prefix"] = auto.ConfigValue{Value: prefix}
-	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode}
+	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode} // backwards compatible with legacy behavior; now using recipes
 	if domain != "" {
 		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
 	}
@@ -266,10 +279,6 @@ func stackConfig() auto.ConfigMap {
 	}
 	if registryCredsArn != "" {
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
-	}
-
-	switch mode {
-	case "development":
 	}
 
 	return cfg
@@ -405,24 +414,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to get project settings: %v", err)
 	}
-	ps.Config = projectConfig()
+	ps.Config = projectConfig(prefix)
 	if err := stack.Workspace().SaveProjectSettings(ctx, ps); err != nil {
 		log.Fatalf("failed to save project settings: %v", err)
 	}
 
-	// Set stack-level config (provider settings, defang config, user secrets)
+	// Set stack-level config (provider settings, defang config)
 	cfg := stackConfig()
-	if provider() == "azure" {
-		userCfg, err := fetchAzureUserConfig(ctx)
-		if err != nil {
-			log.Printf("warning: failed to read Azure user config from App Configuration: %v", err)
-		}
-		for k, v := range userCfg {
-			// Store under the project namespace so the provider's ConfigProvider can
-			// read it via config.New(ctx, "").GetSecret(key).
-			cfg[project+":"+k] = auto.ConfigValue{Value: v, Secret: true}
-		}
-	}
 	if err := stack.SetAllConfig(ctx, cfg); err != nil {
 		log.Fatalf("failed to set config: %v", err)
 	}
@@ -476,7 +474,7 @@ func main() {
 			log.Fatalf("failed to preview: %v", err)
 		}
 
-	case "destroy":
+	case "down", "destroy":
 		evtCh, evts := collectEvents()
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
@@ -486,39 +484,9 @@ func main() {
 			optdestroy.ContinueOnError(),
 			optdestroy.Remove(),
 		}
-		if pulumiDebug {
-			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
-		}
-		_, err := stack.Destroy(ctx, destroyOpts...)
-		uploadEvents(ctx, *evts)
-		uploadState(ctx, stack)
-		if err != nil {
-			log.Fatalf("failed to destroy: %v", err)
-		}
-
-	case "down":
 		// down = refresh + destroy (consistent with legacy behavior)
-		refreshOpts := []optrefresh.Option{
-			optrefresh.UserAgent(userAgent),
-			optrefresh.Color(color()),
-			optrefresh.ProgressStreams(os.Stderr),
-		}
-		if pulumiDebug {
-			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
-		}
-		_, err := stack.Refresh(ctx, refreshOpts...)
-		if err != nil {
-			log.Fatalf("failed to refresh: %v", err)
-		}
-
-		evtCh, evts := collectEvents()
-		destroyOpts := []optdestroy.Option{
-			optdestroy.UserAgent(userAgent),
-			optdestroy.Color(color()),
-			optdestroy.ProgressStreams(os.Stderr),
-			optdestroy.EventStreams(evtCh),
-			optdestroy.ContinueOnError(),
-			optdestroy.Remove(),
+		if command == "down" {
+			destroyOpts = append(destroyOpts, optdestroy.Refresh())
 		}
 		if pulumiDebug {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
@@ -531,15 +499,19 @@ func main() {
 		}
 
 	case "refresh":
+		evtCh, evts := collectEvents()
 		refreshOpts := []optrefresh.Option{
 			optrefresh.UserAgent(userAgent),
 			optrefresh.Color(color()),
 			optrefresh.ProgressStreams(os.Stderr),
+			optrefresh.EventStreams(evtCh),
 		}
 		if pulumiDebug {
 			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
 		}
 		_, err := stack.Refresh(ctx, refreshOpts...)
+		uploadEvents(ctx, *evts)
+		uploadState(ctx, stack)
 		if err != nil {
 			log.Fatalf("failed to refresh: %v", err)
 		}

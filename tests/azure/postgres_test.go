@@ -19,6 +19,9 @@ func TestConstructAzurePostgres(t *testing.T) {
 			"project_name": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
+			"environment": property.New(property.NewMap(map[string]property.Value{
+				"POSTGRES_PASSWORD": property.New("secret"),
+			})),
 		}),
 	})
 
@@ -35,6 +38,9 @@ func TestConstructAzurePostgresWithAllowDowntime(t *testing.T) {
 			"image":        property.New("postgres:15"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
+			})),
+			"environment": property.New(property.NewMap(map[string]property.Value{
+				"POSTGRES_PASSWORD": property.New("secret"),
 			})),
 			"aws": property.New(property.NewMap(map[string]property.Value{
 				"vpcId": property.New("vpc-12345"),

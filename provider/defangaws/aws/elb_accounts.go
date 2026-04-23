@@ -40,11 +40,9 @@ var elbAccountIds = map[aws.Region]string{
 	"cn-northwest-1": "037604701340", // China (Ningxia); requires a separate account
 }
 
-
 func getElbAccountId(region aws.Region) string {
 	return elbAccountIds[region]
 }
-
 
 func getElbAccountArn(region aws.Region) string {
 	accountId := getElbAccountId(region)
@@ -53,7 +51,6 @@ func getElbAccountArn(region aws.Region) string {
 	}
 	return `arn:aws:iam::` + accountId + `:root`
 }
-
 
 func getElbPrincipal(region aws.Region) any {
 	arn := getElbAccountArn(region)
@@ -64,7 +61,6 @@ func getElbPrincipal(region aws.Region) any {
 		AWS: pulumi.String(arn),
 	}
 }
-
 
 func getNlbPrincipal() iam.ServicePrincipal {
 	return iam.ServicePrincipal{

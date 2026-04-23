@@ -18,7 +18,7 @@ type AzureRedisInputs struct {
 	Image       *string               `pulumi:"image,optional"`
 	Redis       *compose.RedisConfig  `pulumi:"redis,optional"`
 	Deploy      *compose.DeployConfig `pulumi:"deploy,optional"`
-	Environment map[string]string     `pulumi:"environment,optional"`
+	Environment map[string]*string    `pulumi:"environment,optional"`
 }
 
 // AzureRedisOutputs holds the outputs of an Azure Redis component.
@@ -52,7 +52,7 @@ func (*Redis) Construct(
 
 	location := azure.Location(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {

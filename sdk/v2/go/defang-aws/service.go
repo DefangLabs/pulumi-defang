@@ -44,7 +44,7 @@ type serviceArgs struct {
 	Entrypoint   []string                    `pulumi:"entrypoint"`
 	Environment  map[string]string           `pulumi:"environment"`
 	HealthCheck  *compose.HealthCheckConfig  `pulumi:"healthCheck"`
-	Image        *string                     `pulumi:"image"`
+	Image        string                      `pulumi:"image"`
 	Platform     *string                     `pulumi:"platform"`
 	Ports        []compose.ServicePortConfig `pulumi:"ports"`
 	Project_name string                      `pulumi:"project_name"`
@@ -59,7 +59,7 @@ type ServiceArgs struct {
 	Entrypoint   pulumi.StringArrayInput
 	Environment  pulumi.StringMapInput
 	HealthCheck  compose.HealthCheckConfigPtrInput
-	Image        *string
+	Image        string
 	Platform     *string
 	Ports        compose.ServicePortConfigArrayInput
 	Project_name string

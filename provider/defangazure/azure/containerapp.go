@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -17,7 +18,7 @@ func postgresURLEndpoint(
 	ctx *pulumi.Context,
 	v string,
 	serviceEndpoints map[string]pulumi.StringOutput,
-	configProvider *ConfigProvider,
+	configProvider compose.ConfigProvider,
 ) (pulumi.StringOutput, bool) {
 	var prefix string
 	switch {
@@ -102,51 +103,95 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 	return 2.0, "4.00Gi"
 }
 
+// envResult holds the environment variables and secrets for a Container App.
+type envResult struct {
+	Envs    app.EnvironmentVarArray
+	Secrets app.SecretArray
+}
+
+// toContainerAppSecretName converts an env var name to a Container App secret
+// name (lowercase, hyphens instead of underscores).
+func toContainerAppSecretName(envKey string) string {
+	return strings.ToLower(strings.ReplaceAll(envKey, "_", "-"))
+}
+
 // buildEnvVars constructs the environment variable array for a Container App.
+// Pure config vars (empty value in compose) get Key Vault-backed secret references
+// when vault info is available; otherwise they fall back to inline values.
 func buildEnvVars(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
 	serviceEndpoints map[string]pulumi.StringOutput,
-) app.EnvironmentVarArray {
+	serviceHosts map[string]pulumi.StringOutput,
+	opts ...pulumi.InvokeOption,
+) envResult {
 	envs := app.EnvironmentVarArray{
 		app.EnvironmentVarArgs{
 			Name:  pulumi.String("DEFANG_SERVICE"),
 			Value: pulumi.String(serviceName),
 		},
 	}
-	for k, v := range svc.Environment {
-		var value pulumi.StringInput
-		switch {
-		case k == "OPENAI_API_KEY" && infra.LLMInfra != nil:
-			// Replace the placeholder API key with the real Azure OpenAI key.
-			value = infra.LLMInfra.APIKey
-		case v == "" && infra.ConfigProvider != nil:
-			// null/empty in compose means "read from config store" (set via `defang config set`).
-			value = infra.ConfigProvider.GetConfig(ctx, k)
-		default:
-			if ep, ok := redisURLEndpoint(v, serviceEndpoints); ok {
-				value = ep
-			} else if ep, ok := llmURLEndpoint(v, serviceEndpoints); ok {
-				value = ep
-			} else if ep, ok := postgresURLEndpoint(ctx, v, serviceEndpoints, infra.ConfigProvider); ok {
-				// Postgres URL: replace service hostname with managed FQDN and
-				// interpolate ${VAR} credential references from config store.
-				value = ep
-			} else if infra.ConfigProvider != nil && strings.Contains(v, "${") {
-				// Any other value with ${VAR} references: interpolate from config store.
-				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, v)
-			} else {
-				value = pulumi.String(v)
+
+	var appSecrets app.SecretArray
+	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we
+	// need one Secret entry per unique secret but one EnvironmentVar per env
+	// var, so dedupe on the secret var name.
+	seenSecrets := make(map[string]struct{})
+	for k, v := range common.Sorted(svc.Environment) {
+		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
+			envs = append(envs, app.EnvironmentVarArgs{
+				Name:  pulumi.String(k),
+				Value: infra.LLMInfra.APIKey,
+			})
+		} else if secretVar := compose.GetConfigName2(k, v); secretVar != "" && infra.ConfigProvider != nil {
+			secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
+			// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
+			appSecretName := toContainerAppSecretName(secretVar)
+			if _, ok := seenSecrets[appSecretName]; !ok {
+				seenSecrets[appSecretName] = struct{}{}
+				// Container Apps requires both KeyVaultUrl and Identity when
+				// referencing a Key Vault secret — the identity is what the
+				// runtime uses to authenticate the vault fetch.
+				appSecrets = append(appSecrets, app.SecretArgs{
+					Name:        pulumi.String(appSecretName),
+					KeyVaultUrl: pulumi.String(secretURL),
+					Identity:    infra.KeyVaultIdentityID,
+				})
 			}
+			envs = append(envs, app.EnvironmentVarArgs{
+				Name:      pulumi.String(k),
+				SecretRef: pulumi.String(appSecretName),
+			})
+		} else {
+			// v is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
+			// which took the secret-ref branch above when a ConfigProvider is
+			// available. The only way to land here with nil v is
+			// ConfigProvider == nil — treat as empty literal.
+			var raw string
+			if v != nil {
+				raw = *v
+			}
+			var value pulumi.StringInput
+			if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
+				value = ep
+			} else if ep, ok := llmURLEndpoint(raw, serviceEndpoints); ok {
+				value = ep
+			} else if ep, ok := postgresURLEndpoint(ctx, raw, serviceEndpoints, infra.ConfigProvider); ok {
+				value = ep
+			} else if host, ok := serviceHosts[raw]; ok {
+				value = host
+			} else {
+				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, raw)
+			}
+			envs = append(envs, app.EnvironmentVarArgs{
+				Name:  pulumi.String(k),
+				Value: value,
+			})
 		}
-		envs = append(envs, app.EnvironmentVarArgs{
-			Name:  pulumi.String(k),
-			Value: value,
-		})
 	}
-	return envs
+	return envResult{Envs: envs, Secrets: appSecrets}
 }
 
 // CreateContainerApp creates an Azure Container App.
@@ -163,9 +208,10 @@ func CreateContainerApp(
 	infra *SharedInfra,
 	imageURI pulumi.StringInput,
 	serviceEndpoints map[string]pulumi.StringOutput,
+	serviceHosts map[string]pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
-	envs := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints)
+	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts)
 
 	// Resource limits
 	cpu, mem := containerAppCpuMemory(svc.GetCPUs(), svc.GetMemoryMiB())
@@ -180,10 +226,12 @@ func CreateContainerApp(
 	ingress := buildIngress(svc)
 	probes := buildProbes(svc)
 
-	// If there's a build infra (ACR), configure the Container App to pull images
-	// using the pre-created user-assigned managed identity (AcrPull role).
 	var registries app.RegistryCredentialsArray
-	var identity *app.ManagedServiceIdentityArgs
+	// Collect user-assigned identities the app needs: one for ACR pull (when
+	// BuildInfra is present) and one for Key Vault reads (when secrets are
+	// referenced by KeyVaultUrl). Every identity referenced by a secret or
+	// registry must be declared here, or Container Apps rejects the spec.
+	var userIdentities pulumi.StringArray
 	if infra.BuildInfra != nil {
 		identityID := infra.BuildInfra.ManagedIdentityID()
 		registries = app.RegistryCredentialsArray{
@@ -192,9 +240,16 @@ func CreateContainerApp(
 				Identity: identityID,
 			},
 		}
+		userIdentities = append(userIdentities, identityID)
+	}
+	if len(result.Secrets) > 0 && infra.KeyVaultURL != "" {
+		userIdentities = append(userIdentities, infra.KeyVaultIdentityID)
+	}
+	var identity *app.ManagedServiceIdentityArgs
+	if len(userIdentities) > 0 {
 		identity = &app.ManagedServiceIdentityArgs{
 			Type:                   pulumi.String("UserAssigned"),
-			UserAssignedIdentities: pulumi.StringArray{identityID},
+			UserAssignedIdentities: userIdentities,
 		}
 	}
 
@@ -206,6 +261,7 @@ func CreateContainerApp(
 		Configuration: &app.ConfigurationArgs{
 			Ingress:    ingress,
 			Registries: registries,
+			Secrets:    result.Secrets,
 		},
 		Template: &app.TemplateArgs{
 			Scale: &app.ScaleArgs{
@@ -218,7 +274,7 @@ func CreateContainerApp(
 					Image:   imageURI,
 					Command: compose.ToPulumiStringArray(svc.Entrypoint),
 					Args:    compose.ToPulumiStringArray(svc.Command),
-					Env:     envs,
+					Env:     result.Envs,
 					Probes:  probes,
 					Resources: &app.ContainerResourcesArgs{
 						Cpu:    pulumi.Float64(cpu),

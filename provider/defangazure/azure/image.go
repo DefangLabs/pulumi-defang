@@ -1,21 +1,17 @@
 package azure
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 var (
@@ -26,8 +22,8 @@ var (
 // BuildInfra holds the shared Azure Container Registry used across all builds in a project.
 // Created once per project when at least one service requires a build.
 type BuildInfra struct {
-	registry          *containerregistry.Registry
-	subscriptionID    pulumi.StringOutput
+	registry       *containerregistry.Registry
+	subscriptionID pulumi.StringOutput
 	// managedIdentityID is the resource ID of the user-assigned managed identity
 	// granted AcrPull on the registry. Container Apps use it for image pull auth.
 	managedIdentityID pulumi.StringOutput
@@ -105,7 +101,7 @@ func CreateBuildInfra(
 
 	// User-assigned managed identity for Container Apps to pull built images.
 	identity, err := managedidentity.NewUserAssignedIdentity(
-		ctx, name+"-acr-identity", &managedidentity.UserAssignedIdentityArgs{
+		ctx, "acr", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String(location),
 		}, opts...)
@@ -118,7 +114,10 @@ func CreateBuildInfra(
 		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
 		subID, acrPullRoleDefinitionID,
 	)
-	roleAssignment, err := authorization.NewRoleAssignment(ctx, name+"-acr-pull", &authorization.RoleAssignmentArgs{
+	// Parent defaults to the surrounding component (via opts). Pulumi's SDK
+	// discourages using custom resources as parents — destruction order here is
+	// already enforced by the implicit data dependency on identity.PrincipalId.
+	roleAssignment, err := authorization.NewRoleAssignment(ctx, "acr-pull", &authorization.RoleAssignmentArgs{
 		Scope:            registry.ID(),
 		RoleDefinitionId: roleDefID,
 		PrincipalId:      identity.PrincipalId,
@@ -147,49 +146,6 @@ func CreateBuildInfra(
 // imageBuildResult holds the result of building a container image.
 type imageBuildResult struct {
 	imageURI pulumi.StringOutput
-}
-
-func isEphemeralBuildArg(key string) bool {
-	return strings.HasSuffix(key, "_TOKEN")
-}
-
-func removeEphemeralBuildArgs(args map[string]string) map[string]string {
-	args = maps.Clone(args)
-	for key := range args {
-		if isEphemeralBuildArg(key) {
-			args[key] = "Removed ephemeral token"
-		}
-	}
-	return args
-}
-
-func sha256hash(inputs ...string) string {
-	h := sha256.New()
-	for _, s := range inputs {
-		h.Write([]byte(s))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// buildTriggerHash computes a short hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
-	argsStr, err := json.Marshal(removeEphemeralBuildArgs(build.Args))
-	if err != nil {
-		return pulumi.StringOutput{}
-	}
-	var dockerfile, target string
-	if build.Dockerfile != nil {
-		dockerfile = *build.Dockerfile
-	}
-	if build.Target != nil {
-		target = *build.Target
-	}
-	return pulumi.StringOutput(pulumix.Apply(
-		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
-			// Remove SAS query params from URL before hashing (same approach as AWS)
-			contextEtag, _, _ := strings.Cut(ctx, "?")
-			return sha256hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
-		}))
 }
 
 // buildServiceImage builds a container image via ACR Tasks for a service.
@@ -228,9 +184,14 @@ func buildServiceImage(
 		return nil, fmt.Errorf("creating ACR task for %s: %w", serviceName, err)
 	}
 
-	triggerHash := buildTriggerHash(svc.Build)
+	triggerHash := common.BuildTriggerHash(svc.Build)
 
 	var buildResource acrImageBuildResource
+	// IgnoreChanges on contextPath: the defang CLI hands us a fresh SAS URL every
+	// deploy (same blob, new signature/expiry), so a literal diff would trigger a
+	// rebuild even when source is unchanged. Real source changes propagate via
+	// triggers (buildTriggerHash strips the SAS before hashing).
+	buildOpts := append([]pulumi.ResourceOption{pulumi.IgnoreChanges([]string{"contextPath"})}, opts...)
 	err = ctx.RegisterResource("defang-azure:index:ACRImageBuild", serviceName+"-build", pulumi.Map{
 		"subscriptionId":     infra.subscriptionID,
 		"resourceGroupName":  sharedInfra.ResourceGroup.Name,
@@ -241,7 +202,7 @@ func buildServiceImage(
 		"contextPath":        svc.Build.Context,
 		"encodedTaskContent": pulumi.String(encodedYAML),
 		"triggers":           pulumi.StringArray{triggerHash},
-	}, &buildResource, opts...)
+	}, &buildResource, buildOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACRImageBuild resource for %s: %w", serviceName, err)
 	}

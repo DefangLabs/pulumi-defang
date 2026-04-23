@@ -14,11 +14,11 @@ type Postgres struct{}
 
 // AzurePostgresInputs defines the inputs for a standalone Azure PostgreSQL Flexible Server.
 type AzurePostgresInputs struct {
-	ProjectName string                 `pulumi:"project_name"`
-	Image       *string                `pulumi:"image,optional"`
+	ProjectName string                  `pulumi:"project_name"`
+	Image       *string                 `pulumi:"image,optional"`
 	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
-	Deploy      *compose.DeployConfig  `pulumi:"deploy,optional"`
-	Environment map[string]string      `pulumi:"environment,optional"`
+	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`
+	Environment map[string]*string      `pulumi:"environment,optional"`
 }
 
 // AzurePostgresOutputs holds the outputs of an Postgres component.
@@ -46,7 +46,7 @@ func (*Postgres) Construct(
 
 	location := azure.Location(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {
@@ -54,7 +54,14 @@ func (*Postgres) Construct(
 	}
 
 	infra := &azure.SharedInfra{ResourceGroup: rg}
-	configProvider := azure.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		// Standalone Postgres has no Key Vault wiring, so secret refs are
+		// unavailable and the lazy fetch is a no-op; pass an empty URL.
+		configProvider = azure.NewConfigProvider(inputs.ProjectName, "")
+	}
 
 	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, childOpt)
 	if err != nil {

@@ -9,6 +9,7 @@ permissions:
   contents: write # Allows writing releases
   packages: write # Allows publishing packages
   id-token: write # Required for requesting the JWT before publishing to Pypi and NPM
+  pull-requests: write # Allows creating PRs for regenerated examples
 
 env:
   PROVIDER: "defang"

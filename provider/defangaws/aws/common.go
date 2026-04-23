@@ -6,7 +6,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-
 func getCallerAccountId(ctx *pulumi.Context, opts ...pulumi.InvokeOption) (string, error) {
 	ac, err := aws.GetCallerIdentity(ctx, nil, opts...)
 	if err != nil {
@@ -14,7 +13,6 @@ func getCallerAccountId(ctx *pulumi.Context, opts ...pulumi.InvokeOption) (strin
 	}
 	return ac.AccountId, nil
 }
-
 
 func getCallerRegion(ctx *pulumi.Context, opts ...pulumi.InvokeOption) (aws.Region, error) {
 	r, err := aws.GetRegion(ctx, nil, opts...)

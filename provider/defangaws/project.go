@@ -18,7 +18,7 @@ type Project struct{}
 
 // ProjectInputs defines the top-level inputs for the AWS Project component.
 type ProjectInputs struct {
-	// compose.Project
+	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
@@ -89,7 +89,12 @@ func buildProject(
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
-	configProvider := provideraws.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(projectName)
+	}
 
 	// Pre-compute which services need waitForSteadyState: true if any other
 	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)
@@ -117,7 +122,7 @@ func buildProject(
 		}
 
 		waitForHealthy := waitForSteady[svcName]
-		endpoint, dependency, err := buildService(
+		endpoint, dependency, err := newService(
 			ctx, configProvider, svcName, svc, args.Networks, infra, waitForHealthy, deps, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
@@ -135,7 +140,7 @@ func buildProject(
 	}, nil
 }
 
-func buildService(
+func newService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
 	svcName string,
@@ -152,19 +157,23 @@ func buildService(
 	switch {
 	case svc.Postgres != nil:
 		// Managed Postgres → RDS
-		var pgResult *PostgresResult
-		pgResult, err = newPostgresComponent(ctx, configProvider, svcName, svc, infra, deps, parentOpt)
-		if pgResult != nil {
-			dependency = pgResult.Dependency
-			endpoint = pgResult.Endpoint
+		pgComp := &PostgresOutputs{}
+		if regErr := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, parentOpt); regErr != nil {
+			return pulumi.StringOutput{}, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
+		}
+		if err = createPostgres(ctx, pgComp, configProvider, svcName, svc, infra, deps); err == nil {
+			endpoint = pgComp.Endpoint
+			dependency = pgComp.Dependency
 		}
 	case svc.Redis != nil:
 		// Managed Redis → ElastiCache
-		var redisResult *RedisResult
-		redisResult, err = newRedisComponent(ctx, configProvider, svcName, svc, infra, deps, parentOpt)
-		if redisResult != nil {
-			dependency = redisResult.Dependency
-			endpoint = redisResult.Endpoint
+		redisComp := &RedisOutputs{}
+		if regErr := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, parentOpt); regErr != nil {
+			return pulumi.StringOutput{}, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
+		}
+		if err = createRedis(ctx, redisComp, svcName, svc, infra, deps); err == nil {
+			endpoint = redisComp.Endpoint
+			dependency = redisComp.Dependency
 		}
 	default:
 		// TODO: detect sidecar services (network_mode: "service:<name>", volumes_from)
@@ -172,20 +181,23 @@ func buildService(
 		// instead of creating a separate ECS service.
 
 		// Container service → ECS
-		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, parentOpt)
+		svcComp := &ServiceOutputs{}
+		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, parentOpt); regErr != nil {
+			return pulumi.StringOutput{}, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
+		}
+		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pulumi.Parent(svcComp))
 		if imgErr != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}
-		var ecsResult *ECSResult
-		ecsResult, err = newECSServiceComponent(ctx, configProvider, svcName, svc, &provideraws.ECSServiceArgs{
+		args := &provideraws.ECSServiceArgs{
 			Infra:              infra,
 			ImageURI:           imageURI,
 			Networks:           networks,
 			WaitForSteadyState: waitForSteadyState,
-		}, deps, parentOpt)
-		if ecsResult != nil {
-			dependency = ecsResult.Dependency
-			endpoint = ecsResult.Endpoint
+		}
+		if err = createECSService(ctx, svcComp, configProvider, svcName, svc, args, deps); err == nil {
+			endpoint = pulumi.StringOutput(svcComp.Endpoint)
+			dependency = svcComp.Dependency
 		}
 	}
 	if err != nil {

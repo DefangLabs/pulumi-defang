@@ -7,6 +7,12 @@ import (
 
 var ErrNoImageOrBuildConfig = errors.New("no image or build config")
 
+// ErrStandaloneServiceRequiresImage is returned when a standalone Service
+// component is constructed without an Image. Build-from-source is a Project
+// responsibility, so standalone Service instantiations must supply a pre-built
+// image URI.
+var ErrStandaloneServiceRequiresImage = errors.New("standalone Service requires a pre-built image")
+
 // imgRE parses a Docker image reference into registry, repo, tag, and digest parts.
 // Mirrors the regex used by DefangLabs/defang/src/pkg/dockerhub.
 //

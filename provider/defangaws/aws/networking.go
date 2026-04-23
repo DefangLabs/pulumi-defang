@@ -57,7 +57,7 @@ func ResolveNetworking(
 	}
 
 	// Create a new VPC with public and private subnets.
-	vpcName := autonamePrefix(ctx, "shared-vpc")
+	vpcName := common.AutonamingPrefix(ctx, "shared-vpc")
 
 	vpc, err := awsxec2.NewVpc(ctx, "shared-vpc", &awsxec2.VpcArgs{
 		EnableDnsHostnames: pulumi.Bool(true),

@@ -1,9 +1,9 @@
 package defangazure
 
 import (
-	"errors"
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	azureapp "github.com/pulumi/pulumi-azure-native-sdk/app/v3"
@@ -11,19 +11,18 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var ErrBuildInfraNotConfigured = errors.New("build infrastructure is not set up")
-
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
 
 // AzureContainerAppInputs defines the inputs for a standalone Azure Container App.
+// Build-from-source is deliberately unsupported — images must be pre-built and supplied
+// via Image. Build orchestration belongs to the Project component.
 type AzureContainerAppInputs struct {
-	Build       *compose.BuildConfig        `pulumi:"build,optional"`
-	Image       *string                     `pulumi:"image,optional"`
+	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -45,10 +44,13 @@ func (*Service) Construct(
 		return nil, err
 	}
 
+	// Standalone Service is image-only — build belongs to Project.
+	if inputs.Image == "" {
+		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
+	}
 	childOpt := pulumi.Parent(comp)
 	svc := compose.ServiceConfig{
-		Build:       inputs.Build,
-		Image:       inputs.Image,
+		Image:       &inputs.Image,
 		Platform:    (inputs.Platform),
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
@@ -61,14 +63,14 @@ func (*Service) Construct(
 
 	location := azure.Location(ctx)
 
-	rg, err := resources.NewResourceGroup(ctx, name+"-rg", &resources.ResourceGroupArgs{
+	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
 
-	env, err := azureapp.NewManagedEnvironment(ctx, name+"-env", &azureapp.ManagedEnvironmentArgs{
+	env, err := azureapp.NewManagedEnvironment(ctx, name, &azureapp.ManagedEnvironmentArgs{
 		ResourceGroupName: rg.Name,
 		Location:          pulumi.String(location),
 	}, childOpt)
@@ -78,16 +80,9 @@ func (*Service) Construct(
 
 	infra := &azure.SharedInfra{ResourceGroup: rg, Environment: env}
 
-	if svc.Build != nil && infra.BuildInfra == nil {
-		return nil, fmt.Errorf("service %s: %w", name, ErrBuildInfraNotConfigured)
-	}
+	imageURI := pulumi.String(inputs.Image).ToStringOutput()
 
-	imageURI, err := azure.GetServiceImage(ctx, name, svc, infra.BuildInfra, infra, childOpt)
-	if err != nil {
-		return nil, fmt.Errorf("resolving image for %s: %w", name, err)
-	}
-
-	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, childOpt)
+	caResult, err := azure.CreateContainerApp(ctx, name, svc, infra, imageURI, nil, nil, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure Container App: %w", err)
 	}

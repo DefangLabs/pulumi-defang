@@ -10,7 +10,11 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var ErrPostgresConfigNil = errors.New("postgres config is nil")
+var (
+	ErrPostgresConfigNil = errors.New("postgres config is nil")
+	// Hint rendered via %w wrapping; see CreatePostgresFlexible.
+	ErrPostgresPasswordMissing = errors.New("POSTGRES_PASSWORD is required for Azure PostgreSQL Flexible Server")
+)
 
 // sanitizePostgresName strips characters invalid in Azure PostgreSQL Flexible Server names
 // (only lowercase letters, digits, and hyphens are allowed; 3-63 chars).
@@ -77,8 +81,13 @@ func buildPostgresServerArgs(
 			BackupRetentionDays: pulumi.Int(backupRetention),
 			GeoRedundantBackup:  pulumi.String(string(geoBackup)),
 		},
-		AdministratorLogin:         pg.Username,
-		AdministratorLoginPassword: pg.Password,
+		AdministratorLogin: pg.Username,
+		AdministratorLoginPassword: pg.Password.ToStringOutput().ApplyT(func(p string) (string, error) {
+			if p == "" {
+				return "", fmt.Errorf("%w; set it with `defang config set POSTGRES_PASSWORD`", ErrPostgresPasswordMissing)
+			}
+			return p, nil
+		}).(pulumi.StringOutput),
 	}
 
 	if HighAvailability.Get(ctx) {
@@ -128,26 +137,43 @@ func CreatePostgresFlexible(
 		return nil, fmt.Errorf("creating PostgreSQL Flexible Server: %w", err)
 	}
 
+	serverChildOpts := append([]pulumi.ResourceOption{pulumi.Parent(server)}, opts...)
+
 	// Allowlist the pgvector extension. Azure Postgres Flexible Server blocks CREATE EXTENSION
 	// unless the extension is listed in the azure.extensions server parameter first.
-	_, err = dbforpostgresql.NewConfiguration(ctx, sanitized+"-pgvector", &dbforpostgresql.ConfigurationArgs{
-		ResourceGroupName:  infra.ResourceGroup.Name,
-		ServerName:         server.Name,
-		ConfigurationName:  pulumi.String("azure.extensions"),
-		Value:              pulumi.String("VECTOR"),
-		Source:             pulumi.String("user-override"),
-	}, append(opts, pulumi.Parent(server))...)
+	_, err = dbforpostgresql.NewConfiguration(ctx, "pgvector", &dbforpostgresql.ConfigurationArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		ServerName:        server.Name,
+		ConfigurationName: pulumi.String("azure.extensions"),
+		Value:             pulumi.String("VECTOR"),
+		Source:            pulumi.String("user-override"),
+	}, serverChildOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("enabling pgvector extension: %w", err)
 	}
 
+	// Allow non-TLS connections. Azure defaults require_secure_transport=ON, which
+	// rejects non-SSL clients with "no pg_hba.conf entry ... no encryption". AWS/GCP
+	// managed Postgres allow both, and samples (e.g. nextjs-postgres with
+	// POSTGRES_SSL=disable) expect the same here. Clients can still negotiate TLS.
+	_, err = dbforpostgresql.NewConfiguration(ctx, "no-tls", &dbforpostgresql.ConfigurationArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		ServerName:        server.Name,
+		ConfigurationName: pulumi.String("require_secure_transport"),
+		Value:             pulumi.String("OFF"),
+		Source:            pulumi.String("user-override"),
+	}, serverChildOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("disabling require_secure_transport: %w", err)
+	}
+
 	// Create database if non-default; "postgres" already exists on every new Flexible Server.
 	if pg.DBNameStr != "" && pg.DBNameStr != compose.DEFAULT_POSTGRES_DB {
-		_, err := dbforpostgresql.NewDatabase(ctx, sanitized+"-db", &dbforpostgresql.DatabaseArgs{
+		_, err := dbforpostgresql.NewDatabase(ctx, sanitized, &dbforpostgresql.DatabaseArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			ServerName:        server.Name,
 			DatabaseName:      pg.DBName,
-		}, opts...)
+		}, serverChildOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating PostgreSQL database: %w", err)
 		}
@@ -156,12 +182,12 @@ func CreatePostgresFlexible(
 	// Without VNet, allow Azure services to connect via the firewall (0.0.0.0 rule).
 	// With VNet integration, public access is disabled and all traffic is routed through the VNet.
 	if infra.Networking == nil {
-		_, err = dbforpostgresql.NewFirewallRule(ctx, sanitized+"-allow-azure", &dbforpostgresql.FirewallRuleArgs{
+		_, err = dbforpostgresql.NewFirewallRule(ctx, sanitized, &dbforpostgresql.FirewallRuleArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			ServerName:        server.Name,
 			StartIpAddress:    pulumi.String("0.0.0.0"),
 			EndIpAddress:      pulumi.String("0.0.0.0"),
-		}, opts...)
+		}, serverChildOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating PostgreSQL firewall rule: %w", err)
 		}

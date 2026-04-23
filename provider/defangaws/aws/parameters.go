@@ -5,36 +5,44 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 type ConfigProvider struct {
 	projectName string
-	cache       map[string]pulumi.StringOutput
-	mu          sync.Mutex
-	fetched     bool
+	// prefix is the leading namespace segment of every SSM parameter this
+	// provider manages (e.g. "/Defang/<proj>/<stack>/<key>"). Set in
+	// NewConfigProvider; kept private so the CLI and provider stay in sync.
+	prefix  string
+	cache   map[string]pulumi.StringOutput
+	mu      sync.Mutex
+	fetched bool
 }
 
 func NewConfigProvider(projectName string) *ConfigProvider {
-	return &ConfigProvider{projectName: projectName, cache: make(map[string]pulumi.StringOutput)}
+	return &ConfigProvider{
+		prefix:      "Defang", // TODO: customizable prefix
+		projectName: projectName,
+		cache:       make(map[string]pulumi.StringOutput),
+	}
 }
 
-func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
-	// In dry-run mode, return a placeholder value
-	if ctx.DryRun() {
-		return pulumi.Sprintf("dry-run-%s", key).ToStringOutput()
-	}
-
+func (cp *ConfigProvider) GetConfigValue(
+	ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption,
+) pulumi.StringOutput {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 
 	if !cp.fetched {
-		values, err := getParametersByPath(ctx, cp.projectName, opts...)
+		values, err := cp.getParametersByPath(ctx, opts...)
 		if err == nil {
 			cp.fetched = true
 			for k, v := range values {
-				cp.cache[k] = pulumi.String(v).ToStringOutput()
+				// Mark as secret so downstream consumers (env vars, task
+				// definitions) don't leak the value into Pulumi state or logs.
+				cp.cache[k] = pulumi.ToSecret(pulumi.String(v).ToStringOutput()).(pulumi.StringOutput)
 			}
 		}
 	}
@@ -43,15 +51,14 @@ func (cp *ConfigProvider) GetConfig(ctx *pulumi.Context, key string, opts ...pul
 		return val
 	}
 
-	return pulumi.String("").ToStringOutput()
+	return compose.ConfigNotFoundOutput(key)
 }
 
-func getParametersByPath(
+func (cp *ConfigProvider) getParametersByPath(
 	ctx *pulumi.Context,
-	projectName string,
 	opts ...pulumi.InvokeOption,
 ) (map[string]string, error) {
-	path := getSecretPath(projectName, ctx.Stack())
+	path := cp.getSecretID(ctx.Stack(), "")
 	withDecryption := true
 
 	gpr, err := ssm.GetParametersByPath(ctx, &ssm.GetParametersByPathArgs{
@@ -71,6 +78,22 @@ func getParametersByPath(
 	return result, nil
 }
 
-func getSecretPath(projectName, stackName string) string {
-	return fmt.Sprintf("/Defang/%s/%s/", projectName, stackName)
+func (cp *ConfigProvider) getSecretID(stackName, service string) string {
+	// Same as CLI
+	return fmt.Sprintf("/%s/%s/%s/%s", cp.prefix, cp.projectName, stackName, service)
+}
+
+// GetSecretRef returns the full SSM parameter ARN for a config key, so ECS can
+// resolve the secret at task startup via the Secrets field (valueFrom).
+func (cp *ConfigProvider) GetSecretRef(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) (string, error) {
+	region, err := getCallerRegion(ctx, opts...)
+	if err != nil {
+		return "", fmt.Errorf("getting region for secret ARN: %w", err)
+	}
+	accountId, err := getCallerAccountId(ctx, opts...)
+	if err != nil {
+		return "", fmt.Errorf("getting account ID for secret ARN: %w", err)
+	}
+	id := cp.getSecretID(ctx.Stack(), key)
+	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s", region, accountId, id), nil
 }

@@ -170,7 +170,7 @@ func CreateRDS(
 	svc compose.ServiceConfig,
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
-	privateSgID pulumi.IDPtrInput,
+	privateSgID pulumi.StringPtrInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
@@ -188,7 +188,9 @@ func CreateRDS(
 		"defang:service": pulumi.String(serviceName),
 	}
 
-	// Create DB subnet group
+	// Create DB subnet group. AWS rejects uppercase in the name, so use a
+	// lowercased Pulumi resource name — autoname will then produce a valid
+	// "<safe>-<hex>" value. Rely on Pulumi's autoname for uniqueness across stacks.
 	var subnetGroupName pulumi.StringPtrOutput
 	if privateSubnetIDs != nil {
 		subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
@@ -202,16 +204,22 @@ func CreateRDS(
 		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
-	// Create security group for RDS
+	// The service SG is only referenced when supplied; standalone Construct
+	// callers (e.g. unit tests) may omit it.
+	var ingressSGs pulumi.StringArray
+	if privateSgID != nil {
+		ingressSGs = pulumi.StringArray{privateSgID.ToStringPtrOutput().Elem()}
+	}
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String("RDS security group for " + serviceName),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
+				Description:    pulumi.String("Allow incoming Postgres traffic"),
 				Protocol:       pulumi.String("tcp"),
 				FromPort:       pulumi.Int(port),
 				ToPort:         pulumi.Int(port),
-				SecurityGroups: pulumi.StringArray{privateSgID.ToIDPtrOutput().Elem()},
+				SecurityGroups: ingressSGs,
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{

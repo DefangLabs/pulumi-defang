@@ -6,7 +6,6 @@ package gcp
 // service, Cloud SQL, etc.) lives in their own dedicated test files.
 
 import (
-	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -121,16 +120,22 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// SSH firewall rule
+	// SSH firewall rule — match on tcp/22 since several other TCP firewall
+	// rules (MIG health checks, per-service traffic/health-check) also exist.
 	ssh := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
 		allows := m.Get("allows").AsArray()
-		return allows.Len() == 1 && allows.Get(0).AsMap().Get("protocol").AsString() == "tcp"
+		if allows.Len() != 1 {
+			return false
+		}
+		allow := allows.Get(0).AsMap()
+		if allow.Get("protocol").AsString() != "tcp" {
+			return false
+		}
+		ports := allow.Get("ports").AsArray()
+		return ports.Len() == 1 && ports.Get(0).AsString() == "22"
 	})
 	require.NotNil(t, ssh, "expected an SSH firewall rule")
 	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
-	sshPorts := ssh.inputs.Get("allows").AsArray().Get(0).AsMap().Get("ports").AsArray()
-	assert.Equal(t, 1, sshPorts.Len())
-	assert.Equal(t, "22", sshPorts.Get(0).AsString())
 
 	// ICMP firewall rule
 	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
@@ -610,7 +615,7 @@ func TestConstructProjectDependencies(t *testing.T) {
 	}
 
 	server, err := integration.NewServer(
-		context.Background(),
+		t.Context(),
 		defanggcp.Name,
 		semver.MustParse("1.0.0"),
 		integration.WithProvider(defanggcp.Provider()),
@@ -1071,6 +1076,46 @@ func TestConstructProjectNATSettings(t *testing.T) {
 	logCfg := nat.inputs.Get("logConfig").AsMap()
 	assert.True(t, logCfg.Get("enable").AsBool(), "expected NAT log config to be enabled")
 	assert.Equal(t, "ERRORS_ONLY", logCfg.Get("filter").AsString())
+}
+
+// TestConstructProjectAllResourcesAreChildren asserts that every resource
+// created inside a Project descends from the Project component in the Pulumi
+// hierarchy. Runs a rich Construct that exercises shared infra (VPC, LB,
+// DNS), Cloud Run, Compute Engine, build-from-source, managed Postgres, and
+// managed Redis so the assertion covers most resource-creation paths.
+func TestConstructProjectAllResourcesAreChildren(t *testing.T) {
+	mock, tracker := testutil.NewParentTracker()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				})),
+				"worker": testutil.ServiceWithImage("myapp:worker"),
+				"builder": property.New(property.NewMap(map[string]property.Value{
+					"build": property.New(property.NewMap(map[string]property.Value{
+						"context": property.New("./app"),
+					})),
+				})),
+				"db": property.New(property.NewMap(map[string]property.Value{
+					"image":    property.New("postgres:17"),
+					"postgres": property.New(property.NewMap(map[string]property.Value{})),
+				})),
+				"cache": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("redis:7"),
+					"redis": property.New(property.NewMap(map[string]property.Value{})),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	tracker.AssertAllDescendFrom(t, testutil.GcpURN("Project"))
 }
 
 func TestConstructProjectWithLLMPreservesExistingEnvVars(t *testing.T) {

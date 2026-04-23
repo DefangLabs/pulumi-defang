@@ -18,8 +18,8 @@ import (
 
 var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert authorization")
 
-// GlobalConfig holds project-level GCP resources shared across all services.
-type GlobalConfig struct {
+// SharedInfra holds project-level GCP resources shared across all services.
+type SharedInfra struct {
 	Region            string
 	GcpProject        string // GCP project ID, used for IAM bindings
 	Domain            string // delegate domain (e.g. "example.com"); empty when not configured
@@ -68,6 +68,19 @@ func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.Resour
 	return nil
 }
 
+// NewStandaloneGlobalConfig returns a minimal GlobalConfig for standalone component
+// use: just Region and GcpProject read from Pulumi stack config. PublicIP is left nil
+// so VPC-dependent features (Cloud Run VpcAccess, Compute Engine networking) are
+// skipped or fail fast. Callers that need a full VPC/NAT/build-repo setup must use
+// BuildGlobalConfig instead.
+func NewStandaloneGlobalConfig(ctx *pulumi.Context) *SharedInfra {
+	return &SharedInfra{
+		Region:     GcpRegion(ctx),
+		GcpProject: gcpProjectId(ctx),
+		Stack:      ctx.Stack(),
+	}
+}
+
 // BuildGlobalConfig creates shared GCP infrastructure for a multi-service project.
 // domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 // a public DNS managed zone, a wildcard DNS authorization, and a wildcard certificate
@@ -78,7 +91,7 @@ func BuildGlobalConfig(
 	domain string,
 	services map[string]compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
-) (*GlobalConfig, error) {
+) (*SharedInfra, error) {
 	region := GcpRegion(ctx)
 	gcpProject := gcpProjectId(ctx)
 
@@ -150,7 +163,7 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	cfg := &GlobalConfig{
+	cfg := &SharedInfra{
 		Stack:       ctx.Stack(),
 		Region:      region,
 		GcpProject:  gcpProject,
@@ -178,7 +191,7 @@ func BuildGlobalConfig(
 func buildOptionalInfra(
 	ctx *pulumi.Context,
 	projectName string,
-	cfg *GlobalConfig,
+	cfg *SharedInfra,
 	services map[string]compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) error {
@@ -215,7 +228,7 @@ func createWildcardCert(
 	ctx *pulumi.Context,
 	projectName string,
 	domain string,
-	cfg *GlobalConfig,
+	cfg *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
 	fqdn := strings.TrimSuffix(domain, ".")
@@ -324,8 +337,7 @@ const defaultGCPRegion = "us-central1"
 
 // GcpRegion reads the GCP region from Pulumi stack config, falling back to the default.
 func GcpRegion(ctx *pulumi.Context) string {
-	cfg := config.New(ctx, "gcp")
-	if r := cfg.Get("region"); r != "" {
+	if r := config.New(ctx, "gcp").Get("region"); r != "" {
 		return r
 	}
 	return defaultGCPRegion

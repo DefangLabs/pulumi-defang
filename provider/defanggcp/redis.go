@@ -5,6 +5,7 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/redis"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -23,7 +24,14 @@ type RedisInputs struct {
 type RedisOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	// Instance is an internal-only handle to the Memorystore instance. The project
+	// dispatcher reads it to build an LBServiceEntry. Untagged — not part of the
+	// SDK schema.
+	Instance *redis.Instance
 }
+
+// RedisComponentType is the Pulumi resource type token for the Redis component.
+const RedisComponentType = "defang-gcp:index:Redis"
 
 // Construct implements the ComponentResource interface for Redis.
 func (*Redis) Construct(
@@ -34,7 +42,6 @@ func (*Redis) Construct(
 		return nil, err
 	}
 
-	childOpt := pulumi.Parent(comp)
 	svc := compose.ServiceConfig{
 		Redis:  inputs.Redis,
 		Image:  inputs.Image,
@@ -42,19 +49,35 @@ func (*Redis) Construct(
 		Ports:  inputs.Ports,
 	}
 
-	result, err := providergcp.CreateMemoryStore(ctx, name, svc, nil, childOpt)
+	// Standalone Construct runs without a shared GlobalConfig; the project-level
+	// dispatcher calls createRedis with a non-nil infra.
+	return comp, createRedis(ctx, comp, name, svc, nil)
+}
+
+// createRedis creates the Memorystore instance under an already-registered Redis
+// component, populates its Endpoint/Instance, and registers its outputs. Shared
+// between Construct and the project-level dispatcher.
+func createRedis(
+	ctx *pulumi.Context,
+	comp *RedisOutputs,
+	serviceName string,
+	svc compose.ServiceConfig,
+	infra *providergcp.SharedInfra,
+) error {
+	childOpt := pulumi.Parent(comp)
+
+	result, err := providergcp.CreateMemoryStore(ctx, serviceName, svc, infra, childOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build GCP Memorystore: %w", err)
+		return fmt.Errorf("creating Memorystore for %s: %w", serviceName, err)
 	}
 
-	endpoint := pulumi.Sprintf("%s:%d", result.Instance.Host, firstPort(inputs.Ports, defaultRedisPort))
-	comp.Endpoint = endpoint
+	comp.Endpoint = pulumi.Sprintf("%s:%d", result.Instance.Host, firstPort(svc.Ports, defaultRedisPort))
+	comp.Instance = result.Instance
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": endpoint,
+		"endpoint": comp.Endpoint,
 	}); err != nil {
-		return nil, err
+		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
-
-	return comp, nil
+	return nil
 }

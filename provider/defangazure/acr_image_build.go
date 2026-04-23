@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -176,8 +174,7 @@ func scheduleAndWaitACRRun(
 	if scheduled.Properties.Status != nil {
 		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, runID); done {
 			if runErr != nil {
-				log := fetchRunLog(ctx, runsClient, rgName, registryName, runID)
-				return runID, image, fmt.Errorf("%w\n--- ACR run log ---\n%s", runErr, log)
+				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
 			return runID, image, nil
 		}
@@ -206,42 +203,11 @@ func scheduleAndWaitACRRun(
 		}
 		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, runID); done {
 			if runErr != nil {
-				log := fetchRunLog(ctx, runsClient, rgName, registryName, runID)
-				return runID, image, fmt.Errorf("%w\n--- ACR run log ---\n%s", runErr, log)
+				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
 			return runID, image, nil
 		}
 	}
-}
-
-// fetchRunLog fetches the run log content via the ACR log SAS URL.
-// Returns a best-effort string; errors are embedded in the returned string.
-func fetchRunLog(
-	ctx context.Context,
-	runsClient *armcontainerregistry.RunsClient,
-	rgName, registryName, runID string,
-) string {
-	resp, err := runsClient.GetLogSasURL(ctx, rgName, registryName, runID, nil)
-	if err != nil {
-		return fmt.Sprintf("(could not get log URL: %v)", err)
-	}
-	if resp.LogLink == nil {
-		return "(no log URL returned)"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, *resp.LogLink, nil)
-	if err != nil {
-		return fmt.Sprintf("(could not build log request: %v)", err)
-	}
-	httpResp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Sprintf("(could not fetch log: %v)", err)
-	}
-	defer func() { _ = httpResp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(httpResp.Body, 64*1024))
-	if err != nil {
-		return fmt.Sprintf("(could not read log: %v)", err)
-	}
-	return string(body)
 }
 
 // checkRunStatus inspects run properties and returns (image, done, err).

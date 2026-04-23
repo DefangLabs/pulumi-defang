@@ -49,39 +49,6 @@ func TestConstructGcpCloudRunServiceWithIngressPort(t *testing.T) {
 	require.NoError(t, err)
 }
 
-const gcpBuildType = "defang-gcp:defanggcp:Build"
-
-func TestConstructGcpCloudRunServiceWithBuild(t *testing.T) {
-	var capturedBuild property.Map
-	mocks := &integration.MockResourceMonitor{
-		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
-			if args.TypeToken == gcpBuildType {
-				capturedBuild = args.Inputs
-			}
-			return args.Name, args.Inputs, nil
-		},
-	}
-	server := testutil.MakeGcpTestServer(integration.WithMocks(mocks))
-
-	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.GcpURN("Service"),
-		Inputs: property.NewMap(map[string]property.Value{
-			"build": property.New(property.NewMap(map[string]property.Value{
-				"context": property.New("./app"),
-			})),
-		}),
-	})
-
-	require.NoError(t, err)
-	require.NotEqual(t, 0, capturedBuild.Len(), "expected defang-gcp:defanggcp:Build to be registered")
-	// Local context paths are uploaded to GCS; source should be a gs:// URI
-	assert.True(t, strings.HasPrefix(capturedBuild.Get("source").AsString(), "gs://"),
-		"source should be a GCS URI, got: %s", capturedBuild.Get("source").AsString())
-	assert.NotEmpty(t, capturedBuild.Get("sourceDigest").AsString(), "sourceDigest should be set")
-	assert.NotEmpty(t, capturedBuild.Get("machineType").AsString(), "machineType should be set")
-	assert.NotEqual(t, float64(0), capturedBuild.Get("diskSizeGb").AsNumber(), "diskSizeGb should be set")
-}
-
 func TestConstructGcpCloudRunServiceWithEnvironment(t *testing.T) {
 	server := testutil.MakeGcpTestServer()
 
@@ -186,8 +153,19 @@ func TestConstructGcpCloudRunServiceWithoutReservationsHasNoLimits(t *testing.T)
 	template := capturedTemplate.Get("template").AsMap()
 	containers := template.Get("containers").AsArray()
 	require.Equal(t, 1, containers.Len())
-	limits := containers.Get(0).AsMap().Get("resources").AsMap().Get("limits").AsMap()
-	assert.Equal(t, 0, limits.Len(), "expected no resource limits when no reservations defined")
+
+	// Without reservations, the provider either omits the Resources block
+	// entirely or sets it without a Limits map. Accept all three "no limits"
+	// shapes: missing resources, missing resources.limits, or empty limits.
+	resources := containers.Get(0).AsMap().Get("resources")
+	if resources.IsNull() {
+		return
+	}
+	limits := resources.AsMap().Get("limits")
+	if limits.IsNull() {
+		return
+	}
+	assert.Equal(t, 0, limits.AsMap().Len(), "expected no resource limits when no reservations defined")
 }
 
 func TestConstructGcpCloudRunServiceWithReservationsSetsLimits(t *testing.T) {
@@ -227,7 +205,10 @@ func TestConstructGcpCloudRunServiceWithReservationsSetsLimits(t *testing.T) {
 	assert.Equal(t, "512Mi", limits.Get("memory").AsString())
 }
 
-func TestConstructGcpCloudRunServiceSetsVpcAccess(t *testing.T) {
+// Standalone Service has no shared VPC (Infra is not passed from the SDK), so VpcAccess
+// must not be set on the Cloud Run template. VPC-backed deployments go through the
+// Project component, which provisions the full GlobalConfig.
+func TestConstructGcpCloudRunServiceSkipsVpcAccessWhenStandalone(t *testing.T) {
 	var capturedTemplate property.Map
 	mocks := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
@@ -249,10 +230,8 @@ func TestConstructGcpCloudRunServiceSetsVpcAccess(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
 	template := capturedTemplate.Get("template").AsMap()
-	vpcAccess := template.Get("vpcAccess").AsMap()
-	assert.Equal(t, "PRIVATE_RANGES_ONLY", vpcAccess.Get("egress").AsString())
-	networkInterfaces := vpcAccess.Get("networkInterfaces").AsArray()
-	assert.Equal(t, 1, networkInterfaces.Len())
+	assert.True(t, template.Get("vpcAccess").IsNull(),
+		"standalone Service should not attach VpcAccess; got %v", template.Get("vpcAccess"))
 }
 
 func TestConstructGcpServiceCreatesServiceAccount(t *testing.T) {
@@ -327,4 +306,104 @@ func TestConstructGcpCloudRunServiceSetsMaxInstanceRequestConcurrency(t *testing
 	require.NotEqual(t, 0, capturedTemplate.Len(), "expected gcp:cloudrunv2/service:Service to be registered")
 	template := capturedTemplate.Get("template").AsMap()
 	assert.InDelta(t, float64(80), template.Get("maxInstanceRequestConcurrency").AsNumber(), 0)
+}
+
+// constructGcpServiceEnvs constructs a standalone Cloud Run Service with the
+// given environment map and returns (records, envs-by-name) from the resulting
+// Cloud Run service's container. Shared between the secret-ref and
+// DEFANG_SERVICE env tests.
+func constructGcpServiceEnvs(t *testing.T, env map[string]property.Value) ([]resourceRecord, map[string]property.Map) {
+	t.Helper()
+	inputs := map[string]property.Value{
+		"image": property.New("myapp:latest"),
+	}
+	if env != nil {
+		inputs["environment"] = property.New(property.NewMap(env))
+	}
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Service"),
+		Inputs: property.NewMap(inputs),
+	})
+	require.NoError(t, err)
+
+	cr := findTypeWhere(*records, gcpCloudRunServiceType, func(property.Map) bool { return true })
+	require.NotNil(t, cr, "expected Cloud Run service to be registered")
+
+	containers := cr.inputs.Get("template").AsMap().Get("containers").AsArray()
+	require.Equal(t, 1, containers.Len())
+	envs := containers.Get(0).AsMap().Get("envs").AsArray()
+
+	byName := map[string]property.Map{}
+	for i := range envs.Len() {
+		e := envs.Get(i).AsMap()
+		byName[e.Get("name").AsString()] = e
+	}
+	return *records, byName
+}
+
+// TestConstructGcpCloudRunServiceEmitsSecretRefs is the mocks-based complement
+// to the example's integration test: it verifies that env vars matching the
+// bare ${VAR} pattern (per compose.GetConfigName) are emitted as Cloud Run
+// SecretKeyRef entries, not inlined as plaintext values — and that multiple
+// references to the same secret share one IAM binding.
+func TestConstructGcpCloudRunServiceEmitsSecretRefs(t *testing.T) {
+	records, byName := constructGcpServiceEnvs(t, map[string]property.Value{
+		"LITERAL": property.New("plain-value"),
+		"SECRET":  property.New("${CONFIG}"),             // bare ref → SecretKeyRef
+		"OTHER":   property.New("${CONFIG}"),             // same secret, second var → same ref
+		"MIXED":   property.New("prefix${CONFIG}suffix"), // not bare → resolved value, not ref
+	})
+
+	// LITERAL: plain value, no valueSource
+	literal, ok := byName["LITERAL"]
+	require.True(t, ok, "LITERAL env var missing")
+	assert.Equal(t, "plain-value", literal.Get("value").AsString())
+	assert.True(t, literal.Get("valueSource").IsNull())
+
+	// SECRET: SecretKeyRef, NO inline value
+	sec, ok := byName["SECRET"]
+	require.True(t, ok, "SECRET env var missing")
+	assert.True(t, sec.Get("value").IsNull(),
+		"secret env var must not have inline value (would leak plaintext into state)")
+	secRef := sec.Get("valueSource").AsMap().Get("secretKeyRef").AsMap()
+	require.NotEqual(t, 0, secRef.Len(), "SECRET must have valueSource.secretKeyRef")
+	assert.NotEmpty(t, secRef.Get("secret").AsString())
+	assert.Equal(t, "latest", secRef.Get("version").AsString())
+
+	// OTHER: same secret, also a ref — and the underlying Secret ID matches
+	other, ok := byName["OTHER"]
+	require.True(t, ok, "OTHER env var missing")
+	assert.True(t, other.Get("value").IsNull())
+	otherRef := other.Get("valueSource").AsMap().Get("secretKeyRef").AsMap()
+	assert.Equal(t, secRef.Get("secret").AsString(), otherRef.Get("secret").AsString(),
+		"two env vars pointing at the same secret should reference the same Secret ID")
+
+	// MIXED: interpolation (not a bare ref) — resolved via GetConfigValue, ends up
+	// as a plain value, NOT a SecretKeyRef.
+	mixed, ok := byName["MIXED"]
+	require.True(t, ok, "MIXED env var missing")
+	assert.True(t, mixed.Get("valueSource").IsNull(),
+		"MIXED is prefix${CONFIG}suffix — not a bare ref, so no SecretKeyRef")
+
+	// Exactly one IamMember should exist — deduped even though two env vars
+	// reference the same secret (regression test for the URN collision bug).
+	iamCount := countType(records, "gcp:secretmanager/secretIamMember:SecretIamMember")
+	assert.Equal(t, 1, iamCount, "expected one IamMember per unique secret")
+}
+
+// TestConstructGcpCloudRunServiceInjectsDefangServiceEnv verifies that the
+// Cloud Run container's env array always contains DEFANG_SERVICE set to the
+// service name — runtime code (health checks, log filters, telemetry) relies
+// on it being present.
+func TestConstructGcpCloudRunServiceInjectsDefangServiceEnv(t *testing.T) {
+	// The testutil URN helpers hardcode the resource name as "name".
+	const serviceName = "name"
+	_, byName := constructGcpServiceEnvs(t, nil)
+
+	defang, ok := byName["DEFANG_SERVICE"]
+	require.True(t, ok, "DEFANG_SERVICE env var not found on Cloud Run container")
+	assert.Equal(t, serviceName, defang.Get("value").AsString(),
+		"DEFANG_SERVICE value should match the service name")
 }

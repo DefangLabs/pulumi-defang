@@ -19,7 +19,7 @@ var awsConfig = property.New(property.NewMap(map[string]property.Value{
 }))
 
 func TestConstructAwsRedis(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
@@ -33,7 +33,7 @@ func TestConstructAwsRedis(t *testing.T) {
 }
 
 func TestConstructAwsRedisWithImage(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
@@ -48,7 +48,7 @@ func TestConstructAwsRedisWithImage(t *testing.T) {
 }
 
 func TestConstructAwsRedisWithValkey(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
@@ -63,7 +63,7 @@ func TestConstructAwsRedisWithValkey(t *testing.T) {
 }
 
 func TestConstructAwsRedisWithCustomPort(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
@@ -84,7 +84,7 @@ func TestConstructAwsRedisWithCustomPort(t *testing.T) {
 }
 
 func TestConstructAwsRedisWithAllowDowntime(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
@@ -102,7 +102,7 @@ func TestConstructAwsRedisWithAllowDowntime(t *testing.T) {
 }
 
 func TestConstructAwsRedisWithVPC(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),

@@ -32,16 +32,18 @@ func CreateALB(
 		Description: pulumi.String("ALB security group"),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
-				Protocol:   pulumi.String("tcp"),
-				FromPort:   pulumi.Int(80),
-				ToPort:     pulumi.Int(80),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				Description: pulumi.String("Allow incoming HTTP traffic"),
+				Protocol:    pulumi.String("tcp"),
+				FromPort:    pulumi.Int(80),
+				ToPort:      pulumi.Int(80),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 			&ec2.SecurityGroupIngressArgs{
-				Protocol:   pulumi.String("tcp"),
-				FromPort:   pulumi.Int(443),
-				ToPort:     pulumi.Int(443),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				Description: pulumi.String("Allow incoming HTTPS traffic"),
+				Protocol:    pulumi.String("tcp"),
+				FromPort:    pulumi.Int(443),
+				ToPort:      pulumi.Int(443),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{
