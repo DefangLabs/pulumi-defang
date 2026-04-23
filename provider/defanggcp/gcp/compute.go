@@ -2,11 +2,10 @@ package gcp
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
@@ -24,7 +23,6 @@ type ComputeEngineResult struct {
 // run on Cloud Run (e.g. background workers with no listening port).
 func CreateComputeEngine(
 	ctx *pulumi.Context,
-	projectName string,
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
@@ -348,15 +346,15 @@ func getCloudInitConfig(
 	}
 
 	var envFlags strings.Builder
-	keys := slices.Sorted(maps.Keys(svc.Environment))
-	for _, k := range keys {
+	for k, v := range common.Sorted(svc.Environment) {
 		// Compute/VM deploys embed concrete values into the `docker run -e` cmd
 		// string — no runtime config-provider resolution is available here, so
 		// a nil *string (YAML "KEY:" with no value) flattens to an empty value.
 		var val string
-		if v := svc.Environment[k]; v != nil {
+		if v != nil {
 			val = *v
 		}
+		// FIXME: provide all environment (and secrets) as env instead of flattening into the command line.
 		fmt.Fprintf(&envFlags, "-e %q ", fmt.Sprintf("%s=%s", k, val))
 	}
 

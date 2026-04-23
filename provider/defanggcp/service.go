@@ -144,7 +144,7 @@ func createService(
 		lbEntry = &providergcp.LBServiceEntry{Name: serviceName, CloudRunService: crResult.Service, Config: svc}
 	} else {
 		ceResult, ceErr := providergcp.CreateComputeEngine(
-			ctx, projectName, serviceName, image, svc, sa, infra, parentOpt,
+			ctx, serviceName, image, svc, sa, infra, parentOpt,
 		)
 		if ceErr != nil {
 			return fmt.Errorf("creating Compute Engine service %s: %w", serviceName, ceErr)
