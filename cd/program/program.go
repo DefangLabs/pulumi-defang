@@ -21,7 +21,10 @@ func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 }
 
 // NewRun returns a Pulumi inline program that deploys the given compose YAML.
-func NewRun(composeYaml []byte) pulumi.RunFunc {
+// projectPb is the raw ProjectUpdate protobuf; it's uploaded as a
+// Pulumi-managed blob at the end of the deploy (gated on the project
+// component so the upload only happens on success).
+func NewRun(composeYaml, projectPb []byte) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
 		cfg := config.New(ctx, "defang")
 
@@ -33,21 +36,32 @@ func NewRun(composeYaml []byte) pulumi.RunFunc {
 			return err
 		}
 
+		var projectRes pulumi.Resource
 		var endpoints pulumi.StringMapOutput
 		var loadBalancerDns pulumi.StringPtrOutput
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, cf, domain)
+			projectRes, endpoints, loadBalancerDns, err = deployAWS(ctx, cf, domain)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, cf)
+			projectRes, endpoints, loadBalancerDns, err = deployGCP(ctx, cf)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, cf)
+			projectRes, endpoints, loadBalancerDns, err = deployAzure(ctx, cf)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}
 		if err != nil {
 			return err
+		}
+
+		// Upload ProjectUpdate protobuf as a Pulumi-managed blob, gated on the
+		// project component so it only runs after all services are created.
+		// The CLI reads this file via `provider.GetProjectUpdate` for
+		// `defang compose ps`, log filtering, etc.
+		if len(projectPb) > 0 {
+			if err := saveProjectPb(ctx, provider, projectPb, projectRes); err != nil {
+				return err
+			}
 		}
 
 		ctx.Export("endpoints", endpoints)

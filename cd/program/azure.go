@@ -9,7 +9,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.Resource, pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "azure-native")
 
 	providerArgs := &pulumiazure.ProviderArgs{
@@ -21,14 +21,14 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutp
 	}
 	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", providerArgs)
 	if err != nil {
-		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
 	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf), pulumi.Providers(azureProvider))
 	if err != nil {
-		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
-	return project.Endpoints, project.LoadBalancerDns, nil
+	return project, project.Endpoints, project.LoadBalancerDns, nil
 }
 
 func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {

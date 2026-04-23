@@ -11,7 +11,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.Resource, pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "aws")
 
 	providerArgs := &aws.ProviderArgs{
@@ -31,7 +31,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 
 	awsProvider, err := aws.NewProvider(ctx, "aws", providerArgs)
 	if err != nil {
-		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
 	args := toAWSArgs(cf)
@@ -48,9 +48,9 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 
 	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Providers(awsProvider))
 	if err != nil {
-		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
-	return project.Endpoints, project.LoadBalancerDns, nil
+	return project, project.Endpoints, project.LoadBalancerDns, nil
 }
 
 func toAWSArgs(cf *compose.Project) *defangaws.ProjectArgs {

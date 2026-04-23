@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -19,9 +18,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -96,101 +93,6 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 	}
 }
 
-// writeProjectUpdate persists the ProjectUpdate protobuf to a provider-
-// specific location derived from stateUrl (DEFANG_STATE_URL). The CLI later
-// reads this blob via provider.GetProjectUpdate to drive `defang compose ps`,
-// `defang compose logs --service X`, and the mode-compatibility check before
-// each deploy. We write pre-Pulumi so even failed/canceled deploys leave a
-// record of the requested state.
-//
-// Layout:
-//
-//	AWS    → s3://{bucket}/projects/{project}/{stack}/project.pb
-//	GCP    → gs://{bucket}/projects/{project}/{stack}/project.pb
-//	Azure  → storage account from stateUrl, `projects` container, blob
-//	         {project}/{stack}/project.pb
-func writeProjectUpdate(ctx context.Context, project, stack string, data []byte) error {
-	if project == "" || stack == "" {
-		return fmt.Errorf("project and stack are required to save project.pb (got project=%q stack=%q)", project, stack)
-	}
-	if stateUrl == "" {
-		return errors.New("DEFANG_STATE_URL is not set; cannot derive project.pb target")
-	}
-	switch {
-	case strings.HasPrefix(stateUrl, "s3://"):
-		bucket := strings.SplitN(strings.TrimPrefix(stateUrl, "s3://"), "/", 2)[0]
-		bucket = strings.SplitN(bucket, "?", 2)[0]
-		key := fmt.Sprintf("projects/%s/%s/project.pb", project, stack)
-		return uploadS3(ctx, bucket, key, data)
-	case strings.HasPrefix(stateUrl, "gs://"):
-		bucket := strings.SplitN(strings.TrimPrefix(stateUrl, "gs://"), "/", 2)[0]
-		bucket = strings.SplitN(bucket, "?", 2)[0]
-		key := fmt.Sprintf("projects/%s/%s/project.pb", project, stack)
-		return uploadGCS(ctx, bucket, key, data)
-	case strings.HasPrefix(stateUrl, "azblob://"):
-		u, err := url.Parse(stateUrl)
-		if err != nil {
-			return fmt.Errorf("parsing DEFANG_STATE_URL %q: %w", stateUrl, err)
-		}
-		account := u.Query().Get("storage_account")
-		if account == "" {
-			return fmt.Errorf("DEFANG_STATE_URL %q missing storage_account query param", stateUrl)
-		}
-		// Azure uses a dedicated `projects` container, not a key prefix inside
-		// the Pulumi-state container.
-		blobName := fmt.Sprintf("%s/%s/project.pb", project, stack)
-		return uploadAzureBlob(ctx, account, "projects", blobName, data)
-	default:
-		return fmt.Errorf("unsupported DEFANG_STATE_URL scheme for project.pb upload: %q", stateUrl)
-	}
-}
-
-func uploadS3(ctx context.Context, bucket, key string, data []byte) error {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-	contentType := "application/protobuf"
-	_, err = s3.NewFromConfig(cfg).PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &bucket,
-		Key:         &key,
-		Body:        bytes.NewReader(data),
-		ContentType: &contentType,
-	})
-	return err
-}
-
-func uploadGCS(ctx context.Context, bucket, key string, data []byte) error {
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	w := client.Bucket(bucket).Object(key).NewWriter(ctx)
-	w.ContentType = "application/protobuf"
-	if _, err := w.Write(data); err != nil {
-		_ = w.Close()
-		return err
-	}
-	return w.Close()
-}
-
-func uploadAzureBlob(ctx context.Context, account, containerName, blobName string, data []byte) error {
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return fmt.Errorf("creating Azure credential: %w", err)
-	}
-	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", account)
-	client, err := azblob.NewClient(serviceURL, cred, nil)
-	if err != nil {
-		return fmt.Errorf("creating Azure blob client: %w", err)
-	}
-	contentType := "application/protobuf"
-	_, err = client.UploadBuffer(ctx, containerName, blobName, data, &blockblob.UploadBufferOptions{
-		HTTPHeaders: &blob.HTTPHeaders{BlobContentType: &contentType},
-	})
-	return err
-}
 
 // fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, base64, or a local file.
 func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
@@ -481,26 +383,23 @@ func main() {
 			log.Fatalf("missing required argument: payload")
 		}
 		payload := os.Args[2]
-		// Fetch protobuf and extract compose YAML
-		var composeYaml []byte
+		// Fetch protobuf and extract compose YAML. The ProjectUpdate bytes
+		// are passed through to the Pulumi program, which uploads them as a
+		// Pulumi-managed blob after the deploy succeeds — so the file only
+		// appears on success and is tracked in state (vs. a pre-Pulumi SDK
+		// upload that would leave stale records on failure).
+		var composeYaml, projectUpdate []byte
 		if payload != "" {
-			projectUpdate, err := fetchPayload(ctx, payload)
+			projectUpdate, err = fetchPayload(ctx, payload)
 			if err != nil {
 				log.Fatalf("failed to fetch payload: %v", err)
-			}
-			// Persist the ProjectUpdate bytes as a historical record of the
-			// requested deploy, before Pulumi runs. The CLI reads this blob
-			// via provider.GetProjectUpdate for `defang compose ps`, mode
-			// compatibility checks, and log filtering.
-			if err := writeProjectUpdate(ctx, project, stack, projectUpdate); err != nil {
-				log.Printf("warning: failed to save project.pb: %v", err)
 			}
 			composeYaml, err = extractComposeYaml(projectUpdate)
 			if err != nil {
 				log.Fatalf("failed to extract compose: %v", err)
 			}
 		}
-		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(composeYaml))
+		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(composeYaml, projectUpdate))
 	default:
 		s, err = auto.SelectStackInlineSource(ctx, stack, project, nil)
 	}
