@@ -272,34 +272,30 @@ func enableLLM(
 	}
 
 	if svc.Environment == nil {
-		svc.Environment = make(map[string]string)
+		svc.Environment = make(map[string]*string)
+	}
+
+	// setDefault fills an env var with a default only when absent or empty-literal.
+	// A nil *string value (YAML "KEY:" with no value) means "resolve at runtime from
+	// config" — leave it alone.
+	setDefault := func(key, defaultVal string) {
+		val, ok := svc.Environment[key]
+		if ok && (val == nil || *val != "") {
+			return
+		}
+		v := defaultVal
+		svc.Environment[key] = &v
 	}
 
 	// Inject environment variables for Vercel routing for GCP Vertex AI access
 	// https://ai-sdk.dev/providers/ai-sdk-providers/google-vertex
-	if val, ok := svc.Environment["GOOGLE_VERTEX_PROJECT"]; !ok || val == "" {
-		svc.Environment["GOOGLE_VERTEX_PROJECT"] = infra.GcpProject
-	}
-
-	if val, ok := svc.Environment["GOOGLE_VERTEX_LOCATION"]; !ok || val == "" {
-		svc.Environment["GOOGLE_VERTEX_LOCATION"] = infra.Region
-	}
-
-	if val, ok := svc.Environment["VERTEX_PROJECT"]; !ok || val == "" {
-		svc.Environment["VERTEX_PROJECT"] = infra.GcpProject
-	}
-
-	if val, ok := svc.Environment["VERTEX_LOCATION"]; !ok || val == "" {
-		svc.Environment["VERTEX_LOCATION"] = infra.Region
-	}
+	setDefault("GOOGLE_VERTEX_PROJECT", infra.GcpProject)
+	setDefault("GOOGLE_VERTEX_LOCATION", infra.Region)
+	setDefault("VERTEX_PROJECT", infra.GcpProject)
+	setDefault("VERTEX_LOCATION", infra.Region)
 
 	// Inject environment variables for Google ADK to have access to GCP Vertex AI
-	if val, ok := svc.Environment["GOOGLE_CLOUD_PROJECT"]; !ok || val == "" {
-		svc.Environment["GOOGLE_CLOUD_PROJECT"] = infra.GcpProject
-	}
-
-	if val, ok := svc.Environment["GOOGLE_CLOUD_LOCATION"]; !ok || val == "" {
-		svc.Environment["GOOGLE_CLOUD_LOCATION"] = infra.Region
-	}
+	setDefault("GOOGLE_CLOUD_PROJECT", infra.GcpProject)
+	setDefault("GOOGLE_CLOUD_LOCATION", infra.Region)
 	return nil
 }

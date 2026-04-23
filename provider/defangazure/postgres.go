@@ -18,7 +18,7 @@ type AzurePostgresInputs struct {
 	Image       *string                 `pulumi:"image,optional"`
 	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
 	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`
-	Environment map[string]string       `pulumi:"environment,optional"`
+	Environment map[string]*string      `pulumi:"environment,optional"`
 }
 
 // AzurePostgresOutputs holds the outputs of an Postgres component.

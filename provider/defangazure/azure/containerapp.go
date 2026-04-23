@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -138,13 +139,13 @@ func buildEnvVars(
 	// need one Secret entry per unique secret but one EnvironmentVar per env
 	// var, so dedupe on the secret var name.
 	seenSecrets := make(map[string]struct{})
-	for k, v := range svc.Environment {
+	for k, v := range common.Sorted(svc.Environment) {
 		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:  pulumi.String(k),
 				Value: infra.LLMInfra.APIKey,
 			})
-		} else if secretVar := compose.GetConfigName(v); secretVar != "" && infra.ConfigProvider != nil {
+		} else if secretVar := compose.GetConfigName2(k, v); secretVar != "" && infra.ConfigProvider != nil {
 			secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
 			// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
 			appSecretName := toContainerAppSecretName(secretVar)
@@ -164,17 +165,25 @@ func buildEnvVars(
 				SecretRef: pulumi.String(appSecretName),
 			})
 		} else {
+			// v is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
+			// which took the secret-ref branch above when a ConfigProvider is
+			// available. The only way to land here with nil v is
+			// ConfigProvider == nil — treat as empty literal.
+			var raw string
+			if v != nil {
+				raw = *v
+			}
 			var value pulumi.StringInput
-			if ep, ok := redisURLEndpoint(v, serviceEndpoints); ok {
+			if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
 				value = ep
-			} else if ep, ok := llmURLEndpoint(v, serviceEndpoints); ok {
+			} else if ep, ok := llmURLEndpoint(raw, serviceEndpoints); ok {
 				value = ep
-			} else if ep, ok := postgresURLEndpoint(ctx, v, serviceEndpoints, infra.ConfigProvider); ok {
+			} else if ep, ok := postgresURLEndpoint(ctx, raw, serviceEndpoints, infra.ConfigProvider); ok {
 				value = ep
-			} else if host, ok := serviceHosts[v]; ok {
+			} else if host, ok := serviceHosts[raw]; ok {
 				value = host
 			} else {
-				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, v)
+				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, raw)
 			}
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:  pulumi.String(k),

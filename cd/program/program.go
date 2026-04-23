@@ -28,7 +28,7 @@ func NewRun(composeYaml []byte) pulumi.RunFunc {
 		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
 		domain := defangCfg.Get("domain")         // optional project domain
 
-		cf, err := parseCompose(composeYaml, ctx.Project())
+		project, err := parseCompose(composeYaml, ctx.Project())
 		if err != nil {
 			return err
 		}
@@ -38,11 +38,11 @@ func NewRun(composeYaml []byte) pulumi.RunFunc {
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, cf, domain)
+			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, cf)
+			endpoints, loadBalancerDns, err = deployGCP(ctx, project)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, cf)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}

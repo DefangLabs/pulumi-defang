@@ -359,21 +359,15 @@ func CreateECSService(
 	// all others go to Environment (resolved plaintext).
 	var secretEntries []Secret
 
-	envKeys := make([]string, 0, len(svc.Environment))
-	for k := range svc.Environment {
-		envKeys = append(envKeys, k)
-	}
-	slices.Sort(envKeys) // deterministic order
-	for _, k := range envKeys {
-		v := svc.Environment[k]
-		if secretVar := compose.GetConfigName(v); secretVar != "" {
+	for k, v := range common.Sorted(svc.Environment) {
+		if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
 			ref, err := configProvider.GetSecretRef(ctx, secretVar, opt)
 			if err != nil {
 				return nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
 			}
 			secretEntries = append(secretEntries, Secret{Name: k, ValueFrom: ref})
 		} else {
-			resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, v)
+			resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, *v)
 			entry := envEntry{name: k, idx: len(allInputs)}
 			envEntries = append(envEntries, entry)
 			allInputs = append(allInputs, resolved)

@@ -18,7 +18,7 @@ type PostgresInputs struct {
 	Postgres    *compose.PostgresConfig     `pulumi:"postgres,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 }
 

@@ -3,6 +3,7 @@ package gcp
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
@@ -104,8 +105,8 @@ func buildEnvVars(
 			Value: pulumi.String(serviceName),
 		},
 	}
-	for k, v := range svc.Environment {
-		if secretVar := compose.GetConfigName(v); secretVar != "" {
+	for k, v := range common.Sorted(svc.Environment) {
+		if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
 			secretId, _ := configProvider.GetSecretRef(ctx, secretVar)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name: pulumi.String(k),
@@ -121,7 +122,14 @@ func buildEnvVars(
 				secretIds = append(secretIds, secretId)
 			}
 		} else {
-			value := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, v)
+			// v is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
+			// which would have taken the secret-ref branch above when a
+			// configProvider is available.
+			var raw string
+			if v != nil {
+				raw = *v
+			}
+			value := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name:  pulumi.String(k),
 				Value: value,

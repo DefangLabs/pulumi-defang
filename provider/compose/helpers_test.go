@@ -56,7 +56,7 @@ func TestToPulumiStringArray(t *testing.T) {
 func TestGetConfigOrEnvValue(t *testing.T) {
 	tests := []struct {
 		name         string
-		environment  map[string]string
+		environment  map[string]*string
 		key          string
 		defaultValue string
 		configs      map[string]string
@@ -71,29 +71,37 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		},
 		{
 			name:         "key absent returns default",
-			environment:  map[string]string{},
+			environment:  map[string]*string{},
 			key:          "MY_KEY",
 			defaultValue: "default",
 			expected:     "default",
 		},
 		{
 			name:        "empty string value is literal empty",
-			environment: map[string]string{"MY_KEY": ""},
+			environment: map[string]*string{"MY_KEY": ptr("")},
 			key:         "MY_KEY",
 			expected:    "",
 		},
 		{
 			name:        "plain string value returned as-is",
-			environment: map[string]string{"MY_KEY": "hello"},
+			environment: map[string]*string{"MY_KEY": ptr("hello")},
 			key:         "MY_KEY",
 			expected:    "hello",
 		},
 		{
 			name:        "interpolated value resolves variables from config provider",
-			environment: map[string]string{"MY_KEY": "prefix_${SECRET}_suffix"},
+			environment: map[string]*string{"MY_KEY": ptr("prefix_${SECRET}_suffix")},
 			key:         "MY_KEY",
 			configs:     map[string]string{"SECRET": "resolved"},
 			expected:    "prefix_resolved_suffix",
+		},
+		{
+			// Compose spec: "KEY:" (no value) → resolve from config at runtime.
+			name:        "nil value resolves from config provider via ${KEY}",
+			environment: map[string]*string{"MY_KEY": nil},
+			key:         "MY_KEY",
+			configs:     map[string]string{"MY_KEY": "from-config"},
+			expected:    "from-config",
 		},
 	}
 

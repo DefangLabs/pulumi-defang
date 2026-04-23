@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/codebuild"
@@ -157,7 +158,7 @@ func createCodeBuildProject(
 			Value: pulumi.String(region),
 		},
 	}
-	for k, v := range build.Args {
+	for k, v := range common.Sorted(build.Args) {
 		envVars = append(envVars, &codebuild.ProjectEnvironmentEnvironmentVariableArgs{
 			Name:  pulumi.String(k),
 			Value: pulumi.String(v),

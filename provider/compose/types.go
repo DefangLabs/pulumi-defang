@@ -11,6 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ptr returns a pointer to v. Duplicates common.Ptr because common imports
+// compose, so compose can't import common.
+func ptr[T any](v T) *T { return &v }
+
 type NetworkID string
 
 type Services = map[string]ServiceConfig
@@ -51,7 +55,7 @@ type ServiceConfig struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`
@@ -354,12 +358,12 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	}
 
 	dbNameStr, ok := s.Environment["POSTGRES_DB"]
-	if !ok || dbNameStr == "" {
-		dbNameStr = DEFAULT_POSTGRES_DB
+	if !ok || dbNameStr == nil || *dbNameStr == "" {
+		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
 	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
-	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "")
+	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "") // FIXME: should not default to ""
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {
@@ -373,7 +377,7 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	return &PostgresConfigArgs{
 		Version:       version,
 		DBName:        dbName,
-		DBNameStr:     dbNameStr,
+		DBNameStr:     *dbNameStr,
 		Username:      username,
 		Password:      password,
 		AllowDowntime: allowDowntime,

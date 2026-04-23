@@ -3,6 +3,7 @@ package azure
 import (
 	"testing"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -49,11 +50,11 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 			KeyVaultIdentityID: pulumi.String(identityID).ToStringOutput(),
 		}
 		svc := compose.ServiceConfig{
-			Environment: map[string]string{
-				"LITERAL": "plain-value",
-				"SECRET":  "${CONFIG}",             // bare ref → secret entry + SecretRef
-				"OTHER":   "${CONFIG}",             // same secret, second env var → shared entry
-				"MIXED":   "prefix${CONFIG}suffix", // not bare → plain Value, no Secret entry
+			Environment: map[string]*string{
+				"LITERAL": common.Ptr("plain-value"),
+				"SECRET":  common.Ptr("${CONFIG}"),             // bare ref → secret entry + SecretRef
+				"OTHER":   common.Ptr("${CONFIG}"),             // same secret, second env var → shared entry
+				"MIXED":   common.Ptr("prefix${CONFIG}suffix"), // not bare → plain Value, no Secret entry
 			},
 		}
 

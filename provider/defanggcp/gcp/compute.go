@@ -350,7 +350,14 @@ func getCloudInitConfig(
 	var envFlags strings.Builder
 	keys := slices.Sorted(maps.Keys(svc.Environment))
 	for _, k := range keys {
-		envFlags.WriteString(fmt.Sprintf("-e %q ", fmt.Sprintf("%s=%s", k, svc.Environment[k])))
+		// Compute/VM deploys embed concrete values into the `docker run -e` cmd
+		// string — no runtime config-provider resolution is available here, so
+		// a nil *string (YAML "KEY:" with no value) flattens to an empty value.
+		var val string
+		if v := svc.Environment[k]; v != nil {
+			val = *v
+		}
+		envFlags.WriteString(fmt.Sprintf("-e %q ", fmt.Sprintf("%s=%s", k, val)))
 	}
 
 	dependencies := "Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket"

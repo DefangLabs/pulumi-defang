@@ -146,6 +146,13 @@ func GetConfigName(value string) string {
 	return ""
 }
 
+func GetConfigName2(key string, value *string) string {
+	if value == nil {
+		return key
+	}
+	return GetConfigName(*value)
+}
+
 func GetConfigOrEnvValue(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
@@ -155,8 +162,14 @@ func GetConfigOrEnvValue(
 	opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
 	if v, ok := s.Environment[key]; ok {
+		var value string
+		if v == nil {
+			value = "${" + key + "}"
+		} else {
+			value = *v
+		}
 		// Resolve any $VAR / ${VAR} interpolations; empty string passes through as-is.
-		return InterpolateEnvironmentVariable(ctx, configProvider, v, opts...)
+		return InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)
 	}
 	// Key not in environment at all: use the provided default.
 	return pulumi.String(defaultValue).ToStringOutput()
