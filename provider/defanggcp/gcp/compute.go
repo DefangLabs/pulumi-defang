@@ -41,14 +41,14 @@ func CreateComputeEngine(
 		"roles/cloudtrace.agent",
 	}, gcpConfig, parentOpt)
 
-	var namedPorts compute.RegionInstanceGroupManagerNamedPortArray
+	namedPorts := make(compute.RegionInstanceGroupManagerNamedPortArray, len(svc.Ports))
 	var healthCheckPort *int
-	for _, port := range svc.Ports {
+	for i, port := range svc.Ports {
 		proto := port.GetProtocol()
-		namedPorts = append(namedPorts, &compute.RegionInstanceGroupManagerNamedPortArgs{
+		namedPorts[i] = &compute.RegionInstanceGroupManagerNamedPortArgs{
 			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
 			Port: pulumi.Int(port.Target),
-		})
+		}
 		if proto == "tcp" {
 			p := int(port.Target)
 			healthCheckPort = &p
@@ -357,16 +357,17 @@ func getCloudInitConfig(
 		if v := svc.Environment[k]; v != nil {
 			val = *v
 		}
-		envFlags.WriteString(fmt.Sprintf("-e %q ", fmt.Sprintf("%s=%s", k, val)))
+		fmt.Fprintf(&envFlags, "-e %q ", fmt.Sprintf("%s=%s", k, val))
 	}
 
 	dependencies := "Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket"
 
-	runcmds := []string{
+	runcmds := make([]string, 0, 3+4+2)
+	runcmds = append(runcmds,
 		`echo 'DOCKER_OPTS="--registry-mirror=https://mirror.gcr.io"' | tee /etc/default/docker`,
 		"systemctl daemon-reload",
 		"systemctl restart docker",
-	}
+	)
 
 	sidecars := ""
 	if addHealthCheckSidecar {
@@ -378,7 +379,7 @@ func getCloudInitConfig(
 		fmt.Sprintf("systemctl start %s.service", serviceName),
 	)
 
-	buf.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&buf, `
   - path: /etc/systemd/system/%[1]s.service
     permissions: "0644"
     owner: root
@@ -410,8 +411,7 @@ runcmd:
 		region,
 		envFlags.String(),
 		sidecars,
-		strings.Join(runcmds, "\n  - "),
-	))
+		strings.Join(runcmds, "\n  - "))
 
 	return pulumi.Sprintf(buf.String(), image)
 }

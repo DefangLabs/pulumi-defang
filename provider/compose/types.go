@@ -439,6 +439,18 @@ func (s ServiceConfig) DefaultNetwork() ServiceNetworkConfig {
 	return s.Networks[DefaultNetwork]
 }
 
+func (s ServiceConfig) ResolvedEnvironment() map[string]string {
+	env := make(map[string]string, len(s.Environment))
+	for k, v := range s.Environment {
+		if v != nil {
+			env[k] = *v
+		} else {
+			env[k] = "${" + k + "}" // preserve undefined env vars as placeholders
+		}
+	}
+	return env
+}
+
 // HasIngressPorts returns true if any port has mode "ingress".
 func (s ServiceConfig) HasIngressPorts() bool {
 	for _, p := range s.Ports {

@@ -1,21 +1,17 @@
 package azure
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	containerregistry "github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
 var (
@@ -152,49 +148,6 @@ type imageBuildResult struct {
 	imageURI pulumi.StringOutput
 }
 
-func isEphemeralBuildArg(key string) bool {
-	return strings.HasSuffix(key, "_TOKEN")
-}
-
-func removeEphemeralBuildArgs(args map[string]string) map[string]string {
-	args = maps.Clone(args)
-	for key := range args {
-		if isEphemeralBuildArg(key) {
-			args[key] = "Removed ephemeral token"
-		}
-	}
-	return args
-}
-
-func sha256hash(inputs ...string) string {
-	h := sha256.New()
-	for _, s := range inputs {
-		h.Write([]byte(s))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// buildTriggerHash computes a short hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
-	argsStr, err := json.Marshal(removeEphemeralBuildArgs(build.Args))
-	if err != nil {
-		return pulumi.StringOutput{}
-	}
-	var dockerfile, target string
-	if build.Dockerfile != nil {
-		dockerfile = *build.Dockerfile
-	}
-	if build.Target != nil {
-		target = *build.Target
-	}
-	return pulumi.StringOutput(pulumix.Apply(
-		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
-			// Remove SAS query params from URL before hashing (same approach as AWS)
-			contextEtag, _, _ := strings.Cut(ctx, "?")
-			return sha256hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
-		}))
-}
-
 // buildServiceImage builds a container image via ACR Tasks for a service.
 // Creates an ACR task definition and an ACRImageBuild custom resource that triggers the run.
 func buildServiceImage(
@@ -231,7 +184,7 @@ func buildServiceImage(
 		return nil, fmt.Errorf("creating ACR task for %s: %w", serviceName, err)
 	}
 
-	triggerHash := buildTriggerHash(svc.Build)
+	triggerHash := common.BuildTriggerHash(svc.Build)
 
 	var buildResource acrImageBuildResource
 	// IgnoreChanges on contextPath: the defang CLI hands us a fresh SAS URL every

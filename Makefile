@@ -11,9 +11,6 @@ help: ## Show this help message
 		| sort \
 		| awk -F':|##' '{printf "  \033[36m%-22s\033[0m %s\n", $$1, $$3}'
 
-GOPATH		:= $(shell go env GOPATH)
-export GOTOOLCHAIN := go1.25.6
-
 WORKING_DIR     := $(shell pwd)
 TESTPARALLELISM := 4
 
@@ -59,7 +56,7 @@ only_build: build
 ensure: ## Run go mod tidy
 	go mod tidy
 
-GO_TEST	 := go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
+GO_TEST	:= go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
 test_provider: provider ## Provider integration tests
@@ -69,8 +66,12 @@ test_provider: provider ## Provider integration tests
 test_unit: ## Unit tests only
 	${GO_TEST} -coverprofile=coverage_provider.out ./provider/... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
+.PHONY: test_cd
+test_cd:
+	cd cd && $(GO_TEST) -v | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
+
 .PHONY: test
-test: test_unit test_provider ## Run all tests
+test: test_unit test_provider test_cd ## Run all tests
 
 .PHONY: coverage
 coverage: test

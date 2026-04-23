@@ -58,6 +58,7 @@ func TestInterpolation(t *testing.T) {
 
 	for _, cloud := range []string{"aws", "gcp", "azure"} {
 		t.Run(cloud, func(t *testing.T) {
+			t.Parallel()
 			out, ok := res.Outputs[cloud+"-endpoints"]
 			if !ok {
 				t.Skipf("no %s-endpoints output", cloud)
