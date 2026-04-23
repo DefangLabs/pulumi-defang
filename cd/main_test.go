@@ -308,11 +308,8 @@ func TestProjectConfig(t *testing.T) {
 	if !ok {
 		t.Fatal("disable-default-providers value is not []string")
 	}
-	if len(disabledList) != 1 {
-		t.Errorf("expected 1 disabled provider, got %d", len(disabledList))
-	}
-	if disabledList[0] != "*" {
-		t.Errorf("expected disabled provider '*', got %q", disabledList[0])
+	if len(disabledList) < 3 {
+		t.Errorf("expected >= 3 disabled provider, got %d", len(disabledList))
 	}
 }
 

@@ -67,7 +67,7 @@ test_unit: ## Unit tests only
 	${GO_TEST} -coverprofile=coverage_provider.out ./provider/... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test_cd
-test_cd:
+test_cd: go_sdk
 	cd cd && $(GO_TEST) -v | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test
@@ -109,7 +109,7 @@ PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
 .PHONY: images
 images: image_aws image_gcp image_azure image_all
 
-image_%:
+image_%: go_sdk
 	$(DOCKER_BUILDX) --target $* \
 	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) \
 	  -t $(IMAGE_REPO):$(CD_VERSION)-$* .
@@ -132,7 +132,7 @@ pre-commit: node_modules
 
 # Full build + test run before push (or for CI).
 .PHONY: pre-push
-pre-push: provider test go_sdk
+pre-push: provider test image_all
 	@if ! git diff --quiet -- sdk/v2/ || ! git diff --cached --quiet -- sdk/v2/; then \
 		echo "error: Go SDK has uncommitted changes. Commit sdk/v2/ before pushing." >&2; \
 		exit 1; \
