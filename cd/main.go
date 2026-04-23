@@ -250,15 +250,10 @@ func stackConfig() auto.ConfigMap {
 		if azureSubscription != "" {
 			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
 		}
-		if azureResourceGroup != "" {
-			// The project resource group: the provider imports this RG instead
-			// of creating a new one.
-			cfg["defang-azure:resourceGroup"] = auto.ConfigValue{Value: azureResourceGroup}
-		}
-		if azureKeyVaultName != "" {
-			// Key Vault name to be passed in by cli as config can be set before deployment
-			cfg["defang-azure:keyVaultName"] = auto.ConfigValue{Value: azureKeyVaultName}
-		}
+		// The project RG name and Key Vault name are derived deterministically
+		// from (project, stack, location) and (subscription, RG) respectively
+		// inside the provider — matching the CLI's conventions. No need to
+		// pass them through as stack config or env vars.
 	}
 
 	// Defang recipe config

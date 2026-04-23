@@ -15,8 +15,8 @@ import (
 // the project's Azure Key Vault. Returns an empty map when the vault is unset
 // or contains no matching secrets (first deploy) — not an error.
 //
-// The vault name comes from Pulumi stack config (defang-azure:keyVaultName);
-// project/stack/prefix come from the running context.
+// The vault name is derived deterministically from (subscription, resource group)
+// via KeyVaultName; project/stack/prefix come from the running context.
 func FetchUserConfig(ctx *pulumi.Context) (map[string]string, error) {
 	vaultName := KeyVaultName(ctx)
 	if vaultName == "" {

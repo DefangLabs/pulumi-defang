@@ -1,6 +1,9 @@
 package azure
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -22,9 +25,18 @@ type SharedInfra struct {
 	KeyVaultIdentityID pulumi.StringOutput // user-assigned identity for KV access (zero if no vault)
 }
 
-// KeyVaultName returns the Key Vault name from Pulumi stack config, or empty.
+// KeyVaultName returns the deterministic Key Vault name for this project+stack,
+// derived from (subscription, resource group) per the defang CLI convention
+// (see defang/src/pkg/clouds/azure/keyvault.VaultName). Empty if the
+// subscription ID isn't available.
 func KeyVaultName(ctx *pulumi.Context) string {
-	return config.New(ctx, "defang-azure").Get("keyVaultName")
+	subID := SubscriptionID(ctx)
+	if subID == "" {
+		return ""
+	}
+	rg := ExistingResourceGroup(ctx)
+	h := sha256.Sum256([]byte(subID + "|" + rg))
+	return "kv-" + hex.EncodeToString(h[:])[:8]
 }
 
 // Location reads the Azure location from Pulumi stack config, falling back to the default.
@@ -36,11 +48,12 @@ func Location(ctx *pulumi.Context) string {
 	return defaultAzureLocation
 }
 
-// ExistingResourceGroup returns the name of the project's Azure resource group,
-// read from Pulumi stack config defang-azure:resourceGroup. The provider imports
-// this RG instead of creating a new one. Empty if unset.
+// ExistingResourceGroup returns the deterministic name of the project's Azure
+// resource group, derived from (project, stack, location) per the defang CLI
+// convention (see defang/src/pkg/cli/client/byoc/azure.projectResourceGroupName).
+// The CLI creates this RG before invoking the CD task; the provider imports it.
 func ExistingResourceGroup(ctx *pulumi.Context) string {
-	return config.New(ctx, "defang-azure").Get("resourceGroup")
+	return "defang-" + ctx.Project() + "-" + ctx.Stack() + "-" + Location(ctx)
 }
 
 // SubscriptionID returns the Azure subscription ID from azure-native:subscriptionId config.

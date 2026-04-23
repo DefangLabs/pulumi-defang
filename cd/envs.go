@@ -8,12 +8,10 @@ import (
 
 // Environment variables read at startup.
 var (
-	awsProfile         = os.Getenv("AWS_PROFILE")           // AWS only
-	awsRegion          = Getenv("AWS_REGION", region)       // AWS only
-	azureKeyVaultName  = os.Getenv("AZURE_KEY_VAULT_NAME")  // Azure only; Key Vault for project secrets
-	azureLocation      = os.Getenv("AZURE_LOCATION")        // Azure only
-	azureResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")  // Azure only; the project RG to import and the RG containing the App Configuration store
-	azureSubscription  = os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only
+	awsProfile        = os.Getenv("AWS_PROFILE")           // AWS only
+	awsRegion         = Getenv("AWS_REGION", region)       // AWS only
+	azureLocation     = os.Getenv("AZURE_LOCATION")        // Azure only
+	azureSubscription = os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only; the project RG and Key Vault names are derived from (project, stack, location) and (subscription, RG) respectively — see provider/defangazure/azure/azure.go
 	cdImage            = os.Getenv("DEFANG_CD_IMAGE")       // GCP only; for cleanup
 	delegationSetId    = os.Getenv("DELEGATION_SET_ID")     // AWS only
 	domain             = os.Getenv("DOMAIN")
