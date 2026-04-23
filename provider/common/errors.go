@@ -1,6 +1,15 @@
 // Ported from https://github.com/DefangLabs/defang-mvp/blob/main/pulumi/shared/error.ts
 package common
 
+import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+
+// ErrorOutput wraps an error in a StringOutput that fails the deployment when awaited or applied.
+func ErrorOutput(err error) pulumi.StringOutput {
+	return pulumi.String("").ToStringOutput().ApplyT(func(_ string) (string, error) {
+		return "", err
+	}).(pulumi.StringOutput)
+}
+
 func GetErrorHtml(title string, h1 string, message string) string {
 	return `<!DOCTYPE html>
 <html>

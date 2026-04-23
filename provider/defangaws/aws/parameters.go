@@ -42,7 +42,7 @@ func (cp *ConfigProvider) GetConfigValue(
 			for k, v := range values {
 				// Mark as secret so downstream consumers (env vars, task
 				// definitions) don't leak the value into Pulumi state or logs.
-				cp.cache[k] = pulumi.ToSecret(pulumi.String(v).ToStringOutput()).(pulumi.StringOutput)
+				cp.cache[k] = pulumi.ToSecret(pulumi.String(v)).(pulumi.StringOutput)
 			}
 		}
 	}

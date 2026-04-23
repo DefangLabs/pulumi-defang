@@ -9,6 +9,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -47,9 +49,10 @@ func NewConfigProvider(projectName, keyVaultURL string) *ConfigProvider {
 }
 
 // GetConfigValue returns a user-defined config value as a pulumi.StringOutput marked
-// secret. Unknown keys resolve to "" — same contract as the previous stack-config
-// backed implementation. Never returns a zero-value pulumi.StringOutput{}, which
-// would cause a nil-pointer dereference inside Pulumi's reflection walk.
+// secret. Unknown keys produce a StringOutput that fails the deployment with a
+// compose.ConfigNotFoundError — same contract as AWS/GCP. Never returns a
+// zero-value pulumi.StringOutput{}, which would cause a nil-pointer dereference
+// inside Pulumi's reflection walk.
 //
 // On first call, lazily fetches all project/stack secrets from Key Vault in
 // one pager round-trip, matching the AWS provider's GetParametersByPath pattern.
@@ -59,11 +62,12 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 
 	if !p.fetched && p.keyVaultURL != "" {
 		values, err := p.fetchFromKeyVault(ctx.Context(), ctx.Project(), ctx.Stack())
-		if err == nil {
-			p.fetched = true
-			for k, v := range values {
-				p.cache[k] = pulumi.ToSecret(pulumi.String(v).ToStringOutput()).(pulumi.StringOutput)
-			}
+		if err != nil {
+			return common.ErrorOutput(err)
+		}
+		p.fetched = true
+		for k, v := range values {
+			p.cache[k] = pulumi.ToSecret(pulumi.String(v)).(pulumi.StringOutput)
 		}
 	}
 
@@ -71,10 +75,7 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 		return val
 	}
 
-	// Unknown key → secret-wrapped empty string (Azure contract).
-	out := pulumi.ToSecret(pulumi.String("").ToStringOutput()).(pulumi.StringOutput)
-	p.cache[key] = out
-	return out
+	return compose.ConfigNotFoundOutput(key)
 }
 
 // GetSecretRef returns a ready-to-use Key Vault secret URL of the form

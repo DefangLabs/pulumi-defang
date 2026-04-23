@@ -29,7 +29,7 @@ func (e ConfigNotFoundError) Error() string {
 // an empty string when a config value is required but missing.
 func ConfigNotFoundOutput(key string) pulumi.StringOutput {
 	return pulumi.String(key).ToStringOutput().ApplyT(func(k string) (string, error) {
-		return "", ConfigNotFoundError{Key: k}
+		return "", &ConfigNotFoundError{Key: k}
 	}).(pulumi.StringOutput)
 }
 

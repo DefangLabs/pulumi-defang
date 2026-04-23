@@ -154,7 +154,7 @@ func createTgLrPair(
 	// Determine matcher based on protocol (matches TS createTargetGroup)
 	// With default path "/": grpc -> "0", http/http2 -> "200-399"
 	matcher := "200-399"
-	if appProto == grpcProto {
+	if appProto == compose.PortAppProtocolGRPC {
 		matcher = "0"
 	}
 
@@ -206,6 +206,7 @@ func createTgLrPair(
 			},
 		})
 	} else {
+		// Note: if no endpoints are available, only the first service will be reachable
 		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 			HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
 				Values: pulumi.StringArray{albDnsName},
@@ -222,7 +223,7 @@ func createTgLrPair(
 	// })
 
 	// Add gRPC content-type header matching (matches TS createTgLrPair)
-	if appProto == grpcProto {
+	if appProto == compose.PortAppProtocolGRPC {
 		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 			HttpHeader: &lb.ListenerRuleConditionHttpHeaderArgs{
 				HttpHeaderName: pulumi.String("content-type"),

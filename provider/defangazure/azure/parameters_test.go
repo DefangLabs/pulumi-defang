@@ -3,6 +3,7 @@ package azure
 import (
 	"testing"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/internals"
@@ -44,20 +45,19 @@ func TestGetConfigValue_ReturnsCachedValue(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestGetConfigValue_UnknownKeyReturnsEmptyString verifies the Azure contract:
-// unknown keys resolve to "" (not an error), matching the previous stack-config
-// backed implementation.
-func TestGetConfigValue_UnknownKeyReturnsEmptyString(t *testing.T) {
+// TestGetConfigValue_UnknownKeyReturnsError verifies unknown keys produce an
+// output that fails the deployment with ConfigNotFoundError — matching AWS/GCP.
+func TestGetConfigValue_UnknownKeyReturnsError(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		// No vault URL → fetch is skipped; cache stays empty.
 		cp := NewConfigProvider("myproject", "")
 
 		out := cp.GetConfigValue(ctx, "MISSING")
 
-		res, err := internals.UnsafeAwaitOutput(ctx.Context(), out)
-		require.NoError(t, err)
-		assert.Empty(t, res.Value)
-		assert.True(t, res.Secret)
+		_, err := internals.UnsafeAwaitOutput(ctx.Context(), out)
+		var notFound *compose.ConfigNotFoundError
+		require.ErrorAs(t, err, &notFound)
+		assert.Equal(t, "MISSING", notFound.Key)
 		return nil
 	}, pulumi.WithMocks("myproject", "mystack", azureNoopMocks{}))
 	require.NoError(t, err)
@@ -68,6 +68,9 @@ func TestGetConfigValue_CachesOutput(t *testing.T) {
 	// pulumi.StringOutput (same OutputState pointer) instead of re-wrapping.
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		cp := NewConfigProvider("proj", "")
+		// Pre-seed the cache; the fetch path isn't exercised in this unit test.
+		cp.cache["K"] = pulumi.ToSecret(pulumi.String("v").ToStringOutput()).(pulumi.StringOutput)
+		cp.fetched = true
 		out1 := cp.GetConfigValue(ctx, "K")
 		out2 := cp.GetConfigValue(ctx, "K")
 		assert.Equal(t, out1, out2)

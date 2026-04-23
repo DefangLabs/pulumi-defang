@@ -143,17 +143,11 @@ func fargateResources(cpus float64, memoryMiB int) (string, string) {
 // portProtocol normalizes the transport protocol for ECS container port mappings.
 // Only "tcp" and "udp" are valid; matches TS: ep.protocol === "udp" ? "udp" : "tcp"
 func portProtocol(p compose.ServicePortConfig) awsecs.TransportProtocol {
-	if p.GetProtocol() == udpProto {
+	if p.GetProtocol() == compose.PortProtocolUDP {
 		return awsecs.TransportProtocolUdp
 	}
 	return awsecs.TransportProtocolTcp
 }
-
-const (
-	grpcProto = "grpc"
-	udpProto  = "udp"
-	tcpProto  = "tcp"
-)
 
 func roleArn(r *iam.Role) pulumi.StringOutput {
 	if r == nil {
@@ -179,9 +173,9 @@ func createServiceSG(
 	var ingress ec2.SecurityGroupIngressArray
 
 	for _, port := range svc.Ports {
-		proto := tcpProto
-		if port.GetProtocol() == udpProto {
-			proto = udpProto
+		proto := ec2.ProtocolTypeTCP
+		if port.GetProtocol() == compose.PortProtocolUDP {
+			proto = ec2.ProtocolTypeUDP
 		}
 
 		rule := &ec2.SecurityGroupIngressArgs{

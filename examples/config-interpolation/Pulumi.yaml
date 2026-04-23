@@ -10,5 +10,7 @@ plugins:
     - name: defang-azure
       path: ../../bin
 config:
-  pulimi:disable-default-providers:
-    - "*"
+  pulumi:disable-default-providers:
+    - aws
+    - gcp
+    - azure-native

@@ -43,14 +43,12 @@ func (p *ConfigProvider) GetConfigValue(
 		Secret: secretId,
 	}, opts...)
 	if err != nil || sv == nil {
-		out := compose.ConfigNotFoundOutput(key)
-		p.cache[key] = out
-		return out
+		return compose.ConfigNotFoundOutput(key)
 	}
 
 	// Mark as secret so downstream consumers (env vars, Cloud Run services)
 	// don't leak the value into Pulumi state or logs.
-	out := pulumi.ToSecret(pulumi.String(sv.SecretData).ToStringOutput()).(pulumi.StringOutput)
+	out := pulumi.ToSecret(pulumi.String(sv.SecretData)).(pulumi.StringOutput)
 	p.cache[key] = out
 	return out
 }
