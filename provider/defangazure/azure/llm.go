@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
+	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -35,6 +36,31 @@ func CreateLLMInfra(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*LLMInfra, error) {
+	// CustomSubDomainName is DNS-scoped globally (AI Foundry hands out
+	// `<subdomain>.cognitiveservices.azure.com`), so it must be unique across
+	// all of Azure. Azure also *reserves* a deleted account's subdomain for
+	// ~48h before releasing it, so any naming scheme derived from stable
+	// inputs (project/stack/subscription) collides with itself after a
+	// `down`-then-`up` inside that window.
+	//
+	// Use pulumi-random's RandomString to get a suffix that's persisted in
+	// state: stable across subsequent `up`s, but regenerated when state is
+	// destroyed (so `down`-then-`up` produces a fresh name, sidestepping the
+	// soft-delete reservation).
+	subDomainSuffix, err := random.NewRandomString(ctx, name+"-subdomain", &random.RandomStringArgs{
+		Length:  pulumi.Int(8),
+		Lower:   pulumi.Bool(true),
+		Upper:   pulumi.Bool(false),
+		Numeric: pulumi.Bool(true),
+		Special: pulumi.Bool(false),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating random subdomain suffix: %w", err)
+	}
+	subDomainName := subDomainSuffix.Result.ApplyT(func(suffix string) string {
+		return llmSubDomainPrefix(name) + "-" + suffix
+	}).(pulumi.StringOutput)
+
 	account, err := cognitiveservices.NewAccount(ctx, name, &cognitiveservices.AccountArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.StringPtr(Location(ctx)),
@@ -47,15 +73,7 @@ func CreateLLMInfra(
 		},
 		Properties: &cognitiveservices.AccountPropertiesArgs{
 			AllowProjectManagement: pulumi.Bool(true),
-			// CustomSubDomainName is DNS-scoped globally (AI Foundry hands out
-			// `<subdomain>.cognitiveservices.azure.com`), so it must be unique
-			// across all of Azure — and Azure reserves the subdomain for 48h
-			// after the account is deleted. Derive from (subscription, project,
-			// stack) to avoid colliding between stacks in the same subscription
-			// and to avoid the "last-dash segment of RG name" trick that
-			// collapses to `<project>-<location>` under the CLI's deterministic
-			// RG naming.
-			CustomSubDomainName: pulumi.StringPtr(llmSubDomainName(ctx, name)),
+			CustomSubDomainName:    subDomainName.ToStringPtrOutput(),
 		},
 	}, append(opts, pulumi.ReplaceOnChanges([]string{"properties.customSubDomainName"}))...)
 	if err != nil {
@@ -141,15 +159,10 @@ func CreateLLMDeployment(
 	return nil
 }
 
-// llmSubDomainName returns a ≤24-char globally-unique custom subdomain for the
-// AI Foundry account. Format: `<sanitized-name>-<8 hex>`, where the hex is
-// the stackUniqueSuffix (subscription+project+stack). Stable across
-// refreshes and unique between stacks, so `test2` and `dev` in the same
-// subscription/project get different subdomains.
-func llmSubDomainName(ctx *pulumi.Context, name string) string {
-	suffix := stackUniqueSuffix(SubscriptionID(ctx), ctx.Project(), ctx.Stack())
-	// Reserve 9 chars for "-<8 hex>"; leave up to 15 chars for the name prefix.
-	// Subdomain must be lowercase letters/digits/hyphens; drop anything else.
+// llmSubDomainPrefix sanitizes name into the leading portion of an AI Foundry
+// custom subdomain: lowercase letters, digits, and hyphens only, ≤15 chars so
+// there's room for "-<8-char suffix>" inside Azure's 24-char limit.
+func llmSubDomainPrefix(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(name) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
@@ -160,7 +173,7 @@ func llmSubDomainName(ctx *pulumi.Context, name string) string {
 	if len(prefix) > 15 {
 		prefix = strings.Trim(prefix[:15], "-")
 	}
-	return prefix + "-" + suffix
+	return prefix
 }
 
 // selectModelForAlias maps a Defang model alias to an Output of ModelSpec.
