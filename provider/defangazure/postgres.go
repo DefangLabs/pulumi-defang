@@ -53,16 +53,14 @@ func (*Postgres) Construct(
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
 
-	userCfg, err := azure.FetchUserConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetching user config: %w", err)
-	}
 	infra := &azure.SharedInfra{ResourceGroup: rg}
 	var configProvider compose.ConfigProvider
 	if ctx.DryRun() {
 		configProvider = &compose.DryRunConfigProvider{}
 	} else {
-		configProvider = azure.NewConfigProvider(inputs.ProjectName, userCfg)
+		// Standalone Postgres has no Key Vault wiring, so secret refs are
+		// unavailable and the lazy fetch is a no-op; pass an empty URL.
+		configProvider = azure.NewConfigProvider(inputs.ProjectName, "")
 	}
 
 	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, childOpt)

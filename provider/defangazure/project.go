@@ -316,14 +316,19 @@ func setupSharedInfra(
 
 	types := detectServiceTypes(inputs.Services)
 
-	userCfg, err := providerazure.FetchUserConfig(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fetching user config: %w", err)
+	// Compute keyVaultURL up front so the ConfigProvider can assemble
+	// ready-to-use secret URLs AND lazy-fetch user config on first access.
+	// Empty when no vault is configured, in which case fetch + secret refs are
+	// both disabled.
+	var keyVaultURL string
+	if kvName := providerazure.KeyVaultName(ctx); kvName != "" {
+		keyVaultURL = "https://" + kvName + ".vault.azure.net"
 	}
 
 	infra := &providerazure.SharedInfra{
 		ResourceGroup:  rg,
-		ConfigProvider: providerazure.NewConfigProvider(name, userCfg),
+		KeyVaultURL:    keyVaultURL,
+		ConfigProvider: providerazure.NewConfigProvider(name, keyVaultURL),
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {
@@ -365,7 +370,6 @@ func setupSharedInfra(
 	}
 
 	if kvName := providerazure.KeyVaultName(ctx); kvName != "" {
-		infra.KeyVaultURL = "https://" + kvName + ".vault.azure.net"
 		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, infra, location, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating Key Vault identity: %w", err)

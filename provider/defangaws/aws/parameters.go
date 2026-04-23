@@ -12,13 +12,21 @@ import (
 
 type ConfigProvider struct {
 	projectName string
-	cache       map[string]pulumi.StringOutput
-	mu          sync.Mutex
-	fetched     bool
+	// prefix is the leading namespace segment of every SSM parameter this
+	// provider manages (e.g. "/Defang/<proj>/<stack>/<key>"). Set in
+	// NewConfigProvider; kept private so the CLI and provider stay in sync.
+	prefix  string
+	cache   map[string]pulumi.StringOutput
+	mu      sync.Mutex
+	fetched bool
 }
 
 func NewConfigProvider(projectName string) *ConfigProvider {
-	return &ConfigProvider{projectName: projectName, cache: make(map[string]pulumi.StringOutput)}
+	return &ConfigProvider{
+		prefix:      "Defang", // TODO: customizable prefix
+		projectName: projectName,
+		cache:       make(map[string]pulumi.StringOutput),
+	}
 }
 
 func (cp *ConfigProvider) GetConfigValue(
@@ -28,7 +36,7 @@ func (cp *ConfigProvider) GetConfigValue(
 	defer cp.mu.Unlock()
 
 	if !cp.fetched {
-		values, err := getParametersByPath(ctx, cp.projectName, opts...)
+		values, err := cp.getParametersByPath(ctx, opts...)
 		if err == nil {
 			cp.fetched = true
 			for k, v := range values {
@@ -46,12 +54,11 @@ func (cp *ConfigProvider) GetConfigValue(
 	return compose.ConfigNotFoundOutput(key)
 }
 
-func getParametersByPath(
+func (cp *ConfigProvider) getParametersByPath(
 	ctx *pulumi.Context,
-	projectName string,
 	opts ...pulumi.InvokeOption,
 ) (map[string]string, error) {
-	path := getSecretID(projectName, ctx.Stack(), "")
+	path := cp.getSecretID(ctx.Stack(), "")
 	withDecryption := true
 
 	gpr, err := ssm.GetParametersByPath(ctx, &ssm.GetParametersByPathArgs{
@@ -71,9 +78,9 @@ func getParametersByPath(
 	return result, nil
 }
 
-func getSecretID(projectName, stackName, service string) string {
+func (cp *ConfigProvider) getSecretID(stackName, service string) string {
 	// Same as CLI
-	return fmt.Sprintf("/Defang/%s/%s/%s", projectName, stackName, service) // TODO: customizable prefix
+	return fmt.Sprintf("/%s/%s/%s/%s", cp.prefix, cp.projectName, stackName, service)
 }
 
 // GetSecretRef returns the full SSM parameter ARN for a config key, so ECS can
@@ -87,6 +94,6 @@ func (cp *ConfigProvider) GetSecretRef(ctx *pulumi.Context, key string, opts ...
 	if err != nil {
 		return "", fmt.Errorf("getting account ID for secret ARN: %w", err)
 	}
-	id := getSecretID(cp.projectName, ctx.Stack(), key)
+	id := cp.getSecretID(ctx.Stack(), key)
 	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s", region, accountId, id), nil
 }

@@ -10,69 +10,64 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewConfigProvider_NilValues(t *testing.T) {
-	// Nil map must be replaced with an empty map, otherwise GetConfigValue
-	// would panic on the p.values[key] lookup. Regression guard for the
-	// previous stack-config backed implementation's contract.
-	cp := NewConfigProvider("proj", nil)
+func TestNewConfigProvider(t *testing.T) {
+	cp := NewConfigProvider("proj", "")
 	require.NotNil(t, cp)
-	assert.NotNil(t, cp.values)
-	assert.Empty(t, cp.values)
+	assert.NotNil(t, cp.cache)
+	assert.Empty(t, cp.cache)
+	assert.False(t, cp.fetched)
+	assert.Equal(t, "Defang", cp.prefix)
 }
 
-func TestGetConfigValue(t *testing.T) {
-	tests := []struct {
-		name     string
-		values   map[string]string
-		key      string
-		expected string
-	}{
-		{
-			name:     "returns value for existing key",
-			values:   map[string]string{"MY_KEY": "secret-value"},
-			key:      "MY_KEY",
-			expected: "secret-value",
-		},
-		{
-			// Azure contract: unknown keys resolve to "" (not an error),
-			// matching the previous stack-config backed implementation.
-			name:     "returns empty string for missing key",
-			values:   map[string]string{},
-			key:      "MISSING",
-			expected: "",
-		},
-		{
-			name:     "returns correct value among multiple values",
-			values:   map[string]string{"A": "alpha", "B": "beta"},
-			key:      "B",
-			expected: "beta",
-		},
-	}
+// TestGetConfigValue_ReturnsCachedValue verifies the cache hit path: when a
+// value is already in the cache (simulating a prior successful fetch), it's
+// returned as a secret-marked StringOutput.
+func TestGetConfigValue_ReturnsCachedValue(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		cp := NewConfigProvider("myproject", "")
+		// Pre-seed the cache as if a prior fetch succeeded. `fetched=true`
+		// keeps GetConfigValue from re-running the (nonexistent) fetch in
+		// this in-package unit test.
+		cp.cache["MY_KEY"] = pulumi.ToSecret(pulumi.String("secret-value").ToStringOutput()).(pulumi.StringOutput)
+		cp.fetched = true
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				cp := NewConfigProvider("myproject", tt.values)
-				out := cp.GetConfigValue(ctx, tt.key)
+		out := cp.GetConfigValue(ctx, "MY_KEY")
 
-				// Await instead of ApplyT so we can inspect the secret bit,
-				// which ApplyT does not expose.
-				res, err := internals.UnsafeAwaitOutput(ctx.Context(), out)
-				require.NoError(t, err)
-				assert.Equal(t, tt.expected, res.Value)
-				assert.True(t, res.Secret, "GetConfigValue output must be marked secret")
-				return nil
-			}, pulumi.WithMocks("myproject", "mystack", azureNoopMocks{}))
-			require.NoError(t, err)
-		})
-	}
+		// Await instead of ApplyT so we can inspect the secret bit,
+		// which ApplyT does not expose.
+		res, err := internals.UnsafeAwaitOutput(ctx.Context(), out)
+		require.NoError(t, err)
+		assert.Equal(t, "secret-value", res.Value)
+		assert.True(t, res.Secret, "GetConfigValue output must be marked secret")
+		return nil
+	}, pulumi.WithMocks("myproject", "mystack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
+// TestGetConfigValue_UnknownKeyReturnsEmptyString verifies the Azure contract:
+// unknown keys resolve to "" (not an error), matching the previous stack-config
+// backed implementation.
+func TestGetConfigValue_UnknownKeyReturnsEmptyString(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		// No vault URL → fetch is skipped; cache stays empty.
+		cp := NewConfigProvider("myproject", "")
+
+		out := cp.GetConfigValue(ctx, "MISSING")
+
+		res, err := internals.UnsafeAwaitOutput(ctx.Context(), out)
+		require.NoError(t, err)
+		assert.Empty(t, res.Value)
+		assert.True(t, res.Secret)
+		return nil
+	}, pulumi.WithMocks("myproject", "mystack", azureNoopMocks{}))
+	require.NoError(t, err)
 }
 
 func TestGetConfigValue_CachesOutput(t *testing.T) {
 	// Verify repeated calls for the same key return the identical cached
 	// pulumi.StringOutput (same OutputState pointer) instead of re-wrapping.
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		cp := NewConfigProvider("proj", map[string]string{"K": "v"})
+		cp := NewConfigProvider("proj", "")
 		out1 := cp.GetConfigValue(ctx, "K")
 		out2 := cp.GetConfigValue(ctx, "K")
 		assert.Equal(t, out1, out2)
@@ -82,6 +77,7 @@ func TestGetConfigValue_CachesOutput(t *testing.T) {
 }
 
 func TestGetSecretRef(t *testing.T) {
+	const vaultURL = "https://myvault.vault.azure.net"
 	tests := []struct {
 		name string
 		key  string
@@ -90,19 +86,19 @@ func TestGetSecretRef(t *testing.T) {
 		{
 			name: "replaces underscores with hyphens",
 			key:  "DB_PASSWORD",
-			want: "Defang--myproject--mystack--DB-PASSWORD",
+			want: vaultURL + "/secrets/Defang--myproject--mystack--DB-PASSWORD",
 		},
 		{
 			name: "key without underscores passes through",
 			key:  "APIKEY",
-			want: "Defang--myproject--mystack--APIKEY",
+			want: vaultURL + "/secrets/Defang--myproject--mystack--APIKEY",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				cp := NewConfigProvider("myproject", nil)
+				cp := NewConfigProvider("myproject", vaultURL)
 				ref, err := cp.GetSecretRef(ctx, tt.key)
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, ref)
@@ -111,6 +107,19 @@ func TestGetSecretRef(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestGetSecretRef_NoVault verifies that calling GetSecretRef on a ConfigProvider
+// constructed without a keyVaultURL returns an explicit error — the caller
+// (Container App env builder) must gate on KeyVaultURL before calling this.
+func TestGetSecretRef_NoVault(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		cp := NewConfigProvider("myproject", "")
+		_, err := cp.GetSecretRef(ctx, "SOMETHING")
+		assert.ErrorIs(t, err, ErrNoKeyVaultConfigured)
+		return nil
+	}, pulumi.WithMocks("myproject", "mystack", azureNoopMocks{}))
+	require.NoError(t, err)
 }
 
 type azureNoopMocks struct{}

@@ -44,7 +44,7 @@ func TestStringInputCannotUnmarshalYAML(t *testing.T) {
 }
 
 func TestProjectUnmarshalYAML(t *testing.T) {
-	input := `
+	input := `name: my-project
 services:
   web:
     image: nginx:latest
@@ -56,6 +56,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PORT: "8080"
+      NULL:
     deploy:
       replicas: 2
       resources:

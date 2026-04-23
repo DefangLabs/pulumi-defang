@@ -145,7 +145,7 @@ func buildEnvVars(
 				Value: infra.LLMInfra.APIKey,
 			})
 		} else if secretVar := compose.GetConfigName(v); secretVar != "" && infra.ConfigProvider != nil {
-			secretRef, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
+			secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
 			// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
 			appSecretName := toContainerAppSecretName(secretVar)
 			if _, ok := seenSecrets[appSecretName]; !ok {
@@ -153,12 +153,9 @@ func buildEnvVars(
 				// Container Apps requires both KeyVaultUrl and Identity when
 				// referencing a Key Vault secret — the identity is what the
 				// runtime uses to authenticate the vault fetch.
-				// Build the URL by concatenation (not path.Join) — path.Join
-				// collapses the "//" after https:, producing "https:/…" which
-				// Container Apps rejects.
 				appSecrets = append(appSecrets, app.SecretArgs{
 					Name:        pulumi.String(appSecretName),
-					KeyVaultUrl: pulumi.String(strings.TrimRight(infra.KeyVaultURL, "/") + "/secrets/" + secretRef),
+					KeyVaultUrl: pulumi.String(secretURL),
 					Identity:    infra.KeyVaultIdentityID,
 				})
 			}

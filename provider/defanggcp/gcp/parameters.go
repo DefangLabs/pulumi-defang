@@ -11,12 +11,20 @@ import (
 
 type ConfigProvider struct {
 	projectName string
-	cache       map[string]pulumi.StringOutput
-	mu          sync.Mutex
+	// prefix is the leading namespace segment of every Secret Manager secret
+	// this provider manages (e.g. "Defang_<proj>_<stack>_<key>"). Set in
+	// NewConfigProvider; kept private so the CLI and provider stay in sync.
+	prefix string
+	cache  map[string]pulumi.StringOutput
+	mu     sync.Mutex
 }
 
 func NewConfigProvider(projectName string) *ConfigProvider {
-	return &ConfigProvider{projectName: projectName, cache: make(map[string]pulumi.StringOutput)}
+	return &ConfigProvider{
+		prefix:      "Defang", // TODO: customizable prefix
+		projectName: projectName,
+		cache:       make(map[string]pulumi.StringOutput),
+	}
 }
 
 // GetConfigValue fetches the decrypted secret value from GCP Secret Manager.
@@ -30,7 +38,7 @@ func (p *ConfigProvider) GetConfigValue(
 		return val
 	}
 
-	secretId := getSecretID(p.projectName, ctx.Stack(), key)
+	secretId := p.getSecretID(ctx.Stack(), key)
 	sv, err := secretmanager.LookupSecretVersion(ctx, &secretmanager.LookupSecretVersionArgs{
 		Secret: secretId,
 	}, opts...)
@@ -52,12 +60,11 @@ func (p *ConfigProvider) GetConfigValue(
 func (p *ConfigProvider) GetSecretRef(
 	ctx *pulumi.Context, key string, _ ...pulumi.InvokeOption,
 ) (string, error) {
-	return getSecretID(p.projectName, ctx.Stack(), key), nil
+	return p.getSecretID(ctx.Stack(), key), nil
 }
 
 // getSecretID returns the Secret Manager secret ID for a config key.
-// Matches the old naming convention: Defang_{project}_{stack}_{key}
-func getSecretID(project, stack, key string) string {
-	// Same as CLI
-	return strings.Join([]string{"Defang", project, stack, key}, "_") // TODO: customizable prefix
+// Matches the CLI's naming convention: <prefix>_<project>_<stack>_<key>.
+func (p *ConfigProvider) getSecretID(stack, key string) string {
+	return strings.Join([]string{p.prefix, p.projectName, stack, key}, "_")
 }

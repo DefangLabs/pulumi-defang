@@ -17,7 +17,8 @@ const getSecretVersionToken = "gcp:secretmanager/getSecretVersion:getSecretVersi
 var errSecretNotFound = errors.New("secret not found")
 
 func TestGetSecretID(t *testing.T) {
-	assert.Equal(t, "Defang_myproject_prod_DB_PASSWORD", getSecretID("myproject", "prod", "DB_PASSWORD"))
+	cp := NewConfigProvider("myproject")
+	assert.Equal(t, "Defang_myproject_prod_DB_PASSWORD", cp.getSecretID("prod", "DB_PASSWORD"))
 }
 
 func TestGetSecretRef(t *testing.T) {
