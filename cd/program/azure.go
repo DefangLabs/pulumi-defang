@@ -9,7 +9,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	azureCfg := config.New(ctx, "azure-native")
 
 	providerArgs := &pulumiazure.ProviderArgs{
@@ -27,6 +27,16 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutp
 	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf), pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Upload ProjectUpdate protobuf as a Pulumi-managed Azure Blob, gated on
+	// the project component so it only runs after all services are created.
+	// pulumi.Provider(azureProvider) is required because
+	// pulumi:disable-default-providers excludes azure-native (see cd/main.go projectConfig).
+	if len(projectPb) > 0 {
+		if err := saveProjectPbAzure(ctx, projectPb, project, pulumi.Provider(azureProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 	return project.Endpoints, project.LoadBalancerDns, nil
 }

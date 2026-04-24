@@ -3,12 +3,16 @@ package azure
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
+	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// ErrModelSelectorUnavailable is returned from CreateLLMDeployment when the
+// selector is nil (typically during `pulumi preview`, which skips ARM queries).
 var ErrModelSelectorUnavailable = errors.New("model selector not available (preview mode?)")
 
 // LLMInfra holds a shared Azure AI Foundry account for all LLM services.
@@ -23,18 +27,53 @@ type LLMInfra struct {
 	// Compatible with OpenAI SDK's base_url parameter.
 	BaseURL pulumi.StringOutput
 
+	// lastDeployment is the most recently-registered Deployment under this
+	// account; subsequent CreateLLMDeployment calls DependsOn it to serialize
+	// Azure's per-account deployment operations. Azure returns 409
+	// "Another operation is being performed on the parent resource" if two
+	// Deployments on the same Account run in parallel.
+	lastDeployment pulumi.Resource
+
 	// ModelSelector picks models at deploy time based on region availability.
+	// Listing is deferred until the Account's Name output resolves, so the
+	// ARM list call only runs after Azure has finished creating the account.
 	ModelSelector ModelSelector
 }
 
 // CreateLLMInfra creates an Azure AI Foundry hub (Account with Kind "AIServices") and
-// initializes a ModelSelector that queries the account for available models.
+// builds a lazy ModelSelector that will query the account for available models
+// after it has been created.
 func CreateLLMInfra(
 	ctx *pulumi.Context,
 	name string,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*LLMInfra, error) {
+	// CustomSubDomainName is DNS-scoped globally (AI Foundry hands out
+	// `<subdomain>.cognitiveservices.azure.com`), so it must be unique across
+	// all of Azure. Azure also *reserves* a deleted account's subdomain for
+	// ~48h before releasing it, so any naming scheme derived from stable
+	// inputs (project/stack/subscription) collides with itself after a
+	// `down`-then-`up` inside that window.
+	//
+	// Use pulumi-random's RandomString to get a suffix that's persisted in
+	// state: stable across subsequent `up`s, but regenerated when state is
+	// destroyed (so `down`-then-`up` produces a fresh name, sidestepping the
+	// soft-delete reservation).
+	subDomainSuffix, err := random.NewRandomString(ctx, name+"-subdomain", &random.RandomStringArgs{
+		Length:  pulumi.Int(8),
+		Lower:   pulumi.Bool(true),
+		Upper:   pulumi.Bool(false),
+		Numeric: pulumi.Bool(true),
+		Special: pulumi.Bool(false),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating random subdomain suffix: %w", err)
+	}
+	subDomainName := subDomainSuffix.Result.ApplyT(func(suffix string) string {
+		return llmSubDomainPrefix(name) + "-" + suffix
+	}).(pulumi.StringOutput)
+
 	account, err := cognitiveservices.NewAccount(ctx, name, &cognitiveservices.AccountArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.StringPtr(Location(ctx)),
@@ -47,27 +86,20 @@ func CreateLLMInfra(
 		},
 		Properties: &cognitiveservices.AccountPropertiesArgs{
 			AllowProjectManagement: pulumi.Bool(true),
-			CustomSubDomainName: infra.ResourceGroup.Name.ApplyT(func(rgName string) string {
-				suffix := rgName
-				if idx := strings.LastIndexByte(rgName, '-'); idx >= 0 {
-					suffix = rgName[idx+1:]
-				}
-				s := strings.ToLower(name) + "-" + suffix
-				if len(s) > 24 {
-					s = s[:24]
-				}
-				return s
-			}).(pulumi.StringOutput).ToStringPtrOutput(),
+			CustomSubDomainName:    subDomainName.ToStringPtrOutput(),
 		},
 	}, append(opts, pulumi.ReplaceOnChanges([]string{"properties.customSubDomainName"}))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure AI Foundry account: %w", err)
 	}
 
+	// pulumi.Parent(account) routes the invoke through the account's provider —
+	// required because pulumi:disable-default-providers excludes azure-native
+	// (see cd/main.go projectConfig).
 	keysOut := cognitiveservices.ListAccountKeysOutput(ctx, cognitiveservices.ListAccountKeysOutputArgs{
 		AccountName:       account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
-	})
+	}, pulumi.Parent(account))
 
 	apiKey := keysOut.Key1().ApplyT(func(k *string) string {
 		if k != nil {
@@ -80,15 +112,18 @@ func CreateLLMInfra(
 		return strings.TrimRight(ep, "/") + "/openai/v1/"
 	}).(pulumi.StringOutput)
 
-	// Query available models for this account. This runs at deploy time (not preview).
-	// Pass empty account name — the selector discovers it from the resource group.
+	// Skip the selector during preview — its lazy ARM ListModels call fires
+	// as soon as rgName+accountName are known, which can happen during
+	// `pulumi preview` if the names are static Strings (they're unknown
+	// here, but a cautious guard is cheaper than debugging preview-time
+	// ARM slowness). Consumers get ErrModelSelectorUnavailable in preview.
 	var selector ModelSelector
 	if !ctx.DryRun() {
-		rgName := ExistingResourceGroup(ctx)
-		selector, err = NewDynamicModelSelector(SubscriptionID(ctx), rgName, "")
-		if err != nil {
-			return nil, fmt.Errorf("initializing model selector: %w", err)
-		}
+		selector = NewDynamicModelSelector(
+			SubscriptionID(ctx),
+			infra.ResourceGroup.Name.ToStringOutput(),
+			account.Name.ToStringOutput(),
+		)
 	}
 
 	return &LLMInfra{
@@ -110,42 +145,75 @@ func CreateLLMDeployment(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
-	model, err := selectModelForAlias(modelAlias, llmInfra.ModelSelector)
-	if err != nil {
-		return fmt.Errorf("selecting model for %s: %w", modelAlias, err)
+	if llmInfra.ModelSelector == nil {
+		return ErrModelSelectorUnavailable
+	}
+	specOutput := selectModelForAlias(modelAlias, llmInfra.ModelSelector)
+
+	// Chained ApplyT over an AnyOutput requires `any` as the applier's input —
+	// pulumi's reflection reads the Output's inner type as `interface{}` when
+	// the source was produced via `pulumi.All(...).ApplyT(...)`.
+	pickField := func(get func(ModelSpec) string) pulumi.StringOutput {
+		return specOutput.ApplyT(func(raw any) (string, error) {
+			spec, _ := raw.(ModelSpec)
+			return get(spec), nil
+		}).(pulumi.StringOutput)
+	}
+	modelFormat := pickField(func(s ModelSpec) string { return s.Format })
+	modelName := pickField(func(s ModelSpec) string { return s.Name })
+	modelVersion := pickField(func(s ModelSpec) string { return s.Version })
+	modelSKU := pickField(func(s ModelSpec) string { return s.SKU })
+
+	// Azure serializes deployments on a single AI Services Account — parallel
+	// NewDeployment calls fail with 409 "Another operation is being performed
+	// on the parent resource". Chain each new deployment on the previously-
+	// registered one so Pulumi serializes them in its run.
+	if llmInfra.lastDeployment != nil {
+		opts = append(opts, pulumi.DependsOn([]pulumi.Resource{llmInfra.lastDeployment}))
 	}
 
-	_, err = cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
+	deployment, err := cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
 		AccountName:       llmInfra.Account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
 		DeploymentName:    pulumi.String(deploymentName),
 		Properties: &cognitiveservices.DeploymentPropertiesArgs{
 			Model: &cognitiveservices.DeploymentModelArgs{
-				Format:  pulumi.String(model.Format),
-				Name:    pulumi.String(model.Name),
-				Version: pulumi.String(model.Version),
+				Format:  modelFormat.ToStringPtrOutput(),
+				Name:    modelName.ToStringPtrOutput(),
+				Version: modelVersion.ToStringPtrOutput(),
 			},
 		},
 		Sku: &cognitiveservices.SkuArgs{
-			Name:     pulumi.String(model.SKU),
+			Name:     modelSKU,
 			Capacity: pulumi.Int(1),
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return fmt.Errorf(
-			"creating Azure AI Foundry deployment %s (%s/%s): %w",
-			deploymentName, model.Format, model.Name, err,
-		)
+		return fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
+	llmInfra.lastDeployment = deployment
 	return nil
 }
 
-// selectModelForAlias maps a Defang model alias to a concrete ModelSpec.
-func selectModelForAlias(alias string, selector ModelSelector) (ModelSpec, error) {
-	if selector == nil {
-		return ModelSpec{}, ErrModelSelectorUnavailable
-	}
+// subDomainPrefixRe matches characters to strip from an AI Foundry custom
+// subdomain: anything outside `a-z0-9-`, plus leading/trailing hyphens.
+var subDomainPrefixRe = regexp.MustCompile(`^-+|[^a-z0-9-]|-+$`)
 
+// llmSubDomainPrefix sanitizes name into the leading portion of an AI Foundry
+// custom subdomain: lowercase letters, digits, and hyphens only, ≤15 chars so
+// there's room for "-<8-char suffix>" inside Azure's 24-char limit.
+func llmSubDomainPrefix(name string) string {
+	prefix := subDomainPrefixRe.ReplaceAllString(strings.ToLower(name), "")
+	if len(prefix) > 15 {
+		prefix = strings.Trim(prefix[:15], "-")
+	} else if len(prefix) == 0 {
+		prefix = "llm"
+	}
+	return prefix
+}
+
+// selectModelForAlias maps a Defang model alias to an Output of ModelSpec.
+func selectModelForAlias(alias string, selector ModelSelector) pulumi.Output {
 	var role ModelRole
 	switch {
 	case strings.Contains(alias, "embedding"):

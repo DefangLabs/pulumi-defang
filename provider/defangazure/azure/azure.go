@@ -1,6 +1,9 @@
 package azure
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
@@ -23,9 +26,26 @@ type SharedInfra struct {
 	KeyVaultIdentityID pulumi.StringOutput    // user-assigned identity for KV access (zero if no vault)
 }
 
-// KeyVaultName returns the Key Vault name from Pulumi stack config, or empty.
-func KeyVaultName(ctx *pulumi.Context) string {
-	return config.New(ctx, "defang-azure").Get("keyVaultName")
+// KeyVaultName returns the deterministic Key Vault name for the given Defang
+// Compose project in this stack, derived from (subscription, resource group)
+// per the defang CLI convention (see
+// defang/src/pkg/clouds/azure/keyvault.VaultName). Empty if the subscription
+// ID isn't available.
+//
+// composeProject is the Defang Compose project name (e.g. "crewai"), which
+// may differ from ctx.Project() — a single Pulumi project can host multiple
+// Defang Compose projects.
+func KeyVaultName(ctx *pulumi.Context, composeProject string) string {
+	subID := SubscriptionID(ctx)
+	if subID == "" {
+		return ""
+	}
+	rg := KeyVaultResourceGroup(ctx)
+	if rg == "" {
+		rg = ExistingResourceGroup(ctx, composeProject)
+	}
+	h := sha256.Sum256([]byte(subID + "|" + rg))
+	return "kv-" + hex.EncodeToString(h[:])[:8]
 }
 
 // KeyVaultResourceGroup returns the name of the resource group that contains
@@ -43,11 +63,17 @@ func Location(ctx *pulumi.Context) string {
 	return defaultAzureLocation
 }
 
-// ExistingResourceGroup returns the name of the project's Azure resource group,
-// read from Pulumi stack config defang-azure:resourceGroup. The provider imports
-// this RG instead of creating a new one. Empty if unset.
-func ExistingResourceGroup(ctx *pulumi.Context) string {
-	return config.New(ctx, "defang-azure").Get("resourceGroup")
+// ExistingResourceGroup returns the deterministic name of the Defang Compose
+// project's Azure resource group, derived from (composeProject, stack,
+// location) per the defang CLI convention (see
+// defang/src/pkg/cli/client/byoc/azure.projectResourceGroupName). The CLI
+// creates this RG before invoking the CD task; the provider imports it.
+//
+// composeProject is the Defang Compose project name (typically from the
+// compose file's top-level `name:`), which may differ from ctx.Project() —
+// a single Pulumi project can host multiple Defang Compose projects.
+func ExistingResourceGroup(ctx *pulumi.Context, composeProject string) string {
+	return "defang-" + composeProject + "-" + ctx.Stack() + "-" + Location(ctx)
 }
 
 // SubscriptionID returns the Azure subscription ID from azure-native:subscriptionId config.

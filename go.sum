@@ -529,6 +529,8 @@ github.com/pulumi/pulumi-gcp/sdk/v9 v9.6.0 h1:fRovmU/VERbQqhNyVVmtaDSg617WUNu4kx
 github.com/pulumi/pulumi-gcp/sdk/v9 v9.6.0/go.mod h1:NnYhrxL3Tlxh362lU6926TShn/dUZsoEmd60cuyTGFA=
 github.com/pulumi/pulumi-go-provider v1.3.1 h1:HuzbOG3BWU+JZ1CdJeUwGEATRtCU8HNwRX6rxKUeZ/E=
 github.com/pulumi/pulumi-go-provider v1.3.1/go.mod h1:HS3UcUA42rwKdSx4k47Fr+36oGJqErGm22GP74JC1Gs=
+github.com/pulumi/pulumi-random/sdk/v4 v4.19.2 h1:YDGarxRPtAgpnUg7nXVe+gVfVABBjo88UC6EMAmmvhM=
+github.com/pulumi/pulumi-random/sdk/v4 v4.19.2/go.mod h1:Dyyj49M9eX2ct1b3maqDGikMPVCNxXthG0KAhhj7nmI=
 github.com/pulumi/pulumi/pkg/v3 v3.227.0 h1:0Jk9bALzpSCQwf+2Ol2pqDJToFkBZhLPAF68zTUALK0=
 github.com/pulumi/pulumi/pkg/v3 v3.227.0/go.mod h1:4gX+4x5bjUnXLU8rN1BmVcfOcwIvLl1Ma6ItCjMiilw=
 github.com/pulumi/pulumi/sdk/v3 v3.227.0 h1:QMMHm+sGwauPnhU2pyI/pJT0VTrOaDYPconWwvtOO/c=

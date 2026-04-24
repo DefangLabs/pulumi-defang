@@ -11,7 +11,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	awsCfg := config.New(ctx, "aws")
 
 	providerArgs := &aws.ProviderArgs{
@@ -49,6 +49,16 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Providers(awsProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Upload ProjectUpdate protobuf as a Pulumi-managed S3 object, gated on
+	// the project component so it only runs after all services are created.
+	// pulumi.Provider(awsProvider) is required because
+	// pulumi:disable-default-providers excludes aws (see cd/main.go projectConfig).
+	if len(projectPb) > 0 {
+		if err := saveProjectPbAWS(ctx, projectPb, project, pulumi.Provider(awsProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 	return project.Endpoints, project.LoadBalancerDns, nil
 }

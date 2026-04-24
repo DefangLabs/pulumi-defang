@@ -9,7 +9,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	gcpCfg := config.New(ctx, "gcp")
 
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
@@ -29,6 +29,16 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput
 	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Upload ProjectUpdate protobuf as a Pulumi-managed GCS object, gated on
+	// the project component so it only runs after all services are created.
+	// pulumi.Provider(gcpProvider) is required because
+	// pulumi:disable-default-providers excludes gcp (see cd/main.go projectConfig).
+	if len(projectPb) > 0 {
+		if err := saveProjectPbGCP(ctx, projectPb, project, pulumi.Provider(gcpProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
