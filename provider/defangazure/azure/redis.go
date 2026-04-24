@@ -129,12 +129,15 @@ func CreateRedisEnterprise(
 	}
 
 	// Retrieve the database access key so callers can build a full connection URL.
-	// ListDatabaseKeysOutput is an invoke that runs during the deployment (after the DB exists).
+	// ListDatabaseKeysOutput is an invoke that runs during the deployment (after
+	// the DB exists). Explicit pulumi.Parent(cluster) routes the invoke through
+	// the cluster's provider — required because pulumi:disable-default-providers
+	// excludes azure-native (see cd/main.go projectConfig).
 	keysOut := redis.ListDatabaseKeysOutput(ctx, redis.ListDatabaseKeysOutputArgs{
 		ClusterName:       cluster.Name,
 		DatabaseName:      db.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
-	})
+	}, pulumi.Parent(cluster))
 
 	if useVNet {
 		if err := createRedisVNetEndpoint(ctx, serviceName, location, cluster, infra, opts...); err != nil {

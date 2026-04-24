@@ -53,8 +53,10 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectP
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed S3 object, gated on
 	// the project component so it only runs after all services are created.
+	// pulumi.Provider(awsProvider) is required because
+	// pulumi:disable-default-providers excludes aws (see cd/main.go projectConfig).
 	if len(projectPb) > 0 {
-		if err := saveProjectPbAWS(ctx, projectPb, project); err != nil {
+		if err := saveProjectPbAWS(ctx, projectPb, project, pulumi.Provider(awsProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

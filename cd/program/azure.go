@@ -31,8 +31,10 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pu
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed Azure Blob, gated on
 	// the project component so it only runs after all services are created.
+	// pulumi.Provider(azureProvider) is required because
+	// pulumi:disable-default-providers excludes azure-native (see cd/main.go projectConfig).
 	if len(projectPb) > 0 {
-		if err := saveProjectPbAzure(ctx, projectPb, project); err != nil {
+		if err := saveProjectPbAzure(ctx, projectPb, project, pulumi.Provider(azureProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

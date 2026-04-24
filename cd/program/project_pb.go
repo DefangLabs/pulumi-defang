@@ -23,7 +23,10 @@ func projectPbKey(ctx *pulumi.Context) string {
 // derived from DEFANG_STATE_URL. Gated on dep so the upload only runs after
 // the project component (and its services) have been created successfully —
 // matching the pattern used by the legacy defang-mvp CD pipeline.
-func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource) error {
+//
+// extraOpts should include pulumi.Provider(...) because
+// pulumi:disable-default-providers excludes aws (see cd/main.go projectConfig).
+func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
 		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
@@ -35,7 +38,7 @@ func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource) err
 	if u.Scheme != "s3" || u.Host == "" {
 		return fmt.Errorf("DEFANG_STATE_URL must be an s3:// URL with a bucket for AWS uploads, got %q", stateURL)
 	}
-	opts := []pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}
+	opts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}, extraOpts...)
 	// ContentBase64 preserves binary bytes; Content (string) would fail gRPC
 	// marshaling because protobuf is not valid UTF-8. The provider decodes
 	// the base64 server-side and stores raw bytes in S3.
@@ -50,7 +53,7 @@ func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource) err
 
 // saveProjectPbGCP uploads data as a Pulumi-managed GCS object at the key
 // derived from DEFANG_STATE_URL. See saveProjectPbAWS for semantics.
-func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource) error {
+func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
 		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
@@ -62,7 +65,7 @@ func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource) err
 	if u.Scheme != "gs" || u.Host == "" {
 		return fmt.Errorf("DEFANG_STATE_URL must be a gs:// URL with a bucket for GCP uploads, got %q", stateURL)
 	}
-	opts := []pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}
+	opts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}, extraOpts...)
 	asset, cleanup, err := binaryFileAsset(data, "project-pb-*.pb")
 	if err != nil {
 		return err
@@ -84,7 +87,7 @@ func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource) err
 
 // saveProjectPbAzure uploads data as a Pulumi-managed Azure Blob in the CD
 // storage account's `projects` container. See saveProjectPbAWS for semantics.
-func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource) error {
+func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
 		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
@@ -113,7 +116,7 @@ func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource) e
 	// `projects/projects/<project>/<stack>/project.pb`.
 	blobName := fmt.Sprintf("%s/%s/project.pb", ctx.Project(), ctx.Stack())
 
-	opts := []pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}
+	opts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}, extraOpts...)
 	asset, cleanup, err := binaryFileAsset(data, "project-pb-*.pb")
 	if err != nil {
 		return err

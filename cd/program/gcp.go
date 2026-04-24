@@ -33,8 +33,10 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulu
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed GCS object, gated on
 	// the project component so it only runs after all services are created.
+	// pulumi.Provider(gcpProvider) is required because
+	// pulumi:disable-default-providers excludes gcp (see cd/main.go projectConfig).
 	if len(projectPb) > 0 {
-		if err := saveProjectPbGCP(ctx, projectPb, project); err != nil {
+		if err := saveProjectPbGCP(ctx, projectPb, project, pulumi.Provider(gcpProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

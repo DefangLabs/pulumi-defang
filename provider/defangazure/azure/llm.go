@@ -27,6 +27,13 @@ type LLMInfra struct {
 	// Compatible with OpenAI SDK's base_url parameter.
 	BaseURL pulumi.StringOutput
 
+	// lastDeployment is the most recently-registered Deployment under this
+	// account; subsequent CreateLLMDeployment calls DependsOn it to serialize
+	// Azure's per-account deployment operations. Azure returns 409
+	// "Another operation is being performed on the parent resource" if two
+	// Deployments on the same Account run in parallel.
+	lastDeployment pulumi.Resource
+
 	// ModelSelector picks models at deploy time based on region availability.
 	// Listing is deferred until the Account's Name output resolves, so the
 	// ARM list call only runs after Azure has finished creating the account.
@@ -86,10 +93,13 @@ func CreateLLMInfra(
 		return nil, fmt.Errorf("creating Azure AI Foundry account: %w", err)
 	}
 
+	// pulumi.Parent(account) routes the invoke through the account's provider —
+	// required because pulumi:disable-default-providers excludes azure-native
+	// (see cd/main.go projectConfig).
 	keysOut := cognitiveservices.ListAccountKeysOutput(ctx, cognitiveservices.ListAccountKeysOutputArgs{
 		AccountName:       account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
-	})
+	}, pulumi.Parent(account))
 
 	apiKey := keysOut.Key1().ApplyT(func(k *string) string {
 		if k != nil {
@@ -154,7 +164,15 @@ func CreateLLMDeployment(
 	modelVersion := pickField(func(s ModelSpec) string { return s.Version })
 	modelSKU := pickField(func(s ModelSpec) string { return s.SKU })
 
-	_, err := cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
+	// Azure serializes deployments on a single AI Services Account — parallel
+	// NewDeployment calls fail with 409 "Another operation is being performed
+	// on the parent resource". Chain each new deployment on the previously-
+	// registered one so Pulumi serializes them in its run.
+	if llmInfra.lastDeployment != nil {
+		opts = append(opts, pulumi.DependsOn([]pulumi.Resource{llmInfra.lastDeployment}))
+	}
+
+	deployment, err := cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
 		AccountName:       llmInfra.Account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
 		DeploymentName:    pulumi.String(deploymentName),
@@ -173,6 +191,7 @@ func CreateLLMDeployment(
 	if err != nil {
 		return fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
+	llmInfra.lastDeployment = deployment
 	return nil
 }
 
