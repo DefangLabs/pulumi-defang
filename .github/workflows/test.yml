@@ -111,7 +111,9 @@ jobs:
     needs:
       - build_sdks
     permissions:
+      contents: read
       packages: write
+      id-token: write # for defang OIDC login
     steps:
       - name: Checkout Repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -139,6 +141,7 @@ jobs:
           fi
 
       - name: Build and push image to GHCR
+        id: build-push
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: . # build context must be repo root to include generated Go SDK
@@ -147,3 +150,17 @@ jobs:
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=${{ github.workflow }}
           cache-to: type=gha,scope=${{ github.workflow }},mode=max
+
+      # Pin the staging Azure CD image ref (digest) in the Defang Fabric. Only on main-branch
+      # pushes — PR runs would otherwise have every contributor overwrite the staging config.
+      - name: Set cd_image_ configs in Defang
+        if: github.event_name == 'push'
+        uses: DefangLabs/defang-github-action@v2
+        with:
+          project: ecs
+          stack: awsstaging
+          command: "config set -e cd_image_azure cd_image_aws cd_image_gcp"
+        env:
+          cd_image_azure: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+          cd_image_aws: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+          cd_image_gcp: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
