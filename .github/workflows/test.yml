@@ -155,7 +155,7 @@ jobs:
       # Pin the staging Azure CD image ref (digest) in the Defang Fabric. Only on main-branch
       # pushes — PR runs would otherwise have every contributor overwrite the staging config.
       - name: Set cd_image_ configs in Defang
-        if: github.event_name == 'push'
+        # if: github.event_name == 'push'
         uses: DefangLabs/defang-github-action@2298c7cafed90f258a6b9d2fdfff4821b0382c89 # v2.2.0
         with:
           project: ecs
@@ -165,3 +165,4 @@ jobs:
           cd_image_azure: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_aws: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_gcp: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
