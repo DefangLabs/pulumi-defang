@@ -6,9 +6,10 @@ import (
 	"log"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
-	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 )
 
@@ -67,34 +68,17 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 	}
 }
 
-// extractComposeYaml extracts the compose bytes (field 4) from a ProjectUpdate protobuf
-// without importing the full defang CLI proto package.
+// extractComposeYaml unmarshals a ProjectUpdate protobuf and returns its
+// embedded compose YAML bytes. Errors if the protobuf is malformed or the
+// Compose field is empty (e.g. the CLI sent a ProjectUpdate without a
+// compose file).
 func extractComposeYaml(projectUpdate []byte) ([]byte, error) {
-	for len(projectUpdate) > 0 {
-		num, typ, n := protowire.ConsumeTag(projectUpdate)
-		if n < 0 {
-			return nil, errors.New("invalid protobuf tag")
-		}
-		projectUpdate = projectUpdate[n:]
-		switch typ {
-		case protowire.BytesType:
-			v, n := protowire.ConsumeBytes(projectUpdate)
-			if n < 0 {
-				return nil, errors.New("invalid protobuf bytes field")
-			}
-			if num == 4 {
-				return v, nil
-			}
-			projectUpdate = projectUpdate[n:]
-		case protowire.VarintType:
-			_, n := protowire.ConsumeVarint(projectUpdate)
-			if n < 0 {
-				return nil, errors.New("invalid protobuf varint field")
-			}
-			projectUpdate = projectUpdate[n:]
-		default:
-			return nil, fmt.Errorf("unexpected protobuf wire type %d", typ)
-		}
+	var pu defangv1.ProjectUpdate
+	if err := proto.Unmarshal(projectUpdate, &pu); err != nil {
+		return nil, fmt.Errorf("unmarshaling ProjectUpdate: %w", err)
 	}
-	return nil, errors.New("ProjectUpdate has no compose field")
+	if len(pu.Compose) == 0 {
+		return nil, errors.New("ProjectUpdate has no compose field")
+	}
+	return pu.Compose, nil
 }
