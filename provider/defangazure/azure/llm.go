@@ -206,6 +206,8 @@ func llmSubDomainPrefix(name string) string {
 	prefix := subDomainPrefixRe.ReplaceAllString(strings.ToLower(name), "")
 	if len(prefix) > 15 {
 		prefix = strings.Trim(prefix[:15], "-")
+	} else if len(prefix) == 0 {
+		prefix = "llm"
 	}
 	return prefix
 }
