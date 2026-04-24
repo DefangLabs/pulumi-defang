@@ -1,9 +1,11 @@
 package gcp
 
 import (
+	"errors"
 	"strings"
 	"sync"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -43,7 +45,7 @@ func (p *ConfigProvider) GetConfigValue(
 		Secret: secretId,
 	}, opts...)
 	if err != nil || sv == nil {
-		return compose.ConfigNotFoundOutput(key)
+		return common.ErrorOutput(errors.Join(&compose.ConfigNotFoundError{Key: key}, err))
 	}
 
 	// Mark as secret so downstream consumers (env vars, Cloud Run services)

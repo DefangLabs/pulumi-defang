@@ -55,7 +55,7 @@ type PulumiConfigProvider struct{}
 func (p *PulumiConfigProvider) GetConfigValue(
 	ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
-	return config.New(ctx, "").GetSecret(key)
+	return config.New(ctx, "").RequireSecret(key)
 }
 
 // GetSecretRef is not supported by PulumiConfigProvider.

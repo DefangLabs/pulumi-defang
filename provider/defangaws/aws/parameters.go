@@ -1,10 +1,12 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -37,13 +39,14 @@ func (cp *ConfigProvider) GetConfigValue(
 
 	if !cp.fetched {
 		values, err := cp.getParametersByPath(ctx, opts...)
-		if err == nil {
-			cp.fetched = true
-			for k, v := range values {
-				// Mark as secret so downstream consumers (env vars, task
-				// definitions) don't leak the value into Pulumi state or logs.
-				cp.cache[k] = pulumi.ToSecret(pulumi.String(v)).(pulumi.StringOutput)
-			}
+		if err != nil {
+			return common.ErrorOutput(errors.Join(&compose.ConfigNotFoundError{Key: key}, err))
+		}
+		cp.fetched = true
+		for k, v := range values {
+			// Mark as secret so downstream consumers (env vars, task
+			// definitions) don't leak the value into Pulumi state or logs.
+			cp.cache[k] = pulumi.ToSecret(pulumi.String(v)).(pulumi.StringOutput)
 		}
 	}
 

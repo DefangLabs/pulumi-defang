@@ -63,7 +63,7 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 	if !p.fetched && p.keyVaultURL != "" {
 		values, err := p.fetchFromKeyVault(ctx.Context(), ctx.Project(), ctx.Stack())
 		if err != nil {
-			return common.ErrorOutput(err)
+			return common.ErrorOutput(errors.Join(&compose.ConfigNotFoundError{Key: key}, err))
 		}
 		p.fetched = true
 		for k, v := range values {
