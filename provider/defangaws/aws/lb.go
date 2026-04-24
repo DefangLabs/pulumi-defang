@@ -116,7 +116,7 @@ func createTgLrPair(
 	port compose.ServicePortConfig,
 	healthCheck *compose.HealthCheckConfig,
 	endpoints []string,
-	albDnsName pulumi.StringOutput, // fallback host header when no endpoints are configured
+	albDnsName pulumi.StringInput, // fallback host header when no endpoints are configured
 	opt pulumi.ResourceOption,
 ) (*lb.TargetGroup, *lb.ListenerRule, error) {
 	if !port.IsIngress() {
