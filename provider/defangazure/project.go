@@ -257,7 +257,7 @@ func createProjectResourceGroup(
 		Location: pulumi.String(location),
 	}
 	rgOpts := childOpts
-	if existingRG := providerazure.ExistingResourceGroup(ctx); existingRG != "" {
+	if existingRG := providerazure.ExistingResourceGroup(ctx, name); existingRG != "" {
 		// Import the existing RG: ResourceGroupName must match so Pulumi doesn't
 		// propose a replacement on subsequent refreshes.
 		rgArgs.ResourceGroupName = pulumi.String(existingRG)
@@ -340,7 +340,7 @@ func setupSharedInfra(
 
 	types := detectServiceTypes(inputs.Services)
 
-	userCfg, err := providerazure.FetchUserConfig(ctx)
+	userCfg, err := providerazure.FetchUserConfig(ctx, name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetching user config: %w", err)
 	}
@@ -388,7 +388,7 @@ func setupSharedInfra(
 		infra.BuildInfra = buildInfra
 	}
 
-	if kvName := providerazure.KeyVaultName(ctx); kvName != "" {
+	if kvName := providerazure.KeyVaultName(ctx, name); kvName != "" {
 		infra.KeyVaultURL = "https://" + kvName + ".vault.azure.net"
 		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, infra, location, childOpts...)
 		if err != nil {

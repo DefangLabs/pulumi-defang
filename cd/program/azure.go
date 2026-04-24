@@ -9,7 +9,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.Resource, pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "azure-native")
 
 	providerArgs := &pulumiazure.ProviderArgs{
@@ -21,14 +21,22 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project) (pulumi.Resource, pul
 	}
 	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", providerArgs)
 	if err != nil {
-		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
 	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf), pulumi.Providers(azureProvider))
 	if err != nil {
-		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
-	return project, project.Endpoints, project.LoadBalancerDns, nil
+
+	// Upload ProjectUpdate protobuf as a Pulumi-managed Azure Blob, gated on
+	// the project component so it only runs after all services are created.
+	if len(projectPb) > 0 {
+		if err := saveProjectPbAzure(ctx, projectPb, project); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+	}
+	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
 func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {

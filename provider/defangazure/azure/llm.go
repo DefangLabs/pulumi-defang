@@ -1,13 +1,19 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+// ErrModelSelectorUnavailable is returned from CreateLLMDeployment when the
+// selector is nil (typically during `pulumi preview`, which skips ARM queries).
+var ErrModelSelectorUnavailable = errors.New("model selector not available (preview mode?)")
 
 // LLMInfra holds a shared Azure AI Foundry account for all LLM services.
 type LLMInfra struct {
@@ -96,11 +102,19 @@ func CreateLLMInfra(
 		return strings.TrimRight(ep, "/") + "/openai/v1/"
 	}).(pulumi.StringOutput)
 
-	selector := NewDynamicModelSelector(
-		SubscriptionID(ctx),
-		infra.ResourceGroup.Name.ToStringOutput(),
-		account.Name.ToStringOutput(),
-	)
+	// Skip the selector during preview — its lazy ARM ListModels call fires
+	// as soon as rgName+accountName are known, which can happen during
+	// `pulumi preview` if the names are static Strings (they're unknown
+	// here, but a cautious guard is cheaper than debugging preview-time
+	// ARM slowness). Consumers get ErrModelSelectorUnavailable in preview.
+	var selector ModelSelector
+	if !ctx.DryRun() {
+		selector = NewDynamicModelSelector(
+			SubscriptionID(ctx),
+			infra.ResourceGroup.Name.ToStringOutput(),
+			account.Name.ToStringOutput(),
+		)
+	}
 
 	return &LLMInfra{
 		Account:       account,
@@ -121,6 +135,9 @@ func CreateLLMDeployment(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
+	if llmInfra.ModelSelector == nil {
+		return ErrModelSelectorUnavailable
+	}
 	specOutput := selectModelForAlias(modelAlias, llmInfra.ModelSelector)
 
 	// Chained ApplyT over an AnyOutput requires `any` as the applier's input —
@@ -159,17 +176,15 @@ func CreateLLMDeployment(
 	return nil
 }
 
+// subDomainPrefixRe matches characters to strip from an AI Foundry custom
+// subdomain: anything outside `a-z0-9-`, plus leading/trailing hyphens.
+var subDomainPrefixRe = regexp.MustCompile(`^-+|[^a-z0-9-]|-+$`)
+
 // llmSubDomainPrefix sanitizes name into the leading portion of an AI Foundry
 // custom subdomain: lowercase letters, digits, and hyphens only, ≤15 chars so
 // there's room for "-<8-char suffix>" inside Azure's 24-char limit.
 func llmSubDomainPrefix(name string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(name) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		}
-	}
-	prefix := strings.Trim(b.String(), "-")
+	prefix := subDomainPrefixRe.ReplaceAllString(strings.ToLower(name), "")
 	if len(prefix) > 15 {
 		prefix = strings.Trim(prefix[:15], "-")
 	}

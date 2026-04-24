@@ -36,8 +36,9 @@ const (
 )
 
 // ModelSelector picks the best available model for a given role. Returns a
-// pulumi Output so the ARM "list models" call is deferred until the underlying
-// AIServices account has actually been created.
+// pulumi Output so the ARM "list models" call is deferred until the Account's
+// Name output resolves, i.e. after the AIServices account has actually been
+// created in Azure (not just registered in Pulumi state).
 type ModelSelector interface {
 	SelectModel(role ModelRole) pulumi.Output
 }

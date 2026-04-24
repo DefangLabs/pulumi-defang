@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -30,7 +29,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
-	"google.golang.org/protobuf/encoding/protowire"
 )
 
 var version = "development" // overwritten by -ldflags "-X main.version=..."
@@ -92,7 +90,6 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 		},
 	}
 }
-
 
 // fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, base64, or a local file.
 func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
@@ -179,38 +176,6 @@ func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
 		return nil, fmt.Errorf("GET %s returned %s", uri, resp.Status)
 	}
 	return io.ReadAll(resp.Body)
-}
-
-// extractComposeYaml extracts the compose bytes (field 4) from a ProjectUpdate protobuf
-// without importing the full defang CLI proto package.
-func extractComposeYaml(projectUpdate []byte) ([]byte, error) {
-	for len(projectUpdate) > 0 {
-		num, typ, n := protowire.ConsumeTag(projectUpdate)
-		if n < 0 {
-			return nil, errors.New("invalid protobuf tag")
-		}
-		projectUpdate = projectUpdate[n:]
-		switch typ {
-		case protowire.BytesType:
-			v, n := protowire.ConsumeBytes(projectUpdate)
-			if n < 0 {
-				return nil, errors.New("invalid protobuf bytes field")
-			}
-			if num == 4 {
-				return v, nil
-			}
-			projectUpdate = projectUpdate[n:]
-		case protowire.VarintType:
-			_, n := protowire.ConsumeVarint(projectUpdate)
-			if n < 0 {
-				return nil, errors.New("invalid protobuf varint field")
-			}
-			projectUpdate = projectUpdate[n:]
-		default:
-			return nil, fmt.Errorf("unexpected protobuf wire type %d", typ)
-		}
-	}
-	return nil, errors.New("ProjectUpdate has no compose field")
 }
 
 // stackConfig returns config for Pulumi.<stack>.yaml (stack-level settings).
@@ -378,23 +343,19 @@ func main() {
 			log.Fatalf("missing required argument: payload")
 		}
 		payload := os.Args[2]
-		// Fetch protobuf and extract compose YAML. The ProjectUpdate bytes
-		// are passed through to the Pulumi program, which uploads them as a
-		// Pulumi-managed blob after the deploy succeeds — so the file only
-		// appears on success and is tracked in state (vs. a pre-Pulumi SDK
-		// upload that would leave stale records on failure).
-		var composeYaml, projectUpdate []byte
+		// Fetch the ProjectUpdate protobuf and pass it through to the Pulumi
+		// program; the program extracts the compose YAML itself and uploads
+		// the protobuf as a Pulumi-managed blob after the deploy succeeds —
+		// so the file only appears on success and is tracked in state (vs. a
+		// pre-Pulumi SDK upload that would leave stale records on failure).
+		var projectUpdate []byte
 		if payload != "" {
 			projectUpdate, err = fetchPayload(ctx, payload)
 			if err != nil {
 				log.Fatalf("failed to fetch payload: %v", err)
 			}
-			composeYaml, err = extractComposeYaml(projectUpdate)
-			if err != nil {
-				log.Fatalf("failed to extract compose: %v", err)
-			}
 		}
-		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(composeYaml, projectUpdate))
+		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(projectUpdate))
 	default:
 		s, err = auto.SelectStackInlineSource(ctx, stack, project, nil)
 	}

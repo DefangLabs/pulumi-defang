@@ -15,16 +15,17 @@ import (
 // the project's Azure Key Vault. Returns an empty map when the vault is unset
 // or contains no matching secrets (first deploy) — not an error.
 //
-// The vault name is derived deterministically from (subscription, resource group)
-// via KeyVaultName; project/stack/prefix come from the running context.
-func FetchUserConfig(ctx *pulumi.Context) (map[string]string, error) {
-	vaultName := KeyVaultName(ctx)
+// The vault name is derived deterministically from (subscription, resource
+// group) via KeyVaultName. composeProject is the Defang Compose project name
+// (may differ from ctx.Project()); stack/prefix come from the running context.
+func FetchUserConfig(ctx *pulumi.Context, composeProject string) (map[string]string, error) {
+	vaultName := KeyVaultName(ctx, composeProject)
 	if vaultName == "" {
 		return map[string]string{}, nil
 	}
 
 	prefix := config.New(ctx, "defang").Get("prefix")
-	vals, err := fetchFromKeyVault(ctx.Context(), vaultName, prefix, ctx.Project(), ctx.Stack())
+	vals, err := fetchFromKeyVault(ctx.Context(), vaultName, prefix, composeProject, ctx.Stack())
 	if err != nil {
 		return nil, fmt.Errorf("reading user config from Key Vault: %w", err)
 	}

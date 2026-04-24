@@ -11,7 +11,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.Resource, pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "aws")
 
 	providerArgs := &aws.ProviderArgs{
@@ -31,7 +31,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 
 	awsProvider, err := aws.NewProvider(ctx, "aws", providerArgs)
 	if err != nil {
-		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
 	args := toAWSArgs(cf)
@@ -48,9 +48,17 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string) (pulumi.
 
 	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Providers(awsProvider))
 	if err != nil {
-		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
-	return project, project.Endpoints, project.LoadBalancerDns, nil
+
+	// Upload ProjectUpdate protobuf as a Pulumi-managed S3 object, gated on
+	// the project component so it only runs after all services are created.
+	if len(projectPb) > 0 {
+		if err := saveProjectPbAWS(ctx, projectPb, project); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+	}
+	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
 func toAWSArgs(cf *compose.Project) *defangaws.ProjectArgs {

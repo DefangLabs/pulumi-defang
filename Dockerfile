@@ -76,14 +76,12 @@ ARG PROVIDER_VERSION
 FROM plugins-base AS plugins-aws
 COPY --link --from=build-aws /out/pulumi-resource-defang-aws /tmp/
 RUN pulumi plugin install resource aws $(grep 'pulumi-aws/sdk/v7' go.mod | awk '{print $2}') && \
-    pulumi plugin install resource awsx $(grep 'pulumi-awsx/sdk/v3' go.mod | awk '{print $2}') && \
-    pulumi plugin install resource random $(grep 'pulumi-random/sdk/v4' go.mod | awk '{print $2}')
+    pulumi plugin install resource awsx $(grep 'pulumi-awsx/sdk/v3' go.mod | awk '{print $2}')
 RUN pulumi plugin install resource defang-aws ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-aws
 
 FROM plugins-base AS plugins-gcp
 COPY --link --from=build-gcp /out/pulumi-resource-defang-gcp /tmp/
-RUN pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' go.mod | awk '{print $2}') && \
-    pulumi plugin install resource random $(grep 'pulumi-random/sdk/v4' go.mod | awk '{print $2}')
+RUN pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' go.mod | awk '{print $2}')
 RUN pulumi plugin install resource defang-gcp ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-gcp
 
 FROM plugins-base AS plugins-azure

@@ -53,7 +53,7 @@ func (*Postgres) Construct(
 		return nil, fmt.Errorf("creating resource group: %w", err)
 	}
 
-	userCfg, err := azure.FetchUserConfig(ctx)
+	userCfg, err := azure.FetchUserConfig(ctx, inputs.ProjectName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching user config: %w", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.Resource, pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	cfg := config.New(ctx, "gcp")
 
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
@@ -23,14 +23,22 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.Resource, pulum
 		},
 	})
 	if err != nil {
-		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
 	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf), pulumi.Providers(gcpProvider))
 	if err != nil {
-		return nil, pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
-	return project, project.Endpoints, project.LoadBalancerDns, nil
+
+	// Upload ProjectUpdate protobuf as a Pulumi-managed GCS object, gated on
+	// the project component so it only runs after all services are created.
+	if len(projectPb) > 0 {
+		if err := saveProjectPbGCP(ctx, projectPb, project); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+	}
+	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
 func toGCPArgs(cf *compose.Project) *defanggcp.ProjectArgs {

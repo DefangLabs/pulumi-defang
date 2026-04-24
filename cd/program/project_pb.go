@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strings"
 
 	awss3 "github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 	azurestorage "github.com/pulumi/pulumi-azure-native-sdk/storage/v3"
@@ -13,62 +12,64 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// saveProjectPb uploads the ProjectUpdate protobuf as a Pulumi-managed
-// blob on the provider's object store, derived from DEFANG_STATE_URL. The
-// upload DependsOn dep so it runs only after the project component (and
-// its services) have been created successfully — matching the pattern used
-// by the legacy defang-mvp CD pipeline (pulumi-gcp's BucketObject,
-// pulumi-aws's s3.BucketObject).
-func saveProjectPb(ctx *pulumi.Context, provider string, data []byte, dep pulumi.Resource) error {
+// projectPbKey returns the object-store key for the ProjectUpdate protobuf:
+// `projects/{project}/{stack}/project.pb`. For Azure, the `projects/` prefix
+// is stripped by the caller since Azure uses a dedicated `projects` container.
+func projectPbKey(ctx *pulumi.Context) string {
+	return fmt.Sprintf("projects/%s/%s/project.pb", ctx.Project(), ctx.Stack())
+}
+
+// saveProjectPbAWS uploads data as a Pulumi-managed S3 object at the key
+// derived from DEFANG_STATE_URL. Gated on dep so the upload only runs after
+// the project component (and its services) have been created successfully —
+// matching the pattern used by the legacy defang-mvp CD pipeline.
+func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
 		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
 	}
-	key := fmt.Sprintf("projects/%s/%s/project.pb", ctx.Project(), ctx.Stack())
+	u, err := url.Parse(stateURL)
+	if err != nil {
+		return fmt.Errorf("invalid DEFANG_STATE_URL %q: %w", stateURL, err)
+	}
+	if u.Scheme != "s3" || u.Host == "" {
+		return fmt.Errorf("DEFANG_STATE_URL must be an s3:// URL with a bucket for AWS uploads, got %q", stateURL)
+	}
 	opts := []pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}
-
-	switch provider {
-	case "aws":
-		return saveProjectPbAWS(ctx, stateURL, key, data, opts)
-	case "gcp":
-		return saveProjectPbGCP(ctx, stateURL, key, data, opts)
-	case "azure":
-		return saveProjectPbAzure(ctx, stateURL, key, data, opts)
-	}
-	return fmt.Errorf("unsupported provider for project.pb upload: %q", provider)
-}
-
-func saveProjectPbAWS(ctx *pulumi.Context, stateURL, key string, data []byte, opts []pulumi.ResourceOption) error {
-	bucket := strings.SplitN(strings.TrimPrefix(stateURL, "s3://"), "/", 2)[0]
-	bucket = strings.SplitN(bucket, "?", 2)[0]
-	if bucket == "" {
-		return fmt.Errorf("cannot extract bucket from DEFANG_STATE_URL %q", stateURL)
-	}
 	// ContentBase64 preserves binary bytes; Content (string) would fail gRPC
 	// marshaling because protobuf is not valid UTF-8. The provider decodes
 	// the base64 server-side and stores raw bytes in S3.
-	_, err := awss3.NewBucketObjectv2(ctx, "project-pb", &awss3.BucketObjectv2Args{
-		Bucket:        pulumi.String(bucket),
-		Key:           pulumi.String(key),
+	_, err = awss3.NewBucketObjectv2(ctx, "project-pb", &awss3.BucketObjectv2Args{
+		Bucket:        pulumi.String(u.Host),
+		Key:           pulumi.String(projectPbKey(ctx)),
 		ContentBase64: pulumi.String(base64.StdEncoding.EncodeToString(data)),
 		ContentType:   pulumi.String("application/protobuf"),
 	}, opts...)
 	return err
 }
 
-func saveProjectPbGCP(ctx *pulumi.Context, stateURL, key string, data []byte, opts []pulumi.ResourceOption) error {
-	bucket := strings.SplitN(strings.TrimPrefix(stateURL, "gs://"), "/", 2)[0]
-	bucket = strings.SplitN(bucket, "?", 2)[0]
-	if bucket == "" {
-		return fmt.Errorf("cannot extract bucket from DEFANG_STATE_URL %q", stateURL)
+// saveProjectPbGCP uploads data as a Pulumi-managed GCS object at the key
+// derived from DEFANG_STATE_URL. See saveProjectPbAWS for semantics.
+func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource) error {
+	stateURL := os.Getenv("DEFANG_STATE_URL")
+	if stateURL == "" {
+		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
 	}
+	u, err := url.Parse(stateURL)
+	if err != nil {
+		return fmt.Errorf("invalid DEFANG_STATE_URL %q: %w", stateURL, err)
+	}
+	if u.Scheme != "gs" || u.Host == "" {
+		return fmt.Errorf("DEFANG_STATE_URL must be a gs:// URL with a bucket for GCP uploads, got %q", stateURL)
+	}
+	opts := []pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}
 	asset, cleanup, err := binaryFileAsset(data, "project-pb-*.pb")
 	if err != nil {
 		return err
 	}
 	obj, err := gcpstorage.NewBucketObject(ctx, "project-pb", &gcpstorage.BucketObjectArgs{
-		Bucket:      pulumi.String(bucket),
-		Name:        pulumi.String(key),
+		Bucket:      pulumi.String(u.Host),
+		Name:        pulumi.String(projectPbKey(ctx)),
 		Source:      asset,
 		ContentType: pulumi.String("application/protobuf"),
 	}, opts...)
@@ -81,11 +82,19 @@ func saveProjectPbGCP(ctx *pulumi.Context, stateURL, key string, data []byte, op
 	return nil
 }
 
-func saveProjectPbAzure(ctx *pulumi.Context, stateURL, key string, data []byte, opts []pulumi.ResourceOption) error {
-	// azblob://<container>?storage_account=<acct>
+// saveProjectPbAzure uploads data as a Pulumi-managed Azure Blob in the CD
+// storage account's `projects` container. See saveProjectPbAWS for semantics.
+func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource) error {
+	stateURL := os.Getenv("DEFANG_STATE_URL")
+	if stateURL == "" {
+		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
+	}
 	u, err := url.Parse(stateURL)
 	if err != nil {
-		return fmt.Errorf("parsing DEFANG_STATE_URL %q: %w", stateURL, err)
+		return fmt.Errorf("invalid DEFANG_STATE_URL %q: %w", stateURL, err)
+	}
+	if u.Scheme != "azblob" {
+		return fmt.Errorf("DEFANG_STATE_URL must be an azblob:// URL for Azure uploads, got %q", stateURL)
 	}
 	account := u.Query().Get("storage_account")
 	if account == "" {
@@ -99,10 +108,12 @@ func saveProjectPbAzure(ctx *pulumi.Context, stateURL, key string, data []byte, 
 	}
 	cdRG := "defang-cd-" + location
 
-	// Azure uses a dedicated `projects` container, so strip the `projects/`
-	// prefix that AWS/GCS key convention requires (they use a shared bucket).
-	blobName := strings.TrimPrefix(key, "projects/")
+	// Azure uses a dedicated `projects` container, so strip the AWS/GCS-style
+	// `projects/` prefix from the object key — otherwise the blob lands at
+	// `projects/projects/<project>/<stack>/project.pb`.
+	blobName := fmt.Sprintf("%s/%s/project.pb", ctx.Project(), ctx.Stack())
 
+	opts := []pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}
 	asset, cleanup, err := binaryFileAsset(data, "project-pb-*.pb")
 	if err != nil {
 		return err
