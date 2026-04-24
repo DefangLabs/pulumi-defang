@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,14 +47,14 @@ func TestInterpolation(t *testing.T) {
 	//   ${CONFIG-defaultValue} → configValue   (default: used only if unset)
 	//   ${CONFIG+altValue}     → "altValue"    (alt: used only if set)
 	expected := map[string]string{
-		"LITERAL":           "verbatim",
-		"CONFIG":            configValue,
-		"OTHER":             configValue,
-		"INTERPOLATED":      "prefix" + configValue + "suffix",
-		"EMPTY":             "",
-		"MODIFIER_REQUIRED": configValue,
-		"MODIFIER_DEFAULT":  configValue,
-		"MODIFIER_ALT":      "altValue",
+		"TEST_LITERAL":           "verbatim",
+		"TEST_CONFIG":            configValue,
+		"TEST_OTHER":             configValue,
+		"TEST_INTERPOLATED":      "prefix" + configValue + "suffix",
+		"TEST_EMPTY":             "",
+		"TEST_MODIFIER_REQUIRED": configValue,
+		"TEST_MODIFIER_DEFAULT":  configValue,
+		"TEST_MODIFIER_ALT":      "altValue",
 	}
 
 	for _, cloud := range []string{"aws", "gcp", "azure"} {
@@ -129,4 +130,20 @@ func parseEnv(body string) map[string]string {
 		result[k] = v
 	}
 	return result
+}
+
+func TestInterpolationDestroy(t *testing.T) {
+	stackName := os.Getenv("PULUMI_STACK")
+	if stackName == "" {
+		stackName = "dev"
+	}
+	stack, err := auto.UpsertStackLocalSource(t.Context(), stackName, ".")
+	if err != nil {
+		t.Fatalf("selecting stack: %v", err)
+	}
+
+	_, err = stack.Destroy(context.Background())
+	if err != nil {
+		t.Errorf("pulumi destroy: %v", err)
+	}
 }
