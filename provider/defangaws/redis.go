@@ -21,7 +21,7 @@ type RedisInputs struct {
 	Image       *string                     `pulumi:"image,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	AWS         *provideraws.SharedInfra    `pulumi:"aws,optional"`
 }
 

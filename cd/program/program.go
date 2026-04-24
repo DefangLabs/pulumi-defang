@@ -29,16 +29,16 @@ func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 // (gated on the project component so the upload only happens on success).
 func NewRun(projectPb []byte) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
-		cfg := config.New(ctx, "defang")
+		defangCfg := config.New(ctx, "defang")
 
-		provider := cfg.Require("provider") // "aws", "gcp", or "azure"
-		domain := cfg.Get("domain")         // optional project domain
+		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
+		domain := defangCfg.Get("domain")         // optional project domain
 
 		composeYaml, err := extractComposeYaml(projectPb)
 		if err != nil {
 			log.Fatalf("failed to extract compose: %v", err)
 		}
-		cf, err := parseCompose(composeYaml, ctx.Project())
+		project, err := parseCompose(composeYaml, ctx.Project())
 		if err != nil {
 			return err
 		}
@@ -48,11 +48,11 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, cf, domain, projectPb)
+			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, projectPb)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, cf, projectPb)
+			endpoints, loadBalancerDns, err = deployGCP(ctx, project, projectPb)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, cf, projectPb)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project, projectPb)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}

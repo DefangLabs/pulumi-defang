@@ -3,9 +3,9 @@ package aws
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/codebuild"
@@ -64,14 +64,9 @@ func getBuildSpec(build compose.BuildConfig, destination string) (string, error)
 	// Build args in deterministic order (matches TS: Object.keys(buildArgs).sort())
 	var buildArgsStr string
 	if len(build.Args) > 0 {
-		keys := make([]string, 0, len(build.Args))
-		for k := range build.Args {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
 		var parts []string
-		for _, k := range keys {
-			parts = append(parts, fmt.Sprintf("--build-arg \"%s\"", k))
+		for k := range common.Sorted(build.Args) {
+			parts = append(parts, fmt.Sprintf("--build-arg %q", k))
 		}
 		buildArgsStr = strings.Join(parts, " ")
 	}
@@ -157,7 +152,7 @@ func createCodeBuildProject(
 			Value: pulumi.String(region),
 		},
 	}
-	for k, v := range build.Args {
+	for k, v := range common.Sorted(build.Args) {
 		envVars = append(envVars, &codebuild.ProjectEnvironmentEnvironmentVariableArgs{
 			Name:  pulumi.String(k),
 			Value: pulumi.String(v),

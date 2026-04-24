@@ -3,7 +3,7 @@
 # Build context must be the repo root (because cd/go.mod has replace directives to ../).
 # Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 --target aws .
 #
-ARG GOVERSION=1.26
+ARG GOVERSION=1.25
 ARG PULUMI_VERSION=latest
 ARG BUILDBASE=golang:${GOVERSION}-alpine
 ARG CDBASE=scratch

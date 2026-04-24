@@ -22,7 +22,7 @@ type AzureContainerAppInputs struct {
 	Platform    *string                     `pulumi:"platform,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`

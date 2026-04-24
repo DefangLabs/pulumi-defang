@@ -11,6 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ptr returns a pointer to v. Duplicates common.Ptr because common imports
+// compose, so compose can't import common.
+func ptr[T any](v T) *T { return &v }
+
 type NetworkID string
 
 type Services = map[string]ServiceConfig
@@ -51,7 +55,7 @@ type ServiceConfig struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`
@@ -113,19 +117,44 @@ type ServiceNetworkConfig struct {
 	Aliases []string `pulumi:"aliases,optional" yaml:"aliases,omitempty"`
 }
 
+type PortMode string
+
+const (
+	PortModeHost    PortMode = "host"
+	PortModeIngress PortMode = "ingress"
+)
+
+type PortProtocol string
+
+const (
+	PortProtocolAny  PortProtocol = ""
+	PortProtocolTCP  PortProtocol = "tcp"
+	PortProtocolUDP  PortProtocol = "udp"
+	PortProtocolSCTP PortProtocol = "sctp"
+)
+
+type PortAppProtocol string
+
+const (
+	PortAppProtocolUnknown PortAppProtocol = ""
+	PortAppProtocolHTTP    PortAppProtocol = "http"
+	PortAppProtocolHTTP2   PortAppProtocol = "http2"
+	PortAppProtocolGRPC    PortAppProtocol = "grpc"
+)
+
 // ServicePortConfig defines a port mapping for a service.
 type ServicePortConfig struct {
 	// Container port
 	Target int32 `pulumi:"target" yaml:"target"`
 
 	// Port mode: "host" or "ingress" (default: "ingress")
-	Mode string `pulumi:"mode,optional" yaml:"mode,omitempty"`
+	Mode PortMode `pulumi:"mode,optional" yaml:"mode,omitempty"`
 
 	// Transport protocol: "tcp" or "udp" (default: "tcp")
-	Protocol string `pulumi:"protocol,optional" yaml:"protocol,omitempty"`
+	Protocol PortProtocol `pulumi:"protocol,optional" yaml:"protocol,omitempty"`
 
 	// Application protocol: "http", "http2", "grpc" (default: "http")
-	AppProtocol string `pulumi:"appProtocol,optional" yaml:"app_protocol,omitempty"`
+	AppProtocol PortAppProtocol `pulumi:"appProtocol,optional" yaml:"app_protocol,omitempty"`
 }
 
 // DeployConfig defines deployment parameters.
@@ -285,10 +314,6 @@ func parseDurationSeconds(s string) float64 {
 	return d.Seconds()
 }
 
-type ConfigProvider interface {
-	GetConfig(ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput
-}
-
 // PostgresConfigArgs holds resolved managed Postgres configuration.
 // Derived from PostgresConfig + image tag + environment variables.
 //
@@ -333,12 +358,12 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	}
 
 	dbNameStr, ok := s.Environment["POSTGRES_DB"]
-	if !ok || dbNameStr == "" {
-		dbNameStr = DEFAULT_POSTGRES_DB
+	if !ok || dbNameStr == nil || *dbNameStr == "" {
+		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
 	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
-	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "")
+	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "") // FIXME: should not default to ""
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {
@@ -352,7 +377,7 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	return &PostgresConfigArgs{
 		Version:       version,
 		DBName:        dbName,
-		DBNameStr:     dbNameStr,
+		DBNameStr:     *dbNameStr,
 		Username:      username,
 		Password:      password,
 		AllowDowntime: allowDowntime,
@@ -412,6 +437,18 @@ func (s ServiceConfig) GetPlatform() string {
 // DefaultNetwork returns the default network config for the service, defaulting to empty config.
 func (s ServiceConfig) DefaultNetwork() ServiceNetworkConfig {
 	return s.Networks[DefaultNetwork]
+}
+
+func (s ServiceConfig) ResolvedEnvironment() map[string]string {
+	env := make(map[string]string, len(s.Environment))
+	for k, v := range s.Environment {
+		if v != nil {
+			env[k] = *v
+		} else {
+			env[k] = "${" + k + "}" // preserve undefined env vars as placeholders
+		}
+	}
+	return env
 }
 
 // HasIngressPorts returns true if any port has mode "ingress".

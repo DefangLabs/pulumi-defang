@@ -94,8 +94,7 @@ func createRemoteRepos(
 
 // gcpProjectId reads the GCP project ID from Pulumi stack config.
 func gcpProjectId(ctx *pulumi.Context) string {
-	cfg := config.New(ctx, "gcp")
-	return cfg.Get("project")
+	return config.New(ctx, "gcp").Get("project")
 }
 
 // createBuildInfra creates the shared GCP infrastructure required to build container images:

@@ -10,13 +10,13 @@ import (
 )
 
 func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	cfg := config.New(ctx, "azure-native")
+	azureCfg := config.New(ctx, "azure-native")
 
 	providerArgs := &pulumiazure.ProviderArgs{
-		Location:                  pulumi.StringPtr(cfg.Require("location")),
+		Location:                  pulumi.StringPtr(azureCfg.Require("location")),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
 	}
-	if subID := cfg.Get("subscriptionId"); subID != "" {
+	if subID := azureCfg.Get("subscriptionId"); subID != "" {
 		providerArgs.SubscriptionId = pulumi.StringPtr(subID)
 	}
 	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", providerArgs)
@@ -65,7 +65,7 @@ func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArg
 	args := azurecompose.ServiceConfigArgs{
 		Image:       pulumi.StringPtrFromPtr(svc.Image),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
-		Environment: pulumi.ToStringMap(svc.Environment),
+		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
 	}

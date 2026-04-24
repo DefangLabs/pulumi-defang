@@ -2,7 +2,6 @@ package azure
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
@@ -14,23 +13,13 @@ import (
 //nolint:gosec // built-in role definition ID, not a secret
 const keyVaultSecretsUserRoleID = "4633458b-17de-408a-b874-0445c86b69e6"
 
-// ToContainerAppSecretName converts an env var name to a Container App secret
-// name (lowercase, hyphens instead of underscores).
-func ToContainerAppSecretName(envKey string) string {
-	return strings.ToLower(strings.ReplaceAll(envKey, "_", "-"))
-}
-
-// KeyVaultSecretURL returns the Key Vault URL for a specific secret.
-func KeyVaultSecretURL(vaultURL, project, stack, envKey string) string {
-	// Mirror the CLI's ToSecretName convention:
-	// "/{prefix}/{project}/{stack}/{KEY}" with / -> -- and _ -> -
-	secretName := "Defang--" + project + "--" + stack + "--" + strings.ReplaceAll(envKey, "_", "-")
-	return vaultURL + "/secrets/" + secretName
-}
-
 // CreateKeyVaultIdentity creates a user-assigned managed identity with
 // Key Vault Secrets User role on the vault. Returns the identity resource ID
 // (with an implicit dependency on the role assignment completing).
+//
+// The vault may live in a different resource group than the project (set via
+// defang-azure:keyVaultResourceGroup); if unset, it's assumed to share the
+// project RG.
 func CreateKeyVaultIdentity(
 	ctx *pulumi.Context,
 	vaultName string,
@@ -52,16 +41,28 @@ func CreateKeyVaultIdentity(
 		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
 		subID, keyVaultSecretsUserRoleID,
 	)
-	vaultScope := infra.ResourceGroup.ID().ApplyT(func(rgID string) string {
-		return rgID + "/providers/Microsoft.KeyVault/vaults/" + vaultName
-	}).(pulumi.StringOutput)
 
+	var vaultScope pulumi.StringOutput
+	if kvRG := KeyVaultResourceGroup(ctx); kvRG != "" {
+		vaultScope = pulumi.String(fmt.Sprintf(
+			"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.KeyVault/vaults/%s",
+			subID, kvRG, vaultName,
+		)).ToStringOutput()
+	} else {
+		vaultScope = infra.ResourceGroup.ID().ApplyT(func(rgID string) string {
+			return rgID + "/providers/Microsoft.KeyVault/vaults/" + vaultName
+		}).(pulumi.StringOutput)
+	}
+
+	// Parent defaults to the surrounding component (via opts). Pulumi's SDK
+	// discourages using custom resources as parents — destruction order here is
+	// already enforced by the implicit data dependency on identity.PrincipalId.
 	roleAssignment, err := authorization.NewRoleAssignment(ctx, "kv-secrets-user", &authorization.RoleAssignmentArgs{
 		Scope:            vaultScope,
 		RoleDefinitionId: pulumi.String(roleDefID),
 		PrincipalId:      identity.PrincipalId,
 		PrincipalType:    pulumi.String("ServicePrincipal"),
-	}, append(opts, pulumi.Parent(identity))...)
+	}, opts...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating KV role assignment: %w", err)
 	}

@@ -48,7 +48,7 @@ func createLbLogsBucket(
 		return nil, err
 	}
 
-	// Expire logs after 30 days (from recipe)
+	// Expire logs after N days (from recipe)
 	_, err = s3.NewBucketLifecycleConfiguration(ctx, name, &s3.BucketLifecycleConfigurationArgs{
 		Bucket: bucket.ID(),
 		Rules: s3.BucketLifecycleConfigurationRuleArray{
@@ -116,6 +116,7 @@ func createTgLrPair(
 	port compose.ServicePortConfig,
 	healthCheck *compose.HealthCheckConfig,
 	endpoints []string,
+	albDnsName pulumi.StringInput, // fallback host header when no endpoints are configured
 	opt pulumi.ResourceOption,
 ) (*lb.TargetGroup, *lb.ListenerRule, error) {
 	if !port.IsIngress() {
@@ -140,9 +141,10 @@ func createTgLrPair(
 	if maxTimeout > 120 {
 		maxTimeout = 120
 	}
-	timeout := (6)
+	// Default timeout to interval, clamped to [2, maxTimeout] (matches TS: `healthCheck?.timeout ?? interval`)
+	timeout := clampInt(interval, 2, maxTimeout, interval)
 	if healthCheck != nil {
-		timeout = clampInt(int(healthCheck.TimeoutSeconds), 2, maxTimeout, 6)
+		timeout = clampInt(int(healthCheck.TimeoutSeconds), 2, maxTimeout, interval)
 	}
 	unhealthyThreshold := (3)
 	if healthCheck != nil {
@@ -152,7 +154,7 @@ func createTgLrPair(
 	// Determine matcher based on protocol (matches TS createTargetGroup)
 	// With default path "/": grpc -> "0", http/http2 -> "200-399"
 	matcher := "200-399"
-	if appProto == grpcProto {
+	if appProto == compose.PortAppProtocolGRPC {
 		matcher = "0"
 	}
 
@@ -179,10 +181,12 @@ func createTgLrPair(
 
 	// Set protocol version for http2/grpc (matches TS createTargetGroup)
 	switch appProto {
-	case "http2":
+	case compose.PortAppProtocolHTTP2:
 		tgArgs.ProtocolVersion = pulumi.String("HTTP2")
-	case "grpc":
+	case compose.PortAppProtocolGRPC:
 		tgArgs.ProtocolVersion = pulumi.String("GRPC")
+	case compose.PortAppProtocolHTTP, compose.PortAppProtocolUnknown:
+		// defaults to HTTP1
 	}
 
 	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opt)
@@ -193,11 +197,19 @@ func createTgLrPair(
 	// Build listener rule conditions (matches TS createTgLrPair)
 	conditions := lb.ListenerRuleConditionArray{}
 
-	// Host-based routing: use DomainName for first ingress port, ALB DNS as fallback
+	// Host-based routing: use endpoints if available, otherwise fall back to the ALB DNS name
+	// (matches TS: `values.length || !fallback ? values : [fallback]`)
 	if len(endpoints) > 0 {
 		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 			HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
 				Values: compose.ToPulumiStringArray(endpoints),
+			},
+		})
+	} else {
+		// Note: if no endpoints are available, only the first service will be reachable
+		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
+			HostHeader: &lb.ListenerRuleConditionHostHeaderArgs{
+				Values: pulumi.StringArray{albDnsName},
 			},
 		})
 	}
@@ -211,7 +223,7 @@ func createTgLrPair(
 	// })
 
 	// Add gRPC content-type header matching (matches TS createTgLrPair)
-	if appProto == grpcProto {
+	if appProto == compose.PortAppProtocolGRPC {
 		conditions = append(conditions, &lb.ListenerRuleConditionArgs{
 			HttpHeader: &lb.ListenerRuleConditionHttpHeaderArgs{
 				HttpHeaderName: pulumi.String("content-type"),

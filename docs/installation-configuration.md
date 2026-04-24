@@ -7,16 +7,19 @@ layout: package
 
 The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.
 
-The Defang Pulumi Provider is available in most pulumi languages.
+The Defang Pulumi Provider is available as separate packages per cloud (AWS, GCP, Azure) in most Pulumi languages.
 
-* JavaScript/TypeScript: [`@defang-io/pulumi-defang`](https://www.npmjs.com/package/@defang-io/pulumi-defang)
-* Python: [`pulumi-defang`](https://pypi.org/project/pulumi-defang/)
-* Go: [`github.com/DefangLabs/pulumi-defang/sdk/v1/go/defang`](https://github.com/DefangLabs/pulumi-defang)
-* .NET: [`DefangLabs.Defang`](https://www.nuget.org/packages/DefangLabs.Defang/)
+| Cloud | JavaScript/TypeScript | Python | Go | .NET |
+|-------|----------------------|--------|----|------|
+| AWS | [`@defang-io/pulumi-defang-aws`](https://www.npmjs.com/package/@defang-io/pulumi-defang-aws) | [`pulumi-defang-aws`](https://pypi.org/project/pulumi-defang-aws/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangAws`](https://www.nuget.org/packages/DefangLabs.DefangAws/) |
+| GCP | [`@defang-io/pulumi-defang-gcp`](https://www.npmjs.com/package/@defang-io/pulumi-defang-gcp) | [`pulumi-defang-gcp`](https://pypi.org/project/pulumi-defang-gcp/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangGcp`](https://www.nuget.org/packages/DefangLabs.DefangGcp/) |
+| Azure | [`@defang-io/pulumi-defang-azure`](https://www.npmjs.com/package/@defang-io/pulumi-defang-azure) | [`pulumi-defang-azure`](https://pypi.org/project/pulumi-defang-azure/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangAzure`](https://www.nuget.org/packages/DefangLabs.DefangAzure/) |
 
-### Installing the Pulumi Plugin directly
+### Installing the Pulumi Plugins directly
 ```
-pulumi plugin install resource defang --server github://api.github.com/DefangLabs
+pulumi plugin install resource defang-aws --server github://api.github.com/DefangLabs
+pulumi plugin install resource defang-gcp --server github://api.github.com/DefangLabs
+pulumi plugin install resource defang-azure --server github://api.github.com/DefangLabs
 ```
 
 ## Authentication
