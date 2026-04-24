@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang/examples/multi-cloud
 
-go 1.25.6
+go 1.25.9
 
 replace (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../../sdk/v2/go/defang-aws

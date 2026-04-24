@@ -54,7 +54,7 @@ only_build: build
 
 .PHONY: ensure
 ensure: ## Run go mod tidy
-	go mod tidy
+	find . -name 'go.mod' -execdir go mod tidy \;
 
 GO_TEST	:= go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
@@ -118,6 +118,8 @@ image_%: go_sdk
 install-git-hooks: node_modules ## Set up pre-commit and pre-push hooks
 	printf "#!/bin/sh\nmake pre-commit" > .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
+	printf "#!/bin/sh\nmake pre-commit" > .git/hooks/pre-merge-commit
+	chmod +x .git/hooks/pre-merge-commit
 	printf "#!/bin/sh\nmake -j4 pre-push" > .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 
@@ -127,7 +129,7 @@ node_modules: package.json
 # Fast pre-commit: lint-staged runs golangci-lint + go test only for changed providers.
 # Shared packages (provider/compose, provider/common) trigger all providers.
 .PHONY: pre-commit
-pre-commit: node_modules
+pre-commit: ensure node_modules
 	npx --no lint-staged
 
 # Full build + test run before push (or for CI).
