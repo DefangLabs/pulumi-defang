@@ -110,6 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build_sdks
+    environment: defang-staging
     permissions:
       contents: read
       packages: write
