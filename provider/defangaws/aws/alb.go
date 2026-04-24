@@ -62,7 +62,16 @@ func CreateALB(
 
 	// Create ALB
 	const name = "alb"
+	logsBucket, logErr := createLbLogsBucket(ctx, name+"-logs", LoadBalancerTypeApplication, opt)
+	if logErr != nil {
+		return nil, fmt.Errorf("creating ALB logs bucket: %w", logErr)
+	}
+
 	albArgs := &lb.LoadBalancerArgs{
+		AccessLogs: &lb.LoadBalancerAccessLogsArgs{
+			Bucket:  logsBucket.ID(),
+			Enabled: pulumi.Bool(true),
+		},
 		Internal:                 pulumi.Bool(false),
 		LoadBalancerType:         pulumi.String("application"),
 		SecurityGroups:           pulumi.StringArray{albSG.ID()},
@@ -71,17 +80,6 @@ func CreateALB(
 		Tags: pulumi.StringMap{
 			"defang:scope": pulumi.String("pub"),
 		},
-	}
-
-	if AlbAccessLogs.Get(ctx) {
-		logsBucket, logErr := createLbLogsBucket(ctx, name+"-logs", LoadBalancerTypeApplication, opt)
-		if logErr != nil {
-			return nil, fmt.Errorf("creating ALB logs bucket: %w", logErr)
-		}
-		albArgs.AccessLogs = &lb.LoadBalancerAccessLogsArgs{
-			Bucket:  logsBucket.ID(),
-			Enabled: pulumi.Bool(true),
-		}
 	}
 
 	alb, err := lb.NewLoadBalancer(ctx, name, albArgs, opt)
