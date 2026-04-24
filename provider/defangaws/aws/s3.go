@@ -9,8 +9,14 @@ func createBucket(
 	ctx *pulumi.Context,
 	name string,
 	args *s3.BucketArgs,
+	sseRules s3.BucketServerSideEncryptionConfigurationRuleArrayInput,
 	opts ...pulumi.ResourceOption,
 ) (*s3.Bucket, error) {
+	// TS `IS_PROD` sites were split into semantic recipes: force-destroy-bucket,
+	// bucket-key-enabled, retain-bucket-on-delete — each toggled independently.
+	if args.ForceDestroy == nil {
+		args.ForceDestroy = pulumi.Bool(ForceDestroyBucket.Get(ctx))
+	}
 	bucket, err := s3.NewBucket(
 		ctx,
 		name,
@@ -22,9 +28,8 @@ func createBucket(
 	}
 
 	if args.ServerSideEncryptionConfiguration == nil {
-		_, err = s3.NewBucketServerSideEncryptionConfiguration(ctx, name, &s3.BucketServerSideEncryptionConfigurationArgs{
-			Bucket: bucket.ID(),
-			Rules: s3.BucketServerSideEncryptionConfigurationRuleArray{
+		if sseRules == nil {
+			sseRules = s3.BucketServerSideEncryptionConfigurationRuleArray{
 				s3.BucketServerSideEncryptionConfigurationRuleArgs{
 					ApplyServerSideEncryptionByDefault: &s3.
 						BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
@@ -32,7 +37,11 @@ func createBucket(
 					},
 					BucketKeyEnabled: pulumi.Bool(BucketKeyEnabled.Get(ctx)), // minimize KMS costs in non-prod environments
 				},
-			},
+			}
+		}
+		_, err = s3.NewBucketServerSideEncryptionConfiguration(ctx, name, &s3.BucketServerSideEncryptionConfigurationArgs{
+			Bucket: bucket.ID(),
+			Rules:  sseRules,
 		}, opts...)
 		if err != nil {
 			return nil, err
@@ -46,9 +55,10 @@ func createPrivateBucket(
 	ctx *pulumi.Context,
 	name string,
 	args *s3.BucketArgs,
+	sseRules s3.BucketServerSideEncryptionConfigurationRuleArrayInput,
 	opts ...pulumi.ResourceOption,
 ) (*s3.Bucket, error) {
-	bucket, err := createBucket(ctx, name, args, opts...)
+	bucket, err := createBucket(ctx, name, args, sseRules, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -42,8 +42,16 @@ func createLbLogsBucket(
 		lbPrincipal = getElbPrincipal(lbRegion)
 	}
 
-	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{}, opt)
-
+	sseRules := s3.BucketServerSideEncryptionConfigurationRuleArray{
+		s3.BucketServerSideEncryptionConfigurationRuleArgs{
+			ApplyServerSideEncryptionByDefault: &s3.
+				BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
+				SseAlgorithm: pulumi.String("AES256"),
+			},
+			BucketKeyEnabled: pulumi.Bool(true), // frequently accessed objects will use bucket keys
+		},
+	}
+	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{}, sseRules, opt)
 	if err != nil {
 		return nil, err
 	}

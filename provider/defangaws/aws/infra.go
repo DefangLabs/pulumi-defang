@@ -58,7 +58,7 @@ func CreateProjectInfra(
 	}
 
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "logs", &cloudwatch.LogGroupArgs{
-		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
+		RetentionInDays: pulumi.Int(common.LogRetentionDays.Get(ctx)),
 	}, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating log group: %w", err)
