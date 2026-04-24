@@ -278,7 +278,7 @@ jobs:
       # Pin the Azure CD image ref (digest) in the Defang Fabric so deployments use this exact build.
       - name: Set cd_image_azure config in Defang
         if: matrix.clouds == 'azure'
-        uses: DefangLabs/defang-github-action@v2
+        uses: DefangLabs/defang-github-action@2298c7cafed90f258a6b9d2fdfff4821b0382c89 # v2.2.0
         with:
           project: ecs
           stack: awsprod1
