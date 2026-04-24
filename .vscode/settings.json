@@ -1,5 +1,6 @@
 {
     "go.formatTool": "gofmt",
     "editor.formatOnSave": false,
-    "go.lintTool": "golangci-lint"
+    "go.lintTool": "golangci-lint",
+    "go.buildTags": "integration"
 }
