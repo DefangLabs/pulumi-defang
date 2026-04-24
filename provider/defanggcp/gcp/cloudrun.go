@@ -42,9 +42,9 @@ func CreateCloudRunService(
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*CloudRunResult, error) {
-	template, secretIds := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig)
+	template, secretIds := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig, parentOpt)
 
 	// Grant the service account access to each referenced secret
 	iamDeps := make([]pulumi.Resource, 0, len(secretIds))
@@ -53,10 +53,10 @@ func CreateCloudRunService(
 			SecretId: pulumi.String(sid),
 			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
 			Member:   pulumi.Sprintf("serviceAccount:%v", sa.Email),
-		}, append(opts,
+		}, parentOpt,
 			pulumi.DeletedWith(sa),
 			pulumi.DeleteBeforeReplace(true),
-		)...)
+		)
 		if err != nil {
 			return nil, fmt.Errorf("granting secret access for %s: %w", sid, err)
 		}
@@ -74,7 +74,7 @@ func CreateCloudRunService(
 	if launchStage, err := config.New(ctx, "defang").Try("launch-stage"); err == nil && launchStage != "" {
 		serviceArgs.LaunchStage = pulumi.String(launchStage)
 	}
-	crService, err := cloudrunv2.NewService(ctx, serviceName, serviceArgs, append(opts, pulumi.DependsOn(iamDeps))...)
+	crService, err := cloudrunv2.NewService(ctx, serviceName, serviceArgs, parentOpt, pulumi.DependsOn(iamDeps))
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud Run service: %w", err)
 	}
@@ -92,6 +92,7 @@ func buildEnvVars(
 	configProvider compose.ConfigProvider,
 	serviceName string,
 	svc compose.ServiceConfig,
+	opts ...pulumi.InvokeOption,
 ) (cloudrunv2.ServiceTemplateContainerEnvArray, []string) {
 	// Multiple env vars can reference the same secret (e.g. FOO=${X}, BAR=${X});
 	// the caller creates one SecretIamMember per ID so duplicates would cause a
@@ -129,7 +130,7 @@ func buildEnvVars(
 			if v != nil {
 				raw = *v
 			}
-			value := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw)
+			value := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name:  pulumi.String(k),
 				Value: value,
@@ -149,8 +150,9 @@ func buildTemplate(
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *SharedInfra,
+	opts ...pulumi.InvokeOption,
 ) (*cloudrunv2.ServiceTemplateArgs, []string) {
-	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, svc)
+	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, svc, opts...)
 
 	// Build port config
 	var ports *cloudrunv2.ServiceTemplateContainerPortsArgs

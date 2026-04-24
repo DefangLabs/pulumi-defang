@@ -253,7 +253,7 @@ func CreateECSService(
 	svc compose.ServiceConfig,
 	args *ECSServiceArgs,
 	deps []pulumi.Resource,
-	opt pulumi.ResourceOrInvokeOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*EcsServiceResult, error) {
 	infra := args.Infra
 	if infra == nil {
@@ -261,7 +261,7 @@ func CreateECSService(
 	}
 
 	// Create task role
-	taskRole, err := createTaskRole(ctx, serviceName, opt)
+	taskRole, err := createTaskRole(ctx, serviceName, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating task role: %w", err)
 	}
@@ -272,7 +272,7 @@ func CreateECSService(
 		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-AllowRoute53Sidecar", &iam.RolePolicyAttachmentArgs{
 			Role:      taskRole.Name,
 			PolicyArn: infra.route53SidecarPolicy.Arn,
-		}, opt)
+		}, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("attaching route53 sidecar policy: %w", err)
 		}
@@ -284,7 +284,7 @@ func CreateECSService(
 		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-BedrockPolicy", &iam.RolePolicyAttachmentArgs{
 			Role:      taskRole.Name,
 			PolicyArn: infra.bedrockPolicy.Arn,
-		}, opt)
+		}, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("attaching bedrock policy: %w", err)
 		}
@@ -355,13 +355,13 @@ func CreateECSService(
 
 	for k, v := range common.Sorted(svc.Environment) {
 		if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
-			ref, err := configProvider.GetSecretRef(ctx, secretVar, opt)
+			ref, err := configProvider.GetSecretRef(ctx, secretVar, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
 			}
 			secretEntries = append(secretEntries, Secret{Name: k, ValueFrom: ref})
 		} else {
-			resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, *v)
+			resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, *v, parentOpt)
 			entry := envEntry{name: k, idx: len(allInputs)}
 			envEntries = append(envEntries, entry)
 			allInputs = append(allInputs, resolved)
@@ -473,7 +473,7 @@ func CreateECSService(
 		Tags: pulumi.StringMap{
 			"defang:service": pulumi.String(serviceName),
 		},
-	}, opt)
+	}, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating task definition: %w", err)
 	}
@@ -521,7 +521,7 @@ func CreateECSService(
 				svc.HealthCheck,
 				endpoints,
 				infra.Alb.DnsName,
-				opt)
+				parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
 			}
@@ -548,7 +548,7 @@ func CreateECSService(
 	}
 
 	// Create per-service SG with port-specific ingress (matches TS createServiceSg)
-	serviceSG, err := createServiceSG(ctx, serviceName, svc, infra, isPrivate, opt)
+	serviceSG, err := createServiceSG(ctx, serviceName, svc, infra, isPrivate, parentOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +606,7 @@ func CreateECSService(
 		ctx,
 		serviceName,
 		ecsServiceArgs,
-		opt,
+		parentOpt,
 		pulumi.DependsOn(lbDependsOn),
 		pulumi.DependsOn(deps))
 	if err != nil {
@@ -633,7 +633,7 @@ func CreateECSService(
 		endpointOutput = pulumix.Val(serviceName)
 	}
 
-	err = createCertsAndRoute53Dns(ctx, serviceName, svc, args.Infra, opt)
+	err = createCertsAndRoute53Dns(ctx, serviceName, svc, args.Infra, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating certs and Route53 DNS: %w", err)
 	}
