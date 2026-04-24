@@ -40,7 +40,10 @@ func KeyVaultName(ctx *pulumi.Context, composeProject string) string {
 	if subID == "" {
 		return ""
 	}
-	rg := ExistingResourceGroup(ctx, composeProject)
+	rg := KeyVaultResourceGroup(ctx)
+	if rg == "" {
+		rg = ExistingResourceGroup(ctx, composeProject)
+	}
 	h := sha256.Sum256([]byte(subID + "|" + rg))
 	return "kv-" + hex.EncodeToString(h[:])[:8]
 }
