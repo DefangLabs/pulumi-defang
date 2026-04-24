@@ -1,14 +1,10 @@
 package aws
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecr"
@@ -77,50 +73,6 @@ type codeBuildImageBuildResource struct {
 	Image   pulumi.StringOutput `pulumi:"image"`
 }
 
-func isEphemeralBuildArg(key string) bool {
-	return strings.HasSuffix(key, "_TOKEN")
-}
-
-// Hide ephemeral build args (eg. GITHUB_TOKEN) so we get the same imageTag each CI run
-func removeEphemeralBuildArgs(args map[string]string) map[string]string {
-	args = maps.Clone(args) // shallow clone
-	for key := range args {
-		if isEphemeralBuildArg(key) {
-			args[key] = "Removed ephemeral token"
-		}
-	}
-	return args
-}
-
-func sha1hash(inputs ...string) string {
-	h := sha256.New()
-	for _, c := range inputs {
-		h.Write([]byte(c))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// buildTriggerHash computes a hash of build inputs to trigger replacements when they change.
-func buildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
-	// Must also hash buildArgs, in case tarball is the same; stably serialize to a string
-	argsStr, err := json.Marshal(removeEphemeralBuildArgs(build.Args))
-	if err != nil {
-		return pulumi.StringOutput{}
-	}
-	var dockerfile, target string
-	if build.Dockerfile != nil {
-		dockerfile = *build.Dockerfile
-	}
-	if build.Target != nil {
-		target = *build.Target
-	}
-	return pulumi.StringOutput(pulumix.Apply(
-		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
-			contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
-			return sha1hash(contextEtag, string(argsStr), dockerfile, target)[0:8]
-		}))
-}
-
 // buildServiceImage builds a container image via CodeBuild for a service.
 // Creates a CodeBuild project and a Build custom resource that triggers the build.
 func buildServiceImage(
@@ -154,7 +106,7 @@ func buildServiceImage(
 	// Create the Build custom resource to trigger the actual build.
 	// This resource calls the AWS SDK to start the build, polls until done, and returns the image URL.
 	// If Create fails, the resource is not in state → next `pulumi up` retries automatically.
-	triggerHash := buildTriggerHash(svc.Build)
+	triggerHash := common.BuildTriggerHash(svc.Build)
 
 	// region, err := aws.GetRegion(ctx, &aws.GetRegionArgs{}, opts...)
 	// if err != nil {

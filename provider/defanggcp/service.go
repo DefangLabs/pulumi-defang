@@ -22,7 +22,7 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"project_name"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -78,7 +78,12 @@ func (*Service) Construct(
 	if projectName == "" {
 		projectName = name
 	}
-	configProvider := providergcp.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = providergcp.NewConfigProvider(projectName)
+	}
 
 	infra := inputs.Infra
 	if infra == nil {
@@ -139,7 +144,7 @@ func createService(
 		lbEntry = &providergcp.LBServiceEntry{Name: serviceName, CloudRunService: crResult.Service, Config: svc}
 	} else {
 		ceResult, ceErr := providergcp.CreateComputeEngine(
-			ctx, projectName, serviceName, image, svc, sa, infra, parentOpt,
+			ctx, serviceName, image, svc, sa, infra, parentOpt,
 		)
 		if ceErr != nil {
 			return fmt.Errorf("creating Compute Engine service %s: %w", serviceName, ceErr)

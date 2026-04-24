@@ -16,7 +16,7 @@ import (
 )
 
 func TestCheckBuildMinimal(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
 		Urn: testutil.AwsURN("Build"),
@@ -30,7 +30,7 @@ func TestCheckBuildMinimal(t *testing.T) {
 }
 
 func TestCheckBuildComplete(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
 		Urn: testutil.AwsURN("Build"),
@@ -51,7 +51,7 @@ func TestCheckBuildComplete(t *testing.T) {
 }
 
 func TestCheckBuildMissingProjectName(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	resp, err := server.Check(p.CheckRequest{
 		Urn:    testutil.AwsURN("Build"),

@@ -18,7 +18,7 @@ type Project struct{}
 
 // ProjectInputs defines the top-level inputs for the AWS Project component.
 type ProjectInputs struct {
-	// compose.Project
+	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
@@ -89,7 +89,12 @@ func buildProject(
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
-	configProvider := provideraws.NewConfigProvider(projectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(projectName)
+	}
 
 	// Pre-compute which services need waitForSteadyState: true if any other
 	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)

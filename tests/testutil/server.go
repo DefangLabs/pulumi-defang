@@ -11,12 +11,12 @@ import (
 	"github.com/pulumi/pulumi-go-provider/integration"
 )
 
-func MakeTestServer() integration.Server {
-	return MustNewServer(defangaws.Name, defangaws.Provider())
+func MakeAwsTestServer(opts ...integration.ServerOption) integration.Server {
+	return MustNewServer(defangaws.Name, defangaws.Provider(), opts...)
 }
 
-func MakeAzureTestServer() integration.Server {
-	return MustNewServer(defangazure.Name, defangazure.Provider())
+func MakeAzureTestServer(opts ...integration.ServerOption) integration.Server {
+	return MustNewServer(defangazure.Name, defangazure.Provider(), opts...)
 }
 
 func MakeGcpTestServer(opts ...integration.ServerOption) integration.Server {

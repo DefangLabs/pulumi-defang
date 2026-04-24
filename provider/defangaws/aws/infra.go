@@ -69,12 +69,12 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
 
-	profile := config.New(ctx, "aws").Get("profile")
+	awsProfile := config.New(ctx, "aws").Get("profile")
 
 	var imgInfra *BuildInfra
 	for _, svc := range services {
 		if svc.NeedsBuild() {
-			imgInfra, err = CreateBuildInfra(ctx, logGroup, profile, region.Region, opt)
+			imgInfra, err = CreateBuildInfra(ctx, logGroup, awsProfile, region.Region, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 			}

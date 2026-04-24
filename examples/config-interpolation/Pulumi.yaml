@@ -1,0 +1,16 @@
+name: config-interpolation
+runtime: go
+description: Example showing config interpolation with ${VAR} syntax
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
+    - name: defang-gcp
+      path: ../../bin
+    - name: defang-azure
+      path: ../../bin
+config:
+  pulumi:disable-default-providers:
+    - aws
+    - gcp
+    - azure-native

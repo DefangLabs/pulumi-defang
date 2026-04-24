@@ -8,6 +8,6 @@ import (
 )
 
 func TestProviderStarts(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 	require.NotNil(t, server)
 }

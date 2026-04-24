@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -13,13 +14,13 @@ const defaultAzureLocation = "eastus"
 type SharedInfra struct {
 	ResourceGroup      *resources.ResourceGroup
 	Environment        *app.ManagedEnvironment
-	BuildInfra         *BuildInfra         // nil when no services require image builds
-	Networking         *NetworkingResult   // nil when no VNet-integrated services are present
-	DNS                *DNSResult          // nil when no VNet-integrated services are present
-	LLMInfra           *LLMInfra           // nil when no LLM services are present
-	ConfigProvider     *ConfigProvider     // reads project secrets (set via `defang config set`)
-	KeyVaultURL        string              // Key Vault URL for secret references (empty if no vault)
-	KeyVaultIdentityID pulumi.StringOutput // user-assigned identity for KV access (zero if no vault)
+	BuildInfra         *BuildInfra            // nil when no services require image builds
+	Networking         *NetworkingResult      // nil when no VNet-integrated services are present
+	DNS                *DNSResult             // nil when no VNet-integrated services are present
+	LLMInfra           *LLMInfra              // nil when no LLM services are present
+	ConfigProvider     compose.ConfigProvider // reads project secrets (set via `defang config set`)
+	KeyVaultURL        string                 // Key Vault URL for secret references (empty if no vault)
+	KeyVaultIdentityID pulumi.StringOutput    // user-assigned identity for KV access (zero if no vault)
 }
 
 // KeyVaultName returns the Key Vault name from Pulumi stack config, or empty.
@@ -27,10 +28,16 @@ func KeyVaultName(ctx *pulumi.Context) string {
 	return config.New(ctx, "defang-azure").Get("keyVaultName")
 }
 
+// KeyVaultResourceGroup returns the name of the resource group that contains
+// the user's Key Vault, from Pulumi stack config. Empty if unset, in which
+// case the vault is assumed to live in the project's own resource group.
+func KeyVaultResourceGroup(ctx *pulumi.Context) string {
+	return config.New(ctx, "defang-azure").Get("keyVaultResourceGroup")
+}
+
 // Location reads the Azure location from Pulumi stack config, falling back to the default.
 func Location(ctx *pulumi.Context) string {
-	cfg := config.New(ctx, "azure-native")
-	if l := cfg.Get("location"); l != "" {
+	if l := config.New(ctx, "azure-native").Get("location"); l != "" {
 		return l
 	}
 	return defaultAzureLocation
