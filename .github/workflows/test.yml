@@ -160,7 +160,7 @@ jobs:
         with:
           project: ecs
           stack: awsstagingoidc
-          command: "config set -e cd_image_azure cd_image_aws cd_image_gcp"
+          command: config set -e cd_image_azure # cd_image_cb cd_image_gcp"
         env:
           cd_image_azure: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           # cd_image_cb: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
