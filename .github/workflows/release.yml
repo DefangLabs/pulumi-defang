@@ -274,3 +274,14 @@ jobs:
             done
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Pin the Azure CD image ref (digest) in the Defang Fabric so deployments use this exact build.
+      - name: Set cd_image_azure config in Defang
+        if: matrix.clouds == 'azure'
+        uses: DefangLabs/defang-github-action@482e8e65caf00bc48ad2044d0e41cde178b3e2b6 # v2.3.0
+        with:
+          project: ecs
+          stack: awsprod1oidc
+          command: "config set -e cd_image_azure"
+        env:
+          cd_image_azure: defang.azurecr.io/cd@${{ steps.build-push.outputs.digest }}
