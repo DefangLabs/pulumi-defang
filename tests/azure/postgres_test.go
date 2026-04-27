@@ -16,7 +16,7 @@ func TestConstructAzurePostgres(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AzureURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -34,7 +34,7 @@ func TestConstructAzurePostgresWithAllowDowntime(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AzureURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:15"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
@@ -57,7 +57,7 @@ func TestConstructAzurePostgresWithEnvironment(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AzureURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"environment": property.New(property.NewMap(map[string]property.Value{

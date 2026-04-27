@@ -14,7 +14,7 @@ type Postgres struct{}
 
 // AzurePostgresInputs defines the inputs for a standalone Azure PostgreSQL Flexible Server.
 type AzurePostgresInputs struct {
-	ProjectName string                  `pulumi:"project_name"`
+	ProjectName string                  `pulumi:"projectName"`
 	Image       *string                 `pulumi:"image,optional"`
 	Postgres    *compose.PostgresConfig `pulumi:"postgres,optional"`
 	Deploy      *compose.DeployConfig   `pulumi:"deploy,optional"`

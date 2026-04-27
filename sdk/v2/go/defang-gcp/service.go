@@ -36,32 +36,32 @@ func NewService(ctx *pulumi.Context,
 }
 
 type serviceArgs struct {
-	Command      []string                    `pulumi:"command"`
-	Deploy       *compose.DeployConfig       `pulumi:"deploy"`
-	DomainName   *string                     `pulumi:"domainName"`
-	Entrypoint   []string                    `pulumi:"entrypoint"`
-	Environment  map[string]string           `pulumi:"environment"`
-	HealthCheck  *compose.HealthCheckConfig  `pulumi:"healthCheck"`
-	Image        string                      `pulumi:"image"`
-	Llm          *compose.LlmConfig          `pulumi:"llm"`
-	Platform     *string                     `pulumi:"platform"`
-	Ports        []compose.ServicePortConfig `pulumi:"ports"`
-	Project_name string                      `pulumi:"project_name"`
+	Command     []string                    `pulumi:"command"`
+	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
+	DomainName  *string                     `pulumi:"domainName"`
+	Entrypoint  []string                    `pulumi:"entrypoint"`
+	Environment map[string]string           `pulumi:"environment"`
+	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck"`
+	Image       string                      `pulumi:"image"`
+	Llm         *compose.LlmConfig          `pulumi:"llm"`
+	Platform    *string                     `pulumi:"platform"`
+	Ports       []compose.ServicePortConfig `pulumi:"ports"`
+	ProjectName string                      `pulumi:"projectName"`
 }
 
 // The set of arguments for constructing a Service resource.
 type ServiceArgs struct {
-	Command      pulumi.StringArrayInput
-	Deploy       compose.DeployConfigPtrInput
-	DomainName   *string
-	Entrypoint   pulumi.StringArrayInput
-	Environment  pulumi.StringMapInput
-	HealthCheck  compose.HealthCheckConfigPtrInput
-	Image        string
-	Llm          compose.LlmConfigPtrInput
-	Platform     *string
-	Ports        compose.ServicePortConfigArrayInput
-	Project_name string
+	Command     pulumi.StringArrayInput
+	Deploy      compose.DeployConfigPtrInput
+	DomainName  *string
+	Entrypoint  pulumi.StringArrayInput
+	Environment pulumi.StringMapInput
+	HealthCheck compose.HealthCheckConfigPtrInput
+	Image       string
+	Llm         compose.LlmConfigPtrInput
+	Platform    *string
+	Ports       compose.ServicePortConfigArrayInput
+	ProjectName string
 }
 
 func (ServiceArgs) ElementType() reflect.Type {

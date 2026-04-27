@@ -14,7 +14,7 @@ type Redis struct{}
 
 // AzureRedisInputs defines the inputs for a standalone Azure Cache for Redis instance.
 type AzureRedisInputs struct {
-	ProjectName string                `pulumi:"project_name"`
+	ProjectName string                `pulumi:"projectName"`
 	Image       *string               `pulumi:"image,optional"`
 	Redis       *compose.RedisConfig  `pulumi:"redis,optional"`
 	Deploy      *compose.DeployConfig `pulumi:"deploy,optional"`

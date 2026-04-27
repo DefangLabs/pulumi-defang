@@ -16,7 +16,7 @@ type Postgres struct{}
 
 // PostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
 type PostgresInputs struct {
-	ProjectName string                   `pulumi:"project_name"`
+	ProjectName string                   `pulumi:"projectName"`
 	Postgres    *compose.PostgresConfig  `pulumi:"postgres,optional"`
 	Image       *string                  `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig    `pulumi:"deploy,optional"`
@@ -31,7 +31,7 @@ type PostgresOutputs struct {
 	// InstanceIdentifier is the RDS DBInstanceIdentifier — exposed so consumers
 	// can attach their own CloudWatch MetricAlarms (e.g. CPUUtilization,
 	// FreeStorageSpace) without Defang owning the notification destination.
-	InstanceIdentifier pulumi.StringOutput `pulumi:"instance_identifier"`
+	InstanceIdentifier pulumi.StringOutput `pulumi:"instanceIdentifier"`
 	// Dependency is an internal-only handle (CNAME record or RDS instance) used by
 	// downstream services for ordering. Untagged — not part of the SDK schema.
 	Dependency pulumi.Resource
@@ -113,8 +113,8 @@ func createPostgres(
 	comp.InstanceIdentifier = rdsResult.Instance.Identifier
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint":            comp.Endpoint,
-		"instance_identifier": comp.InstanceIdentifier,
+		"endpoint":           comp.Endpoint,
+		"instanceIdentifier": comp.InstanceIdentifier,
 	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
