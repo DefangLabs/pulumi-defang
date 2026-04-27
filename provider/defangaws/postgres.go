@@ -20,7 +20,7 @@ type PostgresInputs struct {
 	Postgres    *compose.PostgresConfig  `pulumi:"postgres,optional"`
 	Image       *string                  `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig    `pulumi:"deploy,optional"`
-	Environment map[string]string        `pulumi:"environment,optional"`
+	Environment map[string]*string       `pulumi:"environment,optional"`
 	Infra       *provideraws.SharedInfra `pulumi:"aws,optional"`
 }
 
@@ -52,7 +52,12 @@ func (*Postgres) Construct(
 		Environment: inputs.Environment,
 	}
 
-	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(inputs.ProjectName)
+	}
 	if err := createPostgres(ctx, comp, configProvider, name, svc, inputs.Infra, nil); err != nil {
 		return nil, err
 	}

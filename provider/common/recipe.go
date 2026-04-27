@@ -68,4 +68,5 @@ func (v StringValue) Get(ctx *pulumi.Context) string {
 var (
 	DeletionProtection = Bool("deletion-protection", false)
 	LogRetentionDays   = Int("log-retention-days", 1)
+	Prefix             = String("prefix", "Defang")
 )

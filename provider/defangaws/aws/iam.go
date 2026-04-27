@@ -15,7 +15,7 @@ type PolicyDocument struct {
 	Version   iam.PolicyDocumentVersion `json:"Version"`
 }
 
-// PolicyStatement is like Pulumi's iam.PolicyStatement but with JSON tags.
+// PolicyStatement is like Pulumi's iam.PolicyStatement but with JSON tags (ie. omitempty).
 type PolicyStatement struct {
 	// Include a list of actions that the policy allows or denies. Required (either Action or NotAction)
 	Action interface{} `json:"Action,omitempty"`
@@ -77,6 +77,34 @@ func CreateExecutionRole(ctx *pulumi.Context, opts ...pulumi.ResourceOption) (*i
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("attaching execution policy: %w", err)
+	}
+
+	// Inline policy granting permission to resolve container `secrets` (valueFrom)
+	// at task startup. Mirrors `AllowGetSecrets` in shared/ecs/initialize.ts:
+	// AmazonECSTaskExecutionRolePolicy does not include ssm:GetParameters, so
+	// task startup fails with AccessDenied when secrets reference SSM parameters.
+	getSecretsPolicy, err := json.Marshal(PolicyDocument{
+		Version: "2012-10-17",
+		Statement: []PolicyStatement{{
+			Sid:    "AllowGetSecrets",
+			Effect: "Allow",
+			Action: []string{
+				"ssm:GetParameters",
+				"secretsmanager:GetSecretValue",
+				// "kms:Decrypt" only needed for non-default KMS keys
+			},
+			Resource: "*", // TODO: restrict to project-scoped ARNs
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling AllowGetSecrets policy: %w", err)
+	}
+	_, err = iam.NewRolePolicy(ctx, "exec-get-secrets", &iam.RolePolicyArgs{
+		Role:   execRole.Name,
+		Policy: pulumi.String(string(getSecretsPolicy)),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("attaching AllowGetSecrets policy: %w", err)
 	}
 
 	return execRole, nil

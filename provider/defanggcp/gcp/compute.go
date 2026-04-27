@@ -2,11 +2,10 @@ package gcp
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
@@ -24,13 +23,12 @@ type ComputeEngineResult struct {
 // run on Cloud Run (e.g. background workers with no listening port).
 func CreateComputeEngine(
 	ctx *pulumi.Context,
-	projectName string,
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	sa *serviceaccount.Account,
 	gcpConfig *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*ComputeEngineResult, error) {
 	machineType := getComputeMachineType(svc)
 
@@ -39,16 +37,16 @@ func CreateComputeEngine(
 		"roles/logging.logWriter",
 		"roles/monitoring.metricWriter",
 		"roles/cloudtrace.agent",
-	}, gcpConfig, opts...)
+	}, gcpConfig, parentOpt)
 
-	var namedPorts compute.RegionInstanceGroupManagerNamedPortArray
+	namedPorts := make(compute.RegionInstanceGroupManagerNamedPortArray, len(svc.Ports))
 	var healthCheckPort *int
-	for _, port := range svc.Ports {
+	for i, port := range svc.Ports {
 		proto := port.GetProtocol()
-		namedPorts = append(namedPorts, &compute.RegionInstanceGroupManagerNamedPortArgs{
+		namedPorts[i] = &compute.RegionInstanceGroupManagerNamedPortArgs{
 			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
 			Port: pulumi.Int(port.Target),
-		})
+		}
 		if proto == "tcp" {
 			p := int(port.Target)
 			healthCheckPort = &p
@@ -63,18 +61,21 @@ func CreateComputeEngine(
 	cloudInit := getCloudInitConfig(serviceName, image, svc, gcpConfig.Region, addHealthCheckSidecar)
 
 	instanceTemplate, err := createInstanceTemplate(
-		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, opts...)
+		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, parentOpt)
 	if err != nil {
 		return nil, err
 	}
 
 	autoHealing, err := createMIGAutoHealing(
-		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, opts...)
+		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, gcpConfig.VpcId, parentOpt)
 	if err != nil {
 		return nil, err
 	}
 
-	zones, err := compute.GetZones(ctx, &compute.GetZonesArgs{Region: pulumi.StringRef(gcpConfig.Region)})
+	// parentOpt is a ResourceOrInvokeOption so it satisfies pulumi.InvokeOption here
+	// and flows the parent (and its provider) into the zones lookup — required for
+	// correctness when the stack uses a non-default GCP provider.
+	zones, err := compute.GetZones(ctx, &compute.GetZonesArgs{Region: pulumi.StringRef(gcpConfig.Region)}, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("getting zones in region %s: %w", gcpConfig.Region, err)
 	}
@@ -95,7 +96,7 @@ func CreateComputeEngine(
 			NamedPorts:             namedPorts,
 			WaitForInstances:       pulumi.Bool(true),
 			WaitForInstancesStatus: pulumi.String("STABLE"),
-		}, append(opts, pulumi.DependsOn([]pulumi.Resource{instanceTemplate}))...)
+		}, parentOpt, pulumi.DependsOn([]pulumi.Resource{instanceTemplate}))
 	if err != nil {
 		return nil, fmt.Errorf("creating instance group for %s: %w", serviceName, err)
 	}
@@ -345,18 +346,26 @@ func getCloudInitConfig(
 	}
 
 	var envFlags strings.Builder
-	keys := slices.Sorted(maps.Keys(svc.Environment))
-	for _, k := range keys {
-		envFlags.WriteString(fmt.Sprintf("-e %q ", fmt.Sprintf("%s=%s", k, svc.Environment[k])))
+	for k, v := range common.Sorted(svc.Environment) {
+		// Compute/VM deploys embed concrete values into the `docker run -e` cmd
+		// string — no runtime config-provider resolution is available here, so
+		// a nil *string (YAML "KEY:" with no value) flattens to an empty value.
+		var val string
+		if v != nil {
+			val = *v
+		}
+		// FIXME: provide all environment (and secrets) as env instead of flattening into the command line.
+		fmt.Fprintf(&envFlags, "-e %q ", fmt.Sprintf("%s=%s", k, val))
 	}
 
 	dependencies := "Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket"
 
-	runcmds := []string{
+	runcmds := make([]string, 0, 3+4+2)
+	runcmds = append(runcmds,
 		`echo 'DOCKER_OPTS="--registry-mirror=https://mirror.gcr.io"' | tee /etc/default/docker`,
 		"systemctl daemon-reload",
 		"systemctl restart docker",
-	}
+	)
 
 	sidecars := ""
 	if addHealthCheckSidecar {
@@ -368,7 +377,7 @@ func getCloudInitConfig(
 		fmt.Sprintf("systemctl start %s.service", serviceName),
 	)
 
-	buf.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&buf, `
   - path: /etc/systemd/system/%[1]s.service
     permissions: "0644"
     owner: root
@@ -400,8 +409,7 @@ runcmd:
 		region,
 		envFlags.String(),
 		sidecars,
-		strings.Join(runcmds, "\n  - "),
-	))
+		strings.Join(runcmds, "\n  - "))
 
 	return pulumi.Sprintf(buf.String(), image)
 }

@@ -22,7 +22,7 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"project_name"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -68,7 +68,12 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	configProvider := provideraws.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = provideraws.NewConfigProvider(inputs.ProjectName)
+	}
 	infra := inputs.AWS
 	imageURI := pulumi.String(inputs.Image).ToStringOutput()
 

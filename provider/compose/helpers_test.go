@@ -9,16 +9,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockConfigProvider returns pre-seeded values; missing keys resolve to "".
+// mockConfigProvider returns pre-seeded values; missing keys fail.
 type mockConfigProvider struct {
 	values map[string]string
 }
 
-func (m *mockConfigProvider) GetConfig(_ *pulumi.Context, key string, opts ...pulumi.InvokeOption) pulumi.StringOutput {
+func (m *mockConfigProvider) GetConfigValue(
+	_ *pulumi.Context, key string, opts ...pulumi.InvokeOption,
+) pulumi.StringOutput {
 	if v, ok := m.values[key]; ok {
 		return pulumi.String(v).ToStringOutput()
 	}
-	return pulumi.String("").ToStringOutput()
+	return ConfigNotFoundOutput(key)
+}
+
+func (m *mockConfigProvider) GetSecretRef(
+	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
+) (string, error) {
+	return "mock-secret-ref-" + key, nil
 }
 
 // testMocks is a no-op Pulumi mock runtime required by pulumi.WithMocks.
@@ -48,13 +56,11 @@ func TestToPulumiStringArray(t *testing.T) {
 func TestGetConfigOrEnvValue(t *testing.T) {
 	tests := []struct {
 		name         string
-		environment  map[string]string
+		environment  map[string]*string
 		key          string
 		defaultValue string
 		configs      map[string]string
-		// wantUnknown skips value assertion (zero output returned for nil env map)
-		wantUnknown bool
-		expected    string
+		expected     string
 	}{
 		{
 			name:         "nil environment uses default",
@@ -65,29 +71,37 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		},
 		{
 			name:         "key absent returns default",
-			environment:  map[string]string{},
+			environment:  map[string]*string{},
 			key:          "MY_KEY",
 			defaultValue: "default",
 			expected:     "default",
 		},
 		{
-			name:        "empty string value returns empty",
-			environment: map[string]string{"MY_KEY": ""},
+			name:        "empty string value is literal empty",
+			environment: map[string]*string{"MY_KEY": ptr("")},
 			key:         "MY_KEY",
 			expected:    "",
 		},
 		{
 			name:        "plain string value returned as-is",
-			environment: map[string]string{"MY_KEY": "hello"},
+			environment: map[string]*string{"MY_KEY": ptr("hello")},
 			key:         "MY_KEY",
 			expected:    "hello",
 		},
 		{
 			name:        "interpolated value resolves variables from config provider",
-			environment: map[string]string{"MY_KEY": "prefix_${SECRET}_suffix"},
+			environment: map[string]*string{"MY_KEY": ptr("prefix_${SECRET}_suffix")},
 			key:         "MY_KEY",
 			configs:     map[string]string{"SECRET": "resolved"},
 			expected:    "prefix_resolved_suffix",
+		},
+		{
+			// Compose spec: "KEY:" (no value) → resolve from config at runtime.
+			name:        "nil value resolves from config provider via ${KEY}",
+			environment: map[string]*string{"MY_KEY": nil},
+			key:         "MY_KEY",
+			configs:     map[string]string{"MY_KEY": "from-config"},
+			expected:    "from-config",
 		},
 	}
 
@@ -98,15 +112,38 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 				provider := &mockConfigProvider{values: tt.configs}
 				out := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
 
-				if !tt.wantUnknown {
-					out.ApplyT(func(got string) string {
-						assert.Equal(t, tt.expected, got)
-						return got
-					})
-				}
+				out.ApplyT(func(got string) string {
+					assert.Equal(t, tt.expected, got)
+					return got
+				})
 				return nil
 			}, pulumi.WithMocks("proj", "stack", testMocks{}))
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestGetConfigName(t *testing.T) {
+	tests := []struct {
+		value   string
+		wantVar string
+	}{
+		{"${MY_KEY}", "MY_KEY"},  // bare braced reference
+		{"$OTHER", "OTHER"},      // bare unbraced reference
+		{"prefix_${MY_KEY}", ""}, // text before var
+		{"${MY_KEY}_suffix", ""}, // text after var
+		{"${A}_${B}", ""},        // multiple vars
+		{"${VAR:-default}", ""},  // has default modifier
+		{"${VAR:+alt}", ""},      // has presence modifier
+		{"${VAR:?err}", ""},      // has required modifier; TODO: this could be made to work #159
+		{"${VAR+}", ""},          // has empty modifier
+		{"literal", ""},          // no interpolation
+		{"", ""},                 // empty
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			v := GetConfigName(tt.value)
+			assert.Equal(t, tt.wantVar, v)
 		})
 	}
 }
@@ -142,15 +179,21 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "hello_world",
 		},
 		{
-			name:     "escaped variable treated as literal",
-			value:    "$${NOT_A_VAR}",
-			expected: "$${NOT_A_VAR}",
+			name:     "unbraced variable",
+			value:    "$MY_VAR",
+			configs:  map[string]string{"MY_VAR": "secret"},
+			expected: "secret",
 		},
 		{
-			name:     "missing variable resolves to empty string",
-			value:    "${MISSING}",
-			configs:  map[string]string{},
-			expected: "",
+			name:     "escaped dollar produces literal dollar",
+			value:    "$${NOT_A_VAR}",
+			expected: "${NOT_A_VAR}",
+		},
+		{
+			name:     "missing variable resolves from config",
+			value:    "${SECRET}",
+			configs:  map[string]string{"SECRET": "found"},
+			expected: "found",
 		},
 		{
 			name:     "empty string",
@@ -180,4 +223,17 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+
+	t.Run("nil config provider returns raw string", func(t *testing.T) {
+		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+			out := InterpolateEnvironmentVariable(ctx, nil, "value with ${VAR}")
+
+			out.ApplyT(func(got string) string {
+				assert.Equal(t, "value with ${VAR}", got)
+				return got
+			})
+			return nil
+		}, pulumi.WithMocks("proj", "stack", testMocks{}))
+		require.NoError(t, err)
+	})
 }

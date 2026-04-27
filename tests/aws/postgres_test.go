@@ -11,7 +11,7 @@ import (
 )
 
 func TestConstructAwsPostgres(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
@@ -29,7 +29,7 @@ func TestConstructAwsPostgres(t *testing.T) {
 }
 
 func TestConstructAwsPostgresWithAllowDowntime(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
@@ -49,7 +49,7 @@ func TestConstructAwsPostgresWithAllowDowntime(t *testing.T) {
 }
 
 func TestConstructAwsPostgresWithSnapshot(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
@@ -69,7 +69,7 @@ func TestConstructAwsPostgresWithSnapshot(t *testing.T) {
 }
 
 func TestConstructAwsPostgresWithEnvironment(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
@@ -92,7 +92,7 @@ func TestConstructAwsPostgresWithEnvironment(t *testing.T) {
 }
 
 func TestConstructAwsPostgresWithVPC(t *testing.T) {
-	server := testutil.MakeTestServer()
+	server := testutil.MakeAwsTestServer()
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),

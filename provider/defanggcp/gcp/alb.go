@@ -18,9 +18,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-const portModeIngress = "ingress"
-const protoTCP = "tcp"
-
 var (
 	errHealthCheckPortMismatch = errors.New("health check port does not match the ingress target port")
 	errUnsupportedProtocol     = errors.New("unsupported protocol")
@@ -46,12 +43,13 @@ func CreateLoadBalancers(
 	projectName string,
 	services []LBServiceEntry,
 	config *SharedInfra,
+	opts ...pulumi.ResourceOption,
 ) error {
-	if err := createInternalLoadBalancer(ctx, projectName, config, services); err != nil {
+	if err := createInternalLoadBalancer(ctx, projectName, config, services, opts...); err != nil {
 		return err
 	}
 
-	if err := createExternalLoadBalancers(ctx, projectName, config, services); err != nil {
+	if err := createExternalLoadBalancers(ctx, projectName, config, services, opts...); err != nil {
 		return err
 	}
 
@@ -89,7 +87,7 @@ func createExternalLoadBalancers(
 				return err
 			}
 			for _, port := range entry.Config.Ports {
-				if port.Mode != portModeIngress {
+				if port.Mode != compose.PortModeIngress {
 					continue
 				}
 				portDomain := fmt.Sprintf("%s--%d.%s", entry.Name, port.Target, config.Domain)
@@ -136,6 +134,7 @@ func createInternalLoadBalancer(
 	projectName string,
 	config *SharedInfra,
 	services []LBServiceEntry,
+	opts ...pulumi.ResourceOption,
 ) error {
 	var internalAlbServices []string
 	var firstPrivateBackendID pulumi.StringPtrInput
@@ -151,7 +150,7 @@ func createInternalLoadBalancer(
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{service.PostgresInstance.PrivateIpAddress},
-			}); err != nil {
+			}, opts...); err != nil {
 				return err
 			}
 			continue
@@ -162,7 +161,7 @@ func createInternalLoadBalancer(
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{service.RedisInstance.Host},
-			}); err != nil {
+			}, opts...); err != nil {
 				return err
 			}
 			continue
@@ -327,14 +326,14 @@ func createInternalLoadBalancer(
 				var tcpHealthCheckPort *uint32
 				var firewallAllows compute.FirewallAllowArray
 				// Try minimize the number of forwarding rules by grouping the ports by protocol
-				protocolPorts := make(map[string][]uint32)
+				protocolPorts := make(map[compose.PortProtocol][]uint32)
 				for _, port := range service.Config.Ports {
 					proto := port.GetProtocol()
-					if proto != protoTCP && proto != "udp" {
+					if proto != compose.PortProtocolTCP && proto != compose.PortProtocolUDP {
 						return fmt.Errorf("unsupported protocol %s: %w", proto, errUnsupportedProtocol)
 					}
 					portTarget := uint32(port.Target) //nolint:gosec // port numbers are always non-negative
-					if tcpHealthCheckPort == nil && proto == protoTCP {
+					if tcpHealthCheckPort == nil && proto == compose.PortProtocolTCP {
 						tcpHealthCheckPort = &portTarget
 					}
 					protocolPorts[proto] = append(protocolPorts[proto], portTarget)
@@ -376,7 +375,7 @@ func createInternalLoadBalancer(
 							pulumi.String("35.191.0.0/16"),
 						},
 						Allows: compute.FirewallAllowArray{&compute.FirewallAllowArgs{
-							Protocol: pulumi.String(protoTCP),
+							Protocol: pulumi.String(compose.PortProtocolTCP),
 							Ports:    pulumi.StringArray{pulumi.String(strconv.FormatUint(uint64(*tcpHealthCheckPort), 10))},
 						}},
 						TargetTags: pulumi.StringArray{
@@ -427,7 +426,7 @@ func createInternalLoadBalancer(
 										BalancingMode: pulumi.String("CONNECTION"),
 									},
 								},
-								Protocol: pulumi.String(strings.ToUpper(protocol)),
+								Protocol: pulumi.String(strings.ToUpper(string(protocol))),
 								// Protocol: pulumi.String("UNSPECIFIED"), // For passthrough NLB, protocol specified in the forwarding rule
 								ConnectionDrainingTimeoutSec: pulumi.Int(0), // Make configurable?
 								HealthChecks:                 healthCheck.ID(),
@@ -446,7 +445,7 @@ func createInternalLoadBalancer(
 							service.Name+fmt.Sprintf("host-%v-forwarding-rule", portsName),
 							&compute.ForwardingRuleArgs{
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
-								IpProtocol:          pulumi.String(strings.ToUpper(protocol)),
+								IpProtocol:          pulumi.String(strings.ToUpper(string(protocol))),
 								Network:             config.VpcId,
 								Subnetwork:          config.SubnetId,
 								Region:              pulumi.String(config.Region),
@@ -481,7 +480,7 @@ func createInternalLoadBalancer(
 		if config.ProxySubnetId != "" {
 			regionalManagedProxySubnet, err = compute.GetSubnetwork(ctx,
 				"managed-proxy-subnet",
-				pulumi.ID(config.ProxySubnetId), nil,
+				pulumi.ID(config.ProxySubnetId), nil, opts...,
 			)
 		} else {
 			regionalManagedProxySubnet, err = compute.NewSubnetwork(ctx,
@@ -669,7 +668,7 @@ func buildMIGLBEntry(
 	opts ...pulumi.ResourceOption,
 ) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
 	for _, port := range entry.Config.Ports {
-		if port.Mode != portModeIngress {
+		if port.Mode != compose.PortModeIngress {
 			continue
 		}
 		portStr := strconv.Itoa(int(port.Target))

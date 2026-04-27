@@ -10,11 +10,11 @@ import (
 )
 
 func deployGCP(ctx *pulumi.Context, cf *compose.Project) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	cfg := config.New(ctx, "gcp")
+	gcpCfg := config.New(ctx, "gcp")
 
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project: pulumi.StringPtr(cfg.Require("project")),
-		Region:  pulumi.StringPtr(cfg.Require("region")),
+		Project: pulumi.StringPtr(gcpCfg.Require("project")),
+		Region:  pulumi.StringPtr(gcpCfg.Require("region")),
 		DefaultLabels: pulumi.StringMap{
 			"defang-org":     pulumi.String(ctx.Organization()),
 			"defang-project": pulumi.String(ctx.Project()),
@@ -59,7 +59,7 @@ func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
 	args := gcpcompose.ServiceConfigArgs{
 		Image:       pulumi.StringPtrFromPtr(svc.Image),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
-		Environment: pulumi.ToStringMap(svc.Environment),
+		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
 	}

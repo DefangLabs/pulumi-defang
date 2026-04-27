@@ -18,7 +18,7 @@ type PostgresInputs struct {
 	Postgres    *compose.PostgresConfig     `pulumi:"postgres,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]string           `pulumi:"environment,optional"`
+	Environment map[string]*string          `pulumi:"environment,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 }
 
@@ -52,7 +52,12 @@ func (*Postgres) Construct(
 		Ports:       inputs.Ports,
 	}
 
-	configProvider := providergcp.NewConfigProvider(inputs.ProjectName)
+	var configProvider compose.ConfigProvider
+	if ctx.DryRun() {
+		configProvider = &compose.DryRunConfigProvider{}
+	} else {
+		configProvider = providergcp.NewConfigProvider(inputs.ProjectName)
+	}
 	// Standalone Construct runs without a shared GlobalConfig; the project-level
 	// dispatcher calls createPostgres with a non-nil infra.
 	return comp, createPostgres(ctx, comp, configProvider, name, svc, nil)
