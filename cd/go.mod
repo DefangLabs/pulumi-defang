@@ -24,7 +24,7 @@ require (
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0
-	github.com/pulumi/pulumi-gcp/sdk/v9 v9.20.0
+	github.com/pulumi/pulumi-gcp/sdk/v9 v9.21.0
 	github.com/pulumi/pulumi/sdk/v3 v3.231.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
