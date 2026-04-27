@@ -24,5 +24,4 @@ var (
 	RetainBucketOnDelete    = common.Bool("retain-bucket-on-delete", false)
 	Route53SidecarLogs      = common.Bool("route53-sidecar-logs", false)
 	RetainDnsOnDelete       = common.Bool("retain-dns-on-delete", false)
-	StorageEncrypted        = common.Bool("storage-encrypted", false)
 )
