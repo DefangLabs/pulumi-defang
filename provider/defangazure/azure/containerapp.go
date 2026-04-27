@@ -133,6 +133,12 @@ func buildEnvVars(
 			Value: pulumi.String(serviceName),
 		},
 	}
+	if infra.Etag != "" {
+		envs = append(envs, app.EnvironmentVarArgs{
+			Name:  pulumi.String("DEFANG_ETAG"),
+			Value: pulumi.String(infra.Etag),
+		})
+	}
 
 	var appSecrets app.SecretArray
 	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we
@@ -253,36 +259,45 @@ func CreateContainerApp(
 		}
 	}
 
+	template := &app.TemplateArgs{
+		Scale: &app.ScaleArgs{
+			MinReplicas: pulumi.Int(minReplicas),
+			MaxReplicas: pulumi.Int(maxReplicas),
+		},
+		Containers: app.ContainerArray{
+			app.ContainerArgs{
+				Name:    pulumi.String(serviceName),
+				Image:   imageURI,
+				Command: compose.ToPulumiStringArray(svc.Entrypoint),
+				Args:    compose.ToPulumiStringArray(svc.Command),
+				Env:     result.Envs,
+				Probes:  probes,
+				Resources: &app.ContainerResourcesArgs{
+					Cpu:    pulumi.Float64(cpu),
+					Memory: pulumi.String(mem),
+				},
+			},
+		},
+	}
+	// Embed the etag in the revision name (e.g. "myservice--abc123def456") so
+	// ContainerAppConsoleLogs_CL rows are filterable by RevisionName_s without
+	// needing a separate join. Suffix max length is 64 chars; etags are 12.
+	if infra.Etag != "" {
+		template.RevisionSuffix = pulumi.String(infra.Etag)
+	}
+
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,
 		ContainerAppName:     pulumi.StringPtr(serviceName),
 		ManagedEnvironmentId: infra.Environment.ID().ToStringOutput(),
 		Identity:             identity,
+		Tags:                 DefangTags(ctx, infra.Etag, serviceName),
 		Configuration: &app.ConfigurationArgs{
 			Ingress:    ingress,
 			Registries: registries,
 			Secrets:    result.Secrets,
 		},
-		Template: &app.TemplateArgs{
-			Scale: &app.ScaleArgs{
-				MinReplicas: pulumi.Int(minReplicas),
-				MaxReplicas: pulumi.Int(maxReplicas),
-			},
-			Containers: app.ContainerArray{
-				app.ContainerArgs{
-					Name:    pulumi.String(serviceName),
-					Image:   imageURI,
-					Command: compose.ToPulumiStringArray(svc.Entrypoint),
-					Args:    compose.ToPulumiStringArray(svc.Command),
-					Env:     result.Envs,
-					Probes:  probes,
-					Resources: &app.ContainerResourcesArgs{
-						Cpu:    pulumi.Float64(cpu),
-						Memory: pulumi.String(mem),
-					},
-				},
-			},
-		},
+		Template: template,
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Container App: %w", err)

@@ -326,8 +326,16 @@ func main() {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Hour)
 	defer cancel()
 
+	// Wrap stdout/stderr so every log line emitted by the Pulumi engine, the
+	// standard log package, and any library writing to the global file handles
+	// is prefixed with the etag. Lets the CLI filter ContainerAppConsoleLogs_CL
+	// by KQL `Log_s has "<etag>"`. Must run BEFORE any other write.
+	flushEtag := installEtagPrefix(etag)
+	defer flushEtag()
+
 	userAgent := "defang/" + version
 	program.Version = version
+	program.Etag = etag
 
 	command := "up"
 	if len(os.Args) > 1 {

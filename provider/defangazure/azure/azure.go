@@ -24,6 +24,28 @@ type SharedInfra struct {
 	ConfigProvider     compose.ConfigProvider // reads project secrets (set via `defang config set`)
 	KeyVaultURL        string                 // Key Vault URL for secret references (empty if no vault)
 	KeyVaultIdentityID pulumi.StringOutput    // user-assigned identity for KV access (zero if no vault)
+	// Etag is the deployment ID supplied by the CD program; empty for
+	// standalone Service callers.
+	Etag string
+}
+
+// DefangTags returns the standard tag map applied to every Azure resource the
+// provider creates: defang-etag (deployment ID), defang-service (logical name
+// from compose), defang-project (Pulumi project), defang-stack (Pulumi stack).
+// Empty values are omitted so standalone callers without an etag don't end up
+// with a literal empty tag.
+func DefangTags(ctx *pulumi.Context, etag, serviceName string) pulumi.StringMap {
+	tags := pulumi.StringMap{
+		"defang-project": pulumi.String(ctx.Project()),
+		"defang-stack":   pulumi.String(ctx.Stack()),
+	}
+	if etag != "" {
+		tags["defang-etag"] = pulumi.String(etag)
+	}
+	if serviceName != "" {
+		tags["defang-service"] = pulumi.String(serviceName)
+	}
+	return tags
 }
 
 // KeyVaultName returns the deterministic Key Vault name for the given Defang

@@ -32,6 +32,7 @@ func CreateNetworking(
 		AddressSpace: &network.AddressSpaceArgs{
 			AddressPrefixes: pulumi.StringArray{pulumi.String("10.0.0.0/16")},
 		},
+		Tags: DefangTags(ctx, infra.Etag, ""),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating VNet: %w", err)
