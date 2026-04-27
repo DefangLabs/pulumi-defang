@@ -134,6 +134,11 @@ pre-commit: ensure node_modules
 
 .PHONY: pre-merge-commit
 pre-merge-commit: ensure
+	@if ! git diff --quiet -- '*go.mod' '*go.sum'; then \
+		echo "error: 'make ensure' produced changes; commit the tidied go.mod/go.sum before merging." >&2; \
+		git diff --stat -- '*go.mod' '*go.sum' >&2; \
+		exit 1; \
+	fi
 
 # Full build + test run before push (or for CI).
 .PHONY: pre-push
