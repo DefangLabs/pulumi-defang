@@ -17,7 +17,8 @@ import (
 type Postgres struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	Endpoint            pulumi.StringOutput `pulumi:"endpoint"`
+	Instance_identifier pulumi.StringOutput `pulumi:"instance_identifier"`
 }
 
 // NewPostgres registers a new resource with the given unique name, arguments, and options.
@@ -94,6 +95,10 @@ func (o PostgresOutput) ToPostgresOutputWithContext(ctx context.Context) Postgre
 
 func (o PostgresOutput) Endpoint() pulumi.StringOutput {
 	return o.ApplyT(func(v *Postgres) pulumi.StringOutput { return v.Endpoint }).(pulumi.StringOutput)
+}
+
+func (o PostgresOutput) Instance_identifier() pulumi.StringOutput {
+	return o.ApplyT(func(v *Postgres) pulumi.StringOutput { return v.Instance_identifier }).(pulumi.StringOutput)
 }
 
 func init() {
