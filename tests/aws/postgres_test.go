@@ -16,7 +16,7 @@ func TestConstructAwsPostgres(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"aws": property.New(property.NewMap(map[string]property.Value{
@@ -34,7 +34,7 @@ func TestConstructAwsPostgresWithAllowDowntime(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:15"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
@@ -54,7 +54,7 @@ func TestConstructAwsPostgresWithSnapshot(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"fromSnapshot": property.New("rds:myproject-db-2024-01-01"),
@@ -74,7 +74,7 @@ func TestConstructAwsPostgresWithEnvironment(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -97,7 +97,7 @@ func TestConstructAwsPostgresWithVPC(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"aws": property.New(property.NewMap(map[string]property.Value{

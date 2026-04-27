@@ -16,7 +16,7 @@ type Redis struct{}
 
 // RedisInputs defines the inputs for a standalone AWS ElastiCache Redis instance.
 type RedisInputs struct {
-	ProjectName string                      `pulumi:"project_name"`
+	ProjectName string                      `pulumi:"projectName"`
 	Redis       *compose.RedisConfig        `pulumi:"redis,optional"`
 	Image       *string                     `pulumi:"image,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`

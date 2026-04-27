@@ -25,8 +25,8 @@ func TestConstructAwsEcsServiceWithImage(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("nginx:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("nginx:latest"),
 		}),
 	})
 
@@ -39,8 +39,8 @@ func TestConstructAwsEcsServiceWithIngressPort(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("nginx:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("nginx:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
 				testutil.IngressPort(8080),
 			})),
@@ -56,8 +56,8 @@ func TestConstructAwsEcsServiceWithMultiplePorts(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("myapp:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("myapp:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
 				testutil.IngressPort(8080),
 				property.New(property.NewMap(map[string]property.Value{
@@ -78,8 +78,8 @@ func TestConstructAwsEcsServiceWithBuild(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("myapp:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("myapp:latest"),
 			"build": property.New(property.NewMap(map[string]property.Value{
 				"context": property.New("./app"),
 			})),
@@ -95,8 +95,8 @@ func TestConstructAwsEcsServiceWithBuildAndDockerfile(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("myapp:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("myapp:latest"),
 			"build": property.New(property.NewMap(map[string]property.Value{
 				"context":    property.New("./app"),
 				"dockerfile": property.New("docker/Dockerfile.prod"),
@@ -114,8 +114,8 @@ func TestConstructAwsEcsServiceWithVPC(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("nginx:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("nginx:latest"),
 			"aws": property.New(property.NewMap(map[string]property.Value{
 				"vpcId": property.New("vpc-0123456789abcdef0"),
 				"subnetIds": property.New(property.NewArray([]property.Value{
@@ -139,8 +139,8 @@ func TestConstructAwsEcsServiceWithHealthCheck(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("nginx:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("nginx:latest"),
 			"ports": property.New(property.NewArray([]property.Value{
 				testutil.IngressPort(80),
 			})),
@@ -167,8 +167,8 @@ func TestConstructAwsEcsServiceWithEnvironment(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("myapp:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("myapp:latest"),
 			"environment": property.New(property.NewMap(map[string]property.Value{
 				"APP_ENV": property.New("production"),
 				"PORT":    property.New("8080"),
@@ -185,8 +185,8 @@ func TestConstructAwsEcsServiceWithDeploy(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Service"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
-			"image":        property.New("myapp:latest"),
+			"projectName": property.New("myproject"),
+			"image":       property.New("myapp:latest"),
 			"deploy": property.New(property.NewMap(map[string]property.Value{
 				"replicas": property.New(float64(2)),
 				"resources": property.New(property.NewMap(map[string]property.Value{
@@ -209,8 +209,8 @@ func TestConstructAwsEcsServiceWithDeploy(t *testing.T) {
 func constructAwsServiceContainerDef(t *testing.T, env map[string]property.Value) awsprov.ContainerDefinition {
 	t.Helper()
 	inputs := map[string]property.Value{
-		"project_name": property.New("myproject"),
-		"image":        property.New("myapp:latest"),
+		"projectName": property.New("myproject"),
+		"image":       property.New("myapp:latest"),
 	}
 	if env != nil {
 		inputs["environment"] = property.New(property.NewMap(env))

@@ -17,7 +17,8 @@ import (
 type Postgres struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	Endpoint           pulumi.StringOutput `pulumi:"endpoint"`
+	InstanceIdentifier pulumi.StringOutput `pulumi:"instanceIdentifier"`
 }
 
 // NewPostgres registers a new resource with the given unique name, arguments, and options.
@@ -37,22 +38,22 @@ func NewPostgres(ctx *pulumi.Context,
 }
 
 type postgresArgs struct {
-	Aws          *aws.SharedInfra        `pulumi:"aws"`
-	Deploy       *compose.DeployConfig   `pulumi:"deploy"`
-	Environment  map[string]string       `pulumi:"environment"`
-	Image        *string                 `pulumi:"image"`
-	Postgres     *compose.PostgresConfig `pulumi:"postgres"`
-	Project_name string                  `pulumi:"project_name"`
+	Aws         *aws.SharedInfra        `pulumi:"aws"`
+	Deploy      *compose.DeployConfig   `pulumi:"deploy"`
+	Environment map[string]string       `pulumi:"environment"`
+	Image       *string                 `pulumi:"image"`
+	Postgres    *compose.PostgresConfig `pulumi:"postgres"`
+	ProjectName string                  `pulumi:"projectName"`
 }
 
 // The set of arguments for constructing a Postgres resource.
 type PostgresArgs struct {
-	Aws          aws.SharedInfraPtrInput
-	Deploy       compose.DeployConfigPtrInput
-	Environment  pulumi.StringMapInput
-	Image        *string
-	Postgres     compose.PostgresConfigPtrInput
-	Project_name string
+	Aws         aws.SharedInfraPtrInput
+	Deploy      compose.DeployConfigPtrInput
+	Environment pulumi.StringMapInput
+	Image       *string
+	Postgres    compose.PostgresConfigPtrInput
+	ProjectName string
 }
 
 func (PostgresArgs) ElementType() reflect.Type {
@@ -94,6 +95,10 @@ func (o PostgresOutput) ToPostgresOutputWithContext(ctx context.Context) Postgre
 
 func (o PostgresOutput) Endpoint() pulumi.StringOutput {
 	return o.ApplyT(func(v *Postgres) pulumi.StringOutput { return v.Endpoint }).(pulumi.StringOutput)
+}
+
+func (o PostgresOutput) InstanceIdentifier() pulumi.StringOutput {
+	return o.ApplyT(func(v *Postgres) pulumi.StringOutput { return v.InstanceIdentifier }).(pulumi.StringOutput)
 }
 
 func init() {

@@ -36,20 +36,20 @@ func NewPostgres(ctx *pulumi.Context,
 }
 
 type postgresArgs struct {
-	Deploy       *compose.DeployConfig   `pulumi:"deploy"`
-	Environment  map[string]string       `pulumi:"environment"`
-	Image        *string                 `pulumi:"image"`
-	Postgres     *compose.PostgresConfig `pulumi:"postgres"`
-	Project_name string                  `pulumi:"project_name"`
+	Deploy      *compose.DeployConfig   `pulumi:"deploy"`
+	Environment map[string]string       `pulumi:"environment"`
+	Image       *string                 `pulumi:"image"`
+	Postgres    *compose.PostgresConfig `pulumi:"postgres"`
+	ProjectName string                  `pulumi:"projectName"`
 }
 
 // The set of arguments for constructing a Postgres resource.
 type PostgresArgs struct {
-	Deploy       compose.DeployConfigPtrInput
-	Environment  pulumi.StringMapInput
-	Image        *string
-	Postgres     compose.PostgresConfigPtrInput
-	Project_name string
+	Deploy      compose.DeployConfigPtrInput
+	Environment pulumi.StringMapInput
+	Image       *string
+	Postgres    compose.PostgresConfigPtrInput
+	ProjectName string
 }
 
 func (PostgresArgs) ElementType() reflect.Type {

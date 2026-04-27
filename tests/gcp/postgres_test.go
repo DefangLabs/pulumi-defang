@@ -18,7 +18,7 @@ func TestConstructGcpCloudSql(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:15"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 		}),
@@ -33,7 +33,7 @@ func TestConstructGcpCloudSqlWithAllowDowntime(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
@@ -50,7 +50,7 @@ func TestConstructGcpCloudSqlWithEnvironment(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:16"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -70,7 +70,7 @@ func TestConstructGcpCloudSqlNoUserOrDatabaseByDefault(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:17"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 		}),
@@ -90,7 +90,7 @@ func TestConstructGcpCloudSqlCreatesUserAndDatabaseWhenSet(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:17"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -114,7 +114,7 @@ func TestConstructGcpCloudSqlDefaultDbNameSkipsDatabase(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:17"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 			"environment": property.New(property.NewMap(map[string]property.Value{
@@ -138,7 +138,7 @@ func TestConstructGcpCloudSqlStandaloneNoVPCPeering(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Postgres"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("postgres:17"),
 			"postgres":     property.New(property.NewMap(map[string]property.Value{})),
 		}),

@@ -36,20 +36,20 @@ func NewRedis(ctx *pulumi.Context,
 }
 
 type redisArgs struct {
-	Deploy       *compose.DeployConfig `pulumi:"deploy"`
-	Environment  map[string]string     `pulumi:"environment"`
-	Image        *string               `pulumi:"image"`
-	Project_name string                `pulumi:"project_name"`
-	Redis        *compose.RedisConfig  `pulumi:"redis"`
+	Deploy      *compose.DeployConfig `pulumi:"deploy"`
+	Environment map[string]string     `pulumi:"environment"`
+	Image       *string               `pulumi:"image"`
+	ProjectName string                `pulumi:"projectName"`
+	Redis       *compose.RedisConfig  `pulumi:"redis"`
 }
 
 // The set of arguments for constructing a Redis resource.
 type RedisArgs struct {
-	Deploy       compose.DeployConfigPtrInput
-	Environment  pulumi.StringMapInput
-	Image        *string
-	Project_name string
-	Redis        compose.RedisConfigPtrInput
+	Deploy      compose.DeployConfigPtrInput
+	Environment pulumi.StringMapInput
+	Image       *string
+	ProjectName string
+	Redis       compose.RedisConfigPtrInput
 }
 
 func (RedisArgs) ElementType() reflect.Type {
