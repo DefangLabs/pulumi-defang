@@ -132,6 +132,9 @@ node_modules: package.json
 pre-commit: ensure node_modules
 	npx --no lint-staged
 
+.PHONY: pre-merge-commit
+pre-merge-commit: ensure
+
 # Full build + test run before push (or for CI).
 .PHONY: pre-push
 pre-push: provider test image_all
