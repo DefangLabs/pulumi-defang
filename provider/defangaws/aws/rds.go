@@ -267,7 +267,7 @@ func CreateRDS(
 		FinalSnapshotIdentifier:  finalSnapshotIdentifier,
 		PubliclyAccessible:       pulumi.Bool(false),
 		DeletionProtection:       pulumi.Bool(deletionProtection),
-		StorageEncrypted:         pulumi.Bool(StorageEncrypted.Get(ctx)),
+		StorageEncrypted:         pulumi.Bool(true),
 		AutoMinorVersionUpgrade:  pulumi.Bool(true),
 		BackupRetentionPeriod:    pulumi.Int(backupRetentionDays),
 		Tags:                     tags,
@@ -279,6 +279,10 @@ func CreateRDS(
 		rdsArgs.SnapshotIdentifier = pulumi.String(pg.FromSnapshot)
 	}
 
+	// IgnoreChanges on storageEncrypted: pre-existing instances created when the
+	// (now-removed) `storage-encrypted` recipe defaulted to false would otherwise
+	// force-replace on next up. RDS can't toggle encryption in-place, so we
+	// preserve the existing instance and leave migration to the operator.
 	rdsOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{"storageEncrypted"}))
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
