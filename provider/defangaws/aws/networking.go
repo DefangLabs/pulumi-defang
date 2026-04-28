@@ -28,6 +28,7 @@ func ResolveNetworking(
 	privateDomain := common.SafeLabel(projectName) + ".internal"
 
 	strategy := awsxec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: missing type checking
+	numberOfAZs := NumberOfAvailabilityZones.Get(ctx)
 
 	// if cfg != nil && cfg.VpcID != "" {
 	// 	// Use provided VPC and subnet IDs
@@ -56,15 +57,31 @@ func ResolveNetworking(
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
+	// Probe the AZs available to this account in this region. If fewer are accessible than the
+	// recipe asks for, awsx would fail with "does not have at least N Availability Zones"; instead
+	// pin the explicit list and warn so the user can lower the recipe value or change region.
+	azs, err := aws.GetAvailabilityZones(ctx, &aws.GetAvailabilityZonesArgs{State: common.Ptr("available")}, opt)
+	if err != nil {
+		return nil, fmt.Errorf("getting AWS availability zones: %w", err)
+	}
+
+	if len(azs.Names) < numberOfAZs {
+		// slices.Sort(azs.Names) // deterministic order: AWS does not guarantee response ordering
+		_ = ctx.Log.Warn(fmt.Sprintf("region %s only has %d availability zone(s) (%v); recipe %q requested %d",
+			region.Region, len(azs.Names), azs.Names, "number-of-availability-zones", numberOfAZs), nil)
+		numberOfAZs = len(azs.Names)
+	}
+
 	// Create a new VPC with public and private subnets.
 	vpcName := common.AutonamingPrefix(ctx, "shared-vpc")
 
-	vpc, err := awsxec2.NewVpc(ctx, "shared-vpc", &awsxec2.VpcArgs{
+	vpcArgs := &awsxec2.VpcArgs{
 		EnableDnsHostnames: pulumi.Bool(true),
 		// EnableDnsSupport:   pulumi.Bool(true),
 		NatGateways: &awsxec2.NatGatewayConfigurationArgs{
 			Strategy: strategy,
 		},
+		NumberOfAvailabilityZones: &numberOfAZs,
 		VpcEndpointSpecs: []awsxec2.VpcEndpointSpecArgs{
 			{
 				ServiceName:     fmt.Sprintf("com.amazonaws.%s.s3", region.Region),
@@ -77,7 +94,9 @@ func ResolveNetworking(
 		Tags: pulumi.StringMap{
 			"Name": pulumi.String(vpcName),
 		},
-	}, opt)
+	}
+
+	vpc, err := awsxec2.NewVpc(ctx, "shared-vpc", vpcArgs, opt)
 	if err != nil {
 		return nil, err
 	}
