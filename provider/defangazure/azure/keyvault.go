@@ -31,6 +31,7 @@ func CreateKeyVaultIdentity(
 		ctx, "kv", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String(location),
+			Tags:              DefangTags(ctx, infra.Etag, ""),
 		}, opts...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating KV managed identity: %w", err)

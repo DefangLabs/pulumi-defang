@@ -27,6 +27,11 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Etag is the deployment identifier supplied by the CD program; the provider
+	// stamps it onto every resource (tags) and onto Container App revisions
+	// (RevisionSuffix) so that logs and Resource Graph queries can be filtered
+	// per-deployment.
+	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -250,11 +255,12 @@ func createServiceResources(
 // createProjectResourceGroup creates (or imports) the project's resource group.
 func createProjectResourceGroup(
 	ctx *pulumi.Context,
-	name, location string,
+	name, location, etag string,
 	childOpts []pulumi.ResourceOption,
 ) (*resources.ResourceGroup, error) {
 	rgArgs := &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
+		Tags:     providerazure.DefangTags(ctx, etag, ""),
 	}
 	rgOpts := childOpts
 	if existingRG := providerazure.ExistingResourceGroup(ctx, name); existingRG != "" {
@@ -291,6 +297,7 @@ func createManagedEnvironment(
 			Name: pulumi.String("PerGB2018"),
 		},
 		RetentionInDays: pulumi.Int(30),
+		Tags:            providerazure.DefangTags(ctx, infra.Etag, ""),
 	}, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
@@ -310,6 +317,7 @@ func createManagedEnvironment(
 				SharedKey:  logKeys.PrimarySharedKey(),
 			},
 		},
+		Tags: providerazure.DefangTags(ctx, infra.Etag, ""),
 	}
 	if infra.Networking != nil {
 		envArgs.VnetConfiguration = &app.VnetConfigurationArgs{
@@ -338,7 +346,7 @@ func setupSharedInfra(
 ) (*providerazure.SharedInfra, map[string]string, error) {
 	location := providerazure.Location(ctx)
 
-	rg, err := createProjectResourceGroup(ctx, name, location, childOpts)
+	rg, err := createProjectResourceGroup(ctx, name, location, inputs.Etag, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -358,6 +366,7 @@ func setupSharedInfra(
 		ResourceGroup:  rg,
 		KeyVaultURL:    keyVaultURL,
 		ConfigProvider: providerazure.NewConfigProvider(name, keyVaultURL),
+		Etag:           inputs.Etag,
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {

@@ -16,6 +16,11 @@ import (
 // Version is set by main to the build version string.
 var Version = "development"
 
+// Etag is set by main to the deployment ID (DEFANG_ETAG env var). Per-provider
+// deploy functions thread it into their Pulumi component args so the provider
+// can stamp the value onto resource tags / log records / revision suffixes.
+var Etag = ""
+
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 	cf := compose.Project{Name: projectName}
 	if err := yaml.Unmarshal(data, &cf); err != nil {

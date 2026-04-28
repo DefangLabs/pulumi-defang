@@ -45,6 +45,7 @@ func CreateDNSZones(
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String("global"),
 			PrivateZoneName:   pulumi.String(pgZoneName),
+			Tags:              DefangTags(ctx, infra.Etag, pgServiceName),
 		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating postgres private DNS zone: %w", err)
@@ -73,6 +74,7 @@ func CreateDNSZones(
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String("global"),
 			PrivateZoneName:   pulumi.String("privatelink.redis.azure.net"),
+			Tags:              DefangTags(ctx, infra.Etag, redisServiceName),
 		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Redis private DNS zone: %w", err)

@@ -52,6 +52,10 @@ func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {
 		}
 		args.Networks = nm
 	}
+	if Etag != "" {
+		etag := Etag
+		args.Etag = &etag
+	}
 	return args
 }
 
