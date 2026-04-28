@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	ErrNoACRRunID     = errors.New("failed to schedule run: no run ID returned")
-	ErrACRRunTimedOut = errors.New("ACR task run timed out")
-	ErrACRRunFailed   = errors.New("ACR task run failed")
+	ErrNoACRRunID        = errors.New("failed to schedule run: no run ID returned")
+	ErrACRRunTimedOut    = errors.New("ACR task run timed out")
+	ErrACRRunFailed      = errors.New("ACR task run failed")
+	ErrACREmptyUploadURL = errors.New("empty upload URL response from ACR")
 )
 
 // ACRImageBuild is a custom resource that schedules an ACR task run and waits for completion.
@@ -284,14 +285,14 @@ func stageBuildContextToACR(
 	if err != nil {
 		return "", fmt.Errorf("opening download stream: %w", err)
 	}
-	defer dl.Body.Close()
+	defer func() { _ = dl.Body.Close() }()
 
 	up, err := rc.GetBuildSourceUploadURL(ctx, rgName, registryName, nil)
 	if err != nil {
 		return "", fmt.Errorf("getting ACR upload URL: %w", err)
 	}
 	if up.UploadURL == nil || up.RelativePath == nil {
-		return "", errors.New("empty upload URL response from ACR")
+		return "", ErrACREmptyUploadURL
 	}
 
 	bbClient, err := blockblob.NewClientWithNoCredential(*up.UploadURL, nil)
