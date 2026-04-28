@@ -76,13 +76,16 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
 						},
 					},
-					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
-					// The default pattern includes hyphens from project/stack names, so override it.
-					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
-					// ${stack} is safe to include: stacks are lowercase with no hyphens.
 					"azure-native": map[string]any{
 						"resources": map[string]any{
-							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"},
+							// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
+							// The default pattern includes hyphens from project/stack names, so override it.
+							// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
+							// ${stack} is safe to include: stacks are lowercase with no hyphens.
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${stack}${name}${hex(7)}"},
+							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
+							// 5-50	Alphanumerics, hyphens, and underscores
+							"azure-native:containerregistry:Task": map[string]string{"pattern": "${stack}-${name}-${hex(7)}"},
 						},
 					},
 				},
