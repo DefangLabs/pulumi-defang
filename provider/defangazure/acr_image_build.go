@@ -6,15 +6,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
 var (
-	ErrNoACRRunID     = errors.New("failed to schedule run: no run ID returned")
-	ErrACRRunTimedOut = errors.New("ACR task run timed out")
-	ErrACRRunFailed   = errors.New("ACR task run failed")
+	ErrNoACRRunID        = errors.New("failed to schedule run: no run ID returned")
+	ErrACRRunTimedOut    = errors.New("ACR task run timed out")
+	ErrACRRunFailed      = errors.New("ACR task run failed")
+	ErrACREmptyUploadURL = errors.New("empty upload URL response from ACR")
 )
 
 // ACRImageBuild is a custom resource that schedules an ACR task run and waits for completion.
@@ -41,8 +45,10 @@ type ACRImageBuildInputs struct {
 	// Registry login server, e.g. "myregistry.azurecr.io"
 	LoginServer string `pulumi:"loginServer"`
 
-	// Full context URL for the build (may include a SAS token query string).
-	// Passed at run time via EncodedTaskRunRequest so the ARM API never strips the token.
+	// Build context URL — a bare blob URL pointing at the tar that the CLI
+	// uploaded to the CD storage account. Restaged into ACR's own staging
+	// area at run time (see stageBuildContextToACR) so that ACR Tasks can
+	// fetch via its internal credentials, not via a SAS token in this URL.
 	ContextPath string `pulumi:"contextPath"`
 
 	// Base64-encoded ACR task YAML (from generateTaskYAML).
@@ -111,11 +117,13 @@ func (*ACRImageBuild) Create(
 	}, nil
 }
 
-// scheduleAndWaitACRRun schedules an inline ACR task run using EncodedTaskRunRequest
-// and polls until it reaches a terminal state.
-// Using EncodedTaskRunRequest (rather than TaskRunRequest) means the context URL is
-// passed in the request body, which is never persisted — so the ARM API cannot strip
-// the SAS query string the way it does when storing a task definition.
+// scheduleAndWaitACRRun stages the build context into ACR's own upload area,
+// schedules an inline ACR task run, and polls until it reaches a terminal state.
+//
+// Source contextPath is the bare blob URL of the tar in the CD storage account.
+// We download it via the CD task's managed identity and re-upload to ACR's
+// staging slot (GetBuildSourceUploadURL); ACR Tasks then fetches via its own
+// internal credentials, so neither the URL nor any SAS leaks into Pulumi state.
 func scheduleAndWaitACRRun(
 	ctx context.Context,
 	subscriptionID, rgName, registryName string,
@@ -138,6 +146,11 @@ func scheduleAndWaitACRRun(
 		return "", "", fmt.Errorf("creating runs client: %w", err)
 	}
 
+	sourceLocation, err := stageBuildContextToACR(ctx, cred, regClient, rgName, registryName, contextPath)
+	if err != nil {
+		return "", "", fmt.Errorf("staging build context: %w", err)
+	}
+
 	runType := "EncodedTaskRunRequest"
 	isArchiveEnabled := false
 	osLinux := armcontainerregistry.OSLinux
@@ -145,9 +158,9 @@ func scheduleAndWaitACRRun(
 	poller, err := regClient.BeginScheduleRun(ctx, rgName, registryName, &armcontainerregistry.EncodedTaskRunRequest{
 		Type:               &runType,
 		EncodedTaskContent: &encodedTaskContent,
-		// SourceLocation carries the full context URL including SAS token.
-		// EncodedTaskRunRequest is never persisted by ARM, so the query string is preserved.
-		SourceLocation:   &contextPath,
+		// Relative path returned by ACR's GetBuildSourceUploadURL — ACR Tasks
+		// reads this from its own staging area without needing caller credentials.
+		SourceLocation:   &sourceLocation,
 		IsArchiveEnabled: &isArchiveEnabled,
 		Platform: &armcontainerregistry.PlatformProperties{
 			OS: &osLinux,
@@ -248,4 +261,47 @@ func buildImageURI(
 		}
 	}
 	return fmt.Sprintf("%s/%s:%s", loginServer, imageName, runID)
+}
+
+// stageBuildContextToACR streams the tar at sourceURL (a bare blob URL in the
+// CD storage account) into ACR's own upload staging slot, returning the
+// relative path that EncodedTaskRunRequest.SourceLocation expects.
+//
+// The download uses the caller's managed identity; the upload uses a
+// short-lived SAS URL returned by GetBuildSourceUploadURL. Streaming is done
+// via blockblob.UploadStream, which stages blocks of bounded size and commits
+// at the end — no full buffering in memory.
+func stageBuildContextToACR(
+	ctx context.Context,
+	cred azcore.TokenCredential,
+	rc *armcontainerregistry.RegistriesClient,
+	rgName, registryName, sourceURL string,
+) (string, error) {
+	bc, err := blob.NewClient(sourceURL, cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating blob client for %s: %w", sourceURL, err)
+	}
+	dl, err := bc.DownloadStream(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("opening download stream: %w", err)
+	}
+	defer func() { _ = dl.Body.Close() }()
+
+	up, err := rc.GetBuildSourceUploadURL(ctx, rgName, registryName, nil)
+	if err != nil {
+		return "", fmt.Errorf("getting ACR upload URL: %w", err)
+	}
+	if up.UploadURL == nil || up.RelativePath == nil {
+		return "", ErrACREmptyUploadURL
+	}
+
+	bbClient, err := blockblob.NewClientWithNoCredential(*up.UploadURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating blockblob client: %w", err)
+	}
+	if _, err := bbClient.UploadStream(ctx, dl.Body, nil); err != nil {
+		return "", fmt.Errorf("uploading to ACR staging: %w", err)
+	}
+
+	return *up.RelativePath, nil
 }
