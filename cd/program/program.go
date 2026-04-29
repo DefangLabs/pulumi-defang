@@ -13,13 +13,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Version is set by main to the build version string.
-var Version = "development"
-
-// Etag is set by main to the deployment ID (DEFANG_ETAG env var). Per-provider
-// deploy functions thread it into their Pulumi component args so the provider
-// can stamp the value onto resource tags / log records / revision suffixes.
-var Etag = ""
+// Etag and Version are read from stack config (defang:etag, defang:version)
+// inside NewRun. Storing them as Pulumi config values means the deployment
+// state file records exactly what was used — no env var or global to inspect
+// after the fact.
 
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 	cf := compose.Project{Name: projectName}
@@ -39,6 +36,7 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 
 		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
 		domain := defangCfg.Get("domain")         // optional project domain
+		etag := defangCfg.Get("etag")             // deployment identifier; empty in local dev
 
 		composeYaml, err := extractComposeYaml(projectPb)
 		if err != nil {
@@ -54,11 +52,11 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, projectPb)
+			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, projectPb)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, project, projectPb)
+			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectPb)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, project, projectPb)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project, etag, projectPb)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}

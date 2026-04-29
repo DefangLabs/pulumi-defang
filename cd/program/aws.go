@@ -11,19 +11,26 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	awsCfg := config.New(ctx, "aws")
+	defangCfg := config.New(ctx, "defang")
+	version := defangCfg.Get("version")
+
+	defaultTags := pulumi.StringMap{
+		"defang:org":     pulumi.String(ctx.Organization()),
+		"defang:project": pulumi.String(ctx.Project()),
+		"defang:stack":   pulumi.String(ctx.Stack()),
+	}
+	if version != "" {
+		defaultTags["defang:version"] = pulumi.String(version)
+	}
+	if etag != "" {
+		defaultTags["defang:etag"] = pulumi.String(etag)
+	}
 
 	providerArgs := &aws.ProviderArgs{
-		Region: pulumi.StringPtr(awsCfg.Require("region")),
-		DefaultTags: &aws.ProviderDefaultTagsArgs{
-			Tags: pulumi.StringMap{
-				"defang:org":     pulumi.String(ctx.Organization()),
-				"defang:project": pulumi.String(ctx.Project()),
-				"defang:stack":   pulumi.String(ctx.Stack()),
-				"defang:version": pulumi.String(Version),
-			},
-		},
+		Region:      pulumi.StringPtr(awsCfg.Require("region")),
+		DefaultTags: &aws.ProviderDefaultTagsArgs{Tags: defaultTags},
 	}
 	if profile := awsCfg.Get("profile"); profile != "" {
 		providerArgs.Profile = pulumi.StringPtr(profile)

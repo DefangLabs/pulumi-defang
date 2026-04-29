@@ -10,7 +10,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	azureCfg := config.New(ctx, "azure-native")
 
 	providerArgs := &pulumiazure.ProviderArgs{
@@ -28,11 +28,11 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pu
 	// Inject defang-project / defang-stack / defang-etag tags into every
 	// azure-native resource. azure-native has no provider-level default-tags
 	// option, so we use Pulumi's stack transformation API instead.
-	if err := providerazure.RegisterDefaultTags(ctx, providerazure.BaseTags(ctx, Etag)); err != nil {
+	if err := providerazure.RegisterDefaultTags(ctx, providerazure.BaseTags(ctx, etag)); err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf), pulumi.Providers(azureProvider))
+	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf, etag), pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -49,7 +49,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pu
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {
+func toAzureArgs(cf *compose.Project, etag string) *defangazure.ProjectArgs {
 	args := &defangazure.ProjectArgs{
 		Services: toAzureServices(cf.Services),
 	}
@@ -60,9 +60,9 @@ func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {
 		}
 		args.Networks = nm
 	}
-	if Etag != "" {
-		etag := Etag
-		args.Etag = &etag
+	if etag != "" {
+		e := etag
+		args.Etag = &e
 	}
 	return args
 }

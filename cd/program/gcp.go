@@ -9,18 +9,27 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	gcpCfg := config.New(ctx, "gcp")
+	defangCfg := config.New(ctx, "defang")
+	version := defangCfg.Get("version")
+
+	defaultLabels := pulumi.StringMap{
+		"defang-org":     pulumi.String(ctx.Organization()),
+		"defang-project": pulumi.String(ctx.Project()),
+		"defang-stack":   pulumi.String(ctx.Stack()),
+	}
+	if version != "" {
+		defaultLabels["defang-version"] = pulumi.String(version)
+	}
+	if etag != "" {
+		defaultLabels["defang-etag"] = pulumi.String(etag)
+	}
 
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project: pulumi.StringPtr(gcpCfg.Require("project")),
-		Region:  pulumi.StringPtr(gcpCfg.Require("region")),
-		DefaultLabels: pulumi.StringMap{
-			"defang-org":     pulumi.String(ctx.Organization()),
-			"defang-project": pulumi.String(ctx.Project()),
-			"defang-stack":   pulumi.String(ctx.Stack()),
-			"defang-version": pulumi.String(Version),
-		},
+		Project:       pulumi.StringPtr(gcpCfg.Require("project")),
+		Region:        pulumi.StringPtr(gcpCfg.Require("region")),
+		DefaultLabels: defaultLabels,
 	})
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err

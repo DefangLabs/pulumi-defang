@@ -229,6 +229,10 @@ func stackConfig() auto.ConfigMap {
 	cfg["defang:org"] = auto.ConfigValue{Value: org}
 	cfg["defang:prefix"] = auto.ConfigValue{Value: prefix}
 	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode} // backwards compatible with legacy behavior; now using recipes
+	cfg["defang:version"] = auto.ConfigValue{Value: version}     // build version recorded in state
+	if etag != "" {
+		cfg["defang:etag"] = auto.ConfigValue{Value: etag} // deployment ID; recorded in state, surfaced in tags/env
+	}
 	if domain != "" {
 		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
 	}
@@ -334,8 +338,6 @@ func main() {
 	defer flushEtag()
 
 	userAgent := "defang/" + version
-	program.Version = version
-	program.Etag = etag
 
 	command := "up"
 	if len(os.Args) > 1 {
