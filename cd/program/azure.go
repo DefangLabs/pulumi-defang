@@ -1,12 +1,14 @@
 package program
 
 import (
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
 	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
 	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
+	"google.golang.org/protobuf/proto"
 )
 
 func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
@@ -34,7 +36,20 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pu
 	// pulumi.Provider(azureProvider) is required because
 	// pulumi:disable-default-providers excludes azure-native (see cd/main.go projectConfig).
 	if len(projectPb) > 0 {
-		if err := saveProjectPbAzure(ctx, projectPb, project, pulumi.Provider(azureProvider)); err != nil {
+		var pu defangv1.ProjectUpdate
+		if err := proto.Unmarshal(projectPb, &pu); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
+			for _, svc := range pu.Services {
+				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
+					svc.Endpoints = []string{ep}
+				}
+			}
+			return proto.Marshal(&pu)
+		}).(pulumi.AnyOutput)
+
+		if err := saveProjectPbAzure(ctx, updatedPb, project, pulumi.Provider(azureProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

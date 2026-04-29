@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -277,7 +278,18 @@ func stageBuildContextToACR(
 	rc *armcontainerregistry.RegistriesClient,
 	rgName, registryName, sourceURL string,
 ) (string, error) {
-	bc, err := blob.NewClient(sourceURL, cred, nil)
+	// A SAS URL is self-authenticating via query params; passing a credential
+	// alongside it causes Azure to reject the request with InvalidAuthenticationInfo
+	// (two auth methods conflict). Use no-credential client when a SAS is present.
+	var (
+		bc  *blob.Client
+		err error
+	)
+	if u, _ := url.Parse(sourceURL); u != nil && u.RawQuery != "" {
+		bc, err = blob.NewClientWithNoCredential(sourceURL, nil)
+	} else {
+		bc, err = blob.NewClient(sourceURL, cred, nil)
+	}
 	if err != nil {
 		return "", fmt.Errorf("creating blob client for %s: %w", sourceURL, err)
 	}
