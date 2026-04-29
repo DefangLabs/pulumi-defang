@@ -22,6 +22,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectU
 		Region: pulumi.StringPtr(config.GetRegion(ctx)),
 		DefaultTags: &aws.ProviderDefaultTagsArgs{
 			Tags: pulumi.StringMap{
+				"defang:etag":    pulumi.String(projectUpdate.GetEtag()),
 				"defang:org":     pulumi.String(ctx.Organization()),
 				"defang:project": pulumi.String(ctx.Project()),
 				"defang:stack":   pulumi.String(ctx.Stack()),

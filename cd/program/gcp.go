@@ -20,10 +20,11 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defangv1
 		Project: pulumi.StringPtr(config.GetProject(ctx)),
 		Region:  pulumi.StringPtr(config.GetRegion(ctx)),
 		DefaultLabels: pulumi.StringMap{
+			"defang-etag":    pulumi.String(projectUpdate.GetEtag()),
 			"defang-org":     pulumi.String(ctx.Organization()),
 			"defang-project": pulumi.String(ctx.Project()),
 			"defang-stack":   pulumi.String(ctx.Stack()),
-			"defang-version": pulumi.String(Version),
+			// "defang-version": pulumi.String(Version), FIXME: cannot have dots
 		},
 	})
 	if err != nil {
