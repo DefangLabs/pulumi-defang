@@ -53,7 +53,10 @@ func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource, ext
 
 // saveProjectPbGCP uploads data as a Pulumi-managed GCS object at the key
 // derived from DEFANG_STATE_URL. See saveProjectPbAWS for semantics.
-func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
+// data is a pulumi.AnyOutput wrapping []byte so callers can produce the bytes
+// inside an ApplyT (e.g. after updating endpoints) without creating resources
+// inside that callback.
+func saveProjectPbGCP(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
 		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
@@ -65,23 +68,36 @@ func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource, ext
 	if u.Scheme != "gs" || u.Host == "" {
 		return fmt.Errorf("DEFANG_STATE_URL must be a gs:// URL with a bucket for GCP uploads, got %q", stateURL)
 	}
+
+	cleanupCh := make(chan func(), 1)
+	source := data.ApplyT(func(v any) (pulumi.AssetOrArchive, error) {
+		asset, cleanup, err := binaryFileAsset(v.([]byte), "project-pb-*.pb")
+		if err != nil {
+			return nil, err
+		}
+		cleanupCh <- cleanup
+		return asset, nil
+	}).(pulumi.AssetOrArchiveOutput)
+
 	opts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}, extraOpts...)
-	asset, cleanup, err := binaryFileAsset(data, "project-pb-*.pb")
-	if err != nil {
-		return err
-	}
 	obj, err := gcpstorage.NewBucketObject(ctx, "project-pb", &gcpstorage.BucketObjectArgs{
 		Bucket:      pulumi.String(u.Host),
 		Name:        pulumi.String(projectPbKey(ctx)),
-		Source:      asset,
+		Source:      source,
 		ContentType: pulumi.String("application/protobuf"),
 	}, opts...)
 	if err != nil {
-		cleanup()
 		return err
 	}
-	// Remove the temp file after the blob has been created (Crc32c resolves post-create).
-	obj.Crc32c.ApplyT(func(string) error { cleanup(); return nil })
+	// Remove the temp file after the object has been created (Crc32c resolves post-create).
+	obj.Crc32c.ApplyT(func(string) error {
+		select {
+		case fn := <-cleanupCh:
+			fn()
+		default:
+		}
+		return nil
+	})
 	return nil
 }
 
