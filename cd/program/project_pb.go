@@ -87,7 +87,10 @@ func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource, ext
 
 // saveProjectPbAzure uploads data as a Pulumi-managed Azure Blob in the CD
 // storage account's `projects` container. See saveProjectPbAWS for semantics.
-func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
+// data is a pulumi.AnyOutput wrapping []byte so callers can produce the bytes
+// inside an ApplyT (e.g. after updating endpoints) without creating resources
+// inside that callback.
+func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
 		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
@@ -116,24 +119,39 @@ func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource, e
 	// `projects/projects/<project>/<stack>/project.pb`.
 	blobName := fmt.Sprintf("%s/%s/project.pb", ctx.Project(), ctx.Stack())
 
+	// cleanupCh carries the temp-file cleanup fn from the source ApplyT to the
+	// post-create ApplyT below; buffer of 1 avoids blocking if cleanup fires
+	// before the consumer runs (e.g. during a dry-run).
+	cleanupCh := make(chan func(), 1)
+	source := data.ApplyT(func(v any) (pulumi.AssetOrArchive, error) {
+		asset, cleanup, err := binaryFileAsset(v.([]byte), "project-pb-*.pb")
+		if err != nil {
+			return nil, err
+		}
+		cleanupCh <- cleanup
+		return asset, nil
+	}).(pulumi.AssetOrArchiveOutput)
+
 	opts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{dep})}, extraOpts...)
-	asset, cleanup, err := binaryFileAsset(data, "project-pb-*.pb")
-	if err != nil {
-		return err
-	}
 	blob, err := azurestorage.NewBlob(ctx, "project-pb", &azurestorage.BlobArgs{
 		ResourceGroupName: pulumi.String(cdRG),
 		AccountName:       pulumi.String(account),
 		ContainerName:     pulumi.String("projects"),
 		BlobName:          pulumi.String(blobName),
-		Source:            asset,
+		Source:            source,
 		ContentType:       pulumi.StringPtr("application/protobuf"),
 	}, opts...)
 	if err != nil {
-		cleanup()
 		return err
 	}
-	blob.Url.ApplyT(func(string) error { cleanup(); return nil })
+	blob.Url.ApplyT(func(string) error {
+		select {
+		case fn := <-cleanupCh:
+			fn()
+		default:
+		}
+		return nil
+	})
 	return nil
 }
 

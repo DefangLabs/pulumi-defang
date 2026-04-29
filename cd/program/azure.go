@@ -37,30 +37,21 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pu
 	// pulumi:disable-default-providers excludes azure-native (see cd/main.go projectConfig).
 	if len(projectPb) > 0 {
 		var pu defangv1.ProjectUpdate
-		// update projectPb with assigned endpoints and load balancer DNS (if applicable) before uploading
-		// unmarshal to a ProjectUpdate, update the fields, then marshal back to bytes
 		if err := proto.Unmarshal(projectPb, &pu); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
-		project.Endpoints.ApplyT(func(endpoints map[string]string) (map[string]string, error) {
+		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
 			for _, svc := range pu.Services {
-				svcName := svc.GetService().GetName()
-				svcEndpoint, ok := endpoints[svcName]
-				if !ok {
-					continue
+				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
+					svc.Endpoints = []string{ep}
 				}
-				svc.Endpoints = []string{svcEndpoint}
 			}
-			updatedProjectPb, err := proto.Marshal(&pu)
-			if err != nil {
-				return nil, err
-			}
+			return proto.Marshal(&pu)
+		}).(pulumi.AnyOutput)
 
-			if err := saveProjectPbAzure(ctx, updatedProjectPb, project, pulumi.Provider(azureProvider)); err != nil {
-				return nil, err
-			}
-			return endpoints, nil
-		})
+		if err := saveProjectPbAzure(ctx, updatedPb, project, pulumi.Provider(azureProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
