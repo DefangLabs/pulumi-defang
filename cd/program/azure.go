@@ -2,7 +2,6 @@ package program
 
 import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
-	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
 	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
 	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v3"
@@ -22,13 +21,6 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectP
 	}
 	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", providerArgs)
 	if err != nil {
-		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
-	}
-
-	// Inject defang-project / defang-stack / defang-etag tags into every
-	// azure-native resource. azure-native has no provider-level default-tags
-	// option, so we use Pulumi's stack transformation API instead.
-	if err := providerazure.RegisterDefaultTags(ctx, providerazure.BaseTags(ctx, etag)); err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 

@@ -419,8 +419,18 @@ func setupSharedInfra(
 func (*Project) Construct(
 	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
 ) (*ProjectOutputs, error) {
+	// Cascade a transformation to all child resources that injects
+	// defang-project / defang-stack / defang-etag into every azure-native
+	// resource's Tags. azure-native has no DefaultTags, and pulumi-go-provider's
+	// Construct ctx lacks a stack so RegisterStackTransformation panics — the
+	// resource-level Transformations option is the supported cascade.
+	tagOpts := opts
+	if t := providerazure.DefaultTagsTransformation(providerazure.BaseTags(ctx, inputs.Etag)); t != nil {
+		tagOpts = pulumi.Composite(opts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+	}
+
 	comp := &ProjectOutputs{}
-	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
+	if err := ctx.RegisterComponentResource(typ, name, comp, tagOpts); err != nil {
 		return nil, err
 	}
 

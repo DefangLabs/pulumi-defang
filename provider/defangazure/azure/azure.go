@@ -33,8 +33,9 @@ type SharedInfra struct {
 
 // BaseTags returns the project-wide tag map: defang-project (Pulumi project),
 // defang-stack (Pulumi stack), and defang-etag (deployment ID, if non-empty).
-// These are applied to every azure-native resource by the stack transformation
-// installed via RegisterDefaultTags — callers should not set them manually.
+// These are applied to every azure-native resource by the cascading
+// transformation installed via DefaultTagsTransformation — callers should not
+// set them manually.
 func BaseTags(ctx *pulumi.Context, etag string) pulumi.StringMap {
 	tags := pulumi.StringMap{
 		"defang-project": pulumi.String(ctx.Project()),
@@ -48,7 +49,7 @@ func BaseTags(ctx *pulumi.Context, etag string) pulumi.StringMap {
 
 // ServiceTags returns the per-resource tag map for resources scoped to a single
 // service. Only sets defang-service; the project/stack/etag tags are added by
-// the stack transformation registered via RegisterDefaultTags.
+// the cascading transformation installed via DefaultTagsTransformation.
 func ServiceTags(serviceName string) pulumi.StringMap {
 	return pulumi.StringMap{
 		"defang-service": pulumi.String(serviceName),
@@ -59,18 +60,21 @@ func ServiceTags(serviceName string) pulumi.StringMap {
 // default-tags transformation to detect taggable Args structs.
 var stringMapInputType = reflect.TypeOf((*pulumi.StringMapInput)(nil)).Elem()
 
-// RegisterDefaultTags installs a stack transformation that merges baseTags into
-// every azure-native resource's Tags field. Existing per-resource tag values
-// win on key collision so callers can still override (e.g. defang-service).
+// DefaultTagsTransformation returns a resource transformation that merges
+// baseTags into every azure-native resource's Tags field. Existing per-resource
+// tag values win on key collision so callers can still override
+// (e.g. defang-service).
 //
-// azure-native's Provider does not expose a default-tags option, so we use
-// Pulumi's resource-transformation API to enforce the convention from outside.
-func RegisterDefaultTags(ctx *pulumi.Context, baseTags pulumi.StringMap) error {
+// azure-native's Provider has no DefaultTags option, and pulumi-go-provider's
+// Construct context lacks a stack so RegisterStackTransformation panics.
+// Pass the result via pulumi.Transformations(...) on the parent component
+// (Project) — Pulumi cascades component-level transformations to all children.
+func DefaultTagsTransformation(baseTags pulumi.StringMap) pulumi.ResourceTransformation {
 	if len(baseTags) == 0 {
 		return nil
 	}
 	baseOut := baseTags.ToStringMapOutput()
-	return ctx.RegisterStackTransformation(func(args *pulumi.ResourceTransformationArgs) *pulumi.ResourceTransformationResult {
+	return func(args *pulumi.ResourceTransformationArgs) *pulumi.ResourceTransformationResult {
 		if !strings.HasPrefix(args.Type, "azure-native:") {
 			return nil
 		}
@@ -118,7 +122,7 @@ func RegisterDefaultTags(ctx *pulumi.Context, baseTags pulumi.StringMap) error {
 
 		f.Set(reflect.ValueOf(merged))
 		return &pulumi.ResourceTransformationResult{Props: args.Props, Opts: args.Opts}
-	})
+	}
 }
 
 // KeyVaultName returns the deterministic Key Vault name for the given Defang
