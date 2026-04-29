@@ -29,7 +29,7 @@ func projectPbKey(ctx *pulumi.Context) string {
 func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
-		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
+		return nil
 	}
 	u, err := url.Parse(stateURL)
 	if err != nil {
@@ -56,7 +56,7 @@ func saveProjectPbAWS(ctx *pulumi.Context, data []byte, dep pulumi.Resource, ext
 func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
-		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
+		return nil
 	}
 	u, err := url.Parse(stateURL)
 	if err != nil {
@@ -90,7 +90,7 @@ func saveProjectPbGCP(ctx *pulumi.Context, data []byte, dep pulumi.Resource, ext
 func saveProjectPbAzure(ctx *pulumi.Context, data []byte, dep pulumi.Resource, extraOpts ...pulumi.ResourceOption) error {
 	stateURL := os.Getenv("DEFANG_STATE_URL")
 	if stateURL == "" {
-		return fmt.Errorf("DEFANG_STATE_URL is not set; cannot upload project.pb")
+		return nil
 	}
 	u, err := url.Parse(stateURL)
 	if err != nil {
