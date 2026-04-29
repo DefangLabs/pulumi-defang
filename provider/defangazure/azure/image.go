@@ -176,6 +176,7 @@ func buildServiceImage(
 	task, err := createACRTask(
 		ctx,
 		serviceName+"-build",
+		serviceName,
 		encodedYAML,
 		svc.Build.Context,
 		infra.registry,

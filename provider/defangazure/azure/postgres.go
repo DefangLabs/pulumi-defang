@@ -50,7 +50,7 @@ type postgresResult struct {
 // buildPostgresServerArgs constructs the ServerArgs for an Azure PostgreSQL Flexible Server.
 func buildPostgresServerArgs(
 	pg *compose.PostgresConfigArgs,
-	sanitized string,
+	serviceName, sanitized string,
 	infra *SharedInfra,
 	ctx *pulumi.Context,
 	opts ...pulumi.ResourceOption,
@@ -93,7 +93,7 @@ func buildPostgresServerArgs(
 		Location:          infra.ResourceGroup.Location,
 		ServerName:        serverName.ToStringPtrOutput(),
 		Version:           pg.Version,
-		Tags:              DefangTags(ctx, infra.Etag, sanitized),
+		Tags:              DefangTags(ctx, infra.Etag, serviceName),
 		Sku: &dbforpostgresql.SkuArgs{
 			Name: pulumi.String(SkuName.Get(ctx)),
 			Tier: pulumi.String(string(dbforpostgresql.SkuTierBurstable)),
@@ -154,7 +154,7 @@ func CreatePostgresFlexible(
 	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
 	sanitized := sanitizePostgresName(serviceName)
 
-	serverArgs, err := buildPostgresServerArgs(pg, sanitized, infra, ctx, opts...)
+	serverArgs, err := buildPostgresServerArgs(pg, serviceName, sanitized, infra, ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -83,7 +83,7 @@ func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]str
 // strips SAS query strings from contextPath; it is passed at run time instead.
 func createACRTask(
 	ctx *pulumi.Context,
-	name string,
+	name, serviceName string,
 	encodedYAML string,
 	contextURL pulumi.StringInput,
 	registry *containerregistry.Registry,
@@ -103,9 +103,6 @@ func createACRTask(
 		return s
 	})
 
-	// Derive service name from the task logical name (typically "{service}-build")
-	// so build resources are tagged with the right defang-service value.
-	serviceTag := strings.TrimSuffix(name, "-build")
 	task, err := containerregistry.NewTask(ctx, name, &containerregistry.TaskArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		RegistryName:      registry.Name,
@@ -124,7 +121,7 @@ func createACRTask(
 			Cpu: pulumi.Int(2),
 		},
 		Timeout: pulumi.Int(3600),
-		Tags:    DefangTags(ctx, infra.Etag, serviceTag),
+		Tags:    DefangTags(ctx, infra.Etag, serviceName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACR task: %w", err)

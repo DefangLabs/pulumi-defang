@@ -374,7 +374,7 @@ func main() {
 
 	// Set workspace env vars
 	if etag != "" {
-		// USER ends up in Pulumi lock files for debugging; FIXME: doens't work on linux
+		// USER ends up in Pulumi lock files for debugging; FIXME: doesn't work on linux
 		stack.Workspace().SetEnvVar("USER", etag)
 	}
 
