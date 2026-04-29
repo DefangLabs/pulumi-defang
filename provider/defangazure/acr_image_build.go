@@ -35,8 +35,14 @@ type ACRImageBuildInputs struct {
 	// Name of the ACR task — used only to declare a Pulumi dependency on the Task resource.
 	TaskName string `pulumi:"taskName"`
 
-	// Image name (without tag) pushed by the task, e.g. "myservice"
+	// Image name (the shared "builds" repo); per-service builds are
+	// disambiguated by tag prefix (ServiceName).
 	ImageName string `pulumi:"imageName"`
+
+	// Logical Compose service name; encoded as the tag prefix
+	// (e.g. tag "{serviceName}-{runID}") so all services in the project
+	// share a single repo and benefit from cross-service layer reuse.
+	ServiceName string `pulumi:"serviceName"`
 
 	// Registry login server, e.g. "myregistry.azurecr.io"
 	LoginServer string `pulumi:"loginServer"`
@@ -95,6 +101,7 @@ func (*ACRImageBuild) Create(
 		inputs.ContextPath,
 		inputs.LoginServer,
 		inputs.ImageName,
+		inputs.ServiceName,
 		maxWait,
 	)
 	if err != nil {
@@ -120,7 +127,7 @@ func scheduleAndWaitACRRun(
 	ctx context.Context,
 	subscriptionID, rgName, registryName string,
 	encodedTaskContent, contextPath string,
-	loginServer, imageName string,
+	loginServer, imageName, serviceName string,
 	maxWaitSeconds int,
 ) (string, string, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -172,7 +179,7 @@ func scheduleAndWaitACRRun(
 
 	// Check whether the run already reached a terminal state.
 	if scheduled.Properties.Status != nil {
-		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, runID); done {
+		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, serviceName, runID); done {
 			if runErr != nil {
 				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
@@ -201,7 +208,7 @@ func scheduleAndWaitACRRun(
 		if resp.Properties == nil || resp.Properties.Status == nil {
 			continue
 		}
-		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, runID); done {
+		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, serviceName, runID); done {
 			if runErr != nil {
 				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
@@ -214,11 +221,11 @@ func scheduleAndWaitACRRun(
 // done is true when a terminal state is reached.
 func checkRunStatus(
 	props *armcontainerregistry.RunProperties,
-	loginServer, imageName, runID string,
+	loginServer, imageName, serviceName, runID string,
 ) (string, bool, error) {
 	switch *props.Status {
 	case armcontainerregistry.RunStatusSucceeded:
-		return buildImageURI(props.OutputImages, loginServer, imageName, runID), true, nil
+		return buildImageURI(props.OutputImages, loginServer, imageName, serviceName, runID), true, nil
 	case armcontainerregistry.RunStatusFailed, armcontainerregistry.RunStatusError:
 		return "", true, fmt.Errorf("run %s %s: %w", runID, string(*props.Status), ErrACRRunFailed)
 	case armcontainerregistry.RunStatusCanceled:
@@ -233,11 +240,13 @@ func checkRunStatus(
 	return "", false, nil
 }
 
-// buildImageURI constructs the image URI from the run's output images.
-// Falls back to loginServer/imageName:runID when OutputImages is empty.
+// buildImageURI constructs the image URI from the run's output images. With
+// the shared "builds" repo, the per-service primary tag is "{serviceName}-{runID}";
+// it's deterministic so the fallback (used when OutputImages is empty) can
+// reconstruct it without inspecting the run output.
 func buildImageURI(
 	outputImages []*armcontainerregistry.ImageDescriptor,
-	loginServer, imageName, runID string,
+	loginServer, imageName, serviceName, runID string,
 ) string {
 	for _, img := range outputImages {
 		if img.Digest != nil && *img.Digest != "" {
@@ -247,5 +256,5 @@ func buildImageURI(
 			return fmt.Sprintf("%s/%s:%s", loginServer, imageName, *img.Tag)
 		}
 	}
-	return fmt.Sprintf("%s/%s:%s", loginServer, imageName, runID)
+	return fmt.Sprintf("%s/%s:%s-%s", loginServer, imageName, serviceName, runID)
 }
