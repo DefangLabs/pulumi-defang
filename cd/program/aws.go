@@ -1,21 +1,25 @@
 package program
 
 import (
+	"encoding/base64"
+	"fmt"
+
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
 	awscompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/config"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
+	"google.golang.org/protobuf/proto"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	awsCfg := config.New(ctx, "aws")
-
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &aws.ProviderArgs{
-		Region: pulumi.StringPtr(awsCfg.Require("region")),
+		Region: pulumi.StringPtr(config.GetRegion(ctx)),
 		DefaultTags: &aws.ProviderDefaultTagsArgs{
 			Tags: pulumi.StringMap{
 				"defang:org":     pulumi.String(ctx.Organization()),
@@ -25,7 +29,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectP
 			},
 		},
 	}
-	if profile := awsCfg.Get("profile"); profile != "" {
+	if profile := config.GetProfile(ctx); profile != "" {
 		providerArgs.Profile = pulumi.StringPtr(profile)
 	}
 
@@ -36,17 +40,17 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectP
 
 	args := toAWSArgs(cf)
 	if domain != "" {
-		awsCfg := defangaws.AWSConfigArgs{
+		awsCfgArgs := defangaws.AWSConfigArgs{
 			ProjectDomain: pulumi.StringPtr(domain),
 		}
 		// Recursively look up the public Route53 zone for HTTPS support
 		if zone, err := getHostedZoneForHost(ctx, domain, pulumi.Provider(awsProvider)); err == nil {
-			awsCfg.PublicZoneId = pulumi.StringPtr(zone.ZoneId)
+			awsCfgArgs.PublicZoneId = pulumi.StringPtr(zone.ZoneId)
 		}
-		args.Aws = awsCfg
+		args.Aws = awsCfgArgs
 	}
 
-	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Providers(awsProvider))
+	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Provider(awsProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -55,8 +59,17 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectP
 	// the project component so it only runs after all services are created.
 	// pulumi.Provider(awsProvider) is required because
 	// pulumi:disable-default-providers excludes aws (see cd/main.go projectConfig).
-	if len(projectPb) > 0 {
-		if err := saveProjectPbAWS(ctx, projectPb, project, pulumi.Provider(awsProvider)); err != nil {
+	if projectUpdate != nil {
+		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
+			for _, svc := range projectUpdate.Services {
+				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
+					svc.Endpoints = []string{ep}
+				}
+			}
+			return proto.Marshal(projectUpdate)
+		}).(pulumi.AnyOutput)
+
+		if err := saveProjectPbAWS(ctx, updatedPb, project, pulumi.Provider(awsProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}
@@ -187,4 +200,38 @@ func getHostedZoneForHost(ctx *pulumi.Context, hostname string, opts ...pulumi.I
 		return route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &parentZoneName, PrivateZone: &isPrivate}, opts...)
 	}
 	return result, nil
+}
+
+// saveProjectPbAWS uploads data as a Pulumi-managed S3 object at the key
+// derived from DEFANG_STATE_URL. Gated on dep so the upload only runs after
+// the project component (and its services) have been created successfully —
+// matching the pattern used by the legacy defang-mvp CD pipeline.
+//
+// opts should include pulumi.Provider(...) or pulumi.Parent(...) because
+// pulumi:disable-default-providers excludes aws (see cd/main.go projectConfig).
+func saveProjectPbAWS(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
+	u, err := parseStateURL(ctx)
+	if err != nil || u == nil {
+		return err
+	}
+	if u.Scheme != "s3" || u.Host == "" {
+		return fmt.Errorf("DEFANG_STATE_URL must be an s3:// URL with a bucket for AWS uploads, got %q", u.String())
+	}
+	// ContentBase64 preserves binary bytes; Content (string) would fail gRPC
+	// marshaling because protobuf is not valid UTF-8. The provider decodes
+	// the base64 server-side and stores raw bytes in S3.
+	// Note that the -v2 version of BucketObject will be removed in the next
+	// major version of the AWS provider.
+	// See https://www.pulumi.com/registry/packages/aws/how-to-guides/7-0-migration/#s3-bucketbucketv2-changes
+	contentBase64 := data.ApplyT(func(v any) string {
+		return base64.StdEncoding.EncodeToString(v.([]byte))
+	}).(pulumi.StringOutput)
+
+	_, err = s3.NewBucketObject(ctx, "project-pb", &s3.BucketObjectArgs{
+		Bucket:        pulumi.String(u.Host),
+		Key:           pulumi.String(projectPbKey(ctx)),
+		ContentBase64: contentBase64,
+		ContentType:   pulumi.String(protobufContentType),
+	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
+	return err
 }
