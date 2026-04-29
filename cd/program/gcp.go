@@ -35,7 +35,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectPb 
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf), pulumi.Providers(gcpProvider))
+	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, etag), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -52,7 +52,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectPb 
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toGCPArgs(cf *compose.Project) *defanggcp.ProjectArgs {
+func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {
 	args := &defanggcp.ProjectArgs{
 		Services: toGCPServices(cf.Services),
 	}
@@ -62,6 +62,10 @@ func toGCPArgs(cf *compose.Project) *defanggcp.ProjectArgs {
 			nm[string(k)] = gcpcompose.NetworkConfigArgs{Internal: pulumi.Bool(v.Internal)}
 		}
 		args.Networks = nm
+	}
+	if etag != "" {
+		e := etag
+		args.Etag = &e
 	}
 	return args
 }

@@ -23,6 +23,11 @@ type ProjectInputs struct {
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
 
 	AWS *AWSConfig `pulumi:"aws,optional" yaml:"x-defang-aws,omitempty"`
+
+	// Etag is the deployment identifier supplied by the CD program; the
+	// provider injects it as a DEFANG_ETAG env var on every service container
+	// so application logs can be correlated with a specific deployment.
+	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
 }
 
 type AWSConfig provideraws.AWSConfig
@@ -79,6 +84,7 @@ func buildProject(
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
+	infra.Etag = args.Etag
 
 	albDNS := pulumix.Val[*string](nil).Untyped().(pulumi.StringPtrOutput)
 	if infra.Alb != nil {

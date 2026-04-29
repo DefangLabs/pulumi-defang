@@ -49,6 +49,9 @@ type SharedInfra struct {
 	BuildInfra     *BuildInfra       // nil if no builds needed
 	PublicEcrCache *PullThroughCache // ECR public pull-through cache
 	SkipNatGW      bool
+	// Etag is the deployment ID supplied by the CD program; empty for
+	// standalone Service callers.
+	Etag string
 	Policies
 }
 
@@ -329,6 +332,9 @@ func CreateECSService(
 	var envEntries []envEntry
 	staticEnvVars := []KeyValuePair{
 		{Name: "DEFANG_SERVICE", Value: serviceName},
+	}
+	if infra != nil && infra.Etag != "" {
+		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_ETAG", Value: infra.Etag})
 	}
 	if svc.DomainName != "" {
 		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: svc.DomainName})

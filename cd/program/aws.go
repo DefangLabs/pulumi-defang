@@ -41,7 +41,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, pr
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	args := toAWSArgs(cf)
+	args := toAWSArgs(cf, etag)
 	if domain != "" {
 		awsCfg := defangaws.AWSConfigArgs{
 			ProjectDomain: pulumi.StringPtr(domain),
@@ -70,7 +70,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, pr
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toAWSArgs(cf *compose.Project) *defangaws.ProjectArgs {
+func toAWSArgs(cf *compose.Project, etag string) *defangaws.ProjectArgs {
 	args := &defangaws.ProjectArgs{
 		Services: toAWSServices(cf.Services),
 	}
@@ -80,6 +80,10 @@ func toAWSArgs(cf *compose.Project) *defangaws.ProjectArgs {
 			nm[string(k)] = awscompose.NetworkConfigArgs{Internal: pulumi.Bool(v.Internal)}
 		}
 		args.Networks = nm
+	}
+	if etag != "" {
+		e := etag
+		args.Etag = &e
 	}
 	return args
 }
