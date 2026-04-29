@@ -92,7 +92,6 @@ func CreateBuildInfra(
 		Sku: &containerregistry.SkuArgs{
 			Name: pulumi.String(string(containerregistry.SkuNameStandard)),
 		},
-		Tags: DefangTags(ctx, infra.Etag, ""),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACR registry: %w", err)
@@ -105,7 +104,6 @@ func CreateBuildInfra(
 		ctx, "acr", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String(location),
-			Tags:              DefangTags(ctx, infra.Etag, ""),
 		}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed identity: %w", err)

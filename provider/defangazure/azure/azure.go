@@ -3,6 +3,8 @@ package azure
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"reflect"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
@@ -29,12 +31,11 @@ type SharedInfra struct {
 	Etag string
 }
 
-// DefangTags returns the standard tag map applied to every Azure resource the
-// provider creates: defang-etag (deployment ID), defang-service (logical name
-// from compose), defang-project (Pulumi project), defang-stack (Pulumi stack).
-// Empty values are omitted so standalone callers without an etag don't end up
-// with a literal empty tag.
-func DefangTags(ctx *pulumi.Context, etag, serviceName string) pulumi.StringMap {
+// BaseTags returns the project-wide tag map: defang-project (Pulumi project),
+// defang-stack (Pulumi stack), and defang-etag (deployment ID, if non-empty).
+// These are applied to every azure-native resource by the stack transformation
+// installed via RegisterDefaultTags — callers should not set them manually.
+func BaseTags(ctx *pulumi.Context, etag string) pulumi.StringMap {
 	tags := pulumi.StringMap{
 		"defang-project": pulumi.String(ctx.Project()),
 		"defang-stack":   pulumi.String(ctx.Stack()),
@@ -42,10 +43,82 @@ func DefangTags(ctx *pulumi.Context, etag, serviceName string) pulumi.StringMap 
 	if etag != "" {
 		tags["defang-etag"] = pulumi.String(etag)
 	}
-	if serviceName != "" {
-		tags["defang-service"] = pulumi.String(serviceName)
-	}
 	return tags
+}
+
+// ServiceTags returns the per-resource tag map for resources scoped to a single
+// service. Only sets defang-service; the project/stack/etag tags are added by
+// the stack transformation registered via RegisterDefaultTags.
+func ServiceTags(serviceName string) pulumi.StringMap {
+	return pulumi.StringMap{
+		"defang-service": pulumi.String(serviceName),
+	}
+}
+
+// stringMapInputType is the reflect.Type of pulumi.StringMapInput, used by the
+// default-tags transformation to detect taggable Args structs.
+var stringMapInputType = reflect.TypeOf((*pulumi.StringMapInput)(nil)).Elem()
+
+// RegisterDefaultTags installs a stack transformation that merges baseTags into
+// every azure-native resource's Tags field. Existing per-resource tag values
+// win on key collision so callers can still override (e.g. defang-service).
+//
+// azure-native's Provider does not expose a default-tags option, so we use
+// Pulumi's resource-transformation API to enforce the convention from outside.
+func RegisterDefaultTags(ctx *pulumi.Context, baseTags pulumi.StringMap) error {
+	if len(baseTags) == 0 {
+		return nil
+	}
+	baseOut := baseTags.ToStringMapOutput()
+	return ctx.RegisterStackTransformation(func(args *pulumi.ResourceTransformationArgs) *pulumi.ResourceTransformationResult {
+		if !strings.HasPrefix(args.Type, "azure-native:") {
+			return nil
+		}
+		v := reflect.ValueOf(args.Props)
+		if v.Kind() != reflect.Ptr || v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+		if v.Kind() != reflect.Struct {
+			return nil
+		}
+		f := v.FieldByName("Tags")
+		if !f.IsValid() || !f.CanSet() {
+			return nil
+		}
+		if !f.Type().Implements(stringMapInputType) && f.Type() != stringMapInputType {
+			return nil
+		}
+
+		var existingOut pulumi.StringMapOutput
+		if iface := f.Interface(); iface != nil {
+			if existing, ok := iface.(pulumi.StringMapInput); ok {
+				existingOut = existing.ToStringMapOutput()
+			} else {
+				existingOut = pulumi.StringMap{}.ToStringMapOutput()
+			}
+		} else {
+			existingOut = pulumi.StringMap{}.ToStringMapOutput()
+		}
+
+		merged := pulumi.All(baseOut, existingOut).ApplyT(func(parts []interface{}) map[string]string {
+			out := map[string]string{}
+			if base, ok := parts[0].(map[string]string); ok {
+				for k, v := range base {
+					out[k] = v
+				}
+			}
+			if existing, ok := parts[1].(map[string]string); ok {
+				for k, v := range existing {
+					out[k] = v
+				}
+			}
+			return out
+		}).(pulumi.StringMapOutput)
+
+		f.Set(reflect.ValueOf(merged))
+		return &pulumi.ResourceTransformationResult{Props: args.Props, Opts: args.Opts}
+	})
 }
 
 // KeyVaultName returns the deterministic Key Vault name for the given Defang

@@ -121,7 +121,7 @@ func createACRTask(
 			Cpu: pulumi.Int(2),
 		},
 		Timeout: pulumi.Int(3600),
-		Tags:    DefangTags(ctx, infra.Etag, serviceName),
+		Tags:    ServiceTags(serviceName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACR task: %w", err)

@@ -255,12 +255,11 @@ func createServiceResources(
 // createProjectResourceGroup creates (or imports) the project's resource group.
 func createProjectResourceGroup(
 	ctx *pulumi.Context,
-	name, location, etag string,
+	name, location string,
 	childOpts []pulumi.ResourceOption,
 ) (*resources.ResourceGroup, error) {
 	rgArgs := &resources.ResourceGroupArgs{
 		Location: pulumi.String(location),
-		Tags:     providerazure.DefangTags(ctx, etag, ""),
 	}
 	rgOpts := childOpts
 	if existingRG := providerazure.ExistingResourceGroup(ctx, name); existingRG != "" {
@@ -297,7 +296,6 @@ func createManagedEnvironment(
 			Name: pulumi.String("PerGB2018"),
 		},
 		RetentionInDays: pulumi.Int(30),
-		Tags:            providerazure.DefangTags(ctx, infra.Etag, ""),
 	}, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
@@ -317,7 +315,6 @@ func createManagedEnvironment(
 				SharedKey:  logKeys.PrimarySharedKey(),
 			},
 		},
-		Tags: providerazure.DefangTags(ctx, infra.Etag, ""),
 	}
 	if infra.Networking != nil {
 		envArgs.VnetConfiguration = &app.VnetConfigurationArgs{
@@ -346,7 +343,7 @@ func setupSharedInfra(
 ) (*providerazure.SharedInfra, map[string]string, error) {
 	location := providerazure.Location(ctx)
 
-	rg, err := createProjectResourceGroup(ctx, name, location, inputs.Etag, childOpts)
+	rg, err := createProjectResourceGroup(ctx, name, location, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -101,7 +101,7 @@ func CreateLLMInfra(
 			CustomSubDomainName:    subDomainName.ToStringPtrOutput(),
 			PublicNetworkAccess:    publicAccess,
 		},
-		Tags: DefangTags(ctx, infra.Etag, name),
+		Tags: ServiceTags(name),
 	}, append(opts, pulumi.ReplaceOnChanges([]string{"properties.customSubDomainName"}))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure AI Foundry account: %w", err)
@@ -273,7 +273,7 @@ func createLLMPrivateEndpoint(
 				GroupIds:             pulumi.StringArray{pulumi.String("account")},
 			},
 		},
-		Tags: DefangTags(ctx, infra.Etag, "llm"),
+		Tags: ServiceTags("llm"),
 	}, opts...)
 	if err != nil {
 		return fmt.Errorf("creating LLM private endpoint: %w", err)
@@ -342,7 +342,7 @@ func createLLMPrivatelinkZone(
 		ResourceGroupName: infra.ResourceGroup.Name,
 		Location:          pulumi.String("global"),
 		PrivateZoneName:   pulumi.String(zoneName),
-		Tags:              DefangTags(ctx, infra.Etag, "llm"),
+		Tags:              ServiceTags("llm"),
 	}, opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating %s private DNS zone: %w", zoneName, err)

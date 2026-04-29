@@ -291,7 +291,7 @@ func CreateContainerApp(
 		ContainerAppName:     pulumi.StringPtr(serviceName),
 		ManagedEnvironmentId: infra.Environment.ID().ToStringOutput(),
 		Identity:             identity,
-		Tags:                 DefangTags(ctx, infra.Etag, serviceName),
+		Tags:                 ServiceTags(serviceName),
 		Configuration: &app.ConfigurationArgs{
 			Ingress:    ingress,
 			Registries: registries,
