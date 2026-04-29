@@ -85,7 +85,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${stack}${name}${hex(7)}"},
 							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 							// 5-50	Alphanumerics, hyphens, and underscores
-							"azure-native:containerregistry:Task": map[string]string{"pattern": "${stack}-${name}-${hex(7)}"},
+							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
 						},
 					},
 				},
