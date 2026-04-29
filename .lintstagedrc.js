@@ -38,7 +38,9 @@ function goHook(files) {
   if (buildPkgs.length > 0) {
     cmds.push(`go build ${buildPkgs.join(' ')}`);
   }
-  cmds.push(`go test -count=1 -timeout 5m ${testPkgs.join(' ')}`);
+  // Omit -count=1 so the Go test cache hits when nothing in the staged
+  // packages or their deps changed since the last run.
+  cmds.push(`go test -short -timeout 5m ${testPkgs.join(' ')}`);
   return cmds;
 }
 
