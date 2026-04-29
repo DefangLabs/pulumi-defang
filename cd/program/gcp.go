@@ -1,20 +1,24 @@
 package program
 
 import (
+	"fmt"
+
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
 	gcpcompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
+	"google.golang.org/protobuf/proto"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	gcpCfg := config.New(ctx, "gcp")
-
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project: pulumi.StringPtr(gcpCfg.Require("project")),
-		Region:  pulumi.StringPtr(gcpCfg.Require("region")),
+		Project: pulumi.StringPtr(config.GetProject(ctx)),
+		Region:  pulumi.StringPtr(config.GetRegion(ctx)),
 		DefaultLabels: pulumi.StringMap{
 			"defang-org":     pulumi.String(ctx.Organization()),
 			"defang-project": pulumi.String(ctx.Project()),
@@ -35,8 +39,17 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectPb []byte) (pulu
 	// the project component so it only runs after all services are created.
 	// pulumi.Provider(gcpProvider) is required because
 	// pulumi:disable-default-providers excludes gcp (see cd/main.go projectConfig).
-	if len(projectPb) > 0 {
-		if err := saveProjectPbGCP(ctx, projectPb, project, pulumi.Provider(gcpProvider)); err != nil {
+	if projectUpdate != nil {
+		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
+			for _, svc := range projectUpdate.Services {
+				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
+					svc.Endpoints = []string{ep}
+				}
+			}
+			return proto.Marshal(projectUpdate)
+		}).(pulumi.AnyOutput)
+
+		if err := saveProjectPbGCP(ctx, updatedPb, project, pulumi.Provider(gcpProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}
@@ -151,4 +164,31 @@ func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
 		args.Llm = gcpcompose.LlmConfigArgs{}
 	}
 	return args
+}
+
+// saveProjectPbGCP uploads data as a Pulumi-managed GCS object at the key
+// derived from DEFANG_STATE_URL. See saveProjectPbAWS for semantics.
+// data is a pulumi.AnyOutput wrapping []byte so callers can produce the bytes
+// inside an ApplyT (e.g. after updating endpoints) without creating resources
+// inside that callback.
+func saveProjectPbGCP(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
+	u, err := parseStateURL(ctx)
+	if err != nil || u == nil {
+		return err
+	}
+	if u.Scheme != "gs" || u.Host == "" {
+		return fmt.Errorf("DEFANG_STATE_URL must be a gs:// URL with a bucket for GCP uploads, got %q", u.String())
+	}
+
+	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
+		return NewTempFileAsset("project-pb-*.pb", v.([]byte))
+	}).(pulumi.AssetOutput)
+
+	_, err = storage.NewBucketObject(ctx, "project-pb", &storage.BucketObjectArgs{
+		Bucket:      pulumi.String(u.Host),
+		Name:        pulumi.String(projectPbKey(ctx)),
+		Source:      source,
+		ContentType: pulumi.String(protobufContentType),
+	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
+	return err
 }
