@@ -173,7 +173,7 @@ func buildServiceImage(
 
 	task, err := createACRTask(
 		ctx,
-		serviceName+"-build",
+		serviceName,
 		encodedYAML,
 		svc.Build.Context,
 		infra.registry,
@@ -192,7 +192,7 @@ func buildServiceImage(
 	// rebuild even when source is unchanged. Real source changes propagate via
 	// triggers (buildTriggerHash strips the SAS before hashing).
 	buildOpts := append([]pulumi.ResourceOption{pulumi.IgnoreChanges([]string{"contextPath"})}, opts...)
-	err = ctx.RegisterResource("defang-azure:index:ACRImageBuild", serviceName+"-build", pulumi.Map{
+	err = ctx.RegisterResource("defang-azure:index:ACRImageBuild", serviceName, pulumi.Map{
 		"subscriptionId":     infra.subscriptionID,
 		"resourceGroupName":  sharedInfra.ResourceGroup.Name,
 		"registryName":       infra.registry.Name,

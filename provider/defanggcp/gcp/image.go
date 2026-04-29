@@ -257,7 +257,7 @@ func buildServiceImage(
 	var buildRes gcpBuildResource
 	if err := ctx.RegisterResource(
 		"defang-gcp:defanggcp:Build",
-		serviceName+"-build",
+		serviceName,
 		pulumi.Map{
 			"projectId":      pulumi.String(infra.GcpProject),
 			"location":       pulumi.String(infra.Region),
