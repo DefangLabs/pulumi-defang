@@ -16,7 +16,7 @@ type Postgres struct{}
 
 // PostgresInputs defines the inputs for a standalone AWS RDS Postgres instance.
 type PostgresInputs struct {
-	ProjectName string                   `pulumi:"project_name"`
+	ProjectName string                   `pulumi:"projectName"`
 	Postgres    *compose.PostgresConfig  `pulumi:"postgres,optional"`
 	Image       *string                  `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig    `pulumi:"deploy,optional"`
@@ -28,6 +28,10 @@ type PostgresInputs struct {
 type PostgresOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	// InstanceIdentifier is the RDS DBInstanceIdentifier — exposed so consumers
+	// can attach their own CloudWatch MetricAlarms (e.g. CPUUtilization,
+	// FreeStorageSpace) without Defang owning the notification destination.
+	InstanceIdentifier pulumi.StringOutput `pulumi:"instanceIdentifier"`
 	// Dependency is an internal-only handle (CNAME record or RDS instance) used by
 	// downstream services for ordering. Untagged — not part of the SDK schema.
 	Dependency pulumi.Resource
@@ -106,8 +110,12 @@ func createPostgres(
 		pulumix.Output[string](rdsResult.Instance.Address), func(addr string) string {
 			return fmt.Sprintf("%s:%d", addr, 5432)
 		}))
+	comp.InstanceIdentifier = rdsResult.Instance.Identifier
 
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": comp.Endpoint}); err != nil {
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"endpoint":           comp.Endpoint,
+		"instanceIdentifier": comp.InstanceIdentifier,
+	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
 	return nil

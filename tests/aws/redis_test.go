@@ -24,7 +24,7 @@ func TestConstructAwsRedis(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"aws":          awsConfig,
 		}),
 	})
@@ -38,7 +38,7 @@ func TestConstructAwsRedisWithImage(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
 			"aws":          awsConfig,
 		}),
@@ -53,7 +53,7 @@ func TestConstructAwsRedisWithValkey(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("valkey/valkey:8"),
 			"aws":          awsConfig,
 		}),
@@ -68,7 +68,7 @@ func TestConstructAwsRedisWithCustomPort(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
 			"ports": property.New(property.NewArray([]property.Value{
 				property.New(property.NewMap(map[string]property.Value{
@@ -89,7 +89,7 @@ func TestConstructAwsRedisWithAllowDowntime(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
 			"redis": property.New(property.NewMap(map[string]property.Value{
 				"allowDowntime": property.New(true),
@@ -107,7 +107,7 @@ func TestConstructAwsRedisWithVPC(t *testing.T) {
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Redis"),
 		Inputs: property.NewMap(map[string]property.Value{
-			"project_name": property.New("myproject"),
+			"projectName": property.New("myproject"),
 			"image":        property.New("redis:7.2"),
 			"aws": property.New(property.NewMap(map[string]property.Value{
 				"vpcID": property.New("vpc-0123456789abcdef0"),
