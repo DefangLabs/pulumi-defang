@@ -5,6 +5,7 @@ import (
 
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -24,19 +25,18 @@ func CreateKeyVaultIdentity(
 	ctx *pulumi.Context,
 	vaultName string,
 	infra *SharedInfra,
-	location string,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	identity, err := managedidentity.NewUserAssignedIdentity(
 		ctx, "kv", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
-			Location:          pulumi.String(location),
+			// Location:          pulumi.String(location),
 		}, opts...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating KV managed identity: %w", err)
 	}
 
-	subID := SubscriptionID(ctx)
+	subID := config.GetSubscriptionId(ctx)
 	roleDefID := fmt.Sprintf(
 		"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
 		subID, keyVaultSecretsUserRoleID,

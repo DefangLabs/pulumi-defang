@@ -90,9 +90,9 @@ func buildPostgresServerArgs(
 
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          infra.ResourceGroup.Location,
-		ServerName:        serverName.ToStringPtrOutput(),
-		Version:           pg.Version,
+		// Location:          infra.ResourceGroup.Location,
+		ServerName: serverName.ToStringPtrOutput(),
+		Version:    pg.Version,
 		Sku: &dbforpostgresql.SkuArgs{
 			Name: pulumi.String(SkuName.Get(ctx)),
 			Tier: pulumi.String(string(dbforpostgresql.SkuTierBurstable)),

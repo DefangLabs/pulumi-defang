@@ -71,7 +71,6 @@ func CreateRedisEnterprise(
 		return nil, ErrRedisConfigNil
 	}
 
-	location := Location(ctx)
 	skuName := selectEnterpriseSkuName(svc.GetMemoryMiB())
 
 	// HighAvailability is enabled by default (data is replicated).
@@ -84,7 +83,7 @@ func CreateRedisEnterprise(
 
 	cluster, err := redis.NewRedisEnterprise(ctx, serviceName, &redis.RedisEnterpriseArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.StringPtr(location),
+		// Location:          pulumi.StringPtr(location),
 		MinimumTlsVersion: pulumi.String("1.2"),
 		HighAvailability:  pulumi.String(haValue),
 		Sku: redis.SkuArgs{
@@ -140,7 +139,7 @@ func CreateRedisEnterprise(
 	}, pulumi.Parent(cluster))
 
 	if useVNet {
-		if err := createRedisVNetEndpoint(ctx, serviceName, location, cluster, infra, opts...); err != nil {
+		if err := createRedisVNetEndpoint(ctx, serviceName, cluster, infra, opts...); err != nil {
 			return nil, err
 		}
 	}
@@ -161,14 +160,14 @@ func CreateRedisEnterprise(
 // the Redis cluster stays within the VNet (Plaintext protocol, plain redis:// URL).
 func createRedisVNetEndpoint(
 	ctx *pulumi.Context,
-	serviceName, location string,
+	serviceName string,
 	cluster *redis.RedisEnterprise,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
 	pe, err := network.NewPrivateEndpoint(ctx, serviceName, &network.PrivateEndpointArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.StringPtr(location),
+		// Location:          pulumi.StringPtr(location),
 		Subnet: &network.SubnetTypeArgs{
 			Id: infra.Networking.PrivateEndpointsSubnet.ID().ToStringOutput(),
 		},

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -76,8 +77,8 @@ func CreateLLMInfra(
 
 	account, err := cognitiveservices.NewAccount(ctx, name, &cognitiveservices.AccountArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.StringPtr(Location(ctx)),
-		Kind:              pulumi.String("AIServices"),
+		// Location:          pulumi.StringPtr(config.GetLocation(ctx)),
+		Kind: pulumi.String("AIServices"),
 		Sku: &cognitiveservices.SkuArgs{
 			Name: pulumi.String("S0"),
 		},
@@ -120,7 +121,7 @@ func CreateLLMInfra(
 	var selector ModelSelector
 	if !ctx.DryRun() {
 		selector = NewDynamicModelSelector(
-			SubscriptionID(ctx),
+			config.GetSubscriptionId(ctx),
 			infra.ResourceGroup.Name.ToStringOutput(),
 			account.Name.ToStringOutput(),
 		)

@@ -106,7 +106,7 @@ func createACRTask(
 	task, err := containerregistry.NewTask(ctx, name, &containerregistry.TaskArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		RegistryName:      registry.Name,
-		Location:          registry.Location,
+		// Location:          registry.Location,
 		Platform: &containerregistry.PlatformPropertiesArgs{
 			Os: pulumi.String("Linux"),
 		},

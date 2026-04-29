@@ -61,10 +61,8 @@ func (*Service) Construct(
 		DomainName:  inputs.DomainName,
 	}
 
-	location := azure.Location(ctx)
-
 	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
-		Location: pulumi.String(location),
+		// Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
@@ -72,7 +70,7 @@ func (*Service) Construct(
 
 	env, err := azureapp.NewManagedEnvironment(ctx, name, &azureapp.ManagedEnvironmentArgs{
 		ResourceGroupName: rg.Name,
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 	}, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)

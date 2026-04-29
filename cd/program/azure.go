@@ -18,7 +18,7 @@ import (
 
 func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &pulumiazure.ProviderArgs{
-		Location:                  pulumi.StringPtr(config.GetLocation(ctx)),
+		Location:                  pulumi.String(config.GetLocation(ctx)),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
 	}
 	if subID := config.GetSubscriptionId(ctx); subID != "" {

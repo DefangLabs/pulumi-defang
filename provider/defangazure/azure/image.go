@@ -81,14 +81,13 @@ func CreateBuildInfra(
 	ctx *pulumi.Context,
 	name string,
 	infra *SharedInfra,
-	location string,
 	opts ...pulumi.ResourceOption,
 ) (*BuildInfra, error) {
 	// Use sanitized name as the Pulumi logical name so auto-naming produces an
 	// alphanumeric base; Pulumi appends a random suffix for global uniqueness.
 	registry, err := containerregistry.NewRegistry(ctx, sanitizeRegistryName(name), &containerregistry.RegistryArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 		Sku: &containerregistry.SkuArgs{
 			Name: pulumi.String(string(containerregistry.SkuNameStandard)),
 		},
@@ -103,7 +102,7 @@ func CreateBuildInfra(
 	identity, err := managedidentity.NewUserAssignedIdentity(
 		ctx, "acr", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
-			Location:          pulumi.String(location),
+			// Location:          pulumi.String(location),
 		}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed identity: %w", err)
