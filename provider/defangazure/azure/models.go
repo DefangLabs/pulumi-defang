@@ -140,7 +140,7 @@ func listModels(subscriptionID, resourceGroup, accountName string) ([]availableM
 		return nil, fmt.Errorf("creating cognitive services client: %w", err)
 	}
 
-	ctx := context.Background()
+	ctx := context.TODO()
 
 	if accountName == "" {
 		return nil, fmt.Errorf("%w: resource group %s", ErrNoAIServicesAccount, resourceGroup)

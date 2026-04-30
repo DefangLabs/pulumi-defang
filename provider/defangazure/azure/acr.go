@@ -99,7 +99,7 @@ func generateTaskYAML(serviceName, dockerfilePath string, buildArgs map[string]s
 // strips SAS query strings from contextPath; it is passed at run time instead.
 func createACRTask(
 	ctx *pulumi.Context,
-	name, serviceName string,
+	serviceName string,
 	encodedYAML string,
 	contextURL pulumi.StringInput,
 	registry *containerregistry.Registry,
@@ -111,18 +111,18 @@ func createACRTask(
 		if idx := strings.Index(s, "?"); idx >= 0 {
 			base := s[:idx]
 			msg := fmt.Sprintf("ACR task %s: build context URL: %s (SAS token present, %d bytes)",
-				name, base, len(s)-idx-1)
+				serviceName, base, len(s)-idx-1)
 			_ = ctx.Log.Info(msg, nil)
 		} else {
-			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", name, s), nil)
+			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", serviceName, s), nil)
 		}
 		return s
 	})
 
-	task, err := containerregistry.NewTask(ctx, name, &containerregistry.TaskArgs{
+	task, err := containerregistry.NewTask(ctx, serviceName, &containerregistry.TaskArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		RegistryName:      registry.Name,
-		Location:          registry.Location,
+		// Location:          registry.Location,
 		Platform: &containerregistry.PlatformPropertiesArgs{
 			Os: pulumi.String("Linux"),
 		},

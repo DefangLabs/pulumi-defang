@@ -25,7 +25,6 @@ type BuildInfra struct {
 	ecrRepo       *ecr.Repository
 	ecrRepoURL    pulumix.Output[string]
 	logGroup      *cloudwatch.LogGroup
-	profile       string
 	region        string
 }
 
@@ -34,7 +33,7 @@ type BuildInfra struct {
 func CreateBuildInfra(
 	ctx *pulumi.Context,
 	logGroup *cloudwatch.LogGroup,
-	profile, region string,
+	region string,
 	opts ...pulumi.ResourceOption,
 ) (*BuildInfra, error) {
 	ecrResult, err := createECRRepo(ctx, "build", opts...)
@@ -52,7 +51,6 @@ func CreateBuildInfra(
 		ecrRepoURL:    ecrResult.repoURL,
 		codeBuildRole: cbRole,
 		logGroup:      logGroup,
-		profile:       profile,
 		region:        region,
 	}, nil
 }
@@ -69,7 +67,7 @@ type imageBuildResult struct {
 // Used with ctx.RegisterResource to create the resource from within the component.
 type codeBuildImageBuildResource struct {
 	pulumi.CustomResourceState
-	BuildID pulumi.StringOutput `pulumi:"buildId"`
+	BuildId pulumi.StringOutput `pulumi:"buildId"`
 	Image   pulumi.StringOutput `pulumi:"image"`
 }
 
@@ -115,9 +113,8 @@ func buildServiceImage(
 	// region.Region
 
 	var buildResource codeBuildImageBuildResource
-	err = ctx.RegisterResource("defang-aws:index:Build", serviceName+"-build", pulumi.Map{
+	err = ctx.RegisterResource("defang-aws:index:Build", serviceName, pulumi.Map{
 		"projectName": cbResult.project.Name,
-		"profile":     pulumi.String(infra.profile),
 		"region":      pulumi.String(infra.region),
 		"destination": cbResult.destination,
 		"triggers":    pulumi.StringArray{triggerHash},

@@ -23,12 +23,11 @@ func CreateNetworking(
 	ctx *pulumi.Context,
 	name string,
 	infra *SharedInfra,
-	location string,
 	opts ...pulumi.ResourceOption,
 ) (*NetworkingResult, error) {
 	vnet, err := network.NewVirtualNetwork(ctx, name, &network.VirtualNetworkArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 		AddressSpace: &network.AddressSpaceArgs{
 			AddressPrefixes: pulumi.StringArray{pulumi.String("10.0.0.0/16")},
 		},

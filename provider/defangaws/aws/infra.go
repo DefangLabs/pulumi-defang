@@ -12,7 +12,6 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/route53"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 // CreateProjectInfra creates shared AWS infrastructure for a multi-service project.
@@ -69,12 +68,10 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("creating execution role: %w", err)
 	}
 
-	awsProfile := config.New(ctx, "aws").Get("profile")
-
 	var imgInfra *BuildInfra
 	for _, svc := range services {
 		if svc.NeedsBuild() {
-			imgInfra, err = CreateBuildInfra(ctx, logGroup, awsProfile, region.Region, opt)
+			imgInfra, err = CreateBuildInfra(ctx, logGroup, region.Region, opt)
 			if err != nil {
 				return nil, fmt.Errorf("creating image build infrastructure: %w", err)
 			}

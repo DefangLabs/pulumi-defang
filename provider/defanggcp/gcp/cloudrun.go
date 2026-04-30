@@ -65,7 +65,7 @@ func CreateCloudRunService(
 
 	// Create Cloud Run service (depends on IAM bindings)
 	serviceArgs := &cloudrunv2.ServiceArgs{
-		Location:           pulumi.String(gcpConfig.Region),
+		Location:           pulumi.String(gcpConfig.Region), // required
 		Ingress:            pulumi.String(Ingress.Get(ctx)),
 		InvokerIamDisabled: pulumi.Bool(true),
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),

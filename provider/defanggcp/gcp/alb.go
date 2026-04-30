@@ -65,10 +65,13 @@ func createExternalLoadBalancers(
 	entries []LBServiceEntry,
 	opts ...pulumi.ResourceOption,
 ) error {
-	// Filter to services with ingress ports
+	// Filter to services that can be wired into the external LB. Managed services
+	// (Postgres/Redis) and CloudRunJob entries have no HTTP backend and would
+	// otherwise reach buildLBEntry's fall-through, which returns a zero-value
+	// pulumi.IDOutput and panics when ToStringOutput is called on it.
 	var ingressEntries []LBServiceEntry
 	for _, e := range entries {
-		if e.Config.HasIngressPorts() {
+		if e.Config.HasIngressPorts() && (e.CloudRunService != nil || e.InstanceGroup != nil) {
 			ingressEntries = append(ingressEntries, e)
 		}
 	}
@@ -87,7 +90,7 @@ func createExternalLoadBalancers(
 				return err
 			}
 			for _, port := range entry.Config.Ports {
-				if port.Mode != compose.PortModeIngress {
+				if !port.IsIngress() {
 					continue
 				}
 				portDomain := fmt.Sprintf("%s--%d.%s", entry.Name, port.Target, config.Domain)
@@ -221,7 +224,7 @@ func createInternalLoadBalancer(
 			internalAlbServices = append(internalAlbServices, service.Name)
 		case service.InstanceGroup != nil && service.PrivateFqdn != "":
 			// When there is only one ingress port, use the same ALB as the cloud run services
-			if len(service.Config.Ports) == 1 && service.Config.Ports[0].Mode == "ingress" {
+			if len(service.Config.Ports) == 1 && service.Config.Ports[0].IsIngress() {
 				port := service.Config.Ports[0]
 				portTargetStr := strconv.FormatInt(int64(port.Target), 10)
 				portProto := port.GetProtocol()
@@ -584,6 +587,11 @@ func buildURLMap(
 		if err != nil {
 			return nil, err
 		}
+		// Skip entries with no applicable backend: appending a nil matcher panics in
+		// the SDK, and ToStringOutput on a zero-value IDOutput panics on a nil receiver.
+		if matcher == nil {
+			continue
+		}
 		pathMatchers = append(pathMatchers, matcher)
 		if hostRule != nil {
 			hostRules = append(hostRules, hostRule)
@@ -668,7 +676,10 @@ func buildMIGLBEntry(
 	opts ...pulumi.ResourceOption,
 ) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
 	for _, port := range entry.Config.Ports {
-		if port.Mode != compose.PortModeIngress {
+		// Use IsIngress() so a default (empty) Mode is treated as ingress, matching
+		// HasIngressPorts() — otherwise the filter in createExternalLoadBalancers admits
+		// the entry but we fall through to the zero-value return, which panics later.
+		if !port.IsIngress() {
 			continue
 		}
 		portStr := strconv.Itoa(int(port.Target))

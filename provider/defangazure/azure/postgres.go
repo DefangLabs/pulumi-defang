@@ -90,7 +90,6 @@ func buildPostgresServerArgs(
 
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          infra.ResourceGroup.Location,
 		ServerName:        serverName.ToStringPtrOutput(),
 		Version:           pg.Version,
 		Tags:              ServiceTags(serviceName),

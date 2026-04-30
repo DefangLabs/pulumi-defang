@@ -44,10 +44,8 @@ func (*Postgres) Construct(
 		Environment: inputs.Environment,
 	}
 
-	location := azure.Location(ctx)
-
 	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
-		Location: pulumi.String(location),
+		// Location: pulumi.String(location),
 	}, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)

@@ -6,11 +6,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -255,18 +257,18 @@ func createServiceResources(
 // createProjectResourceGroup creates (or imports) the project's resource group.
 func createProjectResourceGroup(
 	ctx *pulumi.Context,
-	name, location string,
+	name string,
 	childOpts []pulumi.ResourceOption,
 ) (*resources.ResourceGroup, error) {
 	rgArgs := &resources.ResourceGroupArgs{
-		Location: pulumi.String(location),
+		// Location: pulumi.String(location),
 	}
 	rgOpts := childOpts
 	if existingRG := providerazure.ExistingResourceGroup(ctx, name); existingRG != "" {
 		// Import the existing RG: ResourceGroupName must match so Pulumi doesn't
 		// propose a replacement on subsequent refreshes.
 		rgArgs.ResourceGroupName = pulumi.String(existingRG)
-		subID := providerazure.SubscriptionID(ctx)
+		subID := config.GetSubscriptionId(ctx)
 		rgID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subID, existingRG)
 		rgOpts = append(rgOpts, pulumi.Import(pulumi.ID(rgID)))
 	}
@@ -284,18 +286,18 @@ func createProjectResourceGroup(
 // interface to ResourceOption.
 func createManagedEnvironment(
 	ctx *pulumi.Context,
-	name, location string,
+	name string,
 	infra *providerazure.SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
 	childOpts []pulumi.ResourceOption,
 ) (*app.ManagedEnvironment, error) {
 	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
-			Name: pulumi.String("PerGB2018"),
+			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
-		RetentionInDays: pulumi.Int(30),
+		RetentionInDays: pulumi.Int(common.LogRetentionDays.Get(ctx)),
 	}, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
@@ -307,7 +309,7 @@ func createManagedEnvironment(
 
 	envArgs := &app.ManagedEnvironmentArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 		AppLogsConfiguration: &app.AppLogsConfigurationArgs{
 			Destination: pulumi.String("log-analytics"),
 			LogAnalyticsConfiguration: &app.LogAnalyticsConfigurationArgs{
@@ -341,9 +343,7 @@ func setupSharedInfra(
 	parentOpt pulumi.ResourceOrInvokeOption,
 	childOpts []pulumi.ResourceOption,
 ) (*providerazure.SharedInfra, map[string]string, error) {
-	location := providerazure.Location(ctx)
-
-	rg, err := createProjectResourceGroup(ctx, name, location, childOpts)
+	rg, err := createProjectResourceGroup(ctx, name, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -367,7 +367,7 @@ func setupSharedInfra(
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {
-		networking, err := providerazure.CreateNetworking(ctx, name, infra, location, childOpts...)
+		networking, err := providerazure.CreateNetworking(ctx, name, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating networking: %w", err)
 		}
@@ -382,7 +382,7 @@ func setupSharedInfra(
 		infra.DNS = dns
 	}
 
-	env, err := createManagedEnvironment(ctx, name, location, infra, parentOpt, childOpts)
+	env, err := createManagedEnvironment(ctx, name, infra, parentOpt, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -397,7 +397,7 @@ func setupSharedInfra(
 	}
 
 	if types.hasBuild {
-		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, location, childOpts...)
+		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating build infrastructure: %w", err)
 		}
@@ -405,7 +405,7 @@ func setupSharedInfra(
 	}
 
 	if kvName := providerazure.KeyVaultName(ctx, name); kvName != "" {
-		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, infra, location, childOpts...)
+		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating Key Vault identity: %w", err)
 		}

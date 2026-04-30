@@ -3,21 +3,22 @@ package program
 import (
 	"errors"
 	"fmt"
-	"log"
 
-	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
-	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 )
 
+// Version is the build version string set by main via -ldflags. Per-provider
+// deploy funcs read this directly (e.g. aws.go, gcp.go) so that user-visible
+// resources can be tagged with the defang version that produced them.
+var Version = "development"
+
 // Etag (defang:etag) is read inside NewRun and threaded into each per-provider
-// deploy func; Version (defang:version) is read inside those deploy funcs
-// directly (e.g. aws.go, gcp.go). Storing both as Pulumi stack config means the
-// deployment state file records exactly what was used — no env var or global
-// to inspect after the fact.
+// deploy func, so the deployment state file records exactly which etag was
+// used — no env var to inspect after the fact.
 
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 	cf := compose.Project{Name: projectName}
@@ -28,10 +29,10 @@ func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 }
 
 // NewRun returns a Pulumi inline program that deploys the given compose YAML.
-// projectPb is the raw ProjectUpdate protobuf; each per-provider deploy
+// projectUpdate is the ProjectUpdate protobuf; each per-provider deploy
 // function uploads it as a Pulumi-managed blob at the end of the deploy
 // (gated on the project component so the upload only happens on success).
-func NewRun(projectPb []byte) pulumi.RunFunc {
+func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
 		defangCfg := config.New(ctx, "defang")
 
@@ -39,11 +40,14 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 		domain := defangCfg.Get("domain")         // optional project domain
 		etag := defangCfg.Get("etag")             // deployment identifier; empty in local dev
 
-		composeYaml, err := extractComposeYaml(projectPb)
-		if err != nil {
-			log.Fatalf("failed to extract compose: %v", err)
+		if projectUpdate == nil {
+			return errors.New("ProjectUpdate is nil")
 		}
-		project, err := parseCompose(composeYaml, ctx.Project())
+		if len(projectUpdate.Compose) == 0 {
+			return errors.New("ProjectUpdate has no compose field")
+		}
+
+		project, err := parseCompose(projectUpdate.Compose, ctx.Project())
 		if err != nil {
 			return err
 		}
@@ -53,11 +57,11 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, projectPb)
+			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, projectUpdate)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectPb)
+			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectUpdate)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, project, etag, projectPb)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project, etag, projectUpdate)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}
@@ -70,19 +74,4 @@ func NewRun(projectPb []byte) pulumi.RunFunc {
 
 		return nil
 	}
-}
-
-// extractComposeYaml unmarshals a ProjectUpdate protobuf and returns its
-// embedded compose YAML bytes. Errors if the protobuf is malformed or the
-// Compose field is empty (e.g. the CLI sent a ProjectUpdate without a
-// compose file).
-func extractComposeYaml(projectUpdate []byte) ([]byte, error) {
-	var pu defangv1.ProjectUpdate
-	if err := proto.Unmarshal(projectUpdate, &pu); err != nil {
-		return nil, fmt.Errorf("unmarshaling ProjectUpdate: %w", err)
-	}
-	if len(pu.Compose) == 0 {
-		return nil, errors.New("ProjectUpdate has no compose field")
-	}
-	return pu.Compose, nil
 }

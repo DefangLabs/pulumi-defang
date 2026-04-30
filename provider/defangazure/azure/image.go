@@ -35,11 +35,11 @@ func (b *BuildInfra) ManagedIdentityID() pulumi.StringOutput { return b.managedI
 // LoginServer returns the ACR login server hostname (e.g. "myregistry.azurecr.io").
 func (b *BuildInfra) LoginServer() pulumi.StringOutput { return b.registry.LoginServer }
 
-// acrImageBuildResource is the Pulumi resource state for the ACRImageBuild custom resource.
+// acrImageBuildResource is the Pulumi resource state for the ACRImage Build custom resource.
 // Used with ctx.RegisterResource to create the resource from within the component.
 type acrImageBuildResource struct {
 	pulumi.CustomResourceState
-	RunID pulumi.StringOutput `pulumi:"runId"`
+	RunId pulumi.StringOutput `pulumi:"runId"`
 	Image pulumi.StringOutput `pulumi:"image"`
 }
 
@@ -81,16 +81,15 @@ func CreateBuildInfra(
 	ctx *pulumi.Context,
 	name string,
 	infra *SharedInfra,
-	location string,
 	opts ...pulumi.ResourceOption,
 ) (*BuildInfra, error) {
 	// Use sanitized name as the Pulumi logical name so auto-naming produces an
 	// alphanumeric base; Pulumi appends a random suffix for global uniqueness.
 	registry, err := containerregistry.NewRegistry(ctx, sanitizeRegistryName(name), &containerregistry.RegistryArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 		Sku: &containerregistry.SkuArgs{
-			Name: pulumi.String(string(containerregistry.SkuNameStandard)),
+			Name: pulumi.String(RegistrySku.Get(ctx)),
 		},
 	}, opts...)
 	if err != nil {
@@ -103,7 +102,7 @@ func CreateBuildInfra(
 	identity, err := managedidentity.NewUserAssignedIdentity(
 		ctx, "acr", &managedidentity.UserAssignedIdentityArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
-			Location:          pulumi.String(location),
+			// Location:          pulumi.String(location),
 		}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed identity: %w", err)
@@ -149,7 +148,7 @@ type imageBuildResult struct {
 }
 
 // buildServiceImage builds a container image via ACR Tasks for a service.
-// Creates an ACR task definition and an ACRImageBuild custom resource that triggers the run.
+// Creates an ACR task definition and an ACRImage Build custom resource that triggers the run.
 func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -172,7 +171,6 @@ func buildServiceImage(
 
 	task, err := createACRTask(
 		ctx,
-		serviceName+"-build",
 		serviceName,
 		encodedYAML,
 		svc.Build.Context,
@@ -192,7 +190,7 @@ func buildServiceImage(
 	// rebuild even when source is unchanged. Real source changes propagate via
 	// triggers (buildTriggerHash strips the SAS before hashing).
 	buildOpts := append([]pulumi.ResourceOption{pulumi.IgnoreChanges([]string{"contextPath"})}, opts...)
-	err = ctx.RegisterResource("defang-azure:index:ACRImageBuild", serviceName+"-build", pulumi.Map{
+	err = ctx.RegisterResource("defang-azure:index:Build", serviceName, pulumi.Map{
 		"subscriptionId":     infra.subscriptionID,
 		"resourceGroupName":  sharedInfra.ResourceGroup.Name,
 		"registryName":       infra.registry.Name,
@@ -205,7 +203,7 @@ func buildServiceImage(
 		"triggers":           pulumi.StringArray{triggerHash},
 	}, &buildResource, buildOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating ACRImageBuild resource for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("creating ACRImage Build resource for %s: %w", serviceName, err)
 	}
 
 	return &imageBuildResult{imageURI: buildResource.Image}, nil

@@ -8,7 +8,9 @@ var (
 	DeletionProtection  = common.DeletionProtection
 	GeoRedundantBackup  = common.Bool("geo-redundant-backup", false)
 	HighAvailability    = common.Bool("high-availability", false)
+	LogWorkspaceSku     = common.String("log-workspace-sku", "PerGB2018")
 	MaxReplicas         = common.Int("max-replicas", 0)
+	RegistrySku         = common.String("registry-sku", "Standard")
 	SkuName             = common.String("sku-name", "Standard_B1ms")
 	StorageSizeGB       = common.Int("storage-size-gb", 32)
 )

@@ -9,6 +9,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
+	azureconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
@@ -135,7 +136,7 @@ func DefaultTagsTransformation(baseTags pulumi.StringMap) pulumi.ResourceTransfo
 // may differ from ctx.Project() — a single Pulumi project can host multiple
 // Defang Compose projects.
 func KeyVaultName(ctx *pulumi.Context, composeProject string) string {
-	subID := SubscriptionID(ctx)
+	subID := azureconfig.GetSubscriptionId(ctx)
 	if subID == "" {
 		return ""
 	}
@@ -144,7 +145,7 @@ func KeyVaultName(ctx *pulumi.Context, composeProject string) string {
 		rg = ExistingResourceGroup(ctx, composeProject)
 	}
 	h := sha256.Sum256([]byte(subID + "|" + rg))
-	return "kv-" + hex.EncodeToString(h[:])[:8]
+	return "defang-config-" + hex.EncodeToString(h[:])[:8]
 }
 
 // KeyVaultResourceGroup returns the name of the resource group that contains
@@ -156,7 +157,7 @@ func KeyVaultResourceGroup(ctx *pulumi.Context) string {
 
 // Location reads the Azure location from Pulumi stack config, falling back to the default.
 func Location(ctx *pulumi.Context) string {
-	if l := config.New(ctx, "azure-native").Get("location"); l != "" {
+	if l := azureconfig.GetLocation(ctx); l != "" {
 		return l
 	}
 	return defaultAzureLocation
@@ -172,10 +173,5 @@ func Location(ctx *pulumi.Context) string {
 // compose file's top-level `name:`), which may differ from ctx.Project() —
 // a single Pulumi project can host multiple Defang Compose projects.
 func ExistingResourceGroup(ctx *pulumi.Context, composeProject string) string {
-	return "defang-" + composeProject + "-" + ctx.Stack() + "-" + Location(ctx)
-}
-
-// SubscriptionID returns the Azure subscription ID from azure-native:subscriptionId config.
-func SubscriptionID(ctx *pulumi.Context) string {
-	return config.New(ctx, "azure-native").Get("subscriptionId")
+	return "defang-" + composeProject + "-" + ctx.Stack()
 }

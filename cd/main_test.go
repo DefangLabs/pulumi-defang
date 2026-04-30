@@ -348,6 +348,7 @@ func TestStackConfigAWS(t *testing.T) {
 	savedDelegationSetId := delegationSetId
 	savedRegistryCredsArn := registryCredsArn
 	savedAwsProfile := awsProfile
+	savedStateUrl := stateUrl
 	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
 		gcpProject = savedGcpProject
@@ -360,6 +361,7 @@ func TestStackConfigAWS(t *testing.T) {
 		delegationSetId = savedDelegationSetId
 		registryCredsArn = savedRegistryCredsArn
 		awsProfile = savedAwsProfile
+		stateUrl = savedStateUrl
 	})
 
 	awsRegion = "us-east-1"
@@ -373,11 +375,15 @@ func TestStackConfigAWS(t *testing.T) {
 	delegationSetId = "DELEGSET123"
 	registryCredsArn = "arn:aws:secretsmanager:us-east-1:123456789:secret:creds"
 	awsProfile = "myprofile"
+	stateUrl = "http://example.com/state"
 
 	cfg := stackConfig()
 
 	if cfg["defang:provider"].Value != "aws" {
 		t.Errorf("expected provider aws, got %q", cfg["defang:provider"].Value)
+	}
+	if cfg["defang:stateUrl"].Value != "http://example.com/state" {
+		t.Errorf("expected stateUrl http://example.com/state, got %q", cfg["defang:stateUrl"].Value)
 	}
 	if cfg["aws:region"].Value != "us-east-1" {
 		t.Errorf("expected region us-east-1, got %q", cfg["aws:region"].Value)

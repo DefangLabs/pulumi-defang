@@ -18,9 +18,11 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"google.golang.org/protobuf/proto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
@@ -76,13 +78,16 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
 						},
 					},
-					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
-					// The default pattern includes hyphens from project/stack names, so override it.
-					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
-					// ${stack} is safe to include: stacks are lowercase with no hyphens.
 					"azure-native": map[string]any{
 						"resources": map[string]any{
-							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"},
+							// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
+							// The default pattern includes hyphens from project/stack names, so override it.
+							// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
+							// ${stack} is safe to include: stacks are lowercase with no hyphens.
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${stack}${name}${hex(7)}"},
+							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
+							// 5-50	Alphanumerics, hyphens, and underscores
+							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
 						},
 					},
 				},
@@ -184,13 +189,15 @@ func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
 
 // stackConfig returns config for Pulumi.<stack>.yaml (stack-level settings).
 func stackConfig() auto.ConfigMap {
+	provider := detectProvider()
 	cfg := auto.ConfigMap{
 		// Defang program config
-		"defang:provider": auto.ConfigValue{Value: detectProvider()},
+		"defang:provider": auto.ConfigValue{Value: provider},
+		"defang:stateUrl": auto.ConfigValue{Value: stateUrl},
 	}
 
 	// Cloud provider config read by the explicit providers in the program
-	switch detectProvider() {
+	switch provider {
 	case "aws":
 		if awsRegion == "" {
 			log.Fatal("missing required environment variable: AWS_REGION or REGION")
@@ -229,7 +236,6 @@ func stackConfig() auto.ConfigMap {
 	cfg["defang:org"] = auto.ConfigValue{Value: org}
 	cfg["defang:prefix"] = auto.ConfigValue{Value: prefix}
 	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode} // backwards compatible with legacy behavior; now using recipes
-	cfg["defang:version"] = auto.ConfigValue{Value: version}     // build version recorded in state
 	if etag != "" {
 		cfg["defang:etag"] = auto.ConfigValue{Value: etag} // deployment ID; recorded in state, surfaced in tags/env
 	}
@@ -240,9 +246,11 @@ func stackConfig() auto.ConfigMap {
 		cfg["defang:privateDomain"] = auto.ConfigValue{Value: privateDomain}
 	}
 	if delegationSetId != "" {
+		// FIXME: should use defang-aws namespace
 		cfg["defang:delegationSetId"] = auto.ConfigValue{Value: delegationSetId}
 	}
 	if registryCredsArn != "" {
+		// FIXME: should use defang-aws namespace
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
 	}
 
@@ -338,6 +346,7 @@ func main() {
 	defer flushEtag()
 
 	userAgent := "defang/" + version
+	program.Version = version
 
 	command := "up"
 	if len(os.Args) > 1 {
@@ -358,11 +367,15 @@ func main() {
 		// the protobuf as a Pulumi-managed blob after the deploy succeeds —
 		// so the file only appears on success and is tracked in state (vs. a
 		// pre-Pulumi SDK upload that would leave stale records on failure).
-		var projectUpdate []byte
+		var projectUpdate *defangv1.ProjectUpdate
 		if payload != "" {
-			projectUpdate, err = fetchPayload(ctx, payload)
+			projectPb, err := fetchPayload(ctx, payload)
 			if err != nil {
 				log.Fatalf("failed to fetch payload: %v", err)
+			}
+			projectUpdate = &defangv1.ProjectUpdate{}
+			if err := proto.Unmarshal(projectPb, projectUpdate); err != nil {
+				log.Fatalf("failed to unmarshal ProjectUpdate protobuf: %v", err)
 			}
 		}
 		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(projectUpdate))

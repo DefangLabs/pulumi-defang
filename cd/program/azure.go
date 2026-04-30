@@ -1,22 +1,27 @@
 package program
 
 import (
+	"fmt"
+	"strings"
+
+	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
 	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
+	"github.com/pulumi/pulumi-azure-native-sdk/storage/v3"
 	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
+	"google.golang.org/protobuf/proto"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectPb []byte) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	azureCfg := config.New(ctx, "azure-native")
-
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &pulumiazure.ProviderArgs{
-		Location:                  pulumi.StringPtr(azureCfg.Require("location")),
+		Location:                  pulumi.String(config.GetLocation(ctx)),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
 	}
-	if subID := azureCfg.Get("subscriptionId"); subID != "" {
+	if subID := config.GetSubscriptionId(ctx); subID != "" {
 		providerArgs.SubscriptionId = pulumi.StringPtr(subID)
 	}
 	azureProvider, err := pulumiazure.NewProvider(ctx, "azure", providerArgs)
@@ -33,8 +38,17 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectP
 	// the project component so it only runs after all services are created.
 	// pulumi.Provider(azureProvider) is required because
 	// pulumi:disable-default-providers excludes azure-native (see cd/main.go projectConfig).
-	if len(projectPb) > 0 {
-		if err := saveProjectPbAzure(ctx, projectPb, project, pulumi.Provider(azureProvider)); err != nil {
+	if projectUpdate != nil {
+		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
+			for _, svc := range projectUpdate.Services {
+				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
+					svc.Endpoints = []string{ep}
+				}
+			}
+			return proto.Marshal(projectUpdate)
+		}).(pulumi.AnyOutput)
+
+		if err := saveProjectPbAzure(ctx, updatedPb, project, pulumi.Provider(azureProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}
@@ -153,4 +167,50 @@ func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArg
 		args.Llm = azurecompose.LlmConfigArgs{}
 	}
 	return args
+}
+
+// saveProjectPbAzure uploads data as a Pulumi-managed Azure Blob in the CD
+// storage account's `projects` container. See saveProjectPbAWS for semantics.
+// data is a pulumi.AnyOutput wrapping []byte so callers can produce the bytes
+// inside an ApplyT (e.g. after updating endpoints) without creating resources
+// inside that callback.
+func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
+	u, err := parseStateURL(ctx)
+	if err != nil || u == nil {
+		return err
+	}
+	if u.Scheme != "azblob" {
+		return fmt.Errorf("DEFANG_STATE_URL must be an azblob:// URL for Azure uploads, got %q", u.String())
+	}
+	account := u.Query().Get("storage_account")
+	if account == "" {
+		return fmt.Errorf("DEFANG_STATE_URL %q missing storage_account", u.String())
+	}
+
+	// The CD storage account lives in the shared CD resource group, named
+	// `defang-cd-<location>` by convention (see defang/src/pkg/clouds/azure/cd/driver.go).
+	location := config.GetLocation(ctx)
+	if location == "" {
+		return fmt.Errorf("AZURE_LOCATION must be set to derive the CD resource group")
+	}
+	cdRG := "defang-cd-" + location
+
+	// Azure uses a dedicated `projects` container, so strip the AWS/GCS-style
+	// `projects/` prefix from the object key — otherwise the blob lands at
+	// `projects/projects/<project>/<stack>/project.pb`.
+	containerName, blobName, _ := strings.Cut(projectPbKey(ctx), "/")
+
+	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
+		return NewTempFileAsset("project-pb-*.pb", v.([]byte))
+	}).(pulumi.AssetOutput)
+
+	_, err = storage.NewBlob(ctx, "project-pb", &storage.BlobArgs{
+		ResourceGroupName: pulumi.String(cdRG),
+		AccountName:       pulumi.String(account),
+		ContainerName:     pulumi.String(containerName),
+		BlobName:          pulumi.String(blobName),
+		Source:            source,
+		ContentType:       pulumi.String(protobufContentType),
+	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
+	return err
 }

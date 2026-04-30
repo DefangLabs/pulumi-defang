@@ -7,35 +7,35 @@ import (
 
 const configNamespace = "defang"
 
-// BoolValue is a typed config accessor for a boolean value.
-type BoolValue struct {
+// boolValue is a typed config accessor for a boolean value.
+type boolValue struct {
 	key string
 	def bool
 }
 
-// IntValue is a typed config accessor for an integer value.
-type IntValue struct {
+// intValue is a typed config accessor for an integer value.
+type intValue struct {
 	key string
 	def int
 }
 
-// StringValue is a typed config accessor for a string value.
-type StringValue struct {
+// stringValue is a typed config accessor for a string value.
+type stringValue struct {
 	key string
 	def string
 }
 
 // Bool creates a bool config accessor with the given key and default.
-func Bool(key string, def bool) BoolValue { return BoolValue{key: key, def: def} }
+func Bool(key string, def bool) boolValue { return boolValue{key: key, def: def} }
 
 // Int creates an int config accessor with the given key and default.
-func Int(key string, def int) IntValue { return IntValue{key: key, def: def} }
+func Int(key string, def int) intValue { return intValue{key: key, def: def} }
 
 // String creates a string config accessor with the given key and default.
-func String(key string, def string) StringValue { return StringValue{key: key, def: def} }
+func String(key string, def string) stringValue { return stringValue{key: key, def: def} }
 
 // Get reads the config value from the Pulumi context, falling back to the default.
-func (v BoolValue) Get(ctx *pulumi.Context) bool {
+func (v boolValue) Get(ctx *pulumi.Context) bool {
 	cfg := config.New(ctx, configNamespace)
 	val, err := cfg.TryBool(v.key)
 	if err != nil {
@@ -45,7 +45,7 @@ func (v BoolValue) Get(ctx *pulumi.Context) bool {
 }
 
 // Get reads the config value from the Pulumi context, falling back to the default.
-func (v IntValue) Get(ctx *pulumi.Context) int {
+func (v intValue) Get(ctx *pulumi.Context) int {
 	cfg := config.New(ctx, configNamespace)
 	val, err := cfg.TryInt(v.key)
 	if err != nil {
@@ -55,7 +55,7 @@ func (v IntValue) Get(ctx *pulumi.Context) int {
 }
 
 // Get reads the config value from the Pulumi context, falling back to the default.
-func (v StringValue) Get(ctx *pulumi.Context) string {
+func (v stringValue) Get(ctx *pulumi.Context) string {
 	cfg := config.New(ctx, configNamespace)
 	val, err := cfg.Try(v.key)
 	if err != nil {

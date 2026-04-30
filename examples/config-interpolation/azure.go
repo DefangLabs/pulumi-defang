@@ -14,9 +14,9 @@ import (
 )
 
 func runAzure(ctx *pulumi.Context) error {
-	location := config.New(ctx, "azure-native").Require("location")
+	azureCfg := config.New(ctx, "azure-native")
 	azureProvider, err := pulumiazurenative.NewProvider(ctx, "azure", &pulumiazurenative.ProviderArgs{
-		Location: pulumi.String(location),
+		Location: pulumi.String(azureCfg.Require("location")),
 	})
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func runAzure(ctx *pulumi.Context) error {
 	rgName := defangAzureCfg.Require("keyVaultResourceGroup")
 	rg, err := resources.NewResourceGroup(ctx, "config-example", &resources.ResourceGroupArgs{
 		ResourceGroupName: pulumi.String(rgName),
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 	}, pulumi.Provider(azureProvider))
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func runAzure(ctx *pulumi.Context) error {
 	vault, err := keyvault.NewVault(ctx, "config-example", &keyvault.VaultArgs{
 		ResourceGroupName: rg.Name,
 		VaultName:         pulumi.String(vaultName),
-		Location:          pulumi.String(location),
+		// Location:          pulumi.String(location),
 		Properties: &keyvault.VaultPropertiesArgs{
 			TenantId:                  pulumi.String(clientConfig.TenantId),
 			EnableRbacAuthorization:   pulumi.Bool(true),
@@ -73,9 +73,10 @@ func runAzure(ctx *pulumi.Context) error {
 	// With RBAC, the caller running `pulumi up` needs write perms on the vault
 	// to create the secret below. "Key Vault Administrator" covers data plane
 	// read+write. Built-in role ID 00482a5a-887f-4fb3-b363-3b7fe8e74483.
+	subscriptionId := azureCfg.Require("subscriptionId") // needed for role assignment scope
 	vaultAdminRole, err := authorization.NewRoleAssignment(ctx, "kv-admin", &authorization.RoleAssignmentArgs{
 		Scope:            vault.ID(),
-		RoleDefinitionId: pulumi.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/00482a5a-887f-4fb3-b363-3b7fe8e74483", config.New(ctx, "azure-native").Require("subscriptionId")),
+		RoleDefinitionId: pulumi.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/00482a5a-887f-4fb3-b363-3b7fe8e74483", subscriptionId),
 		PrincipalId:      pulumi.String(clientConfig.ObjectId),
 		PrincipalType:    pulumi.String("User"),
 	}, pulumi.Provider(azureProvider))
