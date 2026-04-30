@@ -36,7 +36,10 @@ const SharedBuildRepo = "builds"
 // Cache lookups try the per-service ":<svc>-latest" first, then a project-
 // wide ":latest" so that brand-new services pick up base layers built by any
 // existing sibling service on their first build.
-func generateTaskYAML(serviceName, dockerfilePath string, buildArgs map[string]string, platform string) (string, error) {
+func generateTaskYAML(
+	serviceName, dockerfilePath string,
+	buildArgs map[string]string,
+	platform string) (string, error) {
 	flags := make([]string, 0, 1+len(buildArgs)+6)
 
 	if platform != "" {
