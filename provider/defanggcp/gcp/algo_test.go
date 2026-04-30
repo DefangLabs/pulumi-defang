@@ -68,6 +68,14 @@ func TestIsCloudRunService(t *testing.T) {
 			expected: true,
 		},
 		{
+			// compose YAML may omit `mode:`; the loader leaves Mode == "" and we
+			// must still treat it as ingress (Cloud Run), otherwise the service
+			// falls through to Compute Engine and Endpoints returns a raw IP.
+			name:     "single port with unset mode defaults to ingress",
+			ports:    []compose.ServicePortConfig{{Target: 80}},
+			expected: true,
+		},
+		{
 			name:     "single host port",
 			ports:    []compose.ServicePortConfig{{Target: 5432, Mode: "host"}},
 			expected: false,

@@ -25,7 +25,10 @@ func needNATGateway(networks compose.Networks, service *compose.ServiceConfig) b
 }
 
 func IsCloudRunService(service *compose.ServiceConfig) bool {
-	return len(service.Ports) == 1 && service.Ports[0].Mode == "ingress"
+	// Mode defaults to "ingress" when unset (matches compose.ServicePortConfig.IsIngress);
+	// without this, a compose YAML omitting `mode:` falls through to Compute Engine and
+	// the project Endpoints output returns a raw load-balancer IP instead of a Cloud Run URL.
+	return len(service.Ports) == 1 && service.Ports[0].IsIngress()
 }
 
 func isCloudRunJob(service *compose.ServiceConfig) bool {
