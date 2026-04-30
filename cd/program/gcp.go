@@ -186,7 +186,7 @@ func saveProjectPbGCP(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Res
 	}
 
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
-		return NewTempFileAsset("project-pb-*.pb", v.([]byte))
+		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
 	}).(pulumi.AssetOutput)
 
 	_, err = storage.NewBucketObject(ctx, "project-pb", &storage.BucketObjectArgs{
