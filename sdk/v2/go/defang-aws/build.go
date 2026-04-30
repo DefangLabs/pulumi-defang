@@ -19,7 +19,6 @@ type Build struct {
 	Destination pulumi.StringPtrOutput   `pulumi:"destination"`
 	Image       pulumi.StringOutput      `pulumi:"image"`
 	MaxWaitTime pulumi.IntPtrOutput      `pulumi:"maxWaitTime"`
-	Profile     pulumi.StringPtrOutput   `pulumi:"profile"`
 	ProjectName pulumi.StringOutput      `pulumi:"projectName"`
 	Region      pulumi.StringPtrOutput   `pulumi:"region"`
 	Triggers    pulumi.StringArrayOutput `pulumi:"triggers"`
@@ -70,7 +69,6 @@ func (BuildState) ElementType() reflect.Type {
 type buildArgs struct {
 	Destination *string  `pulumi:"destination"`
 	MaxWaitTime *int     `pulumi:"maxWaitTime"`
-	Profile     *string  `pulumi:"profile"`
 	ProjectName string   `pulumi:"projectName"`
 	Region      *string  `pulumi:"region"`
 	Triggers    []string `pulumi:"triggers"`
@@ -80,7 +78,6 @@ type buildArgs struct {
 type BuildArgs struct {
 	Destination pulumi.StringPtrInput
 	MaxWaitTime pulumi.IntPtrInput
-	Profile     pulumi.StringPtrInput
 	ProjectName pulumi.StringInput
 	Region      pulumi.StringPtrInput
 	Triggers    pulumi.StringArrayInput
@@ -137,10 +134,6 @@ func (o BuildOutput) Image() pulumi.StringOutput {
 
 func (o BuildOutput) MaxWaitTime() pulumi.IntPtrOutput {
 	return o.ApplyT(func(v *Build) pulumi.IntPtrOutput { return v.MaxWaitTime }).(pulumi.IntPtrOutput)
-}
-
-func (o BuildOutput) Profile() pulumi.StringPtrOutput {
-	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.Profile }).(pulumi.StringPtrOutput)
 }
 
 func (o BuildOutput) ProjectName() pulumi.StringOutput {

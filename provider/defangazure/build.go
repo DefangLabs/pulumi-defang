@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
@@ -55,7 +56,7 @@ type BuildInputs struct {
 	// Base64-encoded ACR task YAML (from generateTaskYAML).
 	EncodedTaskContent string `pulumi:"encodedTaskContent"`
 
-	// Max wait time in seconds (default: 3600)
+	// Max wait time in seconds (default: common.DefaultBuildMaxWaitTime)
 	MaxWaitTime *int `pulumi:"maxWaitTime,optional"`
 
 	// Trigger replacements when these change (hash of build inputs)
@@ -67,7 +68,7 @@ type BuildState struct {
 	BuildInputs
 
 	// The ACR run ID
-	RunID string `pulumi:"runId"`
+	RunId string `pulumi:"runId"`
 
 	// The full image URI pushed by the build (loginServer/imageName:tag or @digest)
 	Image string `pulumi:"image"`
@@ -88,12 +89,12 @@ func (*Build) Create(
 		}, nil
 	}
 
-	maxWait := 3600
+	maxWait := common.DefaultBuildMaxWaitTime
 	if inputs.MaxWaitTime != nil {
 		maxWait = *inputs.MaxWaitTime
 	}
 
-	runID, image, err := scheduleAndWaitACRRun(
+	runId, image, err := scheduleAndWaitACRRun(
 		ctx,
 		inputs.SubscriptionID,
 		inputs.ResourceGroupName,
@@ -112,7 +113,7 @@ func (*Build) Create(
 		ID: inputs.TaskName,
 		Output: BuildState{
 			BuildInputs: inputs,
-			RunID:       runID,
+			RunId:       runId,
 			Image:       image,
 		},
 	}, nil
@@ -182,15 +183,15 @@ func scheduleAndWaitACRRun(
 	if scheduled.Properties == nil || scheduled.Properties.RunID == nil {
 		return "", "", ErrNoACRRunID
 	}
-	runID := *scheduled.Properties.RunID
+	runId := *scheduled.Properties.RunID
 
 	// Check whether the run already reached a terminal state.
 	if scheduled.Properties.Status != nil {
-		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, runID); done {
+		if image, done, runErr := checkRunStatus(scheduled.Properties, loginServer, imageName, runId); done {
 			if runErr != nil {
-				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
+				return runId, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
-			return runID, image, nil
+			return runId, image, nil
 		}
 	}
 
@@ -200,32 +201,28 @@ func scheduleAndWaitACRRun(
 
 	for {
 		if time.Now().After(deadline) {
-			return runID, "", fmt.Errorf("run %s timed out after %ds: %w", runID, maxWaitSeconds, ErrACRRunTimedOut)
+			return runId, "", fmt.Errorf("run %s timed out after %ds: %w", runId, maxWaitSeconds, ErrACRRunTimedOut)
 		}
 
-		// Use a select so Pulumi cancellation/timeout aborts the loop immediately
-		// rather than waiting through the (up to 30s) backoff before the next poll.
-		select {
-		case <-ctx.Done():
-			return runID, "", ctx.Err()
-		case <-time.After(pollInterval):
+		if err := common.SleepWithContext(ctx, pollInterval); err != nil {
+			return runId, "", err
 		}
 		if pollInterval < 30*time.Second {
 			pollInterval = min(pollInterval*2, 30*time.Second)
 		}
 
-		resp, err := runsClient.Get(ctx, rgName, registryName, runID, nil)
+		resp, err := runsClient.Get(ctx, rgName, registryName, runId, nil)
 		if err != nil {
-			return runID, "", fmt.Errorf("polling run %s: %w", runID, err)
+			return runId, "", fmt.Errorf("polling run %s: %w", runId, err)
 		}
 		if resp.Properties == nil || resp.Properties.Status == nil {
 			continue
 		}
-		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, runID); done {
+		if image, done, runErr := checkRunStatus(resp.Properties, loginServer, imageName, runId); done {
 			if runErr != nil {
-				return runID, image, fmt.Errorf("ACR run failed: %w", runErr)
+				return runId, image, fmt.Errorf("ACR run failed: %w", runErr)
 			}
-			return runID, image, nil
+			return runId, image, nil
 		}
 	}
 }
@@ -234,21 +231,21 @@ func scheduleAndWaitACRRun(
 // done is true when a terminal state is reached.
 func checkRunStatus(
 	props *armcontainerregistry.RunProperties,
-	loginServer, imageName, runID string,
+	loginServer, imageName, runId string,
 ) (string, bool, error) {
 	switch *props.Status {
 	case armcontainerregistry.RunStatusSucceeded:
-		return buildImageURI(props.OutputImages, loginServer, imageName, runID), true, nil
+		return buildImageURI(props.OutputImages, loginServer, imageName, runId), true, nil
 	case armcontainerregistry.RunStatusFailed, armcontainerregistry.RunStatusError:
-		return "", true, fmt.Errorf("run %s %s: %w", runID, string(*props.Status), ErrACRRunFailed)
+		return "", true, fmt.Errorf("run %s %s: %w", runId, string(*props.Status), ErrACRRunFailed)
 	case armcontainerregistry.RunStatusCanceled:
-		return "", true, fmt.Errorf("run %s was canceled: %w", runID, ErrACRRunFailed)
+		return "", true, fmt.Errorf("run %s was canceled: %w", runId, ErrACRRunFailed)
 	case armcontainerregistry.RunStatusTimeout:
 		// Wrap the dedicated timeout sentinel so callers can distinguish
 		// ACR-side timeout (this case) from client-side deadline expiry (the
 		// `time.Now().After(deadline)` branch in scheduleAndWaitACRRun) via
 		// errors.Is(err, ErrACRRunTimedOut), separately from generic failures.
-		return "", true, fmt.Errorf("run %s timed out on ACR side: %w", runID, ErrACRRunTimedOut)
+		return "", true, fmt.Errorf("run %s timed out on ACR side: %w", runId, ErrACRRunTimedOut)
 	case armcontainerregistry.RunStatusQueued,
 		armcontainerregistry.RunStatusRunning,
 		armcontainerregistry.RunStatusStarted:
@@ -258,10 +255,10 @@ func checkRunStatus(
 }
 
 // buildImageURI constructs the image URI from the run's output images.
-// Falls back to loginServer/imageName:runID when OutputImages is empty.
+// Falls back to loginServer/imageName:runId when OutputImages is empty.
 func buildImageURI(
 	outputImages []*armcontainerregistry.ImageDescriptor,
-	loginServer, imageName, runID string,
+	loginServer, imageName, runId string,
 ) string {
 	for _, img := range outputImages {
 		if img.Digest != nil && *img.Digest != "" {
@@ -271,7 +268,7 @@ func buildImageURI(
 			return fmt.Sprintf("%s/%s:%s", loginServer, imageName, *img.Tag)
 		}
 	}
-	return fmt.Sprintf("%s/%s:%s", loginServer, imageName, runID)
+	return fmt.Sprintf("%s/%s:%s", loginServer, imageName, runId)
 }
 
 // stageBuildContextToACR streams the tar at sourceURL (a bare blob URL in the
@@ -291,6 +288,9 @@ func stageBuildContextToACR(
 	// A SAS URL is self-authenticating via query params; passing a credential
 	// alongside it causes Azure to reject the request with InvalidAuthenticationInfo
 	// (two auth methods conflict). Use no-credential client when a SAS is present.
+	// Heuristic: any non-empty raw query is treated as a SAS. Fragile if blob
+	// URLs ever carry unrelated query params (currently they don't), so revisit
+	// if the CLI starts appending non-SAS query strings to ContextPath.
 	var (
 		bc  *blob.Client
 		err error

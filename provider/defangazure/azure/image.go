@@ -39,7 +39,7 @@ func (b *BuildInfra) LoginServer() pulumi.StringOutput { return b.registry.Login
 // Used with ctx.RegisterResource to create the resource from within the component.
 type acrImageBuildResource struct {
 	pulumi.CustomResourceState
-	RunID pulumi.StringOutput `pulumi:"runId"`
+	RunId pulumi.StringOutput `pulumi:"runId"`
 	Image pulumi.StringOutput `pulumi:"image"`
 }
 

@@ -16,13 +16,12 @@ type Build struct {
 	pulumi.CustomResourceState
 
 	BuildId        pulumi.StringOutput      `pulumi:"buildId"`
-	CmdArgs        pulumi.StringArrayOutput `pulumi:"cmdArgs"`
 	DiskSizeGb     pulumi.IntPtrOutput      `pulumi:"diskSizeGb"`
-	Image          pulumi.StringPtrOutput   `pulumi:"image"`
 	ImageDigest    pulumi.StringOutput      `pulumi:"imageDigest"`
 	Images         pulumi.StringArrayOutput `pulumi:"images"`
 	Location       pulumi.StringOutput      `pulumi:"location"`
 	MachineType    pulumi.StringPtrOutput   `pulumi:"machineType"`
+	MaxWaitTime    pulumi.IntPtrOutput      `pulumi:"maxWaitTime"`
 	ProjectId      pulumi.StringOutput      `pulumi:"projectId"`
 	ServiceAccount pulumi.StringPtrOutput   `pulumi:"serviceAccount"`
 	Source         pulumi.StringOutput      `pulumi:"source"`
@@ -94,12 +93,11 @@ func (BuildState) ElementType() reflect.Type {
 }
 
 type buildArgs struct {
-	CmdArgs        []string          `pulumi:"cmdArgs"`
 	DiskSizeGb     *int              `pulumi:"diskSizeGb"`
-	Image          *string           `pulumi:"image"`
 	Images         []string          `pulumi:"images"`
 	Location       string            `pulumi:"location"`
 	MachineType    *string           `pulumi:"machineType"`
+	MaxWaitTime    *int              `pulumi:"maxWaitTime"`
 	ProjectId      string            `pulumi:"projectId"`
 	ServiceAccount *string           `pulumi:"serviceAccount"`
 	Source         string            `pulumi:"source"`
@@ -111,12 +109,11 @@ type buildArgs struct {
 
 // The set of arguments for constructing a Build resource.
 type BuildArgs struct {
-	CmdArgs        pulumi.StringArrayInput
 	DiskSizeGb     pulumi.IntPtrInput
-	Image          pulumi.StringPtrInput
 	Images         pulumi.StringArrayInput
 	Location       pulumi.StringInput
 	MachineType    pulumi.StringPtrInput
+	MaxWaitTime    pulumi.IntPtrInput
 	ProjectId      pulumi.StringInput
 	ServiceAccount pulumi.StringPtrInput
 	Source         pulumi.StringInput
@@ -167,16 +164,8 @@ func (o BuildOutput) BuildId() pulumi.StringOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.BuildId }).(pulumi.StringOutput)
 }
 
-func (o BuildOutput) CmdArgs() pulumi.StringArrayOutput {
-	return o.ApplyT(func(v *Build) pulumi.StringArrayOutput { return v.CmdArgs }).(pulumi.StringArrayOutput)
-}
-
 func (o BuildOutput) DiskSizeGb() pulumi.IntPtrOutput {
 	return o.ApplyT(func(v *Build) pulumi.IntPtrOutput { return v.DiskSizeGb }).(pulumi.IntPtrOutput)
-}
-
-func (o BuildOutput) Image() pulumi.StringPtrOutput {
-	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.Image }).(pulumi.StringPtrOutput)
 }
 
 func (o BuildOutput) ImageDigest() pulumi.StringOutput {
@@ -193,6 +182,10 @@ func (o BuildOutput) Location() pulumi.StringOutput {
 
 func (o BuildOutput) MachineType() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.MachineType }).(pulumi.StringPtrOutput)
+}
+
+func (o BuildOutput) MaxWaitTime() pulumi.IntPtrOutput {
+	return o.ApplyT(func(v *Build) pulumi.IntPtrOutput { return v.MaxWaitTime }).(pulumi.IntPtrOutput)
 }
 
 func (o BuildOutput) ProjectId() pulumi.StringOutput {
