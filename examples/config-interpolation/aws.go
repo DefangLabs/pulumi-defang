@@ -4,14 +4,14 @@ import (
 	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
 	awscompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/config"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 func runAws(ctx *pulumi.Context) error {
 	awsProvider, err := aws.NewProvider(ctx, "aws", &aws.ProviderArgs{
-		Region: pulumi.String(config.New(ctx, "aws").Require("region")),
+		Region: pulumi.String(config.GetRegion(ctx)),
 	})
 	if err != nil {
 		return err

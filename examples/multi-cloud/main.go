@@ -2,9 +2,11 @@ package main
 
 import (
 	defangaws "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws"
+	awscompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/compose"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
+	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
-	"github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
+	gcpcompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	pulumiazurenative "github.com/pulumi/pulumi-azure-native-sdk/v3"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
@@ -15,21 +17,21 @@ func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		// --- AWS ---
 		awsProv, err := aws.NewProvider(ctx, "aws", &aws.ProviderArgs{
-			Region: pulumi.StringPtr("us-west-2"),
+			Region: pulumi.String("us-west-2"),
 		})
 		if err != nil {
 			return err
 		}
 
 		awsProj, err := defangaws.NewProject(ctx, "awsProject", &defangaws.ProjectArgs{
-			Services: compose.ServiceConfigMap{
-				"web": compose.ServiceConfigArgs{
-					Image: pulumi.StringPtr("nginx:latest"),
-					Ports: compose.ServicePortConfigArray{
-						compose.ServicePortConfigArgs{
+			Services: awscompose.ServiceConfigMap{
+				"web": awscompose.ServiceConfigArgs{
+					Image: pulumi.String("nginx:latest"),
+					Ports: awscompose.ServicePortConfigArray{
+						awscompose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
-							Mode:        pulumi.StringPtr("ingress"),
-							AppProtocol: pulumi.StringPtr("http"),
+							Mode:        pulumi.String("ingress"),
+							AppProtocol: pulumi.String("http"),
 						},
 					},
 				},
@@ -41,22 +43,22 @@ func main() {
 
 		// --- GCP ---
 		gcpProv, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-			Project: pulumi.StringPtr("liotest-443018"),
-			Region:  pulumi.StringPtr("us-central1"),
+			Project: pulumi.String("liotest-443018"),
+			Region:  pulumi.String("us-central1"),
 		})
 		if err != nil {
 			return err
 		}
 
 		gcpProj, err := defanggcp.NewProject(ctx, "gcpProject", &defanggcp.ProjectArgs{
-			Services: compose.ServiceConfigMap{
-				"web": compose.ServiceConfigArgs{
-					Image: pulumi.StringPtr("nginx:latest"),
-					Ports: compose.ServicePortConfigArray{
-						compose.ServicePortConfigArgs{
+			Services: gcpcompose.ServiceConfigMap{
+				"web": gcpcompose.ServiceConfigArgs{
+					Image: pulumi.String("nginx:latest"),
+					Ports: gcpcompose.ServicePortConfigArray{
+						gcpcompose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
-							Mode:        pulumi.StringPtr("ingress"),
-							AppProtocol: pulumi.StringPtr("http"),
+							Mode:        pulumi.String("ingress"),
+							AppProtocol: pulumi.String("http"),
 						},
 					},
 				},
@@ -68,21 +70,21 @@ func main() {
 
 		// --- Azure ---
 		azureProv, err := pulumiazurenative.NewProvider(ctx, "azure", &pulumiazurenative.ProviderArgs{
-			Location: pulumi.StringPtr("eastus"),
+			Location: pulumi.String("eastus"),
 		})
 		if err != nil {
 			return err
 		}
 
 		azureProj, err := defangazure.NewProject(ctx, "azureProject", &defangazure.ProjectArgs{
-			Services: compose.ServiceConfigMap{
-				"web": compose.ServiceConfigArgs{
-					Image: pulumi.StringPtr("nginx:latest"),
-					Ports: compose.ServicePortConfigArray{
-						compose.ServicePortConfigArgs{
+			Services: azurecompose.ServiceConfigMap{
+				"web": azurecompose.ServiceConfigArgs{
+					Image: pulumi.String("nginx:latest"),
+					Ports: azurecompose.ServicePortConfigArray{
+						azurecompose.ServicePortConfigArgs{
 							Target:      pulumi.Int(80),
-							Mode:        pulumi.StringPtr("ingress"),
-							AppProtocol: pulumi.StringPtr("http"),
+							Mode:        pulumi.String("ingress"),
+							AppProtocol: pulumi.String("http"),
 						},
 					},
 				},

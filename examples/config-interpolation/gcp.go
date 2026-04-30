@@ -6,16 +6,15 @@ import (
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
 	gcpcompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp"
+	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/config"
 	"github.com/pulumi/pulumi-gcp/sdk/v8/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 func runGcp(ctx *pulumi.Context) error {
-	gcpCfg := config.New(ctx, "gcp")
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project: pulumi.String(gcpCfg.Require("project")),
-		Region:  pulumi.String(gcpCfg.Require("region")),
+		Project: pulumi.String(config.GetProject(ctx)),
+		Region:  pulumi.String(config.GetRegion(ctx)),
 	})
 	if err != nil {
 		return err
