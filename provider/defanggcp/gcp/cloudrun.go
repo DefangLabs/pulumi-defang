@@ -158,7 +158,11 @@ func buildTemplate(
 	gcpConfig *SharedInfra,
 	opts ...pulumi.InvokeOption,
 ) (*cloudrunv2.ServiceTemplateArgs, []string) {
-	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, gcpConfig.Etag, svc, opts...)
+	var etag string
+	if gcpConfig != nil {
+		etag = gcpConfig.Etag
+	}
+	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, etag, svc, opts...)
 
 	// Build port config
 	var ports *cloudrunv2.ServiceTemplateContainerPortsArgs

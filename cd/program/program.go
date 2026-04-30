@@ -13,10 +13,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Etag and Version are read from stack config (defang:etag, defang:version)
-// inside NewRun. Storing them as Pulumi config values means the deployment
-// state file records exactly what was used — no env var or global to inspect
-// after the fact.
+// Etag (defang:etag) is read inside NewRun and threaded into each per-provider
+// deploy func; Version (defang:version) is read inside those deploy funcs
+// directly (e.g. aws.go, gcp.go). Storing both as Pulumi stack config means the
+// deployment state file records exactly what was used — no env var or global
+// to inspect after the fact.
 
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 	cf := compose.Project{Name: projectName}
