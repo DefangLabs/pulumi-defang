@@ -18,22 +18,20 @@ import (
 )
 
 func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	defaultTags := pulumi.StringMap{
-		"defang:org":     pulumi.String(ctx.Organization()),
-		"defang:project": pulumi.String(ctx.Project()),
-		"defang:stack":   pulumi.String(ctx.Stack()),
-		"defang:version": pulumi.String(Version),
-	}
-	if etag != "" {
-		defaultTags["defang:etag"] = pulumi.String(etag)
-	}
-
 	providerArgs := &aws.ProviderArgs{
-		Region:      pulumi.StringPtr(config.GetRegion(ctx)),
-		DefaultTags: &aws.ProviderDefaultTagsArgs{Tags: defaultTags},
+		Region: pulumi.String(config.GetRegion(ctx)),
+		DefaultTags: &aws.ProviderDefaultTagsArgs{
+			Tags: pulumi.StringMap{
+				"defang:etag":    pulumi.String(etag),
+				"defang:org":     pulumi.String(ctx.Organization()),
+				"defang:project": pulumi.String(ctx.Project()),
+				"defang:stack":   pulumi.String(ctx.Stack()),
+				"defang:version": pulumi.String(common.Version.Get(ctx)),
+			},
+		},
 	}
 	if profile := config.GetProfile(ctx); profile != "" {
-		providerArgs.Profile = pulumi.StringPtr(profile)
+		providerArgs.Profile = pulumi.String(profile)
 	}
 
 	awsProvider, err := aws.NewProvider(ctx, "aws", providerArgs)
@@ -44,11 +42,11 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, pr
 	args := toAWSArgs(cf, etag)
 	if domain != "" {
 		awsCfgArgs := defangaws.AWSConfigArgs{
-			ProjectDomain: pulumi.StringPtr(domain),
+			ProjectDomain: pulumi.String(domain),
 		}
 		// Recursively look up the public Route53 zone for HTTPS support
 		if zone, err := getHostedZoneForHost(ctx, domain, pulumi.Provider(awsProvider)); err == nil {
-			awsCfgArgs.PublicZoneId = pulumi.StringPtr(zone.ZoneId)
+			awsCfgArgs.PublicZoneId = pulumi.String(zone.ZoneId)
 		}
 		args.Aws = awsCfgArgs
 	}
@@ -114,7 +112,7 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
 	}
 	if svc.DomainName != "" {
-		args.DomainName = pulumi.StringPtr(svc.DomainName)
+		args.DomainName = pulumi.String(svc.DomainName)
 	}
 	if svc.Build != nil {
 		args.Build = awscompose.BuildConfigArgs{

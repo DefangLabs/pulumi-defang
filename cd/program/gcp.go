@@ -16,20 +16,16 @@ import (
 )
 
 func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	defaultLabels := pulumi.StringMap{
-		"defang-org":     pulumi.String(ctx.Organization()),
-		"defang-project": pulumi.String(ctx.Project()),
-		"defang-stack":   pulumi.String(ctx.Stack()),
-		// "defang-version": pulumi.String(Version), FIXME: cannot have dots
-	}
-	if etag != "" {
-		defaultLabels["defang-etag"] = pulumi.String(etag)
-	}
-
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project:       pulumi.StringPtr(config.GetProject(ctx)),
-		Region:        pulumi.StringPtr(config.GetRegion(ctx)),
-		DefaultLabels: defaultLabels,
+		Project: pulumi.String(config.GetProject(ctx)),
+		Region:  pulumi.String(config.GetRegion(ctx)),
+		DefaultLabels: pulumi.StringMap{
+			"defang-etag":    pulumi.String(etag),
+			"defang-org":     pulumi.String(ctx.Organization()),
+			"defang-project": pulumi.String(ctx.Project()),
+			"defang-stack":   pulumi.String(ctx.Stack()),
+			// "defang-version": pulumi.String(Version), FIXME: cannot have dots
+		},
 	})
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err

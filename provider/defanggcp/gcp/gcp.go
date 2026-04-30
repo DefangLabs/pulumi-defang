@@ -9,11 +9,11 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/servicenetworking"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert authorization")
@@ -79,7 +79,7 @@ func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.Resour
 func NewStandaloneGlobalConfig(ctx *pulumi.Context) *SharedInfra {
 	return &SharedInfra{
 		Region:     GcpRegion(ctx),
-		GcpProject: gcpProjectId(ctx),
+		GcpProject: config.GetProject(ctx),
 		Stack:      ctx.Stack(),
 	}
 }
@@ -96,7 +96,7 @@ func BuildGlobalConfig(
 	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
 	region := GcpRegion(ctx)
-	gcpProject := gcpProjectId(ctx)
+	gcpProject := config.GetProject(ctx)
 
 	vpc, err := compute.NewNetwork(ctx, projectName+"-vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
@@ -207,7 +207,7 @@ func buildOptionalInfra(
 	}
 
 	if externalRegistries := collectExternalRegistries(services); len(externalRegistries) > 0 {
-		repos, err := createRemoteRepos(ctx, externalRegistries, projectName, cfg.Region, opts...)
+		repos, err := createRemoteRepos(ctx, externalRegistries, opts...)
 		if err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ func createWildcardCert(
 ) error {
 	fqdn := strings.TrimSuffix(domain, ".")
 
-	zone, err := dns.NewManagedZone(ctx, projectName+"-public-dns", &dns.ManagedZoneArgs{
+	zone, err := dns.NewManagedZone(ctx, "public-dns", &dns.ManagedZoneArgs{
 		Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
 		DnsName:     pulumi.String(fqdn + "."),
 	}, opts...)
@@ -246,7 +246,7 @@ func createWildcardCert(
 	cfg.PublicZoneId = zone.Name
 
 	// CAA record authorizes pki.goog (GCP Certificate Manager) and letsencrypt.org as valid CAs.
-	if _, err := dns.NewRecordSet(ctx, projectName+"-caa", &dns.RecordSetArgs{
+	if _, err := dns.NewRecordSet(ctx, "caa", &dns.RecordSetArgs{
 		ManagedZone: zone.Name,
 		Name:        pulumi.String(fqdn + "."),
 		Type:        pulumi.String("CAA"),
@@ -263,8 +263,7 @@ func createWildcardCert(
 		Description: pulumi.StringPtr("Wildcard DNS authorization for " + fqdn),
 		Domain:      pulumi.String(fqdn),
 	}
-	certAuthz, err := certificatemanager.NewDnsAuthorization(ctx,
-		projectName+"-cert-authz", authzArgs, opts...)
+	certAuthz, err := certificatemanager.NewDnsAuthorization(ctx, "cert-authz", authzArgs, opts...)
 	if err != nil {
 		return err
 	}
@@ -274,15 +273,13 @@ func createWildcardCert(
 	type dnsRecord = certificatemanager.DnsAuthorizationDnsResourceRecord
 	certAuthz.DnsResourceRecords.ApplyT(func(records []dnsRecord) ([]*dns.RecordSet, error) {
 		var rs []*dns.RecordSet
-		for i, record := range records {
+		for _, record := range records {
 			if record.Name == nil || record.Type == nil || record.Data == nil {
 				return nil, fmt.Errorf("%w: invalid DNS record for %s: %v",
 					errInvalidDNSRecord, fqdn, record)
 			}
-			name := projectName + "-cert-authz-record"
-			if i > 0 {
-				name = fmt.Sprintf("%s-%d", name, i)
-			}
+			name := *record.Name + "_" + *record.Type
+			// TODO: avoid creating Pulumi resources within ApplyT
 			r, err := dns.NewRecordSet(ctx, name, &dns.RecordSetArgs{
 				ManagedZone: zone.Name,
 				Name:        pulumi.String(*record.Name),
@@ -299,7 +296,7 @@ func createWildcardCert(
 	})
 
 	// Use a short name without the FQDN to stay within GCP's 63-char resource ID limit.
-	cert, err := certificatemanager.NewCertificate(ctx, projectName+"-wildcard-cert", &certificatemanager.CertificateArgs{
+	cert, err := certificatemanager.NewCertificate(ctx, "wildcard-cert", &certificatemanager.CertificateArgs{
 		Managed: &certificatemanager.CertificateManagedArgs{
 			Domains:           pulumi.StringArray{pulumi.String("*." + fqdn)},
 			DnsAuthorizations: pulumi.StringArray{certAuthz.ID()},
@@ -326,7 +323,7 @@ func CreatePublicDNSRecord(
 	if !strings.HasSuffix(domain, ".") {
 		domain += "."
 	}
-	_, err := dns.NewRecordSet(ctx, domain+"-"+recordType+"-dns", &dns.RecordSetArgs{
+	_, err := dns.NewRecordSet(ctx, domain+"_"+recordType, &dns.RecordSetArgs{
 		Name:        pulumi.String(domain),
 		Type:        pulumi.String(recordType),
 		Ttl:         ttl,
@@ -340,7 +337,7 @@ const defaultGCPRegion = "us-central1"
 
 // GcpRegion reads the GCP region from Pulumi stack config, falling back to the default.
 func GcpRegion(ctx *pulumi.Context) string {
-	if r := config.New(ctx, "gcp").Get("region"); r != "" {
+	if r := config.GetRegion(ctx); r != "" {
 		return r
 	}
 	return defaultGCPRegion

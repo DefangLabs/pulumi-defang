@@ -21,6 +21,7 @@ require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
 	github.com/aws/aws-sdk-go-v2/config v1.32.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.98.0
+	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.14.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0
@@ -109,6 +110,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/hashicorp/hcl/v2 v2.22.0 // indirect
