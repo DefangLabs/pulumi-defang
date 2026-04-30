@@ -19,7 +19,7 @@ const Name string = "defang-azure"
 func Provider() p.Provider {
 	return infer.Provider(infer.Options{
 		Resources: []infer.InferredResource{
-			infer.Resource[*ACRImageBuild, ACRImageBuildInputs, ACRImageBuildState](&ACRImageBuild{}),
+			infer.Resource[*Build, BuildInputs, BuildState](&Build{}),
 		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),

@@ -22,12 +22,12 @@ var (
 	ErrACREmptyUploadURL = errors.New("empty upload URL response from ACR")
 )
 
-// ACRImageBuild is a custom resource that schedules an ACR task run and waits for completion.
+// Build is a custom resource that schedules an ACR task run and waits for completion.
 // Analogous to Build (CodeBuild) in the AWS provider.
-type ACRImageBuild struct{}
+type Build struct{}
 
-// ACRImageBuildInputs are the inputs for the ACR image build resource.
-type ACRImageBuildInputs struct {
+// BuildInputs are the inputs for the ACR image build resource.
+type BuildInputs struct {
 	// Azure subscription ID
 	SubscriptionID string `pulumi:"subscriptionId"`
 
@@ -62,9 +62,9 @@ type ACRImageBuildInputs struct {
 	Triggers []string `pulumi:"triggers,optional"`
 }
 
-// ACRImageBuildState is the output state of the ACR image build resource.
-type ACRImageBuildState struct {
-	ACRImageBuildInputs
+// BuildState is the output state of the ACR image build resource.
+type BuildState struct {
+	BuildInputs
 
 	// The ACR run ID
 	RunID string `pulumi:"runId"`
@@ -74,16 +74,16 @@ type ACRImageBuildState struct {
 }
 
 // Create schedules an ACR task run and waits for it to complete.
-func (*ACRImageBuild) Create(
-	ctx context.Context, req infer.CreateRequest[ACRImageBuildInputs],
-) (infer.CreateResponse[ACRImageBuildState], error) {
+func (*Build) Create(
+	ctx context.Context, req infer.CreateRequest[BuildInputs],
+) (infer.CreateResponse[BuildState], error) {
 	inputs := req.Inputs
 
 	if req.DryRun {
-		return infer.CreateResponse[ACRImageBuildState]{
+		return infer.CreateResponse[BuildState]{
 			ID: inputs.TaskName,
-			Output: ACRImageBuildState{
-				ACRImageBuildInputs: inputs,
+			Output: BuildState{
+				BuildInputs: inputs,
 			},
 		}, nil
 	}
@@ -105,15 +105,15 @@ func (*ACRImageBuild) Create(
 		maxWait,
 	)
 	if err != nil {
-		return infer.CreateResponse[ACRImageBuildState]{}, fmt.Errorf("ACR image build failed: %w", err)
+		return infer.CreateResponse[BuildState]{}, fmt.Errorf("ACR image build failed: %w", err)
 	}
 
-	return infer.CreateResponse[ACRImageBuildState]{
+	return infer.CreateResponse[BuildState]{
 		ID: inputs.TaskName,
-		Output: ACRImageBuildState{
-			ACRImageBuildInputs: inputs,
-			RunID:               runID,
-			Image:               image,
+		Output: BuildState{
+			BuildInputs: inputs,
+			RunID:       runID,
+			Image:       image,
 		},
 	}, nil
 }
