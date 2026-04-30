@@ -21,8 +21,8 @@ func (m *module) Version() semver.Version {
 
 func (m *module) Construct(ctx *pulumi.Context, name, typ, urn string) (r pulumi.Resource, err error) {
 	switch typ {
-	case "defang-azure:index:ACRImageBuild":
-		r = &ACRImageBuild{}
+	case "defang-azure:index:Build":
+		r = &Build{}
 	case "defang-azure:index:Postgres":
 		r = &Postgres{}
 	case "defang-azure:index:Project":

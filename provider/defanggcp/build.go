@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/longrunning"
 	lroauto "cloud.google.com/go/longrunning/autogen"
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
@@ -49,10 +50,9 @@ type BuildArgs struct {
 	DiskSizeGb     *int64            `pulumi:"diskSizeGb,optional"`
 	Substitutions  map[string]string `pulumi:"substitutions,optional"`
 
-	// Deprecated fields for compatibility with older builds
-	Image *string `pulumi:"image,optional"`
-	// Deprecated fields for compatibility with older builds
-	CmdArgs []string `pulumi:"cmdArgs,optional"`
+	// Max wait time in seconds (default: common.DefaultBuildMaxWaitTime).
+	// Sets the server-side build timeout in Cloud Build.
+	MaxWaitTime *int `pulumi:"maxWaitTime,optional"`
 }
 
 type MachineType = cloudbuildpb.BuildOptions_MachineType
@@ -114,6 +114,11 @@ func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) 
 	// TODO: Use inline secret for environment variables since there is no other way to pass env vars to build steps
 	// var secrets *cloudbuildpb.Secrets
 
+	maxWait := common.DefaultBuildMaxWaitTime
+	if args.MaxWaitTime != nil {
+		maxWait = *args.MaxWaitTime
+	}
+
 	// Create a build request
 	build := &cloudbuildpb.Build{
 		Substitutions: args.Substitutions,
@@ -133,16 +138,13 @@ func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) 
 			DiskSizeGb:  GetDiskSize(args.DiskSizeGb),
 			Logging:     cloudbuildpb.BuildOptions_CLOUD_LOGGING_ONLY,
 		},
-		Timeout: durationpb.New(time.Hour),
+		Timeout: durationpb.New(time.Duration(maxWait) * time.Second),
 		Tags:    args.Tags,
+		Images:  args.Images,
 	}
 
 	if args.ServiceAccount != nil {
 		build.ServiceAccount = fmt.Sprintf("projects/%s/serviceAccounts/%s", args.ProjectId, *args.ServiceAccount)
-	}
-
-	if args.Images != nil {
-		build.Images = args.Images
 	}
 
 	// Trigger the build
@@ -160,6 +162,7 @@ func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) 
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create Cloud Build operation: %w", err)
 	}
+	defer func() { _ = op.Close() }()
 
 	build, err = op.Wait(ctx)
 	if err != nil {
@@ -178,7 +181,8 @@ func runCloudBuild(ctx context.Context, args BuildArgs) (string, string, error) 
 }
 
 type CloudBuildOperation struct {
-	lro *longrunning.Operation
+	lro    *longrunning.Operation
+	client *lroauto.OperationsClient
 }
 
 func NewCloudBuildOperation(ctx context.Context, op *longrunningpb.Operation) (*CloudBuildOperation, error) {
@@ -196,11 +200,12 @@ func NewCloudBuildOperation(ctx context.Context, op *longrunningpb.Operation) (*
 
 	lroClient, err := lroauto.NewOperationsClient(ctx, gtransport.WithConnPool(connPool))
 	if err != nil {
+		_ = connPool.Close()
 		return nil, fmt.Errorf("failed to create Operations client: %w", err)
 	}
 	lro := longrunning.InternalNewOperation(lroClient, op)
 
-	return &CloudBuildOperation{lro: lro}, nil
+	return &CloudBuildOperation{lro: lro, client: lroClient}, nil
 }
 
 func (o *CloudBuildOperation) Wait(ctx context.Context) (*cloudbuildpb.Build, error) {
@@ -210,6 +215,16 @@ func (o *CloudBuildOperation) Wait(ctx context.Context) (*cloudbuildpb.Build, er
 		return nil, err
 	}
 	return &resp, err
+}
+
+// Close releases the underlying gRPC connection pool. Without this the pool
+// dialed in NewCloudBuildOperation leaks for the lifetime of the process —
+// each Build resource Create call opens a new pool that's never reaped.
+func (o *CloudBuildOperation) Close() error {
+	if o.client == nil {
+		return nil
+	}
+	return o.client.Close()
 }
 
 func GetMachineType(machineType *string) MachineType {

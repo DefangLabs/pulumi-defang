@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
@@ -34,13 +35,10 @@ type BuildInputs struct {
 	// AWS region
 	Region string `pulumi:"region,optional"`
 
-	// AWS profile
-	Profile string `pulumi:"profile,optional"`
-
 	// Destination image URL (e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com/repo:tag")
 	Destination string `pulumi:"destination,optional"`
 
-	// Max wait time in seconds (default: 1200 = 20 minutes)
+	// Max wait time in seconds (default: common.DefaultBuildMaxWaitTime)
 	MaxWaitTime *int `pulumi:"maxWaitTime,optional"`
 
 	// Trigger replacements when these change (serialized to force replacement)
@@ -52,7 +50,7 @@ type BuildState struct {
 	BuildInputs
 
 	// The CodeBuild build ID
-	BuildID string `pulumi:"buildId"`
+	BuildId string `pulumi:"buildId"`
 
 	// The built image URL (empty for non-image builds)
 	Image string `pulumi:"image"`
@@ -73,26 +71,33 @@ func (*Build) Create(
 		}, nil
 	}
 
-	maxWait := 1200
+	maxWait := common.DefaultBuildMaxWaitTime
 	if inputs.MaxWaitTime != nil {
 		maxWait = *inputs.MaxWaitTime
 	}
 
-	// Initial wait for IAM role to sync
-	time.Sleep(3 * time.Second)
+	// Initial wait for IAM role to sync. The first StartBuild against a
+	// freshly-created CodeBuild project consistently fails with IAM-not-yet-
+	// propagated errors; sleeping unconditionally avoids surfacing a warning
+	// that throws users/agents off.
+	if err := common.SleepWithContext(ctx, 3*time.Second); err != nil {
+		return infer.CreateResponse[BuildState]{}, err
+	}
 	const waitDur = 5 * time.Second
 
-	var buildID string
+	var buildId string
 	var err error
 	for attempt := range 2 {
-		buildID, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, inputs.Profile, maxWait)
+		buildId, err = runCodeBuildBuild(ctx, inputs.ProjectName, inputs.Region, maxWait)
 		if err == nil {
 			break // success
 		}
 		if attempt == 1 || !isRetryable(err) {
 			return infer.CreateResponse[BuildState]{}, fmt.Errorf("CodeBuild build failed: %w", err)
 		}
-		time.Sleep(waitDur)
+		if sleepErr := common.SleepWithContext(ctx, waitDur); sleepErr != nil {
+			return infer.CreateResponse[BuildState]{}, sleepErr
+		}
 	}
 
 	image := inputs.Destination
@@ -101,7 +106,7 @@ func (*Build) Create(
 		ID: inputs.ProjectName,
 		Output: BuildState{
 			BuildInputs: inputs,
-			BuildID:     buildID,
+			BuildId:     buildId,
 			Image:       image,
 		},
 	}, nil
@@ -117,13 +122,10 @@ func isRetryable(err error) bool {
 	return true
 }
 
-func runCodeBuildBuild(ctx context.Context, projectName, region, profile string, maxWaitSeconds int) (string, error) {
+func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitSeconds int) (string, error) {
 	opts := []func(*config.LoadOptions) error{}
 	if region != "" {
 		opts = append(opts, config.WithRegion(region))
-	}
-	if profile != "" {
-		opts = append(opts, config.WithSharedConfigProfile(profile))
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)
@@ -142,45 +144,47 @@ func runCodeBuildBuild(ctx context.Context, projectName, region, profile string,
 	if startOut.Build == nil || startOut.Build.Id == nil {
 		return "", ErrNoBuildID
 	}
-	buildID := *startOut.Build.Id
+	buildId := *startOut.Build.Id
 
 	deadline := time.Now().Add(time.Duration(maxWaitSeconds) * time.Second)
 	pollInterval := 2 * time.Second
 
 	for {
 		if time.Now().After(deadline) {
-			return buildID, fmt.Errorf("build %s timed out after %ds: %w", buildID, maxWaitSeconds, ErrBuildTimedOut)
+			return buildId, fmt.Errorf("build %s timed out after %ds: %w", buildId, maxWaitSeconds, ErrBuildTimedOut)
 		}
 
-		time.Sleep(pollInterval)
+		if err := common.SleepWithContext(ctx, pollInterval); err != nil {
+			return buildId, err
+		}
 		if pollInterval < 5*time.Second {
 			pollInterval = 5 * time.Second
 		}
 
 		batchOut, err := client.BatchGetBuilds(ctx, &codebuild.BatchGetBuildsInput{
-			Ids: []string{buildID},
+			Ids: []string{buildId},
 		})
 		if err != nil {
-			return buildID, fmt.Errorf("polling build status: %w", err)
+			return buildId, fmt.Errorf("polling build status: %w", err)
 		}
 		if len(batchOut.Builds) == 0 {
-			return buildID, fmt.Errorf("build %s: %w", buildID, ErrBuildNotFound)
+			return buildId, fmt.Errorf("build %s: %w", buildId, ErrBuildNotFound)
 		}
 
 		build := batchOut.Builds[0] // assume only one build per request
 		switch build.BuildStatus {
 		case cbtypes.StatusTypeSucceeded:
-			return buildID, nil
+			return buildId, nil
 		case cbtypes.StatusTypeInProgress:
 			continue
 		case cbtypes.StatusTypeFailed:
-			return buildID, fmt.Errorf(`{"state":"%w","reason":%q}`, ErrBuildFailed, getBuildPhaseErrorContexts(build))
+			return buildId, fmt.Errorf(`{"state":"%w","reason":%q}`, ErrBuildFailed, getBuildPhaseErrorContexts(build))
 		case cbtypes.StatusTypeFault:
-			return buildID, fmt.Errorf(`{"state":"%w","reason":%q}`, ErrBuildFaulted, getBuildPhaseErrorContexts(build))
+			return buildId, fmt.Errorf(`{"state":"%w","reason":%q}`, ErrBuildFaulted, getBuildPhaseErrorContexts(build))
 		case cbtypes.StatusTypeStopped:
-			return buildID, ErrBuildStopped
+			return buildId, ErrBuildStopped
 		case cbtypes.StatusTypeTimedOut:
-			return buildID, ErrCodeBuildTimeout
+			return buildId, ErrCodeBuildTimeout
 		default:
 			continue
 		}
