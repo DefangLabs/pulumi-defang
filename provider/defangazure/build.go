@@ -203,7 +203,13 @@ func scheduleAndWaitACRRun(
 			return runID, "", fmt.Errorf("run %s timed out after %ds: %w", runID, maxWaitSeconds, ErrACRRunTimedOut)
 		}
 
-		time.Sleep(pollInterval)
+		// Use a select so Pulumi cancellation/timeout aborts the loop immediately
+		// rather than waiting through the (up to 30s) backoff before the next poll.
+		select {
+		case <-ctx.Done():
+			return runID, "", ctx.Err()
+		case <-time.After(pollInterval):
+		}
 		if pollInterval < 30*time.Second {
 			pollInterval = min(pollInterval*2, 30*time.Second)
 		}
@@ -238,7 +244,11 @@ func checkRunStatus(
 	case armcontainerregistry.RunStatusCanceled:
 		return "", true, fmt.Errorf("run %s was canceled: %w", runID, ErrACRRunFailed)
 	case armcontainerregistry.RunStatusTimeout:
-		return "", true, fmt.Errorf("run %s timed out on ACR side: %w", runID, ErrACRRunFailed)
+		// Wrap the dedicated timeout sentinel so callers can distinguish
+		// ACR-side timeout (this case) from client-side deadline expiry (the
+		// `time.Now().After(deadline)` branch in scheduleAndWaitACRRun) via
+		// errors.Is(err, ErrACRRunTimedOut), separately from generic failures.
+		return "", true, fmt.Errorf("run %s timed out on ACR side: %w", runID, ErrACRRunTimedOut)
 	case armcontainerregistry.RunStatusQueued,
 		armcontainerregistry.RunStatusRunning,
 		armcontainerregistry.RunStatusStarted:
