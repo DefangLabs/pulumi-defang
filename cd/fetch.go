@@ -15,6 +15,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+const maxPayloadBytes = 16 << 20 // 16 MiB
+
+func readLimited(r io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxPayloadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPayloadBytes {
+		return nil, fmt.Errorf("payload exceeds %d bytes", maxPayloadBytes)
+	}
+	return data, nil
+}
+
 // fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, or base64.
 func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 	switch {
@@ -22,7 +35,7 @@ func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
 		return fetchS3(ctx, uri)
 	case strings.HasPrefix(uri, "gs://"):
 		return fetchGCS(ctx, uri)
-	case strings.Contains(uri, ".blob.core.windows.net"):
+	case strings.Contains(uri, ".blob.core.windows.net/"):
 		return fetchAzureBlob(ctx, uri)
 	case strings.HasPrefix(uri, "http://"), strings.HasPrefix(uri, "https://"):
 		return fetchHTTP(ctx, uri)
@@ -48,7 +61,7 @@ func fetchS3(ctx context.Context, uri string) ([]byte, error) {
 		return nil, err
 	}
 	defer result.Body.Close()
-	return io.ReadAll(result.Body)
+	return readLimited(result.Body)
 }
 
 func fetchGCS(ctx context.Context, uri string) ([]byte, error) {
@@ -66,7 +79,7 @@ func fetchGCS(ctx context.Context, uri string) ([]byte, error) {
 		return nil, err
 	}
 	defer rc.Close()
-	return io.ReadAll(rc)
+	return readLimited(rc)
 }
 
 func fetchAzureBlob(ctx context.Context, uri string) ([]byte, error) {
@@ -83,7 +96,7 @@ func fetchAzureBlob(ctx context.Context, uri string) ([]byte, error) {
 		return nil, fmt.Errorf("downloading Azure blob: %w", err)
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	return readLimited(resp.Body)
 }
 
 func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
@@ -99,5 +112,5 @@ func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("GET %s returned %s", uri, resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	return readLimited(resp.Body)
 }

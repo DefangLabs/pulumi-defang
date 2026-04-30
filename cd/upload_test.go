@@ -26,7 +26,9 @@ func TestUpload(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	payload := map[string]string{"key": "value"}
-	doUpload(t.Context(), srv.URL, payload)
+	if err := doUpload(t.Context(), srv.URL, payload); err != nil {
+		t.Fatalf("doUpload failed: %v", err)
+	}
 
 	if receivedContentType != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", receivedContentType)

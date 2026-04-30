@@ -229,7 +229,7 @@ func CreateContainerApp(
 		maxReplicas = mr
 	}
 
-	ingress := buildIngress(svc, nil)
+	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
 	probes := buildProbes(svc)
 
 	var registries app.RegistryCredentialsArray

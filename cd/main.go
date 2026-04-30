@@ -112,29 +112,32 @@ func stackConfig() (auto.ConfigMap, error) {
 	cfg := auto.ConfigMap{
 		// Defang program config
 		"defang:cdImage":  auto.ConfigValue{Value: cdImage},
+		"defang:etag":     auto.ConfigValue{Value: etag}, // deployment ID; recorded in state, surfaced in tags/env
 		"defang:org":      auto.ConfigValue{Value: org},
 		"defang:stateUrl": auto.ConfigValue{Value: stateUrl},
 		"defang:version":  auto.ConfigValue{Value: version},
 	}
 
 	// Cloud provider config read by the explicit providers in the program
-	switch {
-	case awsRegion != "":
-		cfg["defang:provider"] = auto.ConfigValue{Value: "aws"}
+	var providers []string
+	if awsRegion != "" {
+		providers = append(providers, "aws")
 		cfg["aws:region"] = auto.ConfigValue{Value: awsRegion}
 		if awsProfile != "" {
 			cfg["aws:profile"] = auto.ConfigValue{Value: awsProfile}
 		}
+	}
 
-	case gcpProjectId != "":
-		cfg["defang:provider"] = auto.ConfigValue{Value: "gcp"}
+	if gcpProjectId != "" {
+		providers = append(providers, "gcp")
 		cfg["gcp:project"] = auto.ConfigValue{Value: gcpProjectId}
 		if gcpRegion != "" {
 			cfg["gcp:region"] = auto.ConfigValue{Value: gcpRegion}
 		}
+	}
 
-	case azureSubscriptionId != "":
-		cfg["defang:provider"] = auto.ConfigValue{Value: "azure"}
+	if azureSubscriptionId != "" {
+		providers = append(providers, "azure")
 		cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscriptionId}
 		if azureLocation != "" {
 			cfg["azure-native:location"] = auto.ConfigValue{Value: azureLocation}
@@ -144,15 +147,15 @@ func stackConfig() (auto.ConfigMap, error) {
 		// from (project, stack, location) and (subscription, RG) respectively
 		// inside the provider — matching the CLI's conventions. No need to
 		// pass them through as stack config or env vars.
+	}
 
-	default:
+	if len(providers) == 0 {
 		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCP_PROJECT_ID, or AZURE_SUBSCRIPTION_ID environment variable"}
+	} else if len(providers) > 1 {
+		return nil, &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
 	}
 
 	// Defang recipe config
-	if etag != "" {
-		cfg["defang:etag"] = auto.ConfigValue{Value: etag} // deployment ID; recorded in state, surfaced in tags/env
-	}
 	if domain != "" {
 		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
 	}
