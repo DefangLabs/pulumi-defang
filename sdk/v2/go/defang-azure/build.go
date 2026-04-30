@@ -24,6 +24,7 @@ type Build struct {
 	RegistryName       pulumi.StringOutput      `pulumi:"registryName"`
 	ResourceGroupName  pulumi.StringOutput      `pulumi:"resourceGroupName"`
 	RunId              pulumi.StringOutput      `pulumi:"runId"`
+	ServiceName        pulumi.StringOutput      `pulumi:"serviceName"`
 	SubscriptionId     pulumi.StringOutput      `pulumi:"subscriptionId"`
 	TaskName           pulumi.StringOutput      `pulumi:"taskName"`
 	Triggers           pulumi.StringArrayOutput `pulumi:"triggers"`
@@ -53,6 +54,9 @@ func NewBuild(ctx *pulumi.Context,
 	}
 	if args.ResourceGroupName == nil {
 		return nil, errors.New("invalid value for required argument 'ResourceGroupName'")
+	}
+	if args.ServiceName == nil {
+		return nil, errors.New("invalid value for required argument 'ServiceName'")
 	}
 	if args.SubscriptionId == nil {
 		return nil, errors.New("invalid value for required argument 'SubscriptionId'")
@@ -100,6 +104,7 @@ type buildArgs struct {
 	MaxWaitTime        *int     `pulumi:"maxWaitTime"`
 	RegistryName       string   `pulumi:"registryName"`
 	ResourceGroupName  string   `pulumi:"resourceGroupName"`
+	ServiceName        string   `pulumi:"serviceName"`
 	SubscriptionId     string   `pulumi:"subscriptionId"`
 	TaskName           string   `pulumi:"taskName"`
 	Triggers           []string `pulumi:"triggers"`
@@ -114,6 +119,7 @@ type BuildArgs struct {
 	MaxWaitTime        pulumi.IntPtrInput
 	RegistryName       pulumi.StringInput
 	ResourceGroupName  pulumi.StringInput
+	ServiceName        pulumi.StringInput
 	SubscriptionId     pulumi.StringInput
 	TaskName           pulumi.StringInput
 	Triggers           pulumi.StringArrayInput
@@ -190,6 +196,10 @@ func (o BuildOutput) ResourceGroupName() pulumi.StringOutput {
 
 func (o BuildOutput) RunId() pulumi.StringOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.RunId }).(pulumi.StringOutput)
+}
+
+func (o BuildOutput) ServiceName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.ServiceName }).(pulumi.StringOutput)
 }
 
 func (o BuildOutput) SubscriptionId() pulumi.StringOutput {

@@ -89,7 +89,7 @@ func CreateBuildInfra(
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		Sku: &containerregistry.SkuArgs{
-			Name: pulumi.String(string(containerregistry.SkuNameStandard)),
+			Name: pulumi.String(RegistrySku.Get(ctx)),
 		},
 	}, opts...)
 	if err != nil {
@@ -162,9 +162,8 @@ func buildServiceImage(
 	}
 
 	platform := svc.GetPlatform()
-	imageName := serviceName
 
-	taskYAML, err := generateTaskYAML(imageName, svc.Build.GetDockerfile(), svc.Build.Args, platform)
+	taskYAML, err := generateTaskYAML(serviceName, svc.Build.GetDockerfile(), svc.Build.Args, platform)
 	if err != nil {
 		return nil, fmt.Errorf("generating ACR task YAML for %s: %w", serviceName, err)
 	}
@@ -196,7 +195,8 @@ func buildServiceImage(
 		"resourceGroupName":  sharedInfra.ResourceGroup.Name,
 		"registryName":       infra.registry.Name,
 		"taskName":           task.Name,
-		"imageName":          pulumi.String(imageName),
+		"imageName":          pulumi.String(SharedBuildRepo),
+		"serviceName":        pulumi.String(serviceName),
 		"loginServer":        infra.registry.LoginServer,
 		"contextPath":        svc.Build.Context,
 		"encodedTaskContent": pulumi.String(encodedYAML),

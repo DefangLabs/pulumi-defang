@@ -35,6 +35,9 @@ type SharedInfra struct {
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
 	Repos             map[string]*artifactregistry.Repository // non-empty when services reference external registries
+	// Etag is the deployment ID supplied by the CD program; empty for
+	// standalone Service callers.
+	Etag string
 }
 
 // EnableGcpAPIs enables the GCP APIs required by the project.

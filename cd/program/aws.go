@@ -17,18 +17,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+	defaultTags := pulumi.StringMap{
+		"defang:org":     pulumi.String(ctx.Organization()),
+		"defang:project": pulumi.String(ctx.Project()),
+		"defang:stack":   pulumi.String(ctx.Stack()),
+		"defang:version": pulumi.String(Version),
+	}
+	if etag != "" {
+		defaultTags["defang:etag"] = pulumi.String(etag)
+	}
+
 	providerArgs := &aws.ProviderArgs{
-		Region: pulumi.StringPtr(config.GetRegion(ctx)),
-		DefaultTags: &aws.ProviderDefaultTagsArgs{
-			Tags: pulumi.StringMap{
-				"defang:etag":    pulumi.String(projectUpdate.GetEtag()),
-				"defang:org":     pulumi.String(ctx.Organization()),
-				"defang:project": pulumi.String(ctx.Project()),
-				"defang:stack":   pulumi.String(ctx.Stack()),
-				"defang:version": pulumi.String(Version),
-			},
-		},
+		Region:      pulumi.StringPtr(config.GetRegion(ctx)),
+		DefaultTags: &aws.ProviderDefaultTagsArgs{Tags: defaultTags},
 	}
 	if profile := config.GetProfile(ctx); profile != "" {
 		providerArgs.Profile = pulumi.StringPtr(profile)
@@ -39,7 +41,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectU
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	args := toAWSArgs(cf)
+	args := toAWSArgs(cf, etag)
 	if domain != "" {
 		awsCfgArgs := defangaws.AWSConfigArgs{
 			ProjectDomain: pulumi.StringPtr(domain),
@@ -77,7 +79,7 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain string, projectU
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toAWSArgs(cf *compose.Project) *defangaws.ProjectArgs {
+func toAWSArgs(cf *compose.Project, etag string) *defangaws.ProjectArgs {
 	args := &defangaws.ProjectArgs{
 		Services: toAWSServices(cf.Services),
 	}
@@ -87,6 +89,10 @@ func toAWSArgs(cf *compose.Project) *defangaws.ProjectArgs {
 			nm[string(k)] = awscompose.NetworkConfigArgs{Internal: pulumi.Bool(v.Internal)}
 		}
 		args.Networks = nm
+	}
+	if etag != "" {
+		e := etag
+		args.Etag = &e
 	}
 	return args
 }

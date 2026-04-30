@@ -90,7 +90,7 @@ func CreateCloudRunService(
 func buildEnvVars(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
-	serviceName string,
+	serviceName, etag string,
 	svc compose.ServiceConfig,
 	opts ...pulumi.InvokeOption,
 ) (cloudrunv2.ServiceTemplateContainerEnvArray, []string) {
@@ -105,6 +105,12 @@ func buildEnvVars(
 			Name:  pulumi.String("DEFANG_SERVICE"),
 			Value: pulumi.String(serviceName),
 		},
+	}
+	if etag != "" {
+		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("DEFANG_ETAG"),
+			Value: pulumi.String(etag),
+		})
 	}
 	for k, v := range common.Sorted(svc.Environment) {
 		if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
@@ -152,7 +158,11 @@ func buildTemplate(
 	gcpConfig *SharedInfra,
 	opts ...pulumi.InvokeOption,
 ) (*cloudrunv2.ServiceTemplateArgs, []string) {
-	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, svc, opts...)
+	var etag string
+	if gcpConfig != nil {
+		etag = gcpConfig.Etag
+	}
+	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, etag, svc, opts...)
 
 	// Build port config
 	var ports *cloudrunv2.ServiceTemplateContainerPortsArgs

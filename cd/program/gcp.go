@@ -15,23 +15,27 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+	defaultLabels := pulumi.StringMap{
+		"defang-org":     pulumi.String(ctx.Organization()),
+		"defang-project": pulumi.String(ctx.Project()),
+		"defang-stack":   pulumi.String(ctx.Stack()),
+		// "defang-version": pulumi.String(Version), FIXME: cannot have dots
+	}
+	if etag != "" {
+		defaultLabels["defang-etag"] = pulumi.String(etag)
+	}
+
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project: pulumi.StringPtr(config.GetProject(ctx)),
-		Region:  pulumi.StringPtr(config.GetRegion(ctx)),
-		DefaultLabels: pulumi.StringMap{
-			"defang-etag":    pulumi.String(projectUpdate.GetEtag()),
-			"defang-org":     pulumi.String(ctx.Organization()),
-			"defang-project": pulumi.String(ctx.Project()),
-			"defang-stack":   pulumi.String(ctx.Stack()),
-			// "defang-version": pulumi.String(Version), FIXME: cannot have dots
-		},
+		Project:       pulumi.StringPtr(config.GetProject(ctx)),
+		Region:        pulumi.StringPtr(config.GetRegion(ctx)),
+		DefaultLabels: defaultLabels,
 	})
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf), pulumi.Providers(gcpProvider))
+	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, etag), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -57,7 +61,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defangv1
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toGCPArgs(cf *compose.Project) *defanggcp.ProjectArgs {
+func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {
 	args := &defanggcp.ProjectArgs{
 		Services: toGCPServices(cf.Services),
 	}
@@ -67,6 +71,10 @@ func toGCPArgs(cf *compose.Project) *defanggcp.ProjectArgs {
 			nm[string(k)] = gcpcompose.NetworkConfigArgs{Internal: pulumi.Bool(v.Internal)}
 		}
 		args.Networks = nm
+	}
+	if etag != "" {
+		e := etag
+		args.Etag = &e
 	}
 	return args
 }

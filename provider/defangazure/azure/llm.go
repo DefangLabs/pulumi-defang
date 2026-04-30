@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -75,6 +77,16 @@ func CreateLLMInfra(
 		return llmSubDomainPrefix(name) + "-" + suffix
 	}).(pulumi.StringOutput)
 
+	// When a project VNet is available, lock the account to private-endpoint-only
+	// access (data-plane unreachable from the public internet); otherwise leave
+	// it Enabled so the API key — distributed via Key Vault to the user's
+	// Container Apps — remains the only auth gate. The PATCH-time `Required`
+	// quirk is satisfied either way because the field is now always explicit.
+	useVNet := infra.Networking != nil && infra.DNS != nil
+	publicAccess := pulumi.String("Enabled")
+	if useVNet {
+		publicAccess = pulumi.String("Disabled")
+	}
 	account, err := cognitiveservices.NewAccount(ctx, name, &cognitiveservices.AccountArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.StringPtr(config.GetLocation(ctx)),
@@ -88,10 +100,18 @@ func CreateLLMInfra(
 		Properties: &cognitiveservices.AccountPropertiesArgs{
 			AllowProjectManagement: pulumi.Bool(true),
 			CustomSubDomainName:    subDomainName.ToStringPtrOutput(),
+			PublicNetworkAccess:    publicAccess,
 		},
+		Tags: ServiceTags(name),
 	}, append(opts, pulumi.ReplaceOnChanges([]string{"properties.customSubDomainName"}))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure AI Foundry account: %w", err)
+	}
+
+	if useVNet {
+		if err := createLLMPrivateEndpoint(ctx, name, Location(ctx), account, infra, opts...); err != nil {
+			return nil, fmt.Errorf("creating LLM private endpoint: %w", err)
+		}
 	}
 
 	// pulumi.Parent(account) routes the invoke through the account's provider —
@@ -223,4 +243,110 @@ func selectModelForAlias(alias string, selector ModelSelector) pulumi.Output {
 		role = ModelRoleChat
 	}
 	return selector.SelectModel(role)
+}
+
+// createLLMPrivateEndpoint provisions a private endpoint for the AI Foundry
+// account, two privatelink DNS zones (cognitiveservices.azure.com and
+// openai.azure.com — the AIServices kind exposes both data planes), VNet links
+// for each zone, and a PrivateDnsZoneGroup binding both zones to the endpoint.
+// Once applied, the account's data plane endpoint is reachable only from
+// within the VNet via the private endpoint IP — combined with
+// PublicNetworkAccess=Disabled on the account, the endpoint is not callable
+// from the public internet at all.
+func createLLMPrivateEndpoint(
+	ctx *pulumi.Context,
+	serviceName, location string,
+	account *cognitiveservices.Account,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) error {
+	peName := serviceName + "-llm"
+	pe, err := network.NewPrivateEndpoint(ctx, peName, &network.PrivateEndpointArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		Location:          pulumi.StringPtr(location),
+		Subnet: &network.SubnetTypeArgs{
+			Id: infra.Networking.PrivateEndpointsSubnet.ID().ToStringOutput(),
+		},
+		PrivateLinkServiceConnections: network.PrivateLinkServiceConnectionArray{
+			&network.PrivateLinkServiceConnectionArgs{
+				Name:                 pulumi.String(peName),
+				PrivateLinkServiceId: account.ID().ToStringOutput(),
+				GroupIds:             pulumi.StringArray{pulumi.String("account")},
+			},
+		},
+		Tags: ServiceTags("llm"),
+	}, opts...)
+	if err != nil {
+		return fmt.Errorf("creating LLM private endpoint: %w", err)
+	}
+
+	csZone, csZoneOpts, err := createLLMPrivatelinkZone(
+		ctx, serviceName+"-cs", "privatelink.cognitiveservices.azure.com", infra, opts...)
+	if err != nil {
+		return err
+	}
+	if _, err := privatedns.NewVirtualNetworkLink(ctx, serviceName+"-cs", &privatedns.VirtualNetworkLinkArgs{
+		ResourceGroupName:   infra.ResourceGroup.Name,
+		PrivateZoneName:     csZone.Name,
+		Location:            pulumi.String("global"),
+		RegistrationEnabled: pulumi.Bool(false),
+		VirtualNetwork:      &privatedns.SubResourceArgs{Id: infra.Networking.VNet.ID().ToStringOutput()},
+	}, csZoneOpts...); err != nil {
+		return fmt.Errorf("linking cognitiveservices private DNS zone to VNet: %w", err)
+	}
+
+	openaiZone, openaiZoneOpts, err := createLLMPrivatelinkZone(
+		ctx, serviceName+"-openai", "privatelink.openai.azure.com", infra, opts...)
+	if err != nil {
+		return err
+	}
+	if _, err := privatedns.NewVirtualNetworkLink(ctx, serviceName+"-openai", &privatedns.VirtualNetworkLinkArgs{
+		ResourceGroupName:   infra.ResourceGroup.Name,
+		PrivateZoneName:     openaiZone.Name,
+		Location:            pulumi.String("global"),
+		RegistrationEnabled: pulumi.Bool(false),
+		VirtualNetwork:      &privatedns.SubResourceArgs{Id: infra.Networking.VNet.ID().ToStringOutput()},
+	}, openaiZoneOpts...); err != nil {
+		return fmt.Errorf("linking openai private DNS zone to VNet: %w", err)
+	}
+
+	if _, err := network.NewPrivateDnsZoneGroup(ctx, peName, &network.PrivateDnsZoneGroupArgs{
+		ResourceGroupName:       infra.ResourceGroup.Name,
+		PrivateEndpointName:     pe.Name,
+		PrivateDnsZoneGroupName: pulumi.String("default"),
+		PrivateDnsZoneConfigs: network.PrivateDnsZoneConfigArray{
+			&network.PrivateDnsZoneConfigArgs{
+				Name:             pulumi.String("cognitiveservices"),
+				PrivateDnsZoneId: csZone.ID().ToStringOutput(),
+			},
+			&network.PrivateDnsZoneConfigArgs{
+				Name:             pulumi.String("openai"),
+				PrivateDnsZoneId: openaiZone.ID().ToStringOutput(),
+			},
+		},
+	}, append(opts, pulumi.Parent(pe))...); err != nil {
+		return fmt.Errorf("creating LLM private DNS zone group: %w", err)
+	}
+	return nil
+}
+
+// createLLMPrivatelinkZone creates a privatelink private DNS zone for one of
+// the AIServices data planes. Returns the zone plus a child opts slice with
+// the zone as parent, suitable for use creating the VNet link.
+func createLLMPrivatelinkZone(
+	ctx *pulumi.Context,
+	logicalName, zoneName string,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) (*privatedns.PrivateZone, []pulumi.ResourceOption, error) {
+	zone, err := privatedns.NewPrivateZone(ctx, logicalName, &privatedns.PrivateZoneArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		Location:          pulumi.String("global"),
+		PrivateZoneName:   pulumi.String(zoneName),
+		Tags:              ServiceTags("llm"),
+	}, opts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating %s private DNS zone: %w", zoneName, err)
+	}
+	return zone, append(opts, pulumi.Parent(zone)), nil
 }

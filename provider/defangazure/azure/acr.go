@@ -21,10 +21,26 @@ type acrTaskSpec struct {
 	Steps   []acrTaskStep `yaml:"steps"`
 }
 
+// SharedBuildRepo is the single repository name used for every service's
+// builds within a project. Co-locating images in one repo means ACR's blob
+// store deduplicates identical layers across services (e.g. node:20 base
+// layers shared between three Node services), so a freshly-deployed service
+// reuses a previously-cached base layer for free.
+const SharedBuildRepo = "builds"
+
 // generateTaskYAML creates the ACR task YAML for building and pushing a Docker image.
 // Uses BuildKit layer cache stored in the registry (type=registry).
-func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]string, platform string) (string, error) {
-	flags := make([]string, 0, 1+len(buildArgs)+5)
+//
+// All services in a project share the SharedBuildRepo repo; per-service
+// differentiation is encoded in the tag prefix (e.g. "myservice-<runID>").
+// Cache lookups try the per-service ":<svc>-latest" first, then a project-
+// wide ":latest" so that brand-new services pick up base layers built by any
+// existing sibling service on their first build.
+func generateTaskYAML(
+	serviceName, dockerfilePath string,
+	buildArgs map[string]string,
+	platform string) (string, error) {
+	flags := make([]string, 0, 1+len(buildArgs)+6)
 
 	if platform != "" {
 		flags = append(flags, "--platform "+platform)
@@ -40,14 +56,20 @@ func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]str
 		flags = append(flags, fmt.Sprintf("--build-arg %s=%q", k, buildArgs[k]))
 	}
 
+	tagRunID := fmt.Sprintf("{{.Run.Registry}}/%s:%s-{{.Run.ID}}", SharedBuildRepo, serviceName)
+	tagSvcLatest := fmt.Sprintf("{{.Run.Registry}}/%s:%s-latest", SharedBuildRepo, serviceName)
+	tagRepoLatest := fmt.Sprintf("{{.Run.Registry}}/%s:latest", SharedBuildRepo)
+
 	// BUILDKIT_INLINE_CACHE=1 embeds cache metadata into the image so it can
 	// be used as --cache-from on the next run (inline cache strategy).
 	flags = append(flags,
 		"--build-arg BUILDKIT_INLINE_CACHE=1",
-		fmt.Sprintf("-t {{.Run.Registry}}/%s:{{.Run.ID}}", imageName),
-		fmt.Sprintf("-t {{.Run.Registry}}/%s:latest", imageName),
+		"-t "+tagRunID,
+		"-t "+tagSvcLatest,
+		"-t "+tagRepoLatest,
 		"-f "+dockerfilePath,
-		fmt.Sprintf("--cache-from {{.Run.Registry}}/%s:latest", imageName),
+		"--cache-from "+tagSvcLatest,
+		"--cache-from "+tagRepoLatest,
 		".",
 	)
 
@@ -62,10 +84,7 @@ func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]str
 				Env:   []string{"DOCKER_BUILDKIT=1"},
 			},
 			{
-				Push: []string{
-					fmt.Sprintf("{{.Run.Registry}}/%s:{{.Run.ID}}", imageName),
-					fmt.Sprintf("{{.Run.Registry}}/%s:latest", imageName),
-				},
+				Push: []string{tagRunID, tagSvcLatest, tagRepoLatest},
 			},
 		},
 	}
@@ -83,7 +102,7 @@ func generateTaskYAML(imageName, dockerfilePath string, buildArgs map[string]str
 // strips SAS query strings from contextPath; it is passed at run time instead.
 func createACRTask(
 	ctx *pulumi.Context,
-	name string,
+	serviceName string,
 	encodedYAML string,
 	contextURL pulumi.StringInput,
 	registry *containerregistry.Registry,
@@ -95,15 +114,15 @@ func createACRTask(
 		if idx := strings.Index(s, "?"); idx >= 0 {
 			base := s[:idx]
 			msg := fmt.Sprintf("ACR task %s: build context URL: %s (SAS token present, %d bytes)",
-				name, base, len(s)-idx-1)
+				serviceName, base, len(s)-idx-1)
 			_ = ctx.Log.Info(msg, nil)
 		} else {
-			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", name, s), nil)
+			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", serviceName, s), nil)
 		}
 		return s
 	})
 
-	task, err := containerregistry.NewTask(ctx, name, &containerregistry.TaskArgs{
+	task, err := containerregistry.NewTask(ctx, serviceName, &containerregistry.TaskArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		RegistryName:      registry.Name,
 		// Location:          registry.Location,
@@ -121,6 +140,7 @@ func createACRTask(
 			Cpu: pulumi.Int(2),
 		},
 		Timeout: pulumi.Int(3600),
+		Tags:    ServiceTags(serviceName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACR task: %w", err)

@@ -236,6 +236,9 @@ func stackConfig() auto.ConfigMap {
 	cfg["defang:org"] = auto.ConfigValue{Value: org}
 	cfg["defang:prefix"] = auto.ConfigValue{Value: prefix}
 	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode} // backwards compatible with legacy behavior; now using recipes
+	if etag != "" {
+		cfg["defang:etag"] = auto.ConfigValue{Value: etag} // deployment ID; recorded in state, surfaced in tags/env
+	}
 	if domain != "" {
 		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
 	}
@@ -334,6 +337,13 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Hour)
 	defer cancel()
+
+	// Wrap stdout/stderr so every log line emitted by the Pulumi engine, the
+	// standard log package, and any library writing to the global file handles
+	// is prefixed with the etag. Lets the CLI filter ContainerAppConsoleLogs_CL
+	// by KQL `Log_s has "<etag>"`. Must run BEFORE any other write.
+	flushEtag := installEtagPrefix(etag)
+	defer flushEtag()
 
 	userAgent := "defang/" + version
 	program.Version = version

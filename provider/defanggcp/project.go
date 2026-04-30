@@ -22,6 +22,10 @@ type ProjectInputs struct {
 	// Domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 	// a wildcard certificate and DNS zone are created.
 	Domain string `pulumi:"domain,optional" yaml:"domain,omitempty"`
+	// Etag is the deployment identifier supplied by the CD program; the
+	// provider injects it as a DEFANG_ETAG env var on every Cloud Run service
+	// container so application logs can be correlated with a specific deployment.
+	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -78,6 +82,7 @@ func buildProject(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
+	config.Etag = args.Etag
 
 	if err := providergcp.EnableGcpAPIs(ctx, config.GcpProject, childOpts...); err != nil {
 		return nil, err

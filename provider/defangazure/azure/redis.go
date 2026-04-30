@@ -89,6 +89,7 @@ func CreateRedisEnterprise(
 		Sku: redis.SkuArgs{
 			Name: pulumi.String(skuName),
 		},
+		Tags: ServiceTags(serviceName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure Managed Redis cluster: %w", err)
@@ -178,6 +179,7 @@ func createRedisVNetEndpoint(
 				GroupIds:             pulumi.StringArray{pulumi.String("redisEnterprise")},
 			},
 		},
+		Tags: ServiceTags(serviceName),
 	}, opts...)
 	if err != nil {
 		return fmt.Errorf("creating Redis private endpoint: %w", err)

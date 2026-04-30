@@ -29,6 +29,11 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Etag is the deployment identifier supplied by the CD program; the provider
+	// stamps it onto every resource (tags) and onto Container App revisions
+	// (RevisionSuffix) so that logs and Resource Graph queries can be filtered
+	// per-deployment.
+	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -290,7 +295,7 @@ func createManagedEnvironment(
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
-			Name: pulumi.String("PerGB2018"),
+			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
 		RetentionInDays: pulumi.Int(common.LogRetentionDays.Get(ctx)),
 	}, childOpts...)
@@ -358,6 +363,7 @@ func setupSharedInfra(
 		ResourceGroup:  rg,
 		KeyVaultURL:    keyVaultURL,
 		ConfigProvider: providerazure.NewConfigProvider(name, keyVaultURL),
+		Etag:           inputs.Etag,
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {
@@ -413,8 +419,18 @@ func setupSharedInfra(
 func (*Project) Construct(
 	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
 ) (*ProjectOutputs, error) {
+	// Cascade a transformation to all child resources that injects
+	// defang-project / defang-stack / defang-etag into every azure-native
+	// resource's Tags. azure-native has no DefaultTags, and pulumi-go-provider's
+	// Construct ctx lacks a stack so RegisterStackTransformation panics — the
+	// resource-level Transformations option is the supported cascade.
+	tagOpts := opts
+	if t := providerazure.DefaultTagsTransformation(providerazure.BaseTags(ctx, inputs.Etag)); t != nil {
+		tagOpts = pulumi.Composite(opts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+	}
+
 	comp := &ProjectOutputs{}
-	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
+	if err := ctx.RegisterComponentResource(typ, name, comp, tagOpts); err != nil {
 		return nil, err
 	}
 

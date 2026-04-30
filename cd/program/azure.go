@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &pulumiazure.ProviderArgs{
 		Location:                  pulumi.String(config.GetLocation(ctx)),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
@@ -29,7 +29,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defang
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf), pulumi.Providers(azureProvider))
+	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf, etag), pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -55,7 +55,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, projectUpdate *defang
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {
+func toAzureArgs(cf *compose.Project, etag string) *defangazure.ProjectArgs {
 	args := &defangazure.ProjectArgs{
 		Services: toAzureServices(cf.Services),
 	}
@@ -65,6 +65,10 @@ func toAzureArgs(cf *compose.Project) *defangazure.ProjectArgs {
 			nm[string(k)] = azurecompose.NetworkConfigArgs{Internal: pulumi.Bool(v.Internal)}
 		}
 		args.Networks = nm
+	}
+	if etag != "" {
+		e := etag
+		args.Etag = &e
 	}
 	return args
 }
