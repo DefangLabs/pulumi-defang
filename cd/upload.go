@@ -14,10 +14,9 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
-	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 )
 
-func uploadEvents(ctx context.Context, engineEvents []events.EngineEvent) {
+func uploadEvents[T any](ctx context.Context, engineEvents []T) {
 	if eventsUploadUrl == "" {
 		return
 	}
