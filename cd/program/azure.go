@@ -41,6 +41,8 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 	if projectUpdate != nil {
 		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
 			for _, svc := range projectUpdate.Services {
+				svc.Status = "PROVISIONING"
+				svc.State = defangv1.ServiceState_DEPLOYMENT_COMPLETED
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
 					svc.Endpoints = []string{ep}
 				}
@@ -201,7 +203,7 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 	containerName, blobName, _ := strings.Cut(projectPbKey(ctx), "/")
 
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
-		return NewTempFileAsset("project-pb-*.pb", v.([]byte))
+		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
 	}).(pulumi.AssetOutput)
 
 	_, err = storage.NewBlob(ctx, "project-pb", &storage.BlobArgs{
