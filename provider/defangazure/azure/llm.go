@@ -109,7 +109,7 @@ func CreateLLMInfra(
 	}
 
 	if useVNet {
-		if err := createLLMPrivateEndpoint(ctx, name, account, infra, opts...); err != nil {
+		if err := createLLMPrivateEndpoint(ctx, name, Location(ctx), account, infra, opts...); err != nil {
 			return nil, fmt.Errorf("creating LLM private endpoint: %w", err)
 		}
 	}
@@ -224,7 +224,7 @@ var subDomainPrefixRe = regexp.MustCompile(`^-+|[^a-z0-9-]|-+$`)
 // custom subdomain: lowercase letters, digits, and hyphens only, ≤15 chars so
 // there's room for "-<8-char suffix>" inside Azure's 24-char limit.
 func llmSubDomainPrefix(name string) string {
-	prefix := subDomainPrefixRe.ReplaceAllLiteralString(strings.ToLower(name), "")
+	prefix := subDomainPrefixRe.ReplaceAllString(strings.ToLower(name), "")
 	if len(prefix) > 15 {
 		prefix = strings.Trim(prefix[:15], "-")
 	} else if len(prefix) == 0 {
@@ -255,7 +255,7 @@ func selectModelForAlias(alias string, selector ModelSelector) pulumi.Output {
 // from the public internet at all.
 func createLLMPrivateEndpoint(
 	ctx *pulumi.Context,
-	serviceName string,
+	serviceName, location string,
 	account *cognitiveservices.Account,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
@@ -263,7 +263,7 @@ func createLLMPrivateEndpoint(
 	peName := serviceName + "-llm"
 	pe, err := network.NewPrivateEndpoint(ctx, peName, &network.PrivateEndpointArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
-		// Location:          pulumi.StringPtr(location),
+		Location:          pulumi.StringPtr(location),
 		Subnet: &network.SubnetTypeArgs{
 			Id: infra.Networking.PrivateEndpointsSubnet.ID().ToStringOutput(),
 		},

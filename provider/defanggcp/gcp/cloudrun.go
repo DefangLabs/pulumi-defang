@@ -9,6 +9,7 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 type CloudRunResult struct {
@@ -70,7 +71,7 @@ func CreateCloudRunService(
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
 		Template:           template,
 	}
-	if launchStage := LaunchStage.Get(ctx); launchStage != "" {
+	if launchStage, err := config.New(ctx, "defang").Try("launch-stage"); err == nil && launchStage != "" {
 		serviceArgs.LaunchStage = pulumi.String(launchStage)
 	}
 	crService, err := cloudrunv2.NewService(ctx, serviceName, serviceArgs, parentOpt, pulumi.DependsOn(iamDeps))

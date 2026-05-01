@@ -19,7 +19,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.16.0
 	github.com/pulumi/pulumi-gcp/sdk/v8 v8.30.1
-	github.com/pulumi/pulumi/sdk/v3 v3.231.0
+	github.com/pulumi/pulumi/sdk/v3 v3.228.0
 )
 
 require (
@@ -129,7 +129,7 @@ require (
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
-	google.golang.org/grpc v1.80.0 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

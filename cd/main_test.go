@@ -1,8 +1,199 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 )
+
+func TestFetchPayloadBase64(t *testing.T) {
+	original := []byte("hello world")
+	encoded := base64.StdEncoding.EncodeToString(original)
+
+	got, err := fetchPayload(t.Context(), encoded)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Errorf("got %q, want %q", got, original)
+	}
+}
+
+func TestFetchPayloadBase64Invalid(t *testing.T) {
+	// "not-base64!!!" is not valid base64 and not a recognized URI scheme
+	_, err := fetchPayload(t.Context(), "not-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for invalid base64")
+	}
+}
+
+func TestFetchHTTP(t *testing.T) {
+	body := []byte("response body")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := fetchHTTP(t.Context(), srv.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Errorf("got %q, want %q", got, body)
+	}
+}
+
+func TestFetchHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := fetchHTTP(t.Context(), srv.URL)
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+}
+
+func TestFetchPayloadHTTP(t *testing.T) {
+	body := []byte("http payload")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := fetchPayload(t.Context(), srv.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Errorf("got %q, want %q", got, body)
+	}
+}
+
+func TestUpload(t *testing.T) {
+	var receivedBody []byte
+	var receivedContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		receivedContentType = r.Header.Get("Content-Type")
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	payload := map[string]string{"key": "value"}
+	upload(t.Context(), srv.URL, payload)
+
+	if receivedContentType != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %q", receivedContentType)
+	}
+
+	var got map[string]string
+	if err := json.Unmarshal(receivedBody, &got); err != nil {
+		t.Fatalf("failed to unmarshal received body: %v", err)
+	}
+	if got["key"] != "value" {
+		t.Errorf("got key=%q, want %q", got["key"], "value")
+	}
+}
+
+func TestUploadEventsEmpty(t *testing.T) {
+	// Should not send request when events are empty
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	t.Cleanup(srv.Close)
+
+	saved := eventsUploadUrl
+	eventsUploadUrl = srv.URL
+	t.Cleanup(func() { eventsUploadUrl = saved })
+
+	uploadEvents(t.Context(), nil)
+	uploadEvents(t.Context(), []events.EngineEvent{})
+
+	if called {
+		t.Error("expected no HTTP request for empty events")
+	}
+}
+
+func TestUploadEventsNoUrl(t *testing.T) {
+	// Should not send request when URL is empty
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	t.Cleanup(srv.Close)
+
+	saved := eventsUploadUrl
+	eventsUploadUrl = ""
+	t.Cleanup(func() { eventsUploadUrl = saved })
+
+	uploadEvents(t.Context(), []events.EngineEvent{{}})
+
+	if called {
+		t.Error("expected no HTTP request when URL is empty")
+	}
+}
+
+func TestUploadEventsSendsPayload(t *testing.T) {
+	var receivedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	saved := eventsUploadUrl
+	eventsUploadUrl = srv.URL
+	t.Cleanup(func() { eventsUploadUrl = saved })
+
+	uploadEvents(t.Context(), []events.EngineEvent{{}})
+
+	var got map[string]any
+	if err := json.Unmarshal(receivedBody, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	evts, ok := got["events"].([]any)
+	if !ok || len(evts) != 1 {
+		t.Errorf("expected 1 event, got %v", got)
+	}
+}
+
+func TestCollectEvents(t *testing.T) {
+	ch, evts := collectEvents()
+
+	ch <- events.EngineEvent{}
+	ch <- events.EngineEvent{}
+	close(ch)
+
+	// The goroutine drains the channel asynchronously; give it time to finish
+	// after we close the channel.
+	deadline := time.After(2 * time.Second)
+	for {
+		if len(*evts) == 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for events, got %d", len(*evts))
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
 
 func TestColor(t *testing.T) {
 	saved := noColor
@@ -81,7 +272,7 @@ func TestGetenv(t *testing.T) {
 			if tt.envVal != "" {
 				t.Setenv(tt.key, tt.envVal)
 			}
-			if got := getenv(tt.key, tt.fallback); got != tt.want {
+			if got := Getenv(tt.key, tt.fallback); got != tt.want {
 				t.Errorf("Getenv(%q, %q) = %q, want %q", tt.key, tt.fallback, got, tt.want)
 			}
 		})
@@ -101,7 +292,7 @@ func TestSplitByComma(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := splitByComma(tt.input)
+			got := SplitByComma(tt.input)
 			if tt.want == nil {
 				if got != nil {
 					t.Errorf("SplitByComma(%q) = %v, want nil", tt.input, got)
@@ -137,7 +328,7 @@ func TestGetenvBool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := "TEST_GETENVBOOL_" + tt.name
 			t.Setenv(key, tt.val)
-			if got := getenvBool(key); got != tt.want {
+			if got := GetenvBool(key); got != tt.want {
 				t.Errorf("GetenvBool(%q) with value %q = %v, want %v", key, tt.val, got, tt.want)
 			}
 		})
@@ -147,8 +338,8 @@ func TestGetenvBool(t *testing.T) {
 func TestStackConfigAWS(t *testing.T) {
 	// Save and restore all globals that stackConfig reads
 	savedAwsRegion := awsRegion
-	savedGcpProjectId := gcpProjectId
-	savedAzureSubscriptionId := azureSubscriptionId
+	savedGcpProject := gcpProject
+	savedAzureSubscription := azureSubscription
 	savedOrg := org
 	savedPrefix := prefix
 	savedMode := mode
@@ -160,8 +351,8 @@ func TestStackConfigAWS(t *testing.T) {
 	savedStateUrl := stateUrl
 	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
-		gcpProjectId = savedGcpProjectId
-		azureSubscriptionId = savedAzureSubscriptionId
+		gcpProject = savedGcpProject
+		azureSubscription = savedAzureSubscription
 		org = savedOrg
 		prefix = savedPrefix
 		mode = savedMode
@@ -174,8 +365,8 @@ func TestStackConfigAWS(t *testing.T) {
 	})
 
 	awsRegion = "us-east-1"
-	gcpProjectId = ""
-	azureSubscriptionId = ""
+	gcpProject = ""
+	azureSubscription = ""
 	org = "testorg"
 	prefix = "TestPrefix"
 	mode = "development"
@@ -186,10 +377,7 @@ func TestStackConfigAWS(t *testing.T) {
 	awsProfile = "myprofile"
 	stateUrl = "http://example.com/state"
 
-	cfg, err := stackConfig()
-	if err != nil {
-		t.Fatalf("stackConfig() error: %v", err)
-	}
+	cfg := stackConfig()
 
 	if cfg["defang:provider"].Value != "aws" {
 		t.Errorf("expected provider aws, got %q", cfg["defang:provider"].Value)
@@ -222,24 +410,24 @@ func TestStackConfigAWS(t *testing.T) {
 
 func TestStackConfigGCP(t *testing.T) {
 	savedAwsRegion := awsRegion
-	savedGcpProjectId := gcpProjectId
-	savedAzureSubscriptionId := azureSubscriptionId
+	savedGcpProject := gcpProject
+	savedAzureSubscription := azureSubscription
 	savedOrg := org
 	savedPrefix := prefix
 	savedMode := mode
-	savedGcpRegion := gcpRegion
+	savedRegion := region
 	savedDomain := domain
 	savedPrivateDomain := privateDomain
 	savedDelegationSetId := delegationSetId
 	savedRegistryCredsArn := registryCredsArn
 	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
-		gcpProjectId = savedGcpProjectId
-		azureSubscriptionId = savedAzureSubscriptionId
+		gcpProject = savedGcpProject
+		azureSubscription = savedAzureSubscription
 		org = savedOrg
 		prefix = savedPrefix
 		mode = savedMode
-		gcpRegion = savedGcpRegion
+		region = savedRegion
 		domain = savedDomain
 		privateDomain = savedPrivateDomain
 		delegationSetId = savedDelegationSetId
@@ -247,9 +435,9 @@ func TestStackConfigGCP(t *testing.T) {
 	})
 
 	awsRegion = ""
-	gcpProjectId = "my-gcp-project"
-	azureSubscriptionId = ""
-	gcpRegion = "us-central1"
+	gcpProject = "my-gcp-project"
+	azureSubscription = ""
+	region = "us-central1"
 	org = "testorg"
 	prefix = "Test"
 	mode = "production"
@@ -258,10 +446,7 @@ func TestStackConfigGCP(t *testing.T) {
 	delegationSetId = ""
 	registryCredsArn = ""
 
-	cfg, err := stackConfig()
-	if err != nil {
-		t.Fatalf("stackConfig() error: %v", err)
-	}
+	cfg := stackConfig()
 
 	if cfg["defang:provider"].Value != "gcp" {
 		t.Errorf("expected provider gcp, got %q", cfg["defang:provider"].Value)
@@ -283,8 +468,8 @@ func TestStackConfigGCP(t *testing.T) {
 
 func TestStackConfigAzure(t *testing.T) {
 	savedAwsRegion := awsRegion
-	savedGcpProjectId := gcpProjectId
-	savedAzureSubscriptionId := azureSubscriptionId
+	savedGcpProject := gcpProject
+	savedAzureSubscription := azureSubscription
 	savedAzureLocation := azureLocation
 	savedOrg := org
 	savedPrefix := prefix
@@ -295,8 +480,8 @@ func TestStackConfigAzure(t *testing.T) {
 	savedRegistryCredsArn := registryCredsArn
 	t.Cleanup(func() {
 		awsRegion = savedAwsRegion
-		gcpProjectId = savedGcpProjectId
-		azureSubscriptionId = savedAzureSubscriptionId
+		gcpProject = savedGcpProject
+		azureSubscription = savedAzureSubscription
 		azureLocation = savedAzureLocation
 		org = savedOrg
 		prefix = savedPrefix
@@ -308,8 +493,8 @@ func TestStackConfigAzure(t *testing.T) {
 	})
 
 	awsRegion = ""
-	gcpProjectId = ""
-	azureSubscriptionId = "sub-123"
+	gcpProject = ""
+	azureSubscription = "sub-123"
 	azureLocation = "westus2"
 	org = "testorg"
 	prefix = "Test"
@@ -319,10 +504,7 @@ func TestStackConfigAzure(t *testing.T) {
 	delegationSetId = ""
 	registryCredsArn = ""
 
-	cfg, err := stackConfig()
-	if err != nil {
-		t.Fatalf("stackConfig() error: %v", err)
-	}
+	cfg := stackConfig()
 
 	if cfg["defang:provider"].Value != "azure" {
 		t.Errorf("expected provider azure, got %q", cfg["defang:provider"].Value)

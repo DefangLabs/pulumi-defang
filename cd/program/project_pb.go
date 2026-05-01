@@ -34,9 +34,8 @@ func projectPbKey(ctx *pulumi.Context) string {
 // Pulumi's StringAsset rejects non-UTF-8 data (gRPC marshal error), so binary
 // protobufs must go through the filesystem. The temp file is left for the OS
 // to reap — it's a few KB and Pulumi may still be reading it after this returns.
-// Passing "" picks $TMPDIR so the OS reap-on-reboot story actually applies.
 func NewTempFileAsset(pattern string, data []byte) (pulumi.Asset, error) {
-	f, err := os.CreateTemp("", pattern)
+	f, err := os.CreateTemp("defang-cd", pattern)
 	if err != nil {
 		return nil, fmt.Errorf("creating temp file for project.pb: %w", err)
 	}

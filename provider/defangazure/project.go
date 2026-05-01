@@ -10,9 +10,9 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
-	"github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -258,24 +258,20 @@ func createServiceResources(
 func createProjectResourceGroup(
 	ctx *pulumi.Context,
 	name string,
-	childOpt pulumi.ResourceOrInvokeOption,
+	childOpts []pulumi.ResourceOption,
 ) (*resources.ResourceGroup, error) {
-	projectRG := providerazure.ProjectResourceGroupName(ctx, name)
-
 	rgArgs := &resources.ResourceGroupArgs{
-		ResourceGroupName: pulumi.String(projectRG),
 		// Location: pulumi.String(location),
 	}
-	rgOpts := []pulumi.ResourceOption{childOpt}
-
-	if existingRG, err := resources.LookupResourceGroup(ctx, &resources.LookupResourceGroupArgs{
-		ResourceGroupName: projectRG,
-	}, childOpt); err == nil {
+	rgOpts := childOpts
+	if existingRG := providerazure.ExistingResourceGroup(ctx, name); existingRG != "" {
 		// Import the existing RG: ResourceGroupName must match so Pulumi doesn't
 		// propose a replacement on subsequent refreshes.
-		rgOpts = append(rgOpts, pulumi.Import(pulumi.ID(existingRG.Id)))
+		rgArgs.ResourceGroupName = pulumi.String(existingRG)
+		subID := config.GetSubscriptionId(ctx)
+		rgID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subID, existingRG)
+		rgOpts = append(rgOpts, pulumi.Import(pulumi.ID(rgID)))
 	}
-
 	rg, err := resources.NewResourceGroup(ctx, name, rgArgs, rgOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
@@ -293,6 +289,7 @@ func createManagedEnvironment(
 	name string,
 	infra *providerazure.SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
+	childOpts []pulumi.ResourceOption,
 ) (*app.ManagedEnvironment, error) {
 	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
@@ -300,8 +297,8 @@ func createManagedEnvironment(
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
-		RetentionInDays: pulumi.Int(max(30, common.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
-	}, parentOpt)
+		RetentionInDays: pulumi.Int(common.LogRetentionDays.Get(ctx)),
+	}, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
@@ -328,8 +325,8 @@ func createManagedEnvironment(
 	}
 
 	// VnetConfiguration is immutable on Azure — adding/changing it requires replacement.
-	env, err := app.NewManagedEnvironment(ctx, name, envArgs,
-		pulumi.ReplaceOnChanges([]string{"vnetConfiguration"}), parentOpt)
+	envOpts := append([]pulumi.ResourceOption{pulumi.ReplaceOnChanges([]string{"vnetConfiguration"})}, childOpts...)
+	env, err := app.NewManagedEnvironment(ctx, name, envArgs, envOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
@@ -341,11 +338,12 @@ func createManagedEnvironment(
 // identity) used by the per-service resources.
 func setupSharedInfra(
 	ctx *pulumi.Context,
-	projectName string,
+	name string,
 	inputs ProjectInputs,
 	parentOpt pulumi.ResourceOrInvokeOption,
+	childOpts []pulumi.ResourceOption,
 ) (*providerazure.SharedInfra, map[string]string, error) {
-	rg, err := createProjectResourceGroup(ctx, projectName, parentOpt)
+	rg, err := createProjectResourceGroup(ctx, name, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -354,25 +352,29 @@ func setupSharedInfra(
 
 	// Compute keyVaultURL up front so the ConfigProvider can assemble
 	// ready-to-use secret URLs AND lazy-fetch user config on first access.
-	kvName := providerazure.KeyVaultName(ctx, projectName)
-	keyVaultURL := "https://" + kvName + ".vault.azure.net"
+	// Empty when no vault is configured, in which case fetch + secret refs are
+	// both disabled.
+	var keyVaultURL string
+	if kvName := providerazure.KeyVaultName(ctx, name); kvName != "" {
+		keyVaultURL = "https://" + kvName + ".vault.azure.net"
+	}
 
 	infra := &providerazure.SharedInfra{
 		ResourceGroup:  rg,
-		KeyVaultURL:    keyVaultURL, // FIXME: don't set if vault doesn't exist
-		ConfigProvider: providerazure.NewConfigProvider(projectName, keyVaultURL),
+		KeyVaultURL:    keyVaultURL,
+		ConfigProvider: providerazure.NewConfigProvider(name, keyVaultURL),
 		Etag:           inputs.Etag,
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {
-		networking, err := providerazure.CreateNetworking(ctx, projectName, infra, parentOpt)
+		networking, err := providerazure.CreateNetworking(ctx, name, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating networking: %w", err)
 		}
 		infra.Networking = networking
 
 		dns, err := providerazure.CreateDNSZones(
-			ctx, projectName, types.pgServiceName, types.redisServiceName, infra, networking, parentOpt,
+			ctx, name, types.pgServiceName, types.redisServiceName, infra, networking, childOpts...,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating DNS zones: %w", err)
@@ -380,14 +382,14 @@ func setupSharedInfra(
 		infra.DNS = dns
 	}
 
-	env, err := createManagedEnvironment(ctx, projectName, infra, parentOpt)
+	env, err := createManagedEnvironment(ctx, name, infra, parentOpt, childOpts)
 	if err != nil {
 		return nil, nil, err
 	}
 	infra.Environment = env
 
 	if types.hasLLM {
-		llmInfra, err := providerazure.CreateLLMInfra(ctx, projectName, infra, parentOpt)
+		llmInfra, err := providerazure.CreateLLMInfra(ctx, name, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating LLM infra: %w", err)
 		}
@@ -395,23 +397,19 @@ func setupSharedInfra(
 	}
 
 	if types.hasBuild {
-		buildInfra, err := providerazure.CreateBuildInfra(ctx, projectName, infra, parentOpt)
+		buildInfra, err := providerazure.CreateBuildInfra(ctx, name, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating build infrastructure: %w", err)
 		}
 		infra.BuildInfra = buildInfra
 	}
 
-	if _, err := keyvault.LookupVault(ctx, &keyvault.LookupVaultArgs{
-		ResourceGroupName: providerazure.ProjectResourceGroupName(ctx, projectName),
-		VaultName:         kvName,
-	}, parentOpt); err == nil {
-		// Only create the KV access identity and role assignment if the vault exists
-		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, projectName, infra, parentOpt)
+	if kvName := providerazure.KeyVaultName(ctx, name); kvName != "" {
+		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, infra, childOpts...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating Key Vault identity: %w", err)
 		}
-		infra.KeyVaultIdentityID = kvIdentityID.ToStringPtrOutput()
+		infra.KeyVaultIdentityID = kvIdentityID
 	}
 
 	return infra, types.llmModels, nil
@@ -441,7 +439,7 @@ func (*Project) Construct(
 	parentOpt := pulumi.Parent(comp)
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
-	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, parentOpt)
+	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, parentOpt, childOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +483,7 @@ func (*Project) Construct(
 		endpoints[svcName] = endpoint
 	}
 
-	loadBalancerDNS := pulumi.StringPtr("").ToStringPtrOutput() // FIXME: no LB in Azure
+	loadBalancerDNS := pulumi.StringPtr("").ToStringPtrOutput()
 
 	comp.Endpoints = endpoints.ToStringMapOutput()
 	comp.LoadBalancerDNS = loadBalancerDNS

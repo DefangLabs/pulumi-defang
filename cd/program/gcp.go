@@ -16,16 +16,20 @@ import (
 )
 
 func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+	defaultLabels := pulumi.StringMap{
+		"defang-org":     pulumi.String(ctx.Organization()),
+		"defang-project": pulumi.String(ctx.Project()),
+		"defang-stack":   pulumi.String(ctx.Stack()),
+		// "defang-version": pulumi.String(Version), FIXME: cannot have dots
+	}
+	if etag != "" {
+		defaultLabels["defang-etag"] = pulumi.String(etag)
+	}
+
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
-		Project: pulumi.String(config.GetProject(ctx)),
-		Region:  pulumi.String(config.GetRegion(ctx)),
-		DefaultLabels: pulumi.StringMap{
-			"defang-etag":    pulumi.String(etag),
-			"defang-org":     pulumi.String(ctx.Organization()), // TODO: doesn't work with DIY backends
-			"defang-project": pulumi.String(ctx.Project()),
-			"defang-stack":   pulumi.String(ctx.Stack()),
-			// "defang-version": pulumi.String(Version), FIXME: cannot have dots
-		},
+		Project:       pulumi.StringPtr(config.GetProject(ctx)),
+		Region:        pulumi.StringPtr(config.GetRegion(ctx)),
+		DefaultLabels: defaultLabels,
 	})
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
@@ -43,8 +47,6 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpd
 	if projectUpdate != nil {
 		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
 			for _, svc := range projectUpdate.Services {
-				svc.Status = "PROVISIONING"
-				svc.State = defangv1.ServiceState_DEPLOYMENT_COMPLETED
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
 					svc.Endpoints = []string{ep}
 				}
@@ -188,7 +190,7 @@ func saveProjectPbGCP(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Res
 	}
 
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
-		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
+		return NewTempFileAsset("project-pb-*.pb", v.([]byte))
 	}).(pulumi.AssetOutput)
 
 	_, err = storage.NewBucketObject(ctx, "project-pb", &storage.BucketObjectArgs{

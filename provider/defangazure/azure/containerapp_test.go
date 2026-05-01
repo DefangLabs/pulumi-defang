@@ -47,7 +47,7 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 		infra := &SharedInfra{
 			ConfigProvider:     NewConfigProvider("proj", vaultURL),
 			KeyVaultURL:        vaultURL,
-			KeyVaultIdentityID: pulumi.String(identityID).ToStringPtrOutput(),
+			KeyVaultIdentityID: pulumi.String(identityID).ToStringOutput(),
 		}
 		svc := compose.ServiceConfig{
 			Environment: map[string]*string{
