@@ -205,14 +205,18 @@ func collectEvents(ctx context.Context) (chan<- events.EngineEvent, func()) {
 		// LIFO: close(done) runs last so waitEvents() only unblocks after
 		// uploadEvents returns, even on panic in the loop.
 		defer close(done)
-		var engineEvents []events.EngineEvent
+		// The events are marshaled asap so we capture the original event data
+		// before any of it gets mutated. This also allows the GC to collect
+		// the original event objects sooner instead of keeping them alive.
+		var engineEvents []json.RawMessage
 		defer func() {
 			uploadEvents(ctx, engineEvents)
 		}()
 		// Pulumi automation will close the channel when done: https://github.com/pulumi/pulumi/blob/master/sdk/go/auto/stack.go#L1956
 		for evt := range eventsChannel {
 			if eventsUploadUrl != "" {
-				engineEvents = append(engineEvents, evt)
+				bytes, _ := json.Marshal(evt)
+				engineEvents = append(engineEvents, json.RawMessage(bytes))
 			}
 			if jsonOutput {
 				if evt.ResourcePreEvent != nil {
