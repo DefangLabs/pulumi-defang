@@ -224,25 +224,22 @@ func createServiceResources(
 		endpoint = infra.LLMInfra.BaseURL
 
 	default:
-		if err := ctx.RegisterComponentResource(
-			"defang-azure:index:AzureContainerApp", svcName, comp, childOpts...,
-		); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("registering Container App component %s: %w", svcName, err)
+		// Container service path uses the typed *ServiceOutputs so the runtime
+		// registration matches the SDK schema, and shares the worker with the
+		// standalone Service.Construct path.
+		svcComp := &ServiceOutputs{}
+		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, childOpts...); err != nil {
+			return pulumi.StringOutput{}, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-		imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, svcOpts...)
+		imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, pulumi.Parent(svcComp))
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-
-		caResult, err := providerazure.CreateContainerApp(
-			ctx, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, svcOpts...,
-		)
+		err = createContainerApp(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts)
 		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating Container App %s: %w", svcName, err)
+			return pulumi.StringOutput{}, err
 		}
-		endpoint = caResult.App.LatestRevisionFqdn.ApplyT(fqdnToHTTPS).(pulumi.StringOutput)
+		return svcComp.Endpoint, nil
 	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
