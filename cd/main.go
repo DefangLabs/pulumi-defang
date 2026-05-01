@@ -63,7 +63,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// The default pattern includes hyphens from project/stack names, so override it.
 							// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
 							// ${stack} is safe to include: stacks are lowercase with no hyphens.
-							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${stack}${name}${hex(7)}"},
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"}, // name = sanitized project name
 							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 							// 5-50	Alphanumerics, hyphens, and underscores
 							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
@@ -73,7 +73,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 					// (lowercase only, max 63 chars). The default prefix may contain capitals
 					// (e.g. "Defang-"), so force the entire pattern to use the lowercased prefix.
 					"gcp": map[string]any{
-						"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}",
+						"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}", // TODO: sanitize project name
 						"resources": map[string]any{
 							// Service account ID must be between 6 and 30 characters.
 							// Service account ID must start with a lower case letter, followed by one or more lower case alphanumerical characters that can be separated by hyphens.
@@ -81,10 +81,10 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// Cloud Run service name max 49 chars (^[a-z][a-z0-9-]{0,47}[a-z0-9]$).
 							// Default prefix-project-stack pattern overflows on longer inputs;
 							// drop the prefix to mirror old cloudrunServiceName (49 char budget).
-							"gcp:cloudrunv2/service:Service": map[string]string{"pattern": "${project}-${stack}-${name}-${hex(7)}"},
+							"gcp:cloudrunv2/service:Service": map[string]string{"pattern": "${project}-${stack}-${name}-${hex(7)}"}, // TODO: sanitize project name
 							// Memorystore Redis instance ID max 40 chars (^[a-z][a-z0-9-]{0,38}[a-z0-9]$).
 							// Drop the prefix to mirror old redisInstanceName (40 char budget).
-							"gcp:redis/instance:Instance": map[string]string{"pattern": "${project}-${name}-${hex(7)}"},
+							"gcp:redis/instance:Instance": map[string]string{"pattern": "${project}-${name}-${hex(7)}"}, // TODO: sanitize project name
 						},
 					},
 				},
