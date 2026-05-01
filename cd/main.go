@@ -354,6 +354,7 @@ func cdMain(ctx context.Context) error {
 		upOpts := []optup.Option{
 			optup.UserAgent(userAgent),
 			optup.Color(color()),
+			optup.SuppressProgress(),
 			optup.ProgressStreams(progressStream),
 			optup.ErrorProgressStreams(errorProgressStream),
 			optup.EventStreams(evtCh),
@@ -379,6 +380,7 @@ func cdMain(ctx context.Context) error {
 		previewOpts := []optpreview.Option{
 			optpreview.UserAgent(userAgent),
 			optpreview.Color(color()),
+			optpreview.SuppressProgress(),
 			optpreview.ProgressStreams(progressStream),
 			optpreview.ErrorProgressStreams(errorProgressStream),
 			optpreview.EventStreams(evtCh),
@@ -402,6 +404,7 @@ func cdMain(ctx context.Context) error {
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
 			optdestroy.Color(color()),
+			optdestroy.SuppressProgress(),
 			optdestroy.ProgressStreams(progressStream),
 			optdestroy.ErrorProgressStreams(errorProgressStream),
 			optdestroy.EventStreams(evtCh),
@@ -427,6 +430,7 @@ func cdMain(ctx context.Context) error {
 		refreshOpts := []optrefresh.Option{
 			optrefresh.UserAgent(userAgent),
 			optrefresh.Color(color()),
+			optrefresh.SuppressProgress(),
 			optrefresh.ProgressStreams(progressStream),
 			optrefresh.ErrorProgressStreams(errorProgressStream),
 			optrefresh.EventStreams(evtCh),
