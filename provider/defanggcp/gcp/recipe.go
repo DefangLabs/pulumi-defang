@@ -9,7 +9,7 @@ var (
 	BackupEnabled             = common.Bool("backup-enabled", false)
 	DeletionProtection        = common.DeletionProtection
 	Ingress                   = common.String("ingress", "INGRESS_TRAFFIC_ALL")
-	LaunchStage               = common.String("launch-stage", "BETA")
+	LaunchStage               = common.String("launch-stage", "")
 	MaxReplicas               = common.Int("max-replicas", 0)
 	PointInTimeRecovery       = common.Bool("point-in-time-recovery", false)
 	SslMode                   = common.String("ssl-mode", "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
