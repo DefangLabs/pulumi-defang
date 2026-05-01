@@ -37,6 +37,7 @@ type SharedInfra struct {
 // set them manually.
 func BaseTags(ctx *pulumi.Context, etag string) pulumi.StringMap {
 	tags := pulumi.StringMap{
+		"defang-org":     pulumi.String(ctx.Organization()), // TODO: doesn't work with DIY backends
 		"defang-project": pulumi.String(ctx.Project()),
 		"defang-stack":   pulumi.String(ctx.Stack()),
 	}

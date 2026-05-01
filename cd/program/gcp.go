@@ -21,7 +21,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpd
 		Region:  pulumi.String(config.GetRegion(ctx)),
 		DefaultLabels: pulumi.StringMap{
 			"defang-etag":    pulumi.String(etag),
-			"defang-org":     pulumi.String(ctx.Organization()),
+			"defang-org":     pulumi.String(ctx.Organization()), // TODO: doesn't work with DIY backends
 			"defang-project": pulumi.String(ctx.Project()),
 			"defang-stack":   pulumi.String(ctx.Stack()),
 			// "defang-version": pulumi.String(Version), FIXME: cannot have dots
