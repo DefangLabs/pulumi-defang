@@ -229,7 +229,7 @@ func CreateContainerApp(
 		maxReplicas = mr
 	}
 
-	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
+	ingress := buildIngress(svc)
 	probes := buildProbes(svc)
 
 	var registries app.RegistryCredentialsArray
@@ -249,7 +249,7 @@ func CreateContainerApp(
 		userIdentities = append(userIdentities, identityID)
 	}
 	if len(result.Secrets) > 0 && infra.KeyVaultURL != "" {
-		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.Elem())
+		userIdentities = append(userIdentities, infra.KeyVaultIdentityID)
 	}
 	var identity *app.ManagedServiceIdentityArgs
 	if len(userIdentities) > 0 {
@@ -324,20 +324,20 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 	return pulumi.StringOutput{}, false
 }
 
-func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.IngressArgs {
-	if !svc.HasIngressPorts() {
+func buildIngress(svc compose.ServiceConfig) *app.IngressArgs {
+	if len(svc.Ports) == 0 {
 		return nil
 	}
-	var ingressPort compose.ServicePortConfig
+	external := false
 	for _, p := range svc.Ports {
-		if p.IsIngress() {
-			ingressPort = p
-			break // TODO: support more than one ingress port
+		if p.Mode == "ingress" {
+			external = true
+			break
 		}
 	}
 	return &app.IngressArgs{
-		External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
-		TargetPort: pulumi.Int(ingressPort.Target),
+		External:   pulumi.Bool(external),
+		TargetPort: pulumi.Int(svc.Ports[0].Target),
 	}
 }
 

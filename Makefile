@@ -56,31 +56,25 @@ only_build: build
 ensure: ## Run go mod tidy
 	find . -name 'go.mod' -execdir go mod tidy \;
 
-# Default `go test` flags are cacheable (every flag is in Go's "cacheable" set:
-# -v, -timeout, -parallel). COVER=1 layers in -count=1 -cover plus -coverprofile
-# in the test_* recipes, which busts the cache — used by CI and `make coverage`.
-COVER ?=
-GO_TEST_COVER_FLAGS := $(if $(COVER),-count=1 -cover)
-GO_TEST	:= go test -v $(GO_TEST_COVER_FLAGS) -timeout 5m -parallel ${TESTPARALLELISM}
+GO_TEST	:= go test -v -count=1 -cover -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
 test_provider: provider ## Provider integration tests
-	cd tests && ${GO_TEST} $(if $(COVER),-coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/...) -short ./... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
+	cd tests && ${GO_TEST} -coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/... -short ./... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test_unit
 test_unit: ## Unit tests only
-	${GO_TEST} $(if $(COVER),-coverprofile=coverage_provider.out) ./provider/... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
+	${GO_TEST} -coverprofile=coverage_provider.out ./provider/... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test_cd
 test_cd: go_sdk
-	cd cd && $(GO_TEST) -race | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
+	cd cd && $(GO_TEST) -v | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test
 test: test_unit test_provider test_cd ## Run all tests
 
 .PHONY: coverage
-coverage:
-	$(MAKE) COVER=1 test
+coverage: test
 	cat coverage_provider.out <(tail -n +2 coverage_tests.out) > coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	open coverage.html
@@ -108,22 +102,17 @@ release: clean build
 
 # Docker images
 DOCKER_BUILDX  := docker buildx build
-IMAGE_REPO     := defangio/cd-sandbox
+IMAGE_REPO     := defangio/cd
 CD_VERSION     := $(shell git describe --tags --always --dirty)
 PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
 
 .PHONY: images
 images: image_aws image_gcp image_azure image_all
 
-.PHONY: image_%
 image_%: go_sdk
-	$(DOCKER_BUILDX) $(PUSH) --target $* \
+	$(DOCKER_BUILDX) --target $* \
 	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) \
 	  -t $(IMAGE_REPO):$(CD_VERSION)-$* .
-
-.PHONY: push_%
-push_%:
-	$(MAKE) image_$* PUSH=--push
 
 .PHONY: install-git-hooks
 install-git-hooks: node_modules ## Set up pre-commit and pre-push hooks

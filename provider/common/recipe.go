@@ -69,5 +69,4 @@ var (
 	DeletionProtection = Bool("deletion-protection", false)
 	LogRetentionDays   = Int("log-retention-days", 1)
 	Prefix             = String("prefix", "Defang")
-	Version            = String("version", "development")
 )

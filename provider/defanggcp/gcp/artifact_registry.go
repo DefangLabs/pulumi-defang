@@ -6,11 +6,11 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 // BuildInfra holds GCP infrastructure shared across all services with build configs.
@@ -62,21 +62,22 @@ func collectExternalRegistries(services map[string]compose.ServiceConfig) []stri
 func createRemoteRepos(
 	ctx *pulumi.Context,
 	registries []string,
+	projectName, region string,
 	opts ...pulumi.ResourceOption,
 ) (map[string]*artifactregistry.Repository, error) {
 	repos := make(map[string]*artifactregistry.Repository, len(registries))
 	for _, registry := range registries {
 		repoId := sanitizeRepoName(registry)
-		repo, err := artifactregistry.NewRepository(ctx, registry, &artifactregistry.RepositoryArgs{
+		repo, err := artifactregistry.NewRepository(ctx, projectName+"-"+repoId, &artifactregistry.RepositoryArgs{
 			// RepositoryId must be set explicitly. Some AWS resources say "if omitted, the provider
 			// will assign a random, unique name" (e.g. https://www.pulumi.com/registry/packages/aws/api-docs/s3/bucket/),
 			// but the GCP Artifact Registry docs make no such promise:
 			// https://www.pulumi.com/registry/packages/gcp/api-docs/artifactregistry/repository/
 			RepositoryId: pulumi.String(repoId),
-			// Location:     pulumi.String(region),
-			Description: pulumi.String("Remote pull-through cache for " + registry),
-			Format:      pulumi.String("DOCKER"),
-			Mode:        pulumi.String("REMOTE_REPOSITORY"),
+			Location:     pulumi.String(region),
+			Description:  pulumi.String("Remote pull-through cache for " + registry),
+			Format:       pulumi.String("DOCKER"),
+			Mode:         pulumi.String("REMOTE_REPOSITORY"),
 			RemoteRepositoryConfig: &artifactregistry.RepositoryRemoteRepositoryConfigArgs{
 				CommonRepository: &artifactregistry.RepositoryRemoteRepositoryConfigCommonRepositoryArgs{
 					Uri: pulumi.String("https://" + registry),
@@ -91,6 +92,11 @@ func createRemoteRepos(
 	return repos, nil
 }
 
+// gcpProjectId reads the GCP project ID from Pulumi stack config.
+func gcpProjectId(ctx *pulumi.Context) string {
+	return config.New(ctx, "gcp").Get("project")
+}
+
 // createBuildInfra creates the shared GCP infrastructure required to build container images:
 // an Artifact Registry repository, a GCS bucket for build artifacts, a build service account,
 // and the associated IAM bindings.
@@ -100,16 +106,16 @@ func createBuildInfra(
 	opts ...pulumi.ResourceOption,
 ) (*BuildInfra, error) {
 	region := GcpRegion(ctx)
-	gcpProject := config.GetProject(ctx)
+	gcpProject := gcpProjectId(ctx)
 
-	bsa, err := serviceaccount.NewAccount(ctx, "builder", &serviceaccount.AccountArgs{
+	bsa, err := serviceaccount.NewAccount(ctx, projectName, &serviceaccount.AccountArgs{
 		DisplayName: pulumi.String("Image build service account for " + projectName),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating build service account: %w", err)
 	}
 
-	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
+	ar, err := artifactregistry.NewRepository(ctx, projectName, &artifactregistry.RepositoryArgs{
 		// RepositoryId is required by the GCP API; unlike AWS, GCP does not auto-generate resource IDs.
 		RepositoryId: pulumi.String(sanitizeRepoName(projectName)),
 		Location:     pulumi.String(region),
