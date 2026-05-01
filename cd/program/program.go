@@ -29,7 +29,10 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 
 		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
 		domain := defangCfg.Get("domain")         // optional project domain
-		etag := defangCfg.Get("etag")             // deployment identifier; empty in local dev
+		etag := projectUpdate.Etag                // deployment identifier
+		if etag == "" {
+			etag = defangCfg.Get("etag")
+		}
 
 		if len(projectUpdate.Compose) == 0 {
 			return errors.New("ProjectUpdate has no compose field")
