@@ -43,6 +43,8 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpd
 	if projectUpdate != nil {
 		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
 			for _, svc := range projectUpdate.Services {
+				svc.Status = "PROVISIONING"
+				svc.State = defangv1.ServiceState_DEPLOYMENT_COMPLETED
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
 					svc.Endpoints = []string{ep}
 				}
