@@ -297,7 +297,7 @@ func createManagedEnvironment(
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
-		RetentionInDays: pulumi.Int(common.LogRetentionDays.Get(ctx)),
+		RetentionInDays: pulumi.Int(max(30, common.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
 	}, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
