@@ -11,11 +11,24 @@ import (
 
 // Wrap each sink in a LineWriter so a downstream WriteString call always
 // receives a complete line. Required for cloud sinks (e.g. NewLabelsLogger)
-// that emit one structured log entry per WriteString; harmless over stdio.
+// that emit one structured log entry per WriteString, and for the etag-prefix
+// wrapper below to prepend exactly once per line; harmless over plain stdio.
 var (
 	stdoutLogger io.StringWriter = os.Stdout
 	stderrLogger io.StringWriter = os.Stderr
 )
+
+// withEtagPrefix prepends [defang-etag=<etag>] to every line so the CLI can
+// filter Azure ContainerAppConsoleLogs_CL by KQL `Log_s has "<etag>"`. Azure
+// Container Apps doesn't auto-promote JSON-on-stdout into structured columns
+// the way GCP Cloud Logging does, so per-line tagging is the only mechanism
+// that works there. Etag empty → no prefix wrapper.
+func withEtagPrefix(sw io.StringWriter) io.StringWriter {
+	if etag == "" {
+		return sw
+	}
+	return &prefixStringWriter{sw: sw, prefix: fmt.Sprintf("[defang-etag=%s] ", etag)}
+}
 
 // warn is like `console.warn` in JavaScript and logs to stderr.
 func warn(v ...interface{}) {
@@ -41,6 +54,23 @@ func newProgressStream() *LineWriter {
 
 func newErrorProgressStream() *LineWriter {
 	return NewLineWriter(NewIgnoreStringWriter(stderrLogger, ignoreSubstrs))
+}
+
+// prefixStringWriter prepends a fixed prefix to every WriteString call. Used
+// downstream of LineWriter, so each call is one full line; the prefix and the
+// line are concatenated into a single downstream WriteString to preserve the
+// "one WriteString = one log entry" contract that structured sinks (e.g.
+// NewLabelsLogger) rely on.
+type prefixStringWriter struct {
+	sw     io.StringWriter
+	prefix string
+}
+
+func (p *prefixStringWriter) WriteString(s string) (int, error) {
+	n, err := p.sw.WriteString(p.prefix + s)
+	// Report bytes from s only, not the added prefix, so callers' length
+	// accounting matches what they handed us.
+	return max(0, n-len(p.prefix)), err
 }
 
 type IgnoreWriter struct {
@@ -87,6 +117,13 @@ func (lw *LineWriter) Write(p []byte) (n int, err error) {
 		lw.buf.Write(lines[i])
 	}
 	return len(p), nil
+}
+
+// WriteString lets LineWriter stand in anywhere an io.StringWriter is wanted
+// (warn/Println, NewIgnoreStringWriter). Each call is expected to pass a
+// complete line; partial writes will buffer until the next newline.
+func (lw *LineWriter) WriteString(s string) (int, error) {
+	return lw.Write([]byte(s))
 }
 
 // Flush emits any buffered partial line to the underlying sink. Use before

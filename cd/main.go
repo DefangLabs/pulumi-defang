@@ -134,6 +134,7 @@ func stackConfig() (auto.ConfigMap, error) {
 		if gcpRegion != "" {
 			cfg["gcp:region"] = auto.ConfigValue{Value: gcpRegion}
 		}
+		// TODO: configure label-logger
 	}
 
 	if azureSubscriptionId != "" {
@@ -147,12 +148,19 @@ func stackConfig() (auto.ConfigMap, error) {
 		// from (project, stack, location) and (subscription, RG) respectively
 		// inside the provider — matching the CLI's conventions. No need to
 		// pass them through as stack config or env vars.
+
+		// Azure logs don't have structured fields we can filter on, so include
+		// the etag in every log line.
+		stderrLogger = withEtagPrefix(os.Stderr)
+		stdoutLogger = withEtagPrefix(os.Stdout)
 	}
 
 	if len(providers) == 0 {
 		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCP_PROJECT_ID, or AZURE_SUBSCRIPTION_ID environment variable"}
 	} else if len(providers) > 1 {
 		return nil, &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
+	} else {
+		cfg["defang:provider"] = auto.ConfigValue{Value: providers[0]}
 	}
 
 	// Defang recipe config
@@ -254,13 +262,6 @@ func run() int {
 }
 
 func cdMain(ctx context.Context) error {
-	// Wrap stdout/stderr so every log line emitted by the Pulumi engine, the
-	// standard log package, and any library writing to the global file handles
-	// is prefixed with the etag. Lets the CLI filter ContainerAppConsoleLogs_CL
-	// by KQL `Log_s has "<etag>"`. Must run BEFORE any other write.
-	flushEtag := installEtagPrefix(etag)
-	defer flushEtag()
-
 	if stackName == "" {
 		return &usageError{msg: "missing required environment variable: STACK"}
 	}
