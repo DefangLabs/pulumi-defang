@@ -183,20 +183,26 @@ func stackConfig() (auto.ConfigMap, error) {
 }
 
 // collectEvents returns a channel to feed engine events into and a wait
-// function that blocks until the channel is closed and the collector
-// goroutine has drained it, then returns the events. The wait-function
-// pattern provides a happens-before edge between the goroutine's appends
-// and the caller's read, avoiding a data race on the slice.
-func collectEvents(ctx context.Context) chan<- events.EngineEvent {
+// function that blocks until the collector goroutine has drained the
+// channel (closed by Pulumi when the operation finishes) and finished
+// uploading. Callers must defer the wait function so the final upload
+// completes before run() returns and its deferred ctx cancels fire —
+// otherwise the in-flight uploadEvents request gets canceled.
+func collectEvents(ctx context.Context) (chan<- events.EngineEvent, func()) {
 	if eventsUploadUrl == "" && !jsonOutput {
-		return nil
+		return nil, func() {}
 	}
 	eventsChannel := make(chan events.EngineEvent)
+	done := make(chan struct{})
 	go func() {
+		// LIFO: close(done) runs last so waitEvents() only unblocks after
+		// uploadEvents returns, even on panic in the loop.
+		defer close(done)
 		var engineEvents []events.EngineEvent
 		defer func() {
 			uploadEvents(ctx, engineEvents)
 		}()
+		// Pulumi automation will close the channel when done: https://github.com/pulumi/pulumi/blob/master/sdk/go/auto/stack.go#L1956
 		for evt := range eventsChannel {
 			engineEvents = append(engineEvents, evt)
 			if jsonOutput {
@@ -207,7 +213,7 @@ func collectEvents(ctx context.Context) chan<- events.EngineEvent {
 			}
 		}
 	}()
-	return eventsChannel
+	return eventsChannel, func() { <-done }
 }
 
 func main() {
@@ -343,7 +349,8 @@ func cdMain(ctx context.Context) error {
 
 	switch command {
 	case "up", "deploy":
-		evtCh := collectEvents(ctx)
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		upOpts := []optup.Option{
 			optup.UserAgent(userAgent),
 			optup.Color(color()),
@@ -367,7 +374,8 @@ func cdMain(ctx context.Context) error {
 		}
 
 	case "preview":
-		evtCh := collectEvents(ctx)
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		previewOpts := []optpreview.Option{
 			optpreview.UserAgent(userAgent),
 			optpreview.Color(color()),
@@ -389,7 +397,8 @@ func cdMain(ctx context.Context) error {
 		}
 
 	case "down", "destroy":
-		evtCh := collectEvents(ctx)
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
 			optdestroy.Color(color()),
@@ -413,7 +422,8 @@ func cdMain(ctx context.Context) error {
 		}
 
 	case "refresh":
-		evtCh := collectEvents(ctx)
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		refreshOpts := []optrefresh.Option{
 			optrefresh.UserAgent(userAgent),
 			optrefresh.Color(color()),
