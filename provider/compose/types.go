@@ -454,7 +454,7 @@ func (s ServiceConfig) ResolvedEnvironment() map[string]string {
 // HasIngressPorts returns true if any port has mode "ingress".
 func (s ServiceConfig) HasIngressPorts() bool {
 	for _, p := range s.Ports {
-		if p.Mode == "ingress" || p.Mode == "" { // default to "ingress" if mode is not set
+		if p.IsIngress() {
 			return true
 		}
 	}
@@ -464,7 +464,7 @@ func (s ServiceConfig) HasIngressPorts() bool {
 // HasHostPorts returns true if any port has mode "host".
 func (s ServiceConfig) HasHostPorts() bool {
 	for _, p := range s.Ports {
-		if p.Mode == "host" {
+		if p.IsHost() {
 			return true
 		}
 	}

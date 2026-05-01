@@ -12,6 +12,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
@@ -34,16 +35,16 @@ func isCloudRunSupportedRegistry(registry string) bool {
 	return gcrHostRE.MatchString(registry) || dockerPkgRE.MatchString(registry)
 }
 
+var nonLowerAlphaNumericOrDashRe = regexp.MustCompile(`[^a-z0-9-]`)
+
 // sanitizeRepoName produces a valid Artifact Registry repository ID:
 // lowercase alphanumeric + hyphens, max 63 characters.
-var nonAlphaNumRE = regexp.MustCompile(`[^a-z0-9-]`)
-
 func sanitizeRepoName(name string) string {
 	name = strings.ToLower(name)
-	name = nonAlphaNumRE.ReplaceAllLiteralString(name, "-")
+	name = nonLowerAlphaNumericOrDashRe.ReplaceAllLiteralString(name, "-")
 	name = strings.Trim(name, "-")
 	if len(name) > 63 {
-		name = name[:63]
+		name = name[:63] // FIXME: this could lead to collisions
 	}
 	return strings.TrimRight(name, "-")
 }
@@ -118,7 +119,7 @@ func GetServiceImage(
 
 	info := common.ParseImage(*svc.Image)
 	if !isCloudRunSupportedRegistry(info.Registry) {
-		gcpProject := gcpProjectId(ctx)
+		gcpProject := config.GetProject(ctx)
 		region := GcpRegion(ctx)
 		if infra != nil {
 			gcpProject = infra.GcpProject

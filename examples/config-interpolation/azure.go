@@ -59,7 +59,7 @@ func runAzure(ctx *pulumi.Context) error {
 			TenantId:                  pulumi.String(clientConfig.TenantId),
 			EnableRbacAuthorization:   pulumi.Bool(true),
 			EnableSoftDelete:          pulumi.Bool(true),
-			SoftDeleteRetentionInDays: pulumi.Int(7),
+			SoftDeleteRetentionInDays: pulumi.Int(7), // ≥7
 			Sku: &keyvault.SkuArgs{
 				Family: pulumi.String("A"),
 				Name:   keyvault.SkuNameStandard,

@@ -1,28 +1,18 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/storage"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"google.golang.org/protobuf/proto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
@@ -31,22 +21,10 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
+	"google.golang.org/protobuf/proto"
 )
 
 var version = "development" // overwritten by -ldflags "-X main.version=..."
-
-func detectProvider() string {
-	switch {
-	case awsRegion != "":
-		return "aws"
-	case gcpProject != "":
-		return "gcp"
-	case azureSubscription != "":
-		return "azure"
-	}
-	log.Fatal("missing required environment variable: must set one of: AWS_REGION, GCP_PROJECT, or AZURE_SUBSCRIPTION")
-	return ""
-}
 
 func color() string {
 	if noColor {
@@ -61,6 +39,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 		prefix += "-"
 	}
 	lowerPrefix := strings.ToLower(prefix)
+	// TODO: we'll need a lowercase version of the project name as well
 	return map[string]workspace.ProjectConfigType{
 		"pulumi:autonaming": {
 			Value: map[string]any{
@@ -84,10 +63,28 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// The default pattern includes hyphens from project/stack names, so override it.
 							// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
 							// ${stack} is safe to include: stacks are lowercase with no hyphens.
-							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${stack}${name}${hex(7)}"},
+							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"}, // name = sanitized project name
 							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 							// 5-50	Alphanumerics, hyphens, and underscores
 							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
+						},
+					},
+					// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
+					// (lowercase only, max 63 chars). The default prefix may contain capitals
+					// (e.g. "Defang-"), so force the entire pattern to use the lowercased prefix.
+					"gcp": map[string]any{
+						"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}", // TODO: sanitize project name
+						"resources": map[string]any{
+							// Service account ID must be between 6 and 30 characters.
+							// Service account ID must start with a lower case letter, followed by one or more lower case alphanumerical characters that can be separated by hyphens.
+							"gcp:serviceaccount/account:Account": map[string]string{"pattern": "${name}-${hex(4)}"},
+							// Cloud Run service name max 49 chars (^[a-z][a-z0-9-]{0,47}[a-z0-9]$).
+							// Default prefix-project-stack pattern overflows on longer inputs;
+							// drop the prefix to mirror old cloudrunServiceName (49 char budget).
+							"gcp:cloudrunv2/service:Service": map[string]string{"pattern": "${project}-${stack}-${name}-${hex(7)}"}, // TODO: sanitize project name
+							// Memorystore Redis instance ID max 40 chars (^[a-z][a-z0-9-]{0,38}[a-z0-9]$).
+							// Drop the prefix to mirror old redisInstanceName (40 char budget).
+							"gcp:redis/instance:Instance": map[string]string{"pattern": "${project}-${name}-${hex(7)}"}, // TODO: sanitize project name
 						},
 					},
 				},
@@ -95,150 +92,78 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 		},
 		"pulumi:disable-default-providers": {
 			// Ensure we create one provider per cloud by disabling the automatic default providers
-			Value: []string{"eks", "kubernetes", "aws", "aws-native", "gcp", "google-native", "azure", "azure-native"},
+			Value: []string{
+				"aws-native",
+				"aws",
+				"azure-native",
+				"azure",
+				"eks",
+				"gcp",
+				"google-beta",
+				"google-native",
+				"kubernetes",
+			},
 		},
 	}
 }
 
-// fetchPayload retrieves the ProjectUpdate protobuf from s3://, gs://, https://, or base64.
-func fetchPayload(ctx context.Context, uri string) ([]byte, error) {
-	switch {
-	case strings.HasPrefix(uri, "s3://"):
-		return fetchS3(ctx, uri)
-	case strings.HasPrefix(uri, "gs://"):
-		return fetchGCS(ctx, uri)
-	case strings.Contains(uri, ".blob.core.windows.net"):
-		return fetchAzureBlob(ctx, uri)
-	case strings.HasPrefix(uri, "http://"), strings.HasPrefix(uri, "https://"):
-		return fetchHTTP(ctx, uri)
-	default:
-		return base64.StdEncoding.DecodeString(uri)
-	}
-}
-
-func fetchS3(ctx context.Context, uri string) ([]byte, error) {
-	parts := strings.SplitN(strings.TrimPrefix(uri, "s3://"), "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid S3 URI: %v", uri)
-	}
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, err := s3.NewFromConfig(cfg).GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &parts[0],
-		Key:    &parts[1],
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer result.Body.Close()
-	return io.ReadAll(result.Body)
-}
-
-func fetchGCS(ctx context.Context, uri string) ([]byte, error) {
-	parts := strings.SplitN(strings.TrimPrefix(uri, "gs://"), "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid GCS URI: %v", uri)
-	}
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
-	rc, err := client.Bucket(parts[0]).Object(parts[1]).NewReader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	return io.ReadAll(rc)
-}
-
-func fetchAzureBlob(ctx context.Context, uri string) ([]byte, error) {
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating Azure credential: %w", err)
-	}
-	client, err := blob.NewClient(uri, cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating Azure blob client: %w", err)
-	}
-	resp, err := client.DownloadStream(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("downloading Azure blob: %w", err)
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
-}
-
-func fetchHTTP(ctx context.Context, uri string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("GET %s returned %s", uri, resp.Status)
-	}
-	return io.ReadAll(resp.Body)
-}
-
 // stackConfig returns config for Pulumi.<stack>.yaml (stack-level settings).
-func stackConfig() auto.ConfigMap {
-	provider := detectProvider()
+func stackConfig() (auto.ConfigMap, error) {
 	cfg := auto.ConfigMap{
 		// Defang program config
-		"defang:provider": auto.ConfigValue{Value: provider},
+		"defang:cdImage":  auto.ConfigValue{Value: cdImage},
+		"defang:etag":     auto.ConfigValue{Value: etag}, // deployment ID; recorded in state, surfaced in tags/env
+		"defang:org":      auto.ConfigValue{Value: org},
 		"defang:stateUrl": auto.ConfigValue{Value: stateUrl},
+		"defang:version":  auto.ConfigValue{Value: version},
 	}
 
 	// Cloud provider config read by the explicit providers in the program
-	switch provider {
-	case "aws":
-		if awsRegion == "" {
-			log.Fatal("missing required environment variable: AWS_REGION or REGION")
-		}
+	var providers []string
+	if awsRegion != "" {
+		providers = append(providers, "aws")
 		cfg["aws:region"] = auto.ConfigValue{Value: awsRegion}
 		if awsProfile != "" {
 			cfg["aws:profile"] = auto.ConfigValue{Value: awsProfile}
 		}
+	}
 
-	case "gcp":
-		if gcpProject == "" {
-			log.Fatal("missing required environment variable: GCP_PROJECT")
+	if gcpProjectId != "" {
+		providers = append(providers, "gcp")
+		cfg["gcp:project"] = auto.ConfigValue{Value: gcpProjectId}
+		if gcpRegion != "" {
+			cfg["gcp:region"] = auto.ConfigValue{Value: gcpRegion}
 		}
-		cfg["gcp:project"] = auto.ConfigValue{Value: gcpProject}
-		if region == "" {
-			log.Fatal("missing required environment variable: REGION")
-		}
-		cfg["gcp:region"] = auto.ConfigValue{Value: region}
+		// TODO: configure label-logger
+	}
 
-	case "azure":
-		if azureLocation == "" {
-			log.Fatal("missing required environment variable: AZURE_LOCATION")
+	if azureSubscriptionId != "" {
+		providers = append(providers, "azure")
+		cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscriptionId}
+		if azureLocation != "" {
+			cfg["azure-native:location"] = auto.ConfigValue{Value: azureLocation}
 		}
-		cfg["azure-native:location"] = auto.ConfigValue{Value: azureLocation}
 		cfg["azure-native:useMsi"] = auto.ConfigValue{Value: "true"}
-		if azureSubscription != "" {
-			cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscription}
-		}
 		// The project RG name and Key Vault name are derived deterministically
 		// from (project, stack, location) and (subscription, RG) respectively
 		// inside the provider — matching the CLI's conventions. No need to
 		// pass them through as stack config or env vars.
+
+		// Azure logs don't have structured fields we can filter on, so include
+		// the etag in every log line.
+		stderrLogger = withEtagPrefix(os.Stderr)
+		stdoutLogger = withEtagPrefix(os.Stdout)
+	}
+
+	if len(providers) == 0 {
+		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCP_PROJECT_ID, or AZURE_SUBSCRIPTION_ID environment variable"}
+	} else if len(providers) > 1 {
+		return nil, &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
+	} else {
+		cfg["defang:provider"] = auto.ConfigValue{Value: providers[0]}
 	}
 
 	// Defang recipe config
-	cfg["defang:org"] = auto.ConfigValue{Value: org}
-	cfg["defang:prefix"] = auto.ConfigValue{Value: prefix}
-	cfg["defang:deploymentMode"] = auto.ConfigValue{Value: mode} // backwards compatible with legacy behavior; now using recipes
-	if etag != "" {
-		cfg["defang:etag"] = auto.ConfigValue{Value: etag} // deployment ID; recorded in state, surfaced in tags/env
-	}
 	if domain != "" {
 		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
 	}
@@ -253,113 +178,117 @@ func stackConfig() auto.ConfigMap {
 		// FIXME: should use defang-aws namespace
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
 	}
-
-	return cfg
+	// TODO: set recipe values based on deployment mode from `mode` var
+	return cfg, nil
 }
 
-func upload(ctx context.Context, url string, payload any) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("failed to marshal upload payload: %v", err)
-		return
+// collectEvents returns a channel to feed engine events into and a wait
+// function that blocks until the collector goroutine has drained the
+// channel (closed by Pulumi when the operation finishes) and finished
+// uploading. Callers must defer the wait function so the final upload
+// completes before run() returns and its deferred ctx cancels fire —
+// otherwise the in-flight uploadEvents request gets canceled.
+func collectEvents(ctx context.Context) (chan<- events.EngineEvent, func()) {
+	if eventsUploadUrl == "" && !jsonOutput {
+		return nil, func() {}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(data))
-	if err != nil {
-		log.Printf("failed to create upload request: %v", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("failed to upload to %s: %v", url, err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("upload to %s failed: status=%d body=%q", url, resp.StatusCode, string(body))
-	}
-}
-
-func uploadEvents(ctx context.Context, evts []events.EngineEvent) {
-	if eventsUploadUrl == "" || len(evts) == 0 {
-		return
-	}
-	log.Printf("Sending %d deployment events to Portal...", len(evts))
-	upload(ctx, eventsUploadUrl, map[string]any{"events": evts})
-}
-
-func uploadState(ctx context.Context, s auto.Stack) {
-	if statesUploadUrl == "" {
-		return
-	}
-	log.Print("Sending deployment state to Portal...")
-	state, err := s.Export(ctx)
-	if err != nil {
-		log.Printf("failed to export stack state: %v", err)
-		return
-	}
-	upload(ctx, statesUploadUrl, state)
-}
-
-func collectEvents() (chan events.EngineEvent, *[]events.EngineEvent) {
-	ch := make(chan events.EngineEvent)
-	var collected []events.EngineEvent
+	eventsChannel := make(chan events.EngineEvent)
+	done := make(chan struct{})
 	go func() {
-		for evt := range ch {
+		// LIFO: close(done) runs last so waitEvents() only unblocks after
+		// uploadEvents returns, even on panic in the loop.
+		defer close(done)
+		var engineEvents []events.EngineEvent
+		defer func() {
+			uploadEvents(ctx, engineEvents)
+		}()
+		// Pulumi automation will close the channel when done: https://github.com/pulumi/pulumi/blob/master/sdk/go/auto/stack.go#L1956
+		for evt := range eventsChannel {
+			engineEvents = append(engineEvents, evt)
 			if jsonOutput {
 				if evt.ResourcePreEvent != nil {
 					data, _ := json.Marshal(evt.ResourcePreEvent.Metadata)
-					fmt.Println(string(data))
+					Println(string(data)) // jsonl
 				}
 			}
-			collected = append(collected, evt)
 		}
 	}()
-	return ch, &collected
+	return eventsChannel, func() { <-done }
 }
 
 func main() {
+	// All cleanup (signal.Stop, ctx cancels) lives in run() so its defers
+	// actually fire — os.Exit skips deferred calls in the function it's in.
+	os.Exit(run())
+}
+
+func run() int {
+	// --version is informational; skip signal/timeout setup so it stays cheap.
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Println(version)
-		return
-	}
-	if stack == "" {
-		log.Fatal("missing required environment variable: STACK")
-	}
-	if stack != strings.ToLower(stack) {
-		log.Fatal("STACK name must be lowercase")
+		return 0
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Hour)
-	defer cancel()
+	ctx, cancelCause := context.WithCancelCause(context.Background())
+	defer cancelCause(nil)
+	go func() {
+		if s, ok := <-sigCh; ok {
+			cancelCause(&signalError{sig: s.(syscall.Signal)})
+		}
+	}()
 
-	// Wrap stdout/stderr so every log line emitted by the Pulumi engine, the
-	// standard log package, and any library writing to the global file handles
-	// is prefixed with the etag. Lets the CLI filter ContainerAppConsoleLogs_CL
-	// by KQL `Log_s has "<etag>"`. Must run BEFORE any other write.
-	flushEtag := installEtagPrefix(etag)
-	defer flushEtag()
+	ctx, cancelTimeout := context.WithTimeoutCause(ctx, 60*time.Minute, &signalError{sig: syscall.SIGXCPU}) // like TS
+	defer cancelTimeout()
 
-	userAgent := "defang/" + version
-	program.Version = version
+	if err := cdMain(ctx); err != nil {
+		warn(err.Error())
 
-	command := "up"
+		var usageErr *usageError
+		if errors.As(err, &usageErr) {
+			return 2
+		}
+		var sigErr *signalError
+		if errors.As(context.Cause(ctx), &sigErr) {
+			return 128 + int(sigErr.sig) // SIGINT=130, SIGTERM=143, SIGXCPU=152 (timeout)
+		}
+		var pErr *pulumiError
+		if errors.As(err, &pErr) && pErr.code > 0 {
+			// Bubble up the nested Pulumi process exit code (e.g. 255). Skip
+			// non-positive values (-2 unknownErrCode, 0) which aren't useful
+			// process statuses — fall through to the generic 1.
+			return pErr.code
+		}
+		return 1 // generic failure
+	}
+	return 0
+}
+
+func cdMain(ctx context.Context) error {
+	if stackName == "" {
+		return &usageError{msg: "missing required environment variable: STACK"}
+	}
+	if stackName != strings.ToLower(stackName) {
+		return &usageError{msg: "STACK name must be lowercase"}
+	}
+
+	var command string
 	if len(os.Args) > 1 {
 		command = os.Args[1]
 	}
 
-	var s auto.Stack
+	var stack auto.Stack
 	var err error
 	switch command {
+	case "", "help":
+		return &usageError{msg: "usage: cd [up <payload>|preview <payload>|destroy|down|refresh|cancel|outputs]"}
 	case "up", "deploy", "preview":
 		// Payload URL from args (like old code): cd <command> <payload>
 		if len(os.Args) <= 2 {
-			log.Fatalf("missing required argument: payload")
+			return &usageError{msg: "missing required argument: payload"}
 		}
 		payload := os.Args[2]
 		// Fetch the ProjectUpdate protobuf and pass it through to the Pulumi
@@ -367,25 +296,23 @@ func main() {
 		// the protobuf as a Pulumi-managed blob after the deploy succeeds —
 		// so the file only appears on success and is tracked in state (vs. a
 		// pre-Pulumi SDK upload that would leave stale records on failure).
-		var projectUpdate *defangv1.ProjectUpdate
+		projectUpdate := &defangv1.ProjectUpdate{}
 		if payload != "" {
 			projectPb, err := fetchPayload(ctx, payload)
 			if err != nil {
-				log.Fatalf("failed to fetch payload: %v", err)
+				return fmt.Errorf("failed to fetch payload: %w", err)
 			}
-			projectUpdate = &defangv1.ProjectUpdate{}
 			if err := proto.Unmarshal(projectPb, projectUpdate); err != nil {
-				log.Fatalf("failed to unmarshal ProjectUpdate protobuf: %v", err)
+				return fmt.Errorf("failed to unmarshal ProjectUpdate protobuf: %w", err)
 			}
 		}
-		s, err = auto.UpsertStackInlineSource(ctx, stack, project, program.NewRun(projectUpdate))
+		stack, err = auto.UpsertStackInlineSource(ctx, stackName, projectName, program.NewRun(projectUpdate))
 	default:
-		s, err = auto.SelectStackInlineSource(ctx, stack, project, nil)
+		stack, err = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
 	}
 	if err != nil {
-		log.Fatalf("failed to create/select stack: %v", err)
+		return pulumiErr(err)
 	}
-	stack := s
 
 	// Set workspace env vars
 	if etag != "" {
@@ -396,29 +323,40 @@ func main() {
 	// Set project-level config (autonaming, disable-default-providers)
 	ps, err := stack.Workspace().ProjectSettings(ctx)
 	if err != nil {
-		log.Fatalf("failed to get project settings: %v", err)
+		return fmt.Errorf("failed to get project settings: %w", err)
 	}
 	ps.Config = projectConfig(prefix)
 	if err := stack.Workspace().SaveProjectSettings(ctx, ps); err != nil {
-		log.Fatalf("failed to save project settings: %v", err)
+		return fmt.Errorf("failed to save project settings: %w", err)
 	}
 
 	// Set stack-level config (provider settings, defang config)
-	cfg := stackConfig()
+	cfg, err := stackConfig()
+	if err != nil {
+		return err
+	}
 	if err := stack.SetAllConfig(ctx, cfg); err != nil {
-		log.Fatalf("failed to set config: %v", err)
+		return pulumiErr(err)
 	}
 
 	// Common option builders per command type
+	userAgent := "defang/" + version
 	debugLog := debug.LoggingOptions{Debug: pulumiDebug, LogToStdErr: true}
+	progressStream := newProgressStream()
+	defer progressStream.Flush()
+	errorProgressStream := newErrorProgressStream()
+	defer errorProgressStream.Flush()
 
 	switch command {
 	case "up", "deploy":
-		evtCh, evts := collectEvents()
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		upOpts := []optup.Option{
 			optup.UserAgent(userAgent),
 			optup.Color(color()),
-			optup.ProgressStreams(os.Stderr),
+			optup.SuppressProgress(),
+			optup.ProgressStreams(progressStream),
+			optup.ErrorProgressStreams(errorProgressStream),
 			optup.EventStreams(evtCh),
 			optup.TargetDependents(),
 			optup.Target(pulumiTargets),
@@ -430,18 +368,21 @@ func main() {
 			upOpts = append(upOpts, optup.Diff())
 		}
 		_, err := stack.Up(ctx, upOpts...)
-		uploadEvents(ctx, *evts)
 		uploadState(ctx, stack)
 		if err != nil {
-			log.Fatalf("failed to deploy: %v", err)
+			// TODO: run a refresh on failure to update the state with any partial changes, like the CLI does
+			return pulumiErr(err)
 		}
 
 	case "preview":
-		evtCh, evts := collectEvents()
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		previewOpts := []optpreview.Option{
 			optpreview.UserAgent(userAgent),
 			optpreview.Color(color()),
-			optpreview.ProgressStreams(os.Stderr),
+			optpreview.SuppressProgress(),
+			optpreview.ProgressStreams(progressStream),
+			optpreview.ErrorProgressStreams(errorProgressStream),
 			optpreview.EventStreams(evtCh),
 			optpreview.TargetDependents(),
 		}
@@ -453,17 +394,19 @@ func main() {
 		}
 		previewOpts = append(previewOpts, optpreview.Target(pulumiTargets))
 		_, err := stack.Preview(ctx, previewOpts...)
-		uploadEvents(ctx, *evts)
 		if err != nil {
-			log.Fatalf("failed to preview: %v", err)
+			return pulumiErr(err)
 		}
 
 	case "down", "destroy":
-		evtCh, evts := collectEvents()
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
 			optdestroy.Color(color()),
-			optdestroy.ProgressStreams(os.Stderr),
+			optdestroy.SuppressProgress(),
+			optdestroy.ProgressStreams(progressStream),
+			optdestroy.ErrorProgressStreams(errorProgressStream),
 			optdestroy.EventStreams(evtCh),
 			optdestroy.ContinueOnError(),
 			optdestroy.Remove(),
@@ -476,46 +419,46 @@ func main() {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
 		}
 		_, err = stack.Destroy(ctx, destroyOpts...)
-		uploadEvents(ctx, *evts)
 		uploadState(ctx, stack)
 		if err != nil {
-			log.Fatalf("failed to destroy: %v", err)
+			return pulumiErr(err)
 		}
 
 	case "refresh":
-		evtCh, evts := collectEvents()
+		evtCh, waitEvents := collectEvents(ctx)
+		defer waitEvents()
 		refreshOpts := []optrefresh.Option{
 			optrefresh.UserAgent(userAgent),
 			optrefresh.Color(color()),
-			optrefresh.ProgressStreams(os.Stderr),
+			optrefresh.SuppressProgress(),
+			optrefresh.ProgressStreams(progressStream),
+			optrefresh.ErrorProgressStreams(errorProgressStream),
 			optrefresh.EventStreams(evtCh),
 		}
 		if pulumiDebug {
 			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
 		}
 		_, err := stack.Refresh(ctx, refreshOpts...)
-		uploadEvents(ctx, *evts)
 		uploadState(ctx, stack)
 		if err != nil {
-			log.Fatalf("failed to refresh: %v", err)
+			return pulumiErr(err)
 		}
 
 	case "cancel":
 		if err := stack.Cancel(ctx); err != nil {
-			log.Fatalf("failed to cancel: %v", err)
+			return pulumiErr(err)
 		}
 
 	case "outputs":
 		outputs, err := stack.Outputs(ctx)
 		if err != nil {
-			log.Fatalf("failed to get outputs: %v", err)
+			return pulumiErr(err)
 		}
 		data, _ := json.MarshalIndent(outputs, "", "  ")
-		fmt.Println(string(data))
+		Println(string(data))
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", command)
-		fmt.Fprintln(os.Stderr, "usage: cd [up|preview|destroy|down|refresh|cancel|outputs]")
-		os.Exit(1)
+		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
 	}
+	return nil
 }

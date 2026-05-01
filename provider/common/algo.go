@@ -65,12 +65,12 @@ func IsNetworkInternal(networks compose.Networks, networkId compose.NetworkID) b
 }
 
 func InPublicNetwork(networks compose.Networks, service compose.ServiceConfig) bool {
+	_, inDefaultNetwork := service.Networks[compose.DefaultNetwork]
 	if len(networks) == 0 {
 		// No explicit networks defined; services with no explicit network membership
 		// are implicitly in the non-internal "default" network (compose-spec normalization).
-		return len(service.Networks) == 0
+		return inDefaultNetwork || len(service.Networks) == 0
 	}
-	_, inDefaultNetwork := service.Networks[compose.DefaultNetwork]
 	return inDefaultNetwork && !IsNetworkInternal(networks, compose.DefaultNetwork)
 }
 
