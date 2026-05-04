@@ -1,52 +1,58 @@
 # Contributing
 
-## Build & test the Defang provider
+## What this is
 
-1. Run `make provider` to build the provider
-1. Run `make sdks` to build the sdks
-1. Run `make build` to build the provider and the sdks
-1. Run `make install` to install the provider
-1. Run `make examples` to generate the example programs in `examples/` off of the source `examples/yaml` example program.
-1. Run `make up` to run the example program in `examples/yaml`.
-1. Run `make down` to tear down the example program.
+Pulumi providers that deploy Docker Compose applications to AWS, GCP, and Azure. The repo produces three separate provider binaries (`pulumi-resource-defang-aws`, `pulumi-resource-defang-gcp`, `pulumi-resource-defang-azure`) and generates SDKs for Go, Node.js, Python, and .NET from each provider's schema.
 
-## Build the provider and install the plugin
+## Build & test
 
-   ```bash
-   $ make build install
-   ```
-   
-This will:
+Common targets (see `make help` for the full list):
 
-1. Create the SDK codegen binary and place it in a `./bin` folder (gitignored)
-1. Create the provider binary and place it in the `./bin` folder (gitignored)
-1. Generate the dotnet, Go, Node, and Python SDKs and place them in the `./sdk` folder
-1. Install the provider on your machine.
+```bash
+make provider          # Build all three provider binaries into ./bin/
+make schema            # Generate OpenAPI schemas from the provider binaries
+make sdks              # Generate Go, Node.js, Python, and .NET SDKs into ./sdk/
+make build             # Full build: provider + schema + sdks
+make install           # Install provider binaries to $GOPATH/bin
+make examples          # Generate language examples from per-provider YAML sources
+make test              # Run all tests (unit + provider + cd)
+make test_unit         # Unit tests only
+make test_provider     # Provider integration tests
+make lint              # golangci-lint with --fix
+make ensure            # go mod tidy for both root and tests/
+```
 
-## A brief repository overview
+`make examples` regenerates language examples in `examples/{aws,gcp,azure}-{dotnet,go,nodejs,python}/` from the corresponding `examples/{aws,gcp,azure}-yaml/` sources.
 
-1. A `provider/` folder containing the building and implementation logic
-    1. `cmd/pulumi-resource-defang/main.go` - holds the provider's implementation.
-1. `sdk` - holds the generated code libraries.
-1. `examples` a folder of Pulumi programs to try locally and/or use in CI.
+## Git hooks
 
-## Additional Details
+```bash
+make install-git-hooks
+```
 
-This repository depends on the pulumi-go-provider library. For more details on building providers, please check
-the [Pulumi Go Provider docs](https://github.com/pulumi/pulumi-go-provider).
+Sets up:
+- **Pre-commit:** `lint-staged` — runs golangci-lint and tests only for affected providers.
+- **Pre-push:** `make provider test go_sdk` — full build + test.
 
-## Build Examples
+The lint-staged config (`.lintstagedrc.js`) is provider-aware: changes to `provider/compose` or `provider/common` trigger all provider tests since all three providers depend on them.
 
-Create an example program using the resources defined in your provider, and place it in the `examples/` folder.
+## Repository layout
 
-You can now repeat the steps for [build, install, and test](#test-against-the-example).
+- `provider/cmd/pulumi-resource-defang-{aws,gcp,azure}/` — entry points for each provider binary; each emits its own `schema.json`.
+- `provider/defang{aws,gcp,azure}/` — provider implementations (Project, Service, Postgres, Redis, plus AWS-only Build).
+- `provider/compose/` — shared Docker Compose types.
+- `provider/common/` — cross-provider utilities (health checks, ingress detection, DNS, topology sorting).
+- `sdk/` — generated language SDKs.
+- `examples/` — per-provider example programs in YAML, Go, Node.js, Python, and .NET.
+- `tests/` — provider integration tests (separate Go module, uses a mock Pulumi server in `tests/testutil/`).
 
-## Configuring CI and releases
+See [CLAUDE.md](CLAUDE.md) for a deeper architecture overview, including the Project-vs-standalone component scoping model.
 
-1. Follow the instructions laid out in the [deployment templates](./deployment-templates/README-DEPLOYMENT.md).
+## Additional details
+
+This repository depends on the [pulumi-go-provider](https://github.com/pulumi/pulumi-go-provider) library.
 
 ## References
 
-Other resources/examples for implementing providers:
-* [Pulumi Command provider](https://github.com/pulumi/pulumi-command/blob/master/provider/pkg/provider/provider.go)
-* [Pulumi Go Provider repository](https://github.com/pulumi/pulumi-go-provider)
+- [Pulumi Command provider](https://github.com/pulumi/pulumi-command/blob/master/provider/pkg/provider/provider.go)
+- [Pulumi Go Provider repository](https://github.com/pulumi/pulumi-go-provider)

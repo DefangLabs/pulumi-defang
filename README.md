@@ -2,7 +2,41 @@
 
 ![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/DefangLabs/pulumi-defang?label=Version)
 
-The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.
+The Pulumi Providers for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi. Develop once, deploy anywhere.
+
+The repo also contains the source of our CD program in the [`cd/`](cd/) directory, which serves as the
+driver for the Defang deployments: it receive a Compose file, translates it to a Pulumi program, and runs `pulumi up` (or `destroy` etc.) to (de)provision the resources in it.
+
+Most users will want to use these components through the [Defang CLI](https://github.com/DefangLabs/defang), which connects to your cloud account, bootstraps the CD environment and runs the CD image built by this repo.
+
+If you're a Pulumi user, check out our [Pulumi Registry listing](https://www.pulumi.com/registry/packages/defang/) for installation instructions, API docs, and example usage of using the providers in your own Pulumi programs.
+
+The [examples/](examples/) directory in this repo also contains complete working samples for all clouds and languages, incuding [examples/multi-cloud](examples/multi-cloud/) which deploys a single Compose app to all three clouds from a single Pulumi program.
+
+## Components
+
+Each provider (`defang-aws`, `defang-gcp`, `defang-azure`) exposes the same Pulumi resource palette:
+
+- **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure (VPC, networking, DNS, load balancers, build pipelines) alongside each service.
+- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure).
+- **`Build`** (AWS only) — an image-build resource used internally by `Project`.
+- **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
+
+Managed components (`Service`, `Postgres`, `Redis`) share one implementation between standalone and project-scoped use. Standalone instantiations skip the shared-infra provisioning and therefore don't support features that depend on it (VPC access, build-from-source, external load-balancer wiring).
+
+### Resource naming
+
+When creating Pulumi resources, these Pulumi components will only specify the **logical** names, which is either the service name (e.g. `app`) or a name to describe the resource's role (e.g. `shared-vpc`, `ecr-public`).
+The **physical** name of the underlying cloud resource is determined by the Pulumi engine. By default, this will be the logical name followed by a hyphen and 7 random hex characters (e.g. `app-abc1234`).
+To control the physical name, configure `autonaming` rules in the Pulumi configuration files, either globally or per resource type. See the [Pulumi autonaming docs](https://www.pulumi.com/docs/intro/concepts/resources/#autonaming) for details. See the [CD code](cd/main.go) for examples of how autonaming is used in Defang.
+
+## Installation and Configuration
+
+See our [Installation and Configuration](https://pulumi.com/registry/packages/defang/installation-configuration/) docs
+
+## Development
+
+See the [Contributing](https://github.com/DefangLabs/pulumi-defang/blob/main/CONTRIBUTING.md) doc.
 
 ## Example usage
 
@@ -160,28 +194,3 @@ outputs:
 
 {{% /choosable %}}
 {{< /chooser >}}
-
-## Components
-
-Each provider (`defang-aws`, `defang-gcp`, `defang-azure`) exposes the same component palette:
-
-- **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure (VPC, networking, DNS, load balancers, build pipelines) alongside each service.
-- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure).
-- **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
-- **`Build`** (AWS only) — an image-build resource used internally by `Project`.
-
-Managed components (`Service`, `Postgres`, `Redis`) share one implementation between standalone and project-scoped use. Standalone instantiations skip the shared-infra provisioning and therefore don't support features that depend on it (VPC access, build-from-source, external load-balancer wiring).
-
-### Resource naming
-
-When creating Pulumi resources, these Pulumi components will only specify the **logical** name, which is either the service name (e.g. `app`) or a name to describe the resource's role (e.g. `shared-vpc`, `ecr-public`).
-The **physical** name of the underlying cloud resource is determined by the Pulumi engine. By default, this will be the logical name followed by a hyphen and 7 random hex characters (e.g. `app-abc1234`).
-To control the physical name, configure `autonaming` rules in the Pulumi configuration files, either globally or per resource type. See the [Pulumi autonaming docs](https://www.pulumi.com/docs/intro/concepts/resources/#autonaming) for details. See the [CD code](cd/main.go) for examples of how autonaming is used in Defang.
-
-## Installation and Configuration
-
-See our [Installation and Configuration](https://pulumi.com/registry/packages/defang/installation-configuration/) docs
-
-## Development
-
-See the [Contributing](https://github.com/DefangLabs/pulumi-defang/blob/main/CONTRIBUTING.md) doc.
