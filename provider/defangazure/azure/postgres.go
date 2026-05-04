@@ -94,11 +94,11 @@ func buildPostgresServerArgs(
 		Version:           pg.Version,
 		Tags:              ServiceTags(serviceName),
 		Sku: &dbforpostgresql.SkuArgs{
-			Name: pulumi.String(SkuName.Get(ctx)),
+			Name: pulumi.String(PostgresSku.Get(ctx)),
 			Tier: pulumi.String(string(dbforpostgresql.SkuTierBurstable)),
 		},
 		Storage: &dbforpostgresql.StorageArgs{
-			StorageSizeGB: pulumi.Int(StorageSizeGB.Get(ctx)),
+			StorageSizeGB: pulumi.Int(PostgresStorageSizeGB.Get(ctx)),
 		},
 		Backup: &dbforpostgresql.BackupTypeArgs{
 			BackupRetentionDays: pulumi.Int(backupRetention),
