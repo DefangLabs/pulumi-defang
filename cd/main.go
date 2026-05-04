@@ -189,9 +189,10 @@ func stackConfig() (auto.ConfigMap, error) {
 // completes before run() returns and its deferred ctx cancels fire —
 // otherwise the in-flight uploadEvents request gets canceled.
 func collectEvents(ctx context.Context) (chan<- events.EngineEvent, func()) {
-	if eventsUploadUrl == "" && !jsonOutput {
-		return nil, func() {}
-	}
+	// Always create a real channel even when there's no consumer (no upload URL,
+	// no JSON output). Returning nil makes Pulumi's auto SDK block forever on
+	// a chan-send to a nil channel — the events.StreamEvents goroutine
+	// deadlocks and the deploy never completes.
 	eventsChannel := make(chan events.EngineEvent)
 	done := make(chan struct{})
 	go func() {
@@ -204,7 +205,9 @@ func collectEvents(ctx context.Context) (chan<- events.EngineEvent, func()) {
 		}()
 		// Pulumi automation will close the channel when done: https://github.com/pulumi/pulumi/blob/master/sdk/go/auto/stack.go#L1956
 		for evt := range eventsChannel {
-			engineEvents = append(engineEvents, evt)
+			if eventsUploadUrl != "" {
+				engineEvents = append(engineEvents, evt)
+			}
 			if jsonOutput {
 				if evt.ResourcePreEvent != nil {
 					data, _ := json.Marshal(evt.ResourcePreEvent.Metadata)

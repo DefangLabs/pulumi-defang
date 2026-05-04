@@ -108,19 +108,25 @@ func CreateLLMInfra(
 		return nil, fmt.Errorf("creating Azure AI Foundry account: %w", err)
 	}
 
-	if useVNet {
-		if err := createLLMPrivateEndpoint(ctx, name, account, infra, opts...); err != nil {
-			return nil, fmt.Errorf("creating LLM private endpoint: %w", err)
-		}
-	}
-
 	// pulumi.Parent(account) routes the invoke through the account's provider —
 	// required because pulumi:disable-default-providers excludes azure-native
 	// (see cd/main.go projectConfig).
+	//
+	// Called *before* the PE so its resolution can act as a sync barrier:
+	// pulumi-azure-native treats the account LRO as complete at state=Accepted,
+	// but ListAccountKeys won't succeed until the account is actually
+	// provisioned. Threading keysOut.Key1() into the PE's PrivateLinkServiceId
+	// gates PE creation on real account readiness.
 	keysOut := cognitiveservices.ListAccountKeysOutput(ctx, cognitiveservices.ListAccountKeysOutputArgs{
 		AccountName:       account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
 	}, pulumi.Parent(account))
+
+	if useVNet {
+		if err := createLLMPrivateEndpoint(ctx, name, account, keysOut, infra, opts...); err != nil {
+			return nil, fmt.Errorf("creating LLM private endpoint: %w", err)
+		}
+	}
 
 	apiKey := keysOut.Key1().ApplyT(func(k *string) string {
 		if k != nil {
@@ -257,10 +263,20 @@ func createLLMPrivateEndpoint(
 	ctx *pulumi.Context,
 	serviceName string,
 	account *cognitiveservices.Account,
+	keysOut cognitiveservices.ListAccountKeysResultOutput,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
 	peName := serviceName + "-llm"
+	// Gate PrivateLinkServiceId on keysOut so PE creation waits for the
+	// account to be actually provisioned. Plain account.ID() resolves at
+	// state=Accepted, which Azure rejects with AccountProvisioningStateInvalid
+	// when used as PE PrivateLinkServiceId.
+	gatedAccountID := pulumi.All(account.ID(), keysOut.Key1()).ApplyT(
+		func(args []interface{}) string {
+			return string(args[0].(pulumi.ID))
+		},
+	).(pulumi.StringOutput)
 	pe, err := network.NewPrivateEndpoint(ctx, peName, &network.PrivateEndpointArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.StringPtr(location),
@@ -270,7 +286,7 @@ func createLLMPrivateEndpoint(
 		PrivateLinkServiceConnections: network.PrivateLinkServiceConnectionArray{
 			&network.PrivateLinkServiceConnectionArgs{
 				Name:                 pulumi.String(peName),
-				PrivateLinkServiceId: account.ID().ToStringOutput(),
+				PrivateLinkServiceId: gatedAccountID,
 				GroupIds:             pulumi.StringArray{pulumi.String("account")},
 			},
 		},
