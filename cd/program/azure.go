@@ -2,7 +2,7 @@ package program
 
 import (
 	"fmt"
-	"strings"
+	"net/url"
 
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -44,7 +44,10 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 				svc.Status = "PROVISIONING"
 				svc.State = defangv1.ServiceState_DEPLOYMENT_COMPLETED
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
-					svc.Endpoints = []string{ep}
+					svc.Endpoints = []string{ep} // FIXME: support multiple endpoints per service
+					if u, err := url.Parse(ep); err == nil && u.Host != "" {
+						svc.PublicFqdn = u.Host // FIXME: support private FQDNs
+					}
 				}
 			}
 			return proto.Marshal(projectUpdate)
@@ -197,11 +200,6 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 	}
 	cdRG := "defang-cd-" + location
 
-	// Azure uses a dedicated `projects` container, so strip the AWS/GCS-style
-	// `projects/` prefix from the object key — otherwise the blob lands at
-	// `projects/projects/<project>/<stack>/project.pb`.
-	containerName, blobName, _ := strings.Cut(projectPbKey(ctx), "/")
-
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
 		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
 	}).(pulumi.AssetOutput)
@@ -209,8 +207,8 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 	_, err = storage.NewBlob(ctx, "project-pb", &storage.BlobArgs{
 		ResourceGroupName: pulumi.String(cdRG),
 		AccountName:       pulumi.String(account),
-		ContainerName:     pulumi.String(containerName),
-		BlobName:          pulumi.String(blobName),
+		ContainerName:     pulumi.String(u.Host), // Host is the container in azblob:// URLs
+		BlobName:          pulumi.String(projectPbKey(ctx)),
 		Source:            source,
 		ContentType:       pulumi.String(protobufContentType),
 	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
