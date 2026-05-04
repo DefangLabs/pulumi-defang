@@ -11,15 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Version is the build version string set by main via -ldflags. Per-provider
-// deploy funcs read this directly (e.g. aws.go, gcp.go) so that user-visible
-// resources can be tagged with the defang version that produced them.
-var Version = "development"
-
-// Etag (defang:etag) is read inside NewRun and threaded into each per-provider
-// deploy func, so the deployment state file records exactly which etag was
-// used — no env var to inspect after the fact.
-
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 	cf := compose.Project{Name: projectName}
 	if err := yaml.Unmarshal(data, &cf); err != nil {
@@ -38,11 +29,11 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 
 		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
 		domain := defangCfg.Get("domain")         // optional project domain
-		etag := defangCfg.Get("etag")             // deployment identifier; empty in local dev
-
-		if projectUpdate == nil {
-			return errors.New("ProjectUpdate is nil")
+		etag := projectUpdate.Etag                // deployment identifier
+		if etag == "" {
+			etag = defangCfg.Get("etag")
 		}
+
 		if len(projectUpdate.Compose) == 0 {
 			return errors.New("ProjectUpdate has no compose field")
 		}

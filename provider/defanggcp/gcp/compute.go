@@ -83,7 +83,7 @@ func CreateComputeEngine(
 
 	instanceGroup, err := compute.NewRegionInstanceGroupManager(ctx, serviceName+"-instance-group",
 		&compute.RegionInstanceGroupManagerArgs{
-			BaseInstanceName:    pulumi.String(serviceName),
+			BaseInstanceName:    pulumi.String(serviceName), // FIXME: this resource does not support autonaming
 			AutoHealingPolicies: autoHealing,
 			Versions: compute.RegionInstanceGroupManagerVersionArray{
 				&compute.RegionInstanceGroupManagerVersionArgs{

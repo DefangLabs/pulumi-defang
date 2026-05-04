@@ -14,6 +14,11 @@ func (p ServicePortConfig) IsIngress() bool {
 	return p.Mode == PortModeIngress || p.Mode == "" // default to ingress
 }
 
+// IsHost returns true if the port mode is "host", defaulting to false.
+func (p ServicePortConfig) IsHost() bool {
+	return p.Mode == PortModeHost
+}
+
 // GetProtocol returns the protocol, defaulting to "tcp".
 func (p ServicePortConfig) GetProtocol() PortProtocol {
 	if p.Protocol != "" {

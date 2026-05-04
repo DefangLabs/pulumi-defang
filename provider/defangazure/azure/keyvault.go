@@ -23,7 +23,7 @@ const keyVaultSecretsUserRoleID = "4633458b-17de-408a-b874-0445c86b69e6"
 // project RG.
 func CreateKeyVaultIdentity(
 	ctx *pulumi.Context,
-	vaultName string,
+	vaultName, projectName string,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -42,17 +42,14 @@ func CreateKeyVaultIdentity(
 		subID, keyVaultSecretsUserRoleID,
 	)
 
-	var vaultScope pulumi.StringOutput
-	if kvRG := KeyVaultResourceGroup(ctx); kvRG != "" {
-		vaultScope = pulumi.String(fmt.Sprintf(
-			"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.KeyVault/vaults/%s",
-			subID, kvRG, vaultName,
-		)).ToStringOutput()
+	var rgID pulumi.StringOutput
+	if infra.ResourceGroup == nil {
+		kvRG := ProjectResourceGroupName(ctx, projectName)
+		rgID = pulumi.Sprintf("/subscriptions/%s/resourceGroups/%s", subID, kvRG)
 	} else {
-		vaultScope = infra.ResourceGroup.ID().ApplyT(func(rgID string) string {
-			return rgID + "/providers/Microsoft.KeyVault/vaults/" + vaultName
-		}).(pulumi.StringOutput)
+		rgID = infra.ResourceGroup.ID().ToStringOutput()
 	}
+	vaultScope := pulumi.Sprintf("%s/providers/Microsoft.KeyVault/vaults/%s", rgID, vaultName)
 
 	// Parent defaults to the surrounding component (via opts). Pulumi's SDK
 	// discourages using custom resources as parents — destruction order here is
