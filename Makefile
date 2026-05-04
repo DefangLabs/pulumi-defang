@@ -123,7 +123,7 @@ image_%: go_sdk
 
 .PHONY: push_%
 push_%:
-	$(MAKE) image_$* PUSH=--push
+	$(MAKE) image_$* PUSH="--push --platform linux/amd64"
 
 .PHONY: install-git-hooks
 install-git-hooks: node_modules ## Set up pre-commit and pre-push hooks
