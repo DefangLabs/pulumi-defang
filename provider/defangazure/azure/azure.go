@@ -150,7 +150,7 @@ func KeyVaultName(ctx *pulumi.Context, composeProject string) string {
 // compose file's top-level `name:`), which may differ from ctx.Project() —
 // a single Pulumi project can host multiple Defang Compose projects.
 func ProjectResourceGroupName(ctx *pulumi.Context, composeProject string) string {
-	prefix := strings.ToLower(common.Prefix.Get(ctx))
+	prefix := common.Prefix.Get(ctx)
 	if prefix != "" {
 		prefix += "-"
 	}
