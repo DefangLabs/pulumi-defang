@@ -184,8 +184,8 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 	if err != nil || u == nil {
 		return err
 	}
-	if u.Scheme != "azblob" {
-		return fmt.Errorf("DEFANG_STATE_URL must be an azblob:// URL for Azure uploads, got %q", u.String())
+	if u.Scheme != "azblob" || u.Host == "" {
+		return fmt.Errorf("DEFANG_STATE_URL must be an azblob:// URL with a container for Azure uploads, got %q", u.String())
 	}
 	account := u.Query().Get("storage_account")
 	if account == "" {
