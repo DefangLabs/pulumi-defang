@@ -10,7 +10,7 @@ var (
 	HighAvailability      = common.Bool("high-availability", false)
 	LogWorkspaceSku       = common.String("log-workspace-sku", "PerGB2018")
 	MaxReplicas           = common.Int("max-replicas", 0)
-	PostgresSku           = common.String("postgres-sku", "Standard_B1ms")
+	PostgresTier          = common.String("postgres-tier", "burstable")
 	PostgresStorageSizeGB = common.Int("storage-size-gb", 32)
 	RegistrySku           = common.String("registry-sku", "Basic")
 )
