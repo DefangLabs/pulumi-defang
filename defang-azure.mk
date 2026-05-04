@@ -100,8 +100,24 @@ sdks: go_sdk nodejs_sdk python_sdk dotnet_sdk
 build: provider schema sdks
 
 .PHONY: install
-install: provider
+install: provider install_plugin
 	cp "$(WORKING_DIR)/bin/${PROVIDER}" "${GOPATH}/bin"
+
+# install_plugin overwrites the resource-defang-azure plugin in
+# ~/.pulumi/plugins/ so that local Pulumi CLI / inline programs
+# (DEFANG_PULUMI_DIR mode) pick up the freshly-built provider rather
+# than a stale binary from a prior `pulumi plugin install` run.
+#
+# Pulumi resolves the plugin version from schema.json (recorded in the
+# generated SDK), which on a dirty tree can drift from $(VERSION) (the
+# git-tag-derived value). Install under the schema's version so the
+# lookup path matches.
+SCHEMA_VERSION  := $(shell jq -r .version "$(WORKING_DIR)/$(PROVIDER_PATH)/cmd/$(PROVIDER)/schema.json" 2>/dev/null || echo "$(VERSION)")
+.PHONY: install_plugin
+install_plugin: provider
+	mkdir -p "$(HOME)/.pulumi/plugins/resource-$(PACK)-v$(SCHEMA_VERSION)"
+	cp "$(WORKING_DIR)/bin/${PROVIDER}" "$(HOME)/.pulumi/plugins/resource-$(PACK)-v$(SCHEMA_VERSION)/${PROVIDER}"
+	@echo "Installed plugin: $(HOME)/.pulumi/plugins/resource-$(PACK)-v$(SCHEMA_VERSION)/${PROVIDER}"
 
 .PHONY: clean
 clean:
