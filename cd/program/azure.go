@@ -46,7 +46,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
 					svc.Endpoints = []string{ep} // FIXME: support multiple endpoints per service
 					if u, err := url.Parse(ep); err == nil && u.Host != "" {
-						svc.PublicFqdn = u.Host // FIXME: support private FQDNs
+						svc.PublicFqdn = u.Hostname() // FIXME: support private FQDNs
 					}
 				}
 			}
