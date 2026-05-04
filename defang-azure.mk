@@ -115,9 +115,7 @@ install: provider install_plugin
 SCHEMA_VERSION  := $(shell jq -r .version "$(WORKING_DIR)/$(PROVIDER_PATH)/cmd/$(PROVIDER)/schema.json" 2>/dev/null || echo "$(VERSION)")
 .PHONY: install_plugin
 install_plugin: provider
-	mkdir -p "$(HOME)/.pulumi/plugins/resource-$(PACK)-v$(SCHEMA_VERSION)"
-	cp "$(WORKING_DIR)/bin/${PROVIDER}" "$(HOME)/.pulumi/plugins/resource-$(PACK)-v$(SCHEMA_VERSION)/${PROVIDER}"
-	@echo "Installed plugin: $(HOME)/.pulumi/plugins/resource-$(PACK)-v$(SCHEMA_VERSION)/${PROVIDER}"
+	pulumi plugin install resource $(PACK) $(SCHEMA_VERSION) -f "$(WORKING_DIR)/bin/$(PROVIDER)" --reinstall
 
 .PHONY: clean
 clean:
