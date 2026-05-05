@@ -3,6 +3,7 @@ package azure
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3"
@@ -48,9 +49,10 @@ func EnsureKeyVault(
 		VaultName:         vaultName,
 	}, parentOpt)
 	if err != nil {
-		// Vault doesn't exist (CLI hasn't run SetUp yet).
-		// Treat as "no vault" — CreateKeyVaultIdentity will be skipped too.
-		return nil, ErrNoKeyVault
+		if strings.Contains(err.Error(), `Code="ResourceNotFound"`) {
+			return nil, ErrNoKeyVault
+		}
+		return nil, fmt.Errorf("looking up existing Key Vault: %w", err)
 	}
 
 	args := &keyvault.VaultArgs{
