@@ -96,12 +96,13 @@ jobs:
     #     fi
 
   regen:
-    # Auto-commit regenerated schema and Go SDK back to the PR branch so devs
-    # don't have to run `make schema go_sdk` locally. Drift is enforced strictly
-    # at release time — see the `verify_generated` job in release.yml.
-    # Skipped for fork PRs (no write access via GITHUB_TOKEN).
+    # Same-repo PRs: auto-commit regenerated schema + Go SDK back to the branch
+    # so devs don't have to run `make schema go_sdk` locally.
+    # Fork PRs: read-only — fails the job if generated artifacts are stale,
+    # since GITHUB_TOKEN is read-only on forks so we can't push a fix.
+    # Release-time verify in release.yml is the final backstop.
     name: Regenerate schema and Go SDK
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -119,16 +120,22 @@ jobs:
 
       - run: make provider schema go_sdk
 
-      - name: Commit and push if changed
+      - name: Commit and push (same-repo) or fail on drift (fork)
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/
           if git diff --cached --quiet; then
-            echo "No regenerated changes to commit"
-          else
+            echo "No regenerated changes."
+            exit 0
+          fi
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: regenerate schema and Go SDK"
             git push
+          else
+            >&2 echo "error: schema or Go SDK is out of date. Run 'make schema go_sdk' locally and commit the result."
+            git diff --cached --stat
+            exit 1
           fi
 
   build_image:
