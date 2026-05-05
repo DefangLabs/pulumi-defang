@@ -32,9 +32,9 @@ var ErrNoKeyVault = errors.New("no Key Vault found")
 // args here mirror the CLI's BeginCreateOrUpdate parameters exactly to avoid
 // proposing a replacement on import.
 //
-// Returns (nil, nil) when the vault doesn't exist yet — the CLI may not have
-// run SetUp (e.g. the user never ran `defang config set`). Callers should
-// treat that as "no vault, no identity binding".
+// Returns (nil, ErrNoKeyVault) when the vault doesn't exist yet — the CLI may
+// not have run SetUp (e.g. the user never ran `defang config set`). Callers
+// should treat that as "no vault, no identity binding".
 func EnsureKeyVault(
 	ctx *pulumi.Context,
 	composeProject string,
