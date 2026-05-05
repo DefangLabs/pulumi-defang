@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
@@ -14,6 +15,8 @@ import (
 //
 //nolint:gosec // built-in role definition ID, not a secret
 const keyVaultSecretsUserRoleID = "4633458b-17de-408a-b874-0445c86b69e6"
+
+var ErrNoKeyVault = errors.New("no Key Vault found")
 
 // EnsureKeyVault adopts the CLI-created project Key Vault into Pulumi state
 // with RetainOnDelete=true, so:
@@ -47,7 +50,7 @@ func EnsureKeyVault(
 	if err != nil {
 		// Vault doesn't exist (CLI hasn't run SetUp yet).
 		// Treat as "no vault" — CreateKeyVaultIdentity will be skipped too.
-		return nil, nil //nolint:nilerr // intentional: missing vault is not an error
+		return nil, ErrNoKeyVault
 	}
 
 	args := &keyvault.VaultArgs{

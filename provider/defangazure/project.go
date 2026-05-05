@@ -410,7 +410,7 @@ func setupSharedInfra(
 	}
 
 	vault, err := providerazure.EnsureKeyVault(ctx, projectName, infra, parentOpt)
-	if err != nil {
+	if err != nil && !errors.Is(err, providerazure.ErrNoKeyVault) {
 		return nil, nil, err
 	}
 	if vault != nil {
