@@ -1,0 +1,563 @@
+{
+  "name": "defang-aws",
+  "version": "2.0.0-alpha+dirty",
+  "description": "Deploy containerized services to AWS with Pulumi.",
+  "keywords": [
+    "category/cloud",
+    "category/infrastructure",
+    "kind/native",
+    "defang",
+    "docker",
+    "cloud",
+    "aws",
+    "ecs",
+    "fargate"
+  ],
+  "homepage": "https://github.com/DefangLabs/pulumi-defang",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/DefangLabs/pulumi-defang",
+  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
+  "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang",
+  "publisher": "Defang",
+  "language": {
+    "csharp": {
+      "rootNamespace": "DefangLabs"
+    },
+    "nodejs": {
+      "packageName": "@defang-io/pulumi-defang-aws"
+    },
+    "python": {
+      "pyproject": {}
+    }
+  },
+  "config": {},
+  "types": {
+    "defang-aws:aws:SharedInfra": {
+      "properties": {
+        "privateSgID": {
+          "type": "string"
+        },
+        "privateSubnetIDs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "privateZoneID": {
+          "type": "string"
+        },
+        "publicSubnetIDs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vpcID": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "vpcID"
+      ]
+    },
+    "defang-aws:compose:BuildConfig": {
+      "properties": {
+        "args": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "context": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "shmSize": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "context"
+      ]
+    },
+    "defang-aws:compose:DeployConfig": {
+      "properties": {
+        "replicas": {
+          "type": "integer"
+        },
+        "resources": {
+          "$ref": "#/types/defang-aws:compose:Resources"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:HealthCheckConfig": {
+      "properties": {
+        "intervalSeconds": {
+          "type": "integer"
+        },
+        "retries": {
+          "type": "integer"
+        },
+        "startPeriodSeconds": {
+          "type": "integer"
+        },
+        "test": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutSeconds": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:LlmConfig": {
+      "type": "object"
+    },
+    "defang-aws:compose:NetworkConfig": {
+      "properties": {
+        "internal": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:PostgresConfig": {
+      "properties": {
+        "allowDowntime": {
+          "type": "boolean"
+        },
+        "fromSnapshot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:RedisConfig": {
+      "properties": {
+        "allowDowntime": {
+          "type": "boolean"
+        },
+        "fromSnapshot": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:ResourceConfig": {
+      "properties": {
+        "cpus": {
+          "type": "number"
+        },
+        "memory": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:Resources": {
+      "properties": {
+        "reservations": {
+          "$ref": "#/types/defang-aws:compose:ResourceConfig"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:ServiceConfig": {
+      "properties": {
+        "build": {
+          "$ref": "#/types/defang-aws:compose:BuildConfig"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependsOn": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-aws:compose:ServiceDependency"
+          }
+        },
+        "deploy": {
+          "$ref": "#/types/defang-aws:compose:DeployConfig"
+        },
+        "domainName": {
+          "type": "string"
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "healthCheck": {
+          "$ref": "#/types/defang-aws:compose:HealthCheckConfig"
+        },
+        "image": {
+          "type": "string"
+        },
+        "llm": {
+          "$ref": "#/types/defang-aws:compose:LlmConfig"
+        },
+        "networks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-aws:compose:ServiceNetworkConfig"
+          }
+        },
+        "platform": {
+          "type": "string"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-aws:compose:ServicePortConfig"
+          }
+        },
+        "postgres": {
+          "$ref": "#/types/defang-aws:compose:PostgresConfig"
+        },
+        "redis": {
+          "$ref": "#/types/defang-aws:compose:RedisConfig"
+        },
+        "restart": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:ServiceDependency": {
+      "properties": {
+        "condition": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:ServiceNetworkConfig": {
+      "properties": {
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "type": "object"
+    },
+    "defang-aws:compose:ServicePortConfig": {
+      "properties": {
+        "appProtocol": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "target": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "target"
+      ]
+    },
+    "defang-aws:index:AWSConfig": {
+      "properties": {
+        "projectDomain": {
+          "type": "string"
+        },
+        "publicZoneId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "provider": {},
+  "resources": {
+    "defang-aws:index:Build": {
+      "properties": {
+        "buildId": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "maxWaitTime": {
+          "type": "integer"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "projectName",
+        "buildId",
+        "image"
+      ],
+      "inputProperties": {
+        "destination": {
+          "type": "string"
+        },
+        "maxWaitTime": {
+          "type": "integer"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "projectName": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "requiredInputs": [
+        "projectName"
+      ]
+    },
+    "defang-aws:index:Postgres": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "instance_identifier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint",
+        "instance_identifier"
+      ],
+      "inputProperties": {
+        "aws": {
+          "$ref": "#/types/defang-aws:aws:SharedInfra"
+        },
+        "deploy": {
+          "$ref": "#/types/defang-aws:compose:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "postgres": {
+          "$ref": "#/types/defang-aws:compose:PostgresConfig"
+        },
+        "project_name": {
+          "type": "string",
+          "plain": true
+        }
+      },
+      "requiredInputs": [
+        "project_name"
+      ],
+      "isComponent": true
+    },
+    "defang-aws:index:Project": {
+      "properties": {
+        "endpoints": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "loadBalancerDns": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoints"
+      ],
+      "inputProperties": {
+        "aws": {
+          "$ref": "#/types/defang-aws:index:AWSConfig"
+        },
+        "networks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-aws:compose:NetworkConfig"
+          }
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-aws:compose:ServiceConfig"
+          }
+        }
+      },
+      "requiredInputs": [
+        "services"
+      ],
+      "isComponent": true
+    },
+    "defang-aws:index:Redis": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "inputProperties": {
+        "aws": {
+          "$ref": "#/types/defang-aws:aws:SharedInfra"
+        },
+        "deploy": {
+          "$ref": "#/types/defang-aws:compose:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-aws:compose:ServicePortConfig"
+          }
+        },
+        "project_name": {
+          "type": "string",
+          "plain": true
+        },
+        "redis": {
+          "$ref": "#/types/defang-aws:compose:RedisConfig"
+        }
+      },
+      "requiredInputs": [
+        "project_name"
+      ],
+      "isComponent": true
+    },
+    "defang-aws:index:Service": {
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "inputProperties": {
+        "aws": {
+          "$ref": "#/types/defang-aws:aws:SharedInfra"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "deploy": {
+          "$ref": "#/types/defang-aws:compose:DeployConfig"
+        },
+        "domainName": {
+          "type": "string",
+          "plain": true
+        },
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "healthCheck": {
+          "$ref": "#/types/defang-aws:compose:HealthCheckConfig"
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "platform": {
+          "type": "string",
+          "plain": true
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-aws:compose:ServicePortConfig"
+          }
+        },
+        "project_name": {
+          "type": "string",
+          "plain": true
+        }
+      },
+      "requiredInputs": [
+        "image",
+        "project_name"
+      ],
+      "isComponent": true
+    }
+  }
+}
