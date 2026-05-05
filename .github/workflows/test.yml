@@ -40,7 +40,7 @@ jobs:
 
       - run: make provider
 
-      - run: make schema && git diff --exit-code -- provider/cmd/pulumi-resource-defang/schema.json
+      - run: make schema
 
       - run: COVER=1 make test
 
@@ -73,16 +73,6 @@ jobs:
           language: ${{ matrix.language }}
           provider: defang-${{ matrix.provider }}
 
-      - name: Check Go SDK is up to date
-        if: matrix.language == 'go'
-        run: |
-          git update-index -q --refresh
-          if ! git diff-index --quiet HEAD -- sdk/v2/; then
-            >&2 echo "error: Go SDK is out of date. Run 'make go_sdk' and commit the result."
-            git diff --stat sdk/v2/
-            exit 1
-          fi
-
       - name: Build Example
         run: make example_${{ matrix.provider }}_${{ matrix.language }}
         env:
@@ -104,6 +94,42 @@ jobs:
     #       >&2 echo "error: found +dirty version in examples. Regenerate examples with \`make examples\` and commit the changes."
     #       exit 1
     #     fi
+
+  regen:
+    # Auto-commit regenerated schema and Go SDK back to the PR branch so devs
+    # don't have to run `make schema go_sdk` locally. Drift is enforced strictly
+    # at release time — see the `verify_generated` job in release.yml.
+    # Skipped for fork PRs (no write access via GITHUB_TOKEN).
+    name: Regenerate schema and Go SDK
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Setup Go build environment
+        uses: ./.github/actions/setup-go
+
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6
+
+      - run: make provider schema go_sdk
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/
+          if git diff --cached --quiet; then
+            echo "No regenerated changes to commit"
+          else
+            git commit -m "chore: regenerate schema and Go SDK"
+            git push
+          fi
 
   build_image:
     name: Build Docker Image
