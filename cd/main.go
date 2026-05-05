@@ -67,6 +67,12 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 							// 5-50	Alphanumerics, hyphens, and underscores
 							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
+							// ManagedEnvironment names must be 2–32 chars, alphanumerics and hyphens,
+							// starting with a letter. Default ${prefix}-${project}-${stack}-${name}-${hex(7)}
+							// overflows. One ManagedEnvironment per project per RG, so ${name} alone
+							// disambiguates within the RG; the hex suffix is just to avoid replace-on-rename.
+							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
+							"azure-native:app:ManagedEnvironment": map[string]string{"pattern": "${name}-${hex(7)}"},
 						},
 					},
 					// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
