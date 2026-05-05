@@ -1,6 +1,6 @@
 {
   "name": "defang-gcp",
-  "version": "2.0.0-alpha+dirty",
+  "version": "2.0.0-alpha",
   "description": "Deploy containerized services to GCP with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -264,17 +264,8 @@
         "buildId": {
           "type": "string"
         },
-        "cmdArgs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "diskSizeGb": {
           "type": "integer"
-        },
-        "image": {
-          "type": "string"
         },
         "imageDigest": {
           "type": "string"
@@ -292,6 +283,9 @@
         },
         "machineType": {
           "type": "string"
+        },
+        "maxWaitTime": {
+          "type": "integer"
         },
         "projectId": {
           "type": "string",
@@ -335,17 +329,8 @@
         "imageDigest"
       ],
       "inputProperties": {
-        "cmdArgs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "diskSizeGb": {
           "type": "integer"
-        },
-        "image": {
-          "type": "string"
         },
         "images": {
           "type": "array",
@@ -360,6 +345,9 @@
         },
         "machineType": {
           "type": "string"
+        },
+        "maxWaitTime": {
+          "type": "integer"
         },
         "projectId": {
           "type": "string",
@@ -434,13 +422,13 @@
         "postgres": {
           "$ref": "#/types/defang-gcp:compose:PostgresConfig"
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         }
       },
       "requiredInputs": [
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     },
@@ -462,6 +450,10 @@
       ],
       "inputProperties": {
         "domain": {
+          "type": "string",
+          "plain": true
+        },
+        "etag": {
           "type": "string",
           "plain": true
         },
@@ -570,14 +562,14 @@
             "$ref": "#/types/defang-gcp:compose:ServicePortConfig"
           }
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         }
       },
       "requiredInputs": [
         "image",
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     }

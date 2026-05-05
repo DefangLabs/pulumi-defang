@@ -1,6 +1,6 @@
 {
   "name": "defang-azure",
-  "version": "2.0.0-alpha+dirty",
+  "version": "2.0.0-alpha",
   "description": "Deploy containerized services to Azure with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -259,7 +259,7 @@
   },
   "provider": {},
   "resources": {
-    "defang-azure:index:ACRImageBuild": {
+    "defang-azure:index:Build": {
       "properties": {
         "contextPath": {
           "type": "string"
@@ -288,6 +288,9 @@
         "runId": {
           "type": "string"
         },
+        "serviceName": {
+          "type": "string"
+        },
         "subscriptionId": {
           "type": "string"
         },
@@ -307,6 +310,7 @@
         "registryName",
         "taskName",
         "imageName",
+        "serviceName",
         "loginServer",
         "contextPath",
         "encodedTaskContent",
@@ -335,6 +339,9 @@
         "resourceGroupName": {
           "type": "string"
         },
+        "serviceName": {
+          "type": "string"
+        },
         "subscriptionId": {
           "type": "string"
         },
@@ -354,6 +361,7 @@
         "registryName",
         "taskName",
         "imageName",
+        "serviceName",
         "loginServer",
         "contextPath",
         "encodedTaskContent"
@@ -386,13 +394,13 @@
         "postgres": {
           "$ref": "#/types/defang-azure:compose:PostgresConfig"
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         }
       },
       "requiredInputs": [
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     },
@@ -413,6 +421,10 @@
         "endpoints"
       ],
       "inputProperties": {
+        "etag": {
+          "type": "string",
+          "plain": true
+        },
         "networks": {
           "type": "object",
           "additionalProperties": {
@@ -455,7 +467,7 @@
           "type": "string",
           "plain": true
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         },
@@ -464,7 +476,7 @@
         }
       },
       "requiredInputs": [
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     },

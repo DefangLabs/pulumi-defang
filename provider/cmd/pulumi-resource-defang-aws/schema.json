@@ -1,6 +1,6 @@
 {
   "name": "defang-aws",
-  "version": "2.0.0-alpha+dirty",
+  "version": "2.0.0-alpha",
   "description": "Deploy containerized services to AWS with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -314,9 +314,6 @@
         "maxWaitTime": {
           "type": "integer"
         },
-        "profile": {
-          "type": "string"
-        },
         "projectName": {
           "type": "string"
         },
@@ -342,9 +339,6 @@
         "maxWaitTime": {
           "type": "integer"
         },
-        "profile": {
-          "type": "string"
-        },
         "projectName": {
           "type": "string"
         },
@@ -367,13 +361,13 @@
         "endpoint": {
           "type": "string"
         },
-        "instance_identifier": {
+        "instanceIdentifier": {
           "type": "string"
         }
       },
       "required": [
         "endpoint",
-        "instance_identifier"
+        "instanceIdentifier"
       ],
       "inputProperties": {
         "aws": {
@@ -396,13 +390,13 @@
         "postgres": {
           "$ref": "#/types/defang-aws:compose:PostgresConfig"
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         }
       },
       "requiredInputs": [
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     },
@@ -425,6 +419,10 @@
       "inputProperties": {
         "aws": {
           "$ref": "#/types/defang-aws:index:AWSConfig"
+        },
+        "etag": {
+          "type": "string",
+          "plain": true
         },
         "networks": {
           "type": "object",
@@ -477,7 +475,7 @@
             "$ref": "#/types/defang-aws:compose:ServicePortConfig"
           }
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         },
@@ -486,7 +484,7 @@
         }
       },
       "requiredInputs": [
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     },
@@ -548,14 +546,14 @@
             "$ref": "#/types/defang-aws:compose:ServicePortConfig"
           }
         },
-        "project_name": {
+        "projectName": {
           "type": "string",
           "plain": true
         }
       },
       "requiredInputs": [
         "image",
-        "project_name"
+        "projectName"
       ],
       "isComponent": true
     }
