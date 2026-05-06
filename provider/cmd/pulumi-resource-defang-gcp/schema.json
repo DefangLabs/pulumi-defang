@@ -1,6 +1,5 @@
 {
   "name": "defang-gcp",
-  "version": "2.0.0-alpha",
   "description": "Deploy containerized services to GCP with Pulumi.",
   "keywords": [
     "category/cloud",

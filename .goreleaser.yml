@@ -21,6 +21,8 @@ builds:
       - windows
       - linux
     ldflags:
+      - -s
+      - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defangaws.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-aws/
   - id: pulumi-resource-defang-gcp
@@ -36,6 +38,8 @@ builds:
       - windows
       - linux
     ldflags:
+      - -s
+      - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defanggcp.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-gcp/
   - id: pulumi-resource-defang-azure
@@ -51,6 +55,8 @@ builds:
       - windows
       - linux
     ldflags:
+      - -s
+      - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defangazure.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-azure/
 
@@ -59,6 +65,16 @@ changelog:
 
 release:
   prerelease: auto
+  # Attach per-provider schemas as release assets so the Pulumi Registry's
+  # nightly job has a stable URL alongside the source-tree path (issue #215).
+  # Schemas are deterministic (version-less; see defang-*.mk schema target).
+  extra_files:
+    - glob: provider/cmd/pulumi-resource-defang-aws/schema.json
+      name_template: schema-defang-aws.json
+    - glob: provider/cmd/pulumi-resource-defang-gcp/schema.json
+      name_template: schema-defang-gcp.json
+    - glob: provider/cmd/pulumi-resource-defang-azure/schema.json
+      name_template: schema-defang-azure.json
 
 snapshot:
   version_template: '{{ .Tag }}-SNAPSHOT'

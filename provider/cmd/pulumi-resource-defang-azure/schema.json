@@ -1,6 +1,5 @@
 {
   "name": "defang-azure",
-  "version": "2.0.0-alpha",
   "description": "Deploy containerized services to Azure with Pulumi.",
   "keywords": [
     "category/cloud",
