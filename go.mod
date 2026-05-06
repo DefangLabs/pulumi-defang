@@ -21,7 +21,7 @@ require (
 	github.com/compose-spec/compose-go/v2 v2.10.2
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.28.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0
-	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0
