@@ -1,7 +1,14 @@
 package main
 
 import (
+	"compress/gzip"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 )
 
 func TestColor(t *testing.T) {
@@ -335,5 +342,30 @@ func TestStackConfigAzure(t *testing.T) {
 	}
 	if cfg["azure-native:subscriptionId"].Value != "sub-123" {
 		t.Errorf("expected subscriptionId, got %q", cfg["azure-native:subscriptionId"].Value)
+	}
+}
+
+func TestCollectEvents(t *testing.T) {
+	savedEventsUploadUrl := eventsUploadUrl
+	t.Cleanup(func() { eventsUploadUrl = savedEventsUploadUrl })
+
+	var engineEvents map[string][]events.EngineEvent
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gz, _ := gzip.NewReader(r.Body)
+		defer gz.Close()
+		json.NewDecoder(gz).Decode(&engineEvents)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	eventsUploadUrl = srv.URL
+	ch, wait := collectEvents(t.Context())
+	ch <- events.EngineEvent{EngineEvent: apitype.EngineEvent{Sequence: 1}}
+	ch <- events.EngineEvent{EngineEvent: apitype.EngineEvent{Sequence: 2}}
+	close(ch)
+	wait()
+
+	if len(engineEvents["events"]) != 2 {
+		t.Errorf("expected 2 events, got %d", len(engineEvents["events"]))
 	}
 }
