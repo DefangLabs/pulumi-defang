@@ -367,7 +367,7 @@ func setupSharedInfra(
 	infra := &providerazure.SharedInfra{
 		ResourceGroup:  rg,
 		KeyVaultURL:    keyVaultURL, // FIXME: don't set if vault doesn't exist
-		ConfigProvider: providerazure.NewConfigProvider(projectName, keyVaultURL),
+		ConfigProvider: providerazure.NewConfigProvider(keyVaultURL),
 		Etag:           inputs.Etag,
 	}
 
