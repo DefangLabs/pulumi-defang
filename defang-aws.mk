@@ -106,6 +106,14 @@ build: provider schema sdks
 install: provider
 	cp "$(WORKING_DIR)/bin/${PROVIDER}" "${GOPATH}/bin"
 
+# install_plugin overwrites the resource-defang-azure plugin in
+# ~/.pulumi/plugins/ so that local Pulumi CLI / inline programs
+# (DEFANG_PULUMI_DIR mode) pick up the freshly-built provider rather
+# than a stale binary from a prior `pulumi plugin install` run.
+.PHONY: install_plugin
+install_plugin: provider
+	pulumi plugin install resource $(PACK) $(VERSION) -f "$(WORKING_DIR)/bin/$(PROVIDER)" --reinstall
+
 .PHONY: clean
 clean:
 	rm -rf "$(WORKING_DIR)/bin/${PROVIDER}" "$(SDK_GO_DIR)" "sdk/nodejs/${PACK}" "sdk/python/${PACK}" "sdk/dotnet/${PACK}"
