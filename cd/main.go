@@ -67,6 +67,11 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 							// 5-50	Alphanumerics, hyphens, and underscores
 							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
+							// Requirements for Container App Environment resource names:
+							// Between 2 and 60 characters long.
+							// Lowercase letters, numbers, and hyphens.
+							// https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ContainerApp.EnvNaming
+							"azure-native:app:ManagedEnvironment": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
 						},
 					},
 					// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
