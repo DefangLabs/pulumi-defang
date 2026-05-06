@@ -287,6 +287,13 @@ func CreateContainerApp(
 		template.RevisionSuffix = pulumi.String(infra.Etag)
 	}
 
+	// `customDomains` is managed out-of-band by `defang cert generate`
+	// (BYOD flow). Ignoring it prevents subsequent `pulumi up` calls from
+	// clobbering the binding when other fields on the app change.
+	opts = append(opts, pulumi.IgnoreChanges([]string{
+		"configuration.ingress.customDomains",
+	}))
+
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,
 		ContainerAppName:     pulumi.StringPtr(serviceName),
