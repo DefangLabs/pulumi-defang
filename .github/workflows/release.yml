@@ -49,6 +49,21 @@ jobs:
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6
+
+      # Backstop for the test.yml `regen` auto-commit: refuse to release if the
+      # committed schema or Go SDK don't match what the current source generates.
+      - name: Verify generated artifacts are up to date
+        run: |
+          make schema go_sdk
+          git update-index -q --refresh
+          if ! git diff-index --quiet HEAD -- 'provider/cmd/pulumi-resource-defang-*/schema.json' sdk/v2/; then
+            >&2 echo "error: committed schema.json or Go SDK is out of date relative to source."
+            git diff --stat -- 'provider/cmd/pulumi-resource-defang-*/schema.json' sdk/v2/
+            exit 1
+          fi
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7
         with:

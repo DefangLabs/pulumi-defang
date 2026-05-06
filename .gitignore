@@ -11,7 +11,6 @@ bin/
 examples/**/.defang
 examples/**/Pulumi.*.yaml
 schema-defang.json
-schema.json
 .sdk.tmp.*/
 .sdk.*.stamp
 coverage.out
