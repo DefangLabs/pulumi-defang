@@ -23,12 +23,11 @@ var ErrNoKeyVaultConfigured = errors.New("no Key Vault configured")
 // to the Pulumi program. Values are fetched lazily from the project's Azure
 // Key Vault on the first GetConfigValue call; subsequent calls are served from
 // an in-memory cache.
+//
+// The Key Vault is provisioned per project-stack by the defang CLI (see
+// defang/src/pkg/clouds/azure/keyvault.VaultName), so every secret in it
+// belongs to this project — no name prefix is used.
 type ConfigProvider struct {
-	projectName string
-	// prefix is the leading namespace segment of every Key Vault secret name
-	// this provider manages (e.g. "Defang--<proj>--<stack>--<key>"). Set in
-	// NewConfigProvider; kept private so the CLI and provider stay in sync.
-	prefix string
 	// keyVaultURL is the vault's base URL ("https://<vault>.vault.azure.net"),
 	// used both to locate the vault for the fetch and to assemble ready-to-use
 	// secret references in GetSecretRef. Empty when no vault is configured, in
@@ -39,10 +38,8 @@ type ConfigProvider struct {
 	fetched     bool
 }
 
-func NewConfigProvider(projectName, keyVaultURL string) *ConfigProvider {
+func NewConfigProvider(keyVaultURL string) *ConfigProvider {
 	return &ConfigProvider{
-		prefix:      "Defang", // TODO: customizable prefix
-		projectName: projectName,
 		keyVaultURL: strings.TrimRight(keyVaultURL, "/"),
 		cache:       make(map[string]pulumi.StringOutput),
 	}
@@ -61,7 +58,7 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 	defer p.mu.Unlock()
 
 	if !p.fetched && p.keyVaultURL != "" {
-		values, err := p.fetchFromKeyVault(ctx.Context(), ctx.Project(), ctx.Stack())
+		values, err := p.fetchFromKeyVault(ctx.Context())
 		if err != nil {
 			return common.ErrorOutput(errors.Join(&compose.ConfigNotFoundError{Key: key}, err))
 		}
@@ -83,29 +80,27 @@ func (p *ConfigProvider) GetConfigValue(ctx *pulumi.Context, key string, _ ...pu
 // from Container Apps' KeyVaultUrl field. Returns an error if the provider
 // was constructed without a keyVaultURL (no vault configured on the project).
 func (p *ConfigProvider) GetSecretRef(
-	ctx *pulumi.Context, key string, _ ...pulumi.InvokeOption,
+	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
 ) (string, error) {
 	if p.keyVaultURL == "" {
 		return "", fmt.Errorf("cannot build secret ref for %q: %w", key, ErrNoKeyVaultConfigured)
 	}
-	// Mirror the CLI's ToSecretName convention:
-	// "{prefix}/{project}/{stack}/{KEY}" with / -> -- and _ -> -
+	// Mirror the CLI's ToSecretName: only underscores need replacing.
 	safeKey := strings.ReplaceAll(key, "_", "-")
-	secretName := p.prefix + "--" + ctx.Project() + "--" + ctx.Stack() + "--" + safeKey
-	return p.keyVaultURL + "/secrets/" + secretName, nil
+	return p.keyVaultURL + "/secrets/" + safeKey, nil
 }
 
-// fetchFromKeyVault lists secrets in the vault whose name begins with the
-// project/stack prefix and reads their values. The secret's original key name
-// is recovered from the "original-key" tag (the defang CLI stores the full
-// StackDir path there).
+// fetchFromKeyVault lists every secret in the vault and reads its value. The
+// vault is per project-stack, so all secrets belong to this project. The
+// original key name (with underscores intact) is recovered from the
+// "original-key" tag the CLI sets on PutSecret.
 //
 // Uses the raw azsecrets data-plane client rather than Pulumi's
 // keyvault.LookupSecret invoke because the latter hits ARM's management plane,
 // which per the SDK comment on SecretProperties.Value will never return the
 // secret value. Authentication flows through the Azure credential chain,
 // independent of any Pulumi provider.
-func (p *ConfigProvider) fetchFromKeyVault(ctx context.Context, project, stack string) (map[string]string, error) {
+func (p *ConfigProvider) fetchFromKeyVault(ctx context.Context) (map[string]string, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure credential: %w", err)
@@ -115,10 +110,6 @@ func (p *ConfigProvider) fetchFromKeyVault(ctx context.Context, project, stack s
 	if err != nil {
 		return nil, fmt.Errorf("creating Key Vault client: %w", err)
 	}
-
-	// Secret names follow the StackDir convention with slashes replaced by "--":
-	//   "/<prefix>/<project>/<stack>/<KEY>" -> "<prefix>--<project>--<stack>--<sanitized-key>"
-	keyPrefix := p.prefix + "--" + project + "--" + stack + "--"
 
 	result := make(map[string]string)
 
@@ -133,18 +124,13 @@ func (p *ConfigProvider) fetchFromKeyVault(ctx context.Context, project, stack s
 				continue
 			}
 			secretName := props.ID.Name()
-			if !strings.HasPrefix(secretName, keyPrefix) {
-				continue
-			}
-			var originalKey string
+			// Prefer the original-key tag (preserves underscores) but fall
+			// back to the secret name itself if the tag is absent.
+			originalKey := secretName
 			if props.Tags != nil {
-				if orig, ok := props.Tags["original-key"]; ok && orig != nil {
-					parts := strings.Split(*orig, "/")
-					originalKey = parts[len(parts)-1]
+				if orig, ok := props.Tags["original-key"]; ok && orig != nil && *orig != "" {
+					originalKey = *orig
 				}
-			}
-			if originalKey == "" {
-				continue
 			}
 			resp, err := client.GetSecret(ctx, secretName, "", nil)
 			if err != nil {
