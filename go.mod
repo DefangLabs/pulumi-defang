@@ -38,7 +38,7 @@ require (
 	github.com/pulumi/pulumi-go-provider v1.3.1
 	github.com/pulumi/pulumi-random/sdk/v4 v4.19.2
 	github.com/pulumi/pulumi/pkg/v3 v3.227.0
-	github.com/pulumi/pulumi/sdk/v3 v3.231.0
+	github.com/pulumi/pulumi/sdk/v3 v3.235.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.274.0
 	google.golang.org/grpc v1.80.0
@@ -139,7 +139,7 @@ require (
 	github.com/opentracing/basictracer-go v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pgavlin/fx v0.1.6 // indirect
-	github.com/pgavlin/fx/v2 v2.0.10 // indirect
+	github.com/pgavlin/fx/v2 v2.0.12 // indirect
 	github.com/pgavlin/goldmark v1.1.33-0.20200616210433-b5eb04559386 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
