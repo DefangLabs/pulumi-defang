@@ -501,8 +501,8 @@ github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0 h1:jphjwZoSnNyW4d3dpS++T+TlZFTy6vb9g
 github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0/go.mod h1:ALZ8aBuwNtHkhFCY019gJOfgo7q2WYlsL1kM+0apbEA=
 github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0 h1:QZksspyGhUliOncXYSunj50Rl1OCBp4Z4vDltCtfLyg=
 github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0/go.mod h1:A4c9UObJvoBe0GZLalGGCf3x4WJsutLuZTgHGB9Du1A=
-github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0 h1:1W6iNaRjVc46BXi64q1EanqACCBJc0vVJfhFLO+B4RU=
-github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.16.0/go.mod h1:Ve9We5qYoxavBlzZn9EiaMPCxkR92uvYqjafPCRoeP0=
+github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0 h1:XQ4akM+v4jT6bUDrbzqty0YpwPJAbS/47QzfuAt6+MM=
+github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0/go.mod h1:eCpJILleDDKZkpjXQU1pRYOIinx/FfbCdNCiolUQRBM=
 github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0 h1:8qWHknbi8uL8YNEk4xZJCTB7j3WZNYgortFw88MJR2g=
 github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0/go.mod h1:kXMeD/KGfQcf6sHfFampUpa8bE4fpE14muA1parC3U0=
 github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0 h1:FH5Me4ZjzozVlmtqatPhUpUZB7vGJkGWvqk63qu6iCY=
