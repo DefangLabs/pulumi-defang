@@ -29,7 +29,9 @@ $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go" -not -path "./sdk/*"
 
 .PHONY: schema
 schema: provider
-	pulumi package get-schema "$(WORKING_DIR)/bin/${PROVIDER}" > "${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json"
+	# Strip the version field so the committed schema is deterministic across builds —
+	# version flows binary -> gen-sdk -> SDK package metadata, not via this file.
+	pulumi package get-schema "$(WORKING_DIR)/bin/${PROVIDER}" | jq 'del(.version)' > "${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json"
 
 .PHONY: version
 version:

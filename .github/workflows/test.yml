@@ -96,21 +96,23 @@ jobs:
     #     fi
 
   regen:
-    # Same-repo PRs: auto-commit regenerated schema + Go SDK back to the branch
-    # so devs don't have to run `make schema go_sdk` locally.
-    # Fork PRs: read-only — fails the job if generated artifacts are stale,
-    # since GITHUB_TOKEN is read-only on forks so we can't push a fix.
-    # Release-time verify in release.yml is the final backstop.
+    # Keep committed schema and Go SDK in sync with source. Schemas are
+    # deterministic (version-less, see defang-*.mk), so any diff is a real
+    # source change that needs regenerating.
+    #   Same-repo PRs: auto-commit the regen back to the branch. The original
+    #     run already validated the source; the auto-commit only touches
+    #     derivable artifacts, so it doesn't need to re-trigger CI (and won't,
+    #     since pushes via GITHUB_TOKEN don't fire workflows by design).
+    #   Fork PRs and direct pushes (e.g. admin to main): fail with a clear diff.
     name: Regenerate schema and Go SDK
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout PR branch
+      - name: Checkout PR branch or pushed ref
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
@@ -120,14 +122,16 @@ jobs:
 
       - run: make provider schema go_sdk
 
-      - name: Commit and push (same-repo) or fail on drift (fork)
+      - name: Commit and push (same-repo PR) or fail on drift
         run: |
           git add provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/
           if git diff --cached --quiet; then
             echo "No regenerated changes."
             exit 0
           fi
-          if [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+          # Auto-commit only on same-repo PRs; fork PRs and push events fail.
+          if [ "${{ github.event_name }}" = "pull_request" ] && \
+             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: regenerate schema and Go SDK"
