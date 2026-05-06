@@ -21,6 +21,8 @@ builds:
       - windows
       - linux
     ldflags:
+      - -s
+      - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defangaws.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-aws/
   - id: pulumi-resource-defang-gcp
@@ -36,6 +38,8 @@ builds:
       - windows
       - linux
     ldflags:
+      - -s
+      - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defanggcp.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-gcp/
   - id: pulumi-resource-defang-azure
@@ -51,6 +55,8 @@ builds:
       - windows
       - linux
     ldflags:
+      - -s
+      - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defangazure.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-azure/
 
