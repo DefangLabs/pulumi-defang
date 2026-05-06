@@ -69,7 +69,8 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
 							// Requirements for Container App Environment resource names:
 							// Between 2 and 60 characters long.
-							// Lowercase letters, numbers, and hyphens.
+							// This resource name is not case-sensitive even though it is written as lowercase only in the docs.
+							// Numbers and hyphens are also allowed.
 							// https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ContainerApp.EnvNaming
 							"azure-native:app:ManagedEnvironment": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
 						},
