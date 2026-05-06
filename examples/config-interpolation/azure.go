@@ -91,7 +91,7 @@ func runAzure(ctx *pulumi.Context) error {
 	secretName = strings.TrimPrefix(secretName, "--")
 
 	// FetchUserConfig lists vault secrets and recovers the original key name
-	// from the "original-key" tag — the secret name itself is ignored.
+	// from the "defang-config" tag — the secret name itself is ignored.
 	// DependsOn the role assignment so secret creation waits for the caller's
 	// write permission to be in place (otherwise ARM can 403 on propagation lag).
 	secret, err := keyvault.NewSecret(ctx, "config", &keyvault.SecretArgs{
@@ -102,7 +102,7 @@ func runAzure(ctx *pulumi.Context) error {
 			Value: pulumi.String(configValue),
 		},
 		Tags: pulumi.StringMap{
-			"original-key": pulumi.String(stackPath),
+			"defang-config": pulumi.String(stackPath),
 		},
 	}, pulumi.Provider(azureProvider), pulumi.DependsOn([]pulumi.Resource{vaultAdminRole}))
 	if err != nil {

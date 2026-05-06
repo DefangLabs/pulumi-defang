@@ -93,7 +93,7 @@ func (p *ConfigProvider) GetSecretRef(
 // fetchFromKeyVault lists every secret in the vault and reads its value. The
 // vault is per project-stack, so all secrets belong to this project. The
 // original key name (with underscores intact) is recovered from the
-// "original-key" tag the CLI sets on PutSecret.
+// "defang-config" tag the CLI sets on PutSecret.
 //
 // Uses the raw azsecrets data-plane client rather than Pulumi's
 // keyvault.LookupSecret invoke because the latter hits ARM's management plane,
@@ -124,11 +124,11 @@ func (p *ConfigProvider) fetchFromKeyVault(ctx context.Context) (map[string]stri
 				continue
 			}
 			secretName := props.ID.Name()
-			// Prefer the original-key tag (preserves underscores) but fall
-			// back to the secret name itself if the tag is absent.
+			// Prefer the defang-config tag (preserves underscores) but
+			// fall back to the secret name itself if the tag is absent.
 			originalKey := secretName
 			if props.Tags != nil {
-				if orig, ok := props.Tags["original-key"]; ok && orig != nil && *orig != "" {
+				if orig, ok := props.Tags["defang-config"]; ok && orig != nil && *orig != "" {
 					originalKey = *orig
 				}
 			}
