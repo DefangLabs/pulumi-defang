@@ -1,0 +1,23 @@
+name: defang-scaleway
+runtime: yaml
+description: Example using defang-scaleway to deploy services to Scaleway
+
+plugins:
+  providers:
+    - name: defang-scaleway
+      path: ../../bin
+
+resources:
+  scaleway-demo:
+    type: defang-scaleway:index:Project
+    properties:
+      services:
+        app:
+          image: nginx
+          ports:
+            - target: 80
+              mode: ingress
+              appProtocol: http
+
+outputs:
+  endpoints: ${scaleway-demo.endpoints}

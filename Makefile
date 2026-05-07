@@ -1,7 +1,7 @@
 SHELL=/bin/bash -o pipefail
 PROJECT_NAME := Pulumi defang Resource Provider
 
-PACKS           := defang-aws defang-gcp defang-azure
+PACKS           := defang-aws defang-gcp defang-azure defang-scaleway
 PROJECT         := github.com/DefangLabs/pulumi-defang
 PROVIDER_PATH   := provider
 
@@ -113,7 +113,7 @@ CD_VERSION     := $(shell git describe --tags --always --dirty)
 PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
 
 .PHONY: images
-images: image_aws image_gcp image_azure image_all
+images: image_aws image_gcp image_azure image_scaleway image_all
 
 .PHONY: image_%
 image_%: go_sdk
@@ -161,7 +161,7 @@ pre-push: provider test image_all
 
 # Generate language examples from YAML sources
 # Requires providers to be built first: make install
-EXAMPLE_PROVIDERS  := aws gcp azure
+EXAMPLE_PROVIDERS  := aws gcp azure scaleway
 EXAMPLE_LANGUAGES  := go nodejs python dotnet
 
 .PHONY: examples

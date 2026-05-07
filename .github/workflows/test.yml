@@ -9,6 +9,7 @@ on:
       - "provider/**"
       - "sdk/v2/**"
       - "tests/**"
+      - "examples/**"
       - "go.mod"
       - "go.sum"
       - "Makefile"
@@ -63,6 +64,7 @@ jobs:
           - aws
           - gcp
           - azure
+          - scaleway
     steps:
       - name: Checkout Repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

@@ -11,15 +11,15 @@ Most users will want to use these components through the [Defang CLI](https://gi
 
 If you're a Pulumi user, check out our [Pulumi Registry listing](https://www.pulumi.com/registry/packages/defang/) for installation instructions, API docs, and example usage of using the providers in your own Pulumi programs.
 
-The [examples/](examples/) directory in this repo also contains complete working samples for all clouds and languages, incuding [examples/multi-cloud](examples/multi-cloud/) which deploys a single Compose app to all three clouds from a single Pulumi program.
+The [examples/](examples/) directory in this repo also contains complete working samples for all clouds and languages, incuding [examples/multi-cloud](examples/multi-cloud/) which deploys a single Compose app to the supported clouds from a single Pulumi program.
 
 ## Components
 
-Each provider (`defang-aws`, `defang-gcp`, `defang-azure`) exposes the same Pulumi resource palette:
+Each provider (`defang-aws`, `defang-gcp`, `defang-azure`, `defang-scaleway`) exposes the same Pulumi resource palette:
 
 - **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure (VPC, networking, DNS, load balancers, build pipelines) alongside each service.
-- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure).
-- **`Build`** (AWS only) — an image-build resource used internally by `Project`.
+- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure; Scaleway build support is being wired through CD).
+- **`Build`** — an image-build resource used internally by `Project` where supported.
 - **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
 
 Managed components (`Service`, `Postgres`, `Redis`) share one implementation between standalone and project-scoped use. Standalone instantiations skip the shared-infra provisioning and therefore don't support features that depend on it (VPC access, build-from-source, external load-balancer wiring).
@@ -40,7 +40,7 @@ See the [Contributing](https://github.com/DefangLabs/pulumi-defang/blob/main/CON
 
 ## Example usage
 
-The examples below use AWS. GCP and Azure follow the same pattern — just swap the package name (e.g. `defang-aws` → `defang-gcp`).
+The examples below use AWS. GCP, Azure, and Scaleway follow the same pattern — just swap the package name (e.g. `defang-aws` → `defang-gcp`).
 Complete working samples for all clouds and languages are in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory.
 
 {{< chooser language "typescript,python,go,dotnet,yaml" >}}

@@ -1,0 +1,16 @@
+{
+  "name": "defang-scaleway",
+  "displayName": "defang-scaleway",
+  "publisher": "Defang",
+  "language": {
+    "nodejs": {
+      "packageName": "@defang-io/pulumi-defang-scaleway"
+    },
+    "csharp": {
+      "rootNamespace": "DefangLabs"
+    },
+    "python": {}
+  },
+  "resources": {},
+  "types": {}
+}

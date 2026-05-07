@@ -234,8 +234,8 @@ def compare(path_a: str, path_b: str, all_types_flag: bool = False):
     all_types = sorted(set(types_a) | set(types_b))
 
     _IGNORE_PREFIXES = (
-        'defang-gcp:', 'defang-aws:', 'defang-azure:',
-        'pulumi:providers:gcp', 'pulumi:providers:aws', 'pulumi:providers:azure',
+        'defang-gcp:', 'defang-aws:', 'defang-azure:', 'defang-scaleway:',
+        'pulumi:providers:gcp', 'pulumi:providers:aws', 'pulumi:providers:azure', 'pulumi:providers:scaleway',
         'pulumi:pulumi:Stack',
         # CD uses a standalone cloudbuild plugin; OSS reimplements as defang-gcp:defanggcp:Build
         'cloudbuild:', 'pulumi:providers:cloudbuild',

@@ -7,6 +7,7 @@ replace (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../sdk/v2/go/defang-aws
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure => ../sdk/v2/go/defang-azure
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp => ../sdk/v2/go/defang-gcp
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway => ../sdk/v2/go/defang-scaleway
 	gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 )
 
@@ -19,6 +20,7 @@ require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
+	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway v0.0.0-00010101000000-000000000000
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.98.0
 	github.com/hashicorp/go-retryablehttp v0.7.7

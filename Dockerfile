@@ -65,6 +65,14 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     -ldflags="-w -s -X github.com/DefangLabs/pulumi-defang/provider/defangazure.Version=${PROVIDER_VERSION}" \
     -o /out/pulumi-resource-defang-azure ./provider/cmd/pulumi-resource-defang-azure
 
+FROM build-base AS build-scaleway
+ARG PROVIDER_VERSION
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -buildvcs=false \
+    -ldflags="-w -s -X github.com/DefangLabs/pulumi-defang/provider/defangscaleway.Version=${PROVIDER_VERSION}" \
+    -o /out/pulumi-resource-defang-scaleway ./provider/cmd/pulumi-resource-defang-scaleway
+
 # Install Pulumi cloud-provider plugins (versions extracted from go.mod)
 # This stage runs on the target platform so pulumi downloads the correct plugin binaries.
 #
@@ -118,6 +126,11 @@ ARG PROVIDER_VERSION
 COPY --link --from=build-azure /out/pulumi-resource-defang-azure /tmp/
 RUN pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
 
+FROM plugins-base AS plugins-scaleway-defang
+ARG PROVIDER_VERSION
+COPY --link --from=build-scaleway /out/pulumi-resource-defang-scaleway /tmp/
+RUN pulumi plugin install resource defang-scaleway ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-scaleway
+
 # Final minimal image — no OS, no language runtimes
 FROM ${CDBASE} AS cd-base
 # CA certs for HTTPS
@@ -144,6 +157,9 @@ FROM cd-base AS azure
 COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-azure-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
+FROM cd-base AS scaleway
+COPY --link --from=plugins-scaleway-defang /root/.pulumi/plugins /root/.pulumi/plugins
+
 FROM cd-base AS all
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
@@ -151,3 +167,4 @@ COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/pl
 COPY --link --from=plugins-azure-defang /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-gcp-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-gcp-defang /root/.pulumi/plugins /root/.pulumi/plugins
+COPY --link --from=plugins-scaleway-defang /root/.pulumi/plugins /root/.pulumi/plugins

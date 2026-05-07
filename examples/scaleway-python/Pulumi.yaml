@@ -1,0 +1,8 @@
+name: defang-scaleway
+runtime: python
+description: Example using defang-scaleway to deploy services to Scaleway
+
+plugins:
+  providers:
+    - name: defang-scaleway
+      path: ../../bin
