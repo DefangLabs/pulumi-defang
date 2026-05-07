@@ -193,12 +193,9 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 	}
 
 	// The CD storage account lives in the shared CD resource group, named
-	// `defang-cd-<location>` by convention (see defang/src/pkg/clouds/azure/cd/driver.go).
-	location := config.GetLocation(ctx)
-	if location == "" {
-		return fmt.Errorf("AZURE_LOCATION must be set to derive the CD resource group")
-	}
-	cdRG := "defang-cd-" + location
+	// `defang-cd` (single per subscription, location-independent —
+	// see defang/src/pkg/clouds/azure/cd/driver.go).
+	cdRG := "defang-cd"
 
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
 		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
