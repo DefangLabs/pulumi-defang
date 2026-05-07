@@ -254,6 +254,9 @@
       "required": [
         "target"
       ]
+    },
+    "defang-scaleway:scaleway:SharedInfra": {
+      "type": "object"
     }
   },
   "provider": {},
@@ -282,18 +285,52 @@
     },
     "defang-scaleway:index:Postgres": {
       "properties": {
+        "connectionUrl": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "connectionUrl"
       ],
       "inputProperties": {
+        "deploy": {
+          "$ref": "#/types/defang-scaleway:compose:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-scaleway:compose:ServicePortConfig"
+          }
+        },
         "postgres": {
           "$ref": "#/types/defang-scaleway:compose:PostgresConfig"
+        },
+        "projectName": {
+          "type": "string",
+          "plain": true
+        },
+        "scaleway": {
+          "$ref": "#/types/defang-scaleway:scaleway:SharedInfra"
         }
       },
+      "requiredInputs": [
+        "projectName"
+      ],
       "isComponent": true
     },
     "defang-scaleway:index:Project": {
@@ -337,16 +374,43 @@
     },
     "defang-scaleway:index:Redis": {
       "properties": {
+        "connectionUrl": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "connectionUrl"
       ],
       "inputProperties": {
+        "deploy": {
+          "$ref": "#/types/defang-scaleway:compose:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-scaleway:compose:ServicePortConfig"
+          }
+        },
         "redis": {
           "$ref": "#/types/defang-scaleway:compose:RedisConfig"
+        },
+        "scaleway": {
+          "$ref": "#/types/defang-scaleway:scaleway:SharedInfra"
         }
       },
       "isComponent": true
