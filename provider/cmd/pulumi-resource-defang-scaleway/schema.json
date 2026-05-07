@@ -261,28 +261,6 @@
   },
   "provider": {},
   "resources": {
-    "defang-scaleway:index:Build": {
-      "properties": {
-        "image": {
-          "type": "string"
-        },
-        "imageUri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "image",
-        "imageUri"
-      ],
-      "inputProperties": {
-        "image": {
-          "type": "string"
-        }
-      },
-      "requiredInputs": [
-        "image"
-      ]
-    },
     "defang-scaleway:index:Postgres": {
       "properties": {
         "connectionUrl": {
@@ -469,6 +447,10 @@
           "items": {
             "$ref": "#/types/defang-scaleway:compose:ServicePortConfig"
           }
+        },
+        "projectName": {
+          "type": "string",
+          "plain": true
         }
       },
       "requiredInputs": [

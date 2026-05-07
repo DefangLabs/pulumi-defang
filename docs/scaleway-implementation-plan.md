@@ -182,7 +182,7 @@ AWS, GCP, and Azure all have a custom `Build` resource that invokes a managed cl
 2. Use Scaleway Serverless Jobs to run a build container and push to Container Registry.
 3. Use the current CD sandbox build path and push directly to Scaleway Container Registry from the CD environment.
 
-Recommended first implementation: option 1 or 3. Keep a `Build` resource stub only if needed for schema parity, but avoid inventing a complex Serverless Jobs builder until there is a product requirement. If `Build` is omitted, update SDK/schema expectations and CD program assumptions explicitly.
+Recommended first implementation: option 1 or 3. The current prototype omits the public `Build` resource and returns a clear error for `build:` services in `Project`; avoid inventing a complex Serverless Jobs builder until there is a product requirement.
 
 ### Runtime
 
@@ -248,115 +248,115 @@ This should be a second-phase feature unless Scaleway LLM support is required fo
 
 ### Repository Wiring
 
-- [ ] Add `defang-scaleway` to `PACKS` in `Makefile`.
-- [ ] Add `defang-scaleway.mk` mirroring the other provider makefiles.
-- [ ] Add provider package at `provider/defangscaleway`.
-- [ ] Add helper package at `provider/defangscaleway/scaleway`.
-- [ ] Add Scaleway provider SDK dependency to root `go.mod`.
-- [ ] Add Scaleway CD program path in `cd/program`.
-- [ ] Update `cd/program/program.go` accepted providers from `aws/gcp/azure` to include `scaleway`.
-- [ ] Update Dockerfile targets and image build matrix for `scaleway`.
+- [x] Add `defang-scaleway` to `PACKS` in `Makefile`.
+- [x] Add `defang-scaleway.mk` mirroring the other provider makefiles.
+- [x] Add provider package at `provider/defangscaleway`.
+- [x] Add helper package at `provider/defangscaleway/scaleway`.
+- [x] Add Scaleway provider SDK dependency to root `go.mod`.
+- [x] Add Scaleway CD program path in `cd/program`.
+- [x] Update `cd/program/program.go` accepted providers from `aws/gcp/azure` to include `scaleway`.
+- [x] Update Dockerfile targets and image build matrix for `scaleway`.
 - [ ] Update release/goreleaser config for a fourth provider binary/package.
 - [ ] Update `.github/workflows/test.yml` provider, SDK, example, schema, and Go SDK drift matrices.
 - [ ] Update `.github/workflows/release.yml` SDK/image matrices, Scaleway registry auth, and provider version pinning.
-- [ ] Add generated schema path `provider/cmd/pulumi-resource-defang-scaleway/schema.json`.
-- [ ] Add generated Go SDK path `sdk/v2/go/defang-scaleway`.
-- [ ] Update README/docs installation pages with `defang-scaleway`.
+- [x] Add generated schema path `provider/cmd/pulumi-resource-defang-scaleway/schema.json`.
+- [x] Add generated Go SDK path `sdk/v2/go/defang-scaleway`.
+- [x] Update README/docs installation pages with `defang-scaleway`.
 
 ### Provider Schema
 
-- [ ] Implement `provider/defangscaleway/provider.go`.
+- [x] Implement `provider/defangscaleway/provider.go`.
 - [ ] Register `Build` resource if a build path is included.
-- [ ] Register `Project`, `Service`, `Postgres`, and `Redis` components.
-- [ ] Set metadata: description, keywords, homepage, repo, publisher, logo, license, plugin download URL.
-- [ ] Set language package names, likely `@defang-io/pulumi-defang-scaleway` and matching Go/Python/.NET names.
-- [ ] Add schema tests for `Project`, `Service`, `Postgres`, and `Redis`.
+- [x] Register `Project`, `Service`, `Postgres`, and `Redis` components.
+- [x] Set metadata: description, keywords, homepage, repo, publisher, logo, license, plugin download URL.
+- [x] Set language package names, likely `@defang-io/pulumi-defang-scaleway` and matching Go/Python/.NET names.
+- [x] Add schema tests for `Project`, `Service`, `Postgres`, and `Redis`.
 
 ### Project Component
 
-- [ ] Define `ProjectInputs` with `services`, `networks`, optional Scaleway config, and `etag`.
-- [ ] Define `ProjectOutputs` with `endpoints` and `loadBalancerDns`.
-- [ ] Register component and outputs exactly like existing providers.
-- [ ] Build shared Scaleway infra.
-- [ ] Create a dry-run config provider path.
-- [ ] Create managed services before dependent app services or use `common.TopologicalSort` with explicit dependencies.
+- [x] Define `ProjectInputs` with `services`, `networks`, optional Scaleway config, and `etag`.
+- [x] Define `ProjectOutputs` with `endpoints` and `loadBalancerDns`.
+- [x] Register component and outputs exactly like existing providers.
+- [x] Build shared Scaleway infra.
+- [x] Create a dry-run config provider path.
+- [x] Create managed services before dependent app services or use `common.TopologicalSort` with explicit dependencies.
 - [ ] Keep all child resources parented under the project or service component; existing tests enforce this hierarchy.
-- [ ] Avoid creating resources inside `ApplyT`; use explicit outputs and dependencies instead.
-- [ ] Return per-service endpoints.
-- [ ] Decide whether `loadBalancerDns` should be empty, nil, or a generated container domain.
+- [x] Avoid creating resources inside `ApplyT`; use explicit outputs and dependencies instead.
+- [x] Return per-service endpoints.
+- [x] Decide whether `loadBalancerDns` should be empty, nil, or a generated container domain. Current prototype returns an empty string for CD/CLI compatibility because Scaleway Serverless Containers expose per-service endpoints.
 
 ### Shared Infrastructure
 
-- [ ] Read region/zone/project ID from Scaleway provider config or explicit project inputs.
+- [x] Read region/zone/project ID from Scaleway provider config or explicit project inputs.
 - [ ] Create deterministic Defang names with length/character constraints.
-- [ ] Create Serverless Containers namespace.
-- [ ] Create or reuse Container Registry namespace.
-- [ ] Create VPC/private network when needed.
-- [ ] Add common tags to every Scaleway resource where supported.
+- [x] Create Serverless Containers namespace.
+- [x] Create or reuse Container Registry namespace.
+- [x] Create VPC/private network when needed.
+- [x] Add common tags to every Scaleway resource where supported.
 - [ ] Implement IAM application/API key/policy for private containers if required.
 - [ ] Implement Secret Manager integration or document the CLI-owned secret path.
 
 ### Image Handling
 
-- [ ] Implement `GetServiceImage` for pre-built images.
+- [x] Implement `GetServiceImage` for pre-built images.
 - [ ] Implement `GetServiceImage` for `build:` services once the build decision is made.
-- [ ] Keep standalone `Service` image-only unless all other providers are changed consistently.
+- [x] Keep standalone `Service` image-only unless all other providers are changed consistently.
 - [ ] If building in CD, push to Scaleway registry and feed the immutable image URI into Pulumi.
 - [ ] If building in Pulumi, implement `Build` custom resource, polling, timeout, dry-run behavior, replacement triggers, and image output.
 - [ ] Add unit tests for image URI parsing and build trigger hashing.
 
 ### Service Component
 
-- [ ] Define `ServiceInputs`/`ServiceOutputs` matching existing providers.
-- [ ] Create `scaleway.containers.Container` for regular services.
-- [ ] Map Compose ports to Scaleway `port`, `protocol`, privacy, and endpoint shape.
-- [ ] Map Compose resources to valid Scaleway CPU/memory combinations.
-- [ ] Map env/config/secrets to regular and secret env vars.
-- [ ] Attach Private Network when private dependencies exist.
+- [x] Define `ServiceInputs`/`ServiceOutputs` matching existing providers.
+- [x] Create `scaleway.containers.Container` for regular services.
+- [x] Map Compose ports to Scaleway `port`, `protocol`, privacy, and endpoint shape.
+- [x] Map Compose resources to valid Scaleway CPU/memory combinations.
+- [x] Map env/config/secrets to regular and secret env vars.
+- [x] Attach Private Network when private dependencies exist.
 - [ ] Generate endpoint as `https://` plus container `domainName`.
-- [ ] Add custom domain support with `containers.Domain` if a project domain is configured.
+- [x] Add custom domain support with `containers.Domain` when `domainName` is configured.
 - [ ] Decide how to handle non-HTTP ports, UDP, multiple public ports, and service-to-service internal ports.
-- [ ] Add service unit tests and at least one integration-style Pulumi test.
+- [x] Add service unit tests and at least one integration-style Pulumi test.
 
 ### Postgres Component
 
-- [ ] Define `PostgresInputs`/`PostgresOutputs`.
-- [ ] Create Managed Database instance.
-- [ ] Create database/user/password.
-- [ ] Attach Private Network.
-- [ ] Build `DATABASE_URL`/endpoint output for dependent services.
+- [x] Define `PostgresInputs`/`PostgresOutputs`.
+- [x] Create Managed Database instance.
+- [x] Create database/user/password.
+- [x] Attach Private Network.
+- [x] Build `DATABASE_URL`/endpoint output for dependent services.
 - [ ] Apply vector extension support if Scaleway PostgreSQL supports it and Defang `postgres` options require it.
-- [ ] Add tests for schema registration and connection string formatting.
+- [x] Add tests for schema registration and connection string formatting.
 
 ### Redis Component
 
-- [ ] Define `RedisInputs`/`RedisOutputs`.
-- [ ] Create Managed Redis cluster.
-- [ ] Attach Private Network.
-- [ ] Build Redis endpoint/connection URL.
-- [ ] Add tests for schema registration and URL formatting.
+- [x] Define `RedisInputs`/`RedisOutputs`.
+- [x] Create Managed Redis cluster.
+- [x] Attach Private Network.
+- [x] Build Redis endpoint/connection URL.
+- [x] Add tests for schema registration and URL formatting.
 
 ### CD Program and Examples
 
-- [ ] Add `deployScaleway` in `cd/program/scaleway.go`.
-- [ ] Add provider config validation and clear unsupported-provider errors.
-- [ ] Add `examples/scaleway-yaml/Pulumi.yaml`.
-- [ ] Generate Go, Node.js, Python, and .NET examples.
+- [x] Add `deployScaleway` in `cd/program/scaleway.go`.
+- [x] Add provider config validation and clear unsupported-provider errors.
+- [x] Add `examples/scaleway-yaml/Pulumi.yaml`.
+- [x] Generate Go, Node.js, Python, and .NET examples.
 - [ ] Add Scaleway to README example generation if desired.
 - [ ] Add `compare` support if the comparison tool assumes exactly three providers.
 
 ### Tests and Verification
 
-- [ ] Add `tests/testutil.MakeScalewayTestServer`.
-- [ ] Add Scaleway URN/parent hierarchy helpers if needed.
-- [ ] Add project construct tests.
+- [x] Add `tests/testutil.MakeScalewayTestServer`.
+- [x] Add Scaleway URN/parent hierarchy helpers if needed.
+- [x] Add project construct tests.
 - [ ] Add parent hierarchy tests matching the existing AWS/Azure coverage.
-- [ ] Run `go test ./provider/...`.
-- [ ] Run `make provider_defang-scaleway`.
-- [ ] Run `make schema_defang-scaleway`.
-- [ ] Run `go test ./tests/scaleway -short`.
-- [ ] Run `make test_unit`.
-- [ ] Run `make test_provider`.
+- [x] Run `go test ./provider/...`.
+- [x] Run `make provider_defang-scaleway`.
+- [x] Run `make schema_defang-scaleway`.
+- [x] Run `go test ./tests/scaleway -short`.
+- [x] Run `make test_unit`.
+- [x] Run `make test_provider`.
 - [ ] Run `make test_cd`.
 - [ ] Run `make build` once SDK generation is wired.
 - [ ] Add CI matrix entries for Scaleway.

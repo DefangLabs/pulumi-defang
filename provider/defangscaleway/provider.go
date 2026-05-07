@@ -18,9 +18,6 @@ const Name string = "defang-scaleway"
 
 func Provider() p.Provider {
 	return infer.Provider(infer.Options{
-		Resources: []infer.InferredResource{
-			infer.Resource[*Build, BuildInputs, BuildState](&Build{}),
-		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
 			infer.Component[*Service, ScalewayServiceInputs, *ScalewayServiceOutputs](&Service{}),

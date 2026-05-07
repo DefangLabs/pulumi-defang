@@ -6,6 +6,7 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/containers"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/databases"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/network"
 )
@@ -20,8 +21,10 @@ type SharedInfra struct {
 	Region         string
 	Zone           string
 	ProjectID      string
+	Namespace      *containers.Namespace
 	PrivateNetwork *network.PrivateNetwork
 	ConfigProvider compose.ConfigProvider
+	Etag           string
 }
 
 type PostgresResult struct {

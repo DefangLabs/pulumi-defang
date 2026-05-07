@@ -21,6 +21,11 @@ func GcpURN(typ string) resource.URN {
 	return resource.NewURN("stack", "proj", "", tokens.Type("defang-gcp:index:"+typ), "name")
 }
 
+// ScalewayURN builds a URN for a Scaleway provider component type.
+func ScalewayURN(typ string) resource.URN {
+	return resource.NewURN("stack", "proj", "", tokens.Type("defang-scaleway:index:"+typ), "name")
+}
+
 // ServicesMap wraps a service map as the top-level Inputs for a Project Construct call.
 func ServicesMap(services map[string]property.Value) property.Map {
 	return property.NewMap(map[string]property.Value{

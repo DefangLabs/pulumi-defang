@@ -53,6 +53,10 @@ func (m *recordingMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 		outputs[resource.PropertyKey("endpointPort")] = resource.NewNumberProperty(5432)
 	case "scaleway:redis/cluster:Cluster":
 		outputs[resource.PropertyKey("connectionString")] = resource.NewStringProperty("redis://10.0.0.7:6379")
+	case "scaleway:containers/namespace:Namespace":
+		outputs[resource.PropertyKey("registryEndpoint")] = resource.NewStringProperty("rg.fr-par.scw.cloud/defang")
+	case "scaleway:containers/container:Container":
+		outputs[resource.PropertyKey("domainName")] = resource.NewStringProperty("https://app.functions.fnc.fr-par.scw.cloud")
 	}
 
 	m.mu.Lock()

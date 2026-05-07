@@ -126,6 +126,9 @@ ARG PROVIDER_VERSION
 COPY --link --from=build-azure /out/pulumi-resource-defang-azure /tmp/
 RUN pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
 
+FROM plugins-base AS plugins-scaleway-upstream
+RUN pulumi plugin install resource scaleway $(grep 'pulumiverse/pulumi-scaleway/sdk' go.mod | awk '{print $2}') --server github://api.github.com/pulumiverse
+
 FROM plugins-base AS plugins-scaleway-defang
 ARG PROVIDER_VERSION
 COPY --link --from=build-scaleway /out/pulumi-resource-defang-scaleway /tmp/
@@ -158,6 +161,7 @@ COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/pl
 COPY --link --from=plugins-azure-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
 FROM cd-base AS scaleway
+COPY --link --from=plugins-scaleway-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-scaleway-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
 FROM cd-base AS all
@@ -167,4 +171,5 @@ COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/pl
 COPY --link --from=plugins-azure-defang /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-gcp-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-gcp-defang /root/.pulumi/plugins /root/.pulumi/plugins
+COPY --link --from=plugins-scaleway-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-scaleway-defang /root/.pulumi/plugins /root/.pulumi/plugins

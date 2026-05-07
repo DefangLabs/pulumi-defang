@@ -17,8 +17,8 @@ The [examples/](examples/) directory in this repo also contains complete working
 
 Each provider (`defang-aws`, `defang-gcp`, `defang-azure`, `defang-scaleway`) exposes the same Pulumi resource palette:
 
-- **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure (VPC, networking, DNS, load balancers, build pipelines) alongside each service.
-- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure; Scaleway build support is being wired through CD).
+- **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure alongside each service. Exact shared infrastructure is provider-specific.
+- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility where a cloud build pipeline exists (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure). Scaleway currently requires pre-built images for both standalone `Service` and `Project` services.
 - **`Build`** — an image-build resource used internally by `Project` where supported.
 - **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
 
