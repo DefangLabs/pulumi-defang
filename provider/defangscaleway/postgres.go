@@ -11,7 +11,7 @@ import (
 type Postgres struct{}
 
 type ScalewayPostgresInputs struct {
-	Postgres compose.PostgresConfig `pulumi:"postgres,optional"`
+	Postgres *compose.PostgresConfig `pulumi:"postgres,optional"`
 }
 
 type ScalewayPostgresOutputs struct {

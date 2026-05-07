@@ -11,7 +11,7 @@ import (
 type Redis struct{}
 
 type ScalewayRedisInputs struct {
-	Redis compose.RedisConfig `pulumi:"redis,optional"`
+	Redis *compose.RedisConfig `pulumi:"redis,optional"`
 }
 
 type ScalewayRedisOutputs struct {

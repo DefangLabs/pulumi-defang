@@ -20,11 +20,12 @@ type BuildState struct {
 }
 
 func (*Build) Create(
-	ctx context.Context, name string, input BuildInputs, preview bool,
+	ctx context.Context, req infer.CreateRequest[BuildInputs],
 ) (infer.CreateResponse[BuildState], error) {
+	input := req.Inputs
 	if input.Image == "" {
 		return infer.CreateResponse[BuildState]{}, fmt.Errorf("image is required")
 	}
 	state := BuildState{BuildInputs: input, ImageURI: input.Image}
-	return infer.CreateResponse[BuildState]{ID: name, Output: state}, nil
+	return infer.CreateResponse[BuildState]{ID: req.Name, Output: state}, nil
 }
