@@ -249,8 +249,8 @@ func CreateContainerApp(
 		}
 		userIdentities = append(userIdentities, identityID)
 	}
-	if len(result.Secrets) > 0 && infra.KeyVaultURL != "" {
-		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.Elem())
+	if len(result.Secrets) > 0 && infra.KeyVaultIdentityID != nil {
+		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
 	}
 	var identity *commontypesv5.ManagedServiceIdentityArgs
 	if len(userIdentities) > 0 {
