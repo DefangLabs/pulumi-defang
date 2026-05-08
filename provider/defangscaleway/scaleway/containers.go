@@ -155,13 +155,6 @@ func containerProtocol(svc compose.ServiceConfig) string {
 
 func containerPort(svc compose.ServiceConfig) pulumi.IntPtrInput {
 	for _, p := range svc.Ports {
-		if p.IsIngress() && p.Target > 0 {
-			return pulumi.IntPtr(int(p.Target))
-		}
-	}
-	// For private services, expose the first target port (if any) so other
-	// services on the same private network can reach this container.
-	for _, p := range svc.Ports {
 		if p.Target > 0 {
 			return pulumi.IntPtr(int(p.Target))
 		}
