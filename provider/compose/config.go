@@ -35,11 +35,12 @@ func ConfigNotFoundOutput(key string) pulumi.StringOutput {
 
 type DryRunConfigProvider struct{}
 
-// GetConfigValue returns a dummy config value for dry runs.
+// GetConfigValue returns a dummy config value for dry runs. Keep the placeholder
+// password-shaped so provider-specific validations can still run during preview.
 func (p *DryRunConfigProvider) GetConfigValue(
 	ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
-	return pulumi.ToSecret(pulumi.Sprintf("dry-run-%s", key)).(pulumi.StringOutput)
+	return pulumi.ToSecret(pulumi.Sprintf("DryRun1!-%s", key)).(pulumi.StringOutput)
 }
 
 // GetSecretRef returns a placeholder secret reference for dry runs.

@@ -25,9 +25,10 @@
    - Added `TestContainerPrivacy` for privacy function
    - Added `TestCreateContainerServicePrivateService` verifying private container creation
 
-6. **Enhanced example** (`examples/scaleway-yaml/Pulumi.yaml`)
-   - Updated from single nginx service to multi-service: public web, private worker, managed postgres
-   - Demonstrates all three deployment types in one Pulumi program
+6. **End-to-end example** (`examples/scaleway-yaml/Pulumi.yaml`, `examples/scaleway-e2e-demo/`)
+   - Updated from a static nginx sample to a real request chain: public web service -> public API service -> managed PostgreSQL
+   - Uses pre-built API/web images because Scaleway build-from-source is not implemented in this PR
+   - Documents the current phased deployment path because standalone `Service.environment` inputs are plain strings and cannot yet directly consume component outputs like `${db.connectionUrl}` or `${api.endpoint}`
 
 ### Test Results
 
@@ -74,6 +75,13 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
   - Created namespace, private network, managed PostgreSQL instance, database, privilege, public web container, and private worker container
   - Verified the public web endpoint returned HTTP 200
   - Destroyed all 12 temporary resources after validation
+- End-to-end demo deployment also succeeded on 2026-05-08:
+  - Published temporary public API/web images with `ko` because Docker was unavailable in the workspace
+  - Created standalone managed PostgreSQL plus standalone API and web Serverless Containers
+  - Deployed in phases: DB first, then API with `DATABASE_URL`, then web with `API_URL`
+  - Verified direct API response inserted/read a Postgres hit count
+  - Verified public web response called API, API wrote to Postgres, and the rendered page showed `API status: 200` plus the incrementing database hit count
+  - Destroyed all 11 temporary resources and removed the local Pulumi stack metadata
 - PostgreSQL private network endpoint resolution from a container
 - Redis private network connectivity from a container
 - Container scaling behavior (minScale 0 → cold start latency)
@@ -91,5 +99,10 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
 ### Credentials Status
 
 - `SCALEWAY_DEV_API_KEY` available (secret key / UUID format, authenticates against Scaleway API)
-- Missing: `SCW_ACCESS_KEY`, `SCW_DEFAULT_PROJECT_ID`, `SCW_DEFAULT_ORGANIZATION_ID`
-- Requested human input for full credential set
+- `SCALEWAY_DEV_PROJECT_ID` and `SCALEWAY_DEV_ORG_ID` available in the workspace
+- `SCW_ACCESS_KEY` was discoverable as non-secret metadata via Scaleway IAM API key listing
+- Live Pulumi runs used:
+  - `SCW_ACCESS_KEY`
+  - `SCW_SECRET_KEY=$SCALEWAY_DEV_API_KEY`
+  - `SCW_DEFAULT_PROJECT_ID=$SCALEWAY_DEV_PROJECT_ID`
+  - `SCW_DEFAULT_ORGANIZATION_ID=$SCALEWAY_DEV_ORG_ID`

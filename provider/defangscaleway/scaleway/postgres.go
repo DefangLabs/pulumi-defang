@@ -19,6 +19,9 @@ var (
 	ErrPostgresPasswordInvalid = errors.New("POSTGRES_PASSWORD must be 8-128 characters and include uppercase, lowercase, digit, and special characters for Scaleway Managed Database for PostgreSQL")
 )
 
+// Scaleway reserves the default PostgreSQL user/database name "postgres" for
+// managed instances. Use Defang-specific defaults unless the Compose service
+// explicitly provides POSTGRES_USER or POSTGRES_DB.
 const defaultScalewayPostgresUser = "defang"
 const defaultScalewayPostgresDB = "defang"
 
