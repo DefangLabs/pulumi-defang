@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -15,6 +17,7 @@ import (
 var (
 	ErrContainerImageMissing     = errors.New("Scaleway Serverless Containers require a pre-built image")
 	ErrContainerNamespaceMissing = errors.New("Scaleway Serverless Containers require a namespace")
+	ErrContainerUnsupported      = errors.New("unsupported Scaleway Serverless Container configuration")
 )
 
 type ContainerResult struct {
@@ -74,6 +77,70 @@ func containerMemoryLimit(memMiB int) int {
 	return max(memMiB, 128)
 }
 
+func validateContainerResources(svc compose.ServiceConfig) error {
+	cpu := containerCPULimit(svc.GetCPUs())
+	if cpu < 70 || cpu > 6000 {
+		return fmt.Errorf("%w: CPU limit %d mvCPU is outside Scaleway's documented 70-6000 mvCPU range", ErrContainerUnsupported, cpu)
+	}
+	mem := containerMemoryLimit(svc.GetMemoryMiB())
+	if mem < 128 || mem > 12228 {
+		return fmt.Errorf("%w: memory limit %d MB is outside Scaleway's documented 128-12228 MB range", ErrContainerUnsupported, mem)
+	}
+	replicas := svc.GetReplicas()
+	if replicas < 1 || replicas > 50 {
+		return fmt.Errorf("%w: max scale %d is outside Scaleway's documented 1-50 instance range", ErrContainerUnsupported, replicas)
+	}
+	return nil
+}
+
+func validateContainerPorts(svc compose.ServiceConfig) error {
+	ingressPorts := 0
+	for _, p := range svc.Ports {
+		if p.IsHost() {
+			return fmt.Errorf("%w: host-mode ports are not supported by Scaleway Serverless Containers", ErrContainerUnsupported)
+		}
+		switch p.Target {
+		case 8008, 8012, 8013, 8022, 9090, 9091:
+			return fmt.Errorf("%w: port %d is reserved by Scaleway Serverless Containers", ErrContainerUnsupported, p.Target)
+		}
+		if p.IsIngress() {
+			ingressPorts++
+		}
+	}
+	if ingressPorts > 1 {
+		return fmt.Errorf("%w: Scaleway Serverless Containers expose exactly one public port", ErrContainerUnsupported)
+	}
+	return nil
+}
+
+func validateContainerEnvironment(svc compose.ServiceConfig) error {
+	for k := range svc.Environment {
+		if k == "PORT" || strings.HasPrefix(k, "SCW_") {
+			return fmt.Errorf("%w: environment variable %q is reserved by Scaleway Serverless Containers", ErrContainerUnsupported, k)
+		}
+	}
+	return nil
+}
+
+func validateContainerService(svc compose.ServiceConfig) error {
+	if err := validateContainerResources(svc); err != nil {
+		return err
+	}
+	if err := validateContainerPorts(svc); err != nil {
+		return err
+	}
+	if err := validateContainerEnvironment(svc); err != nil {
+		return err
+	}
+	if svc.LLM != nil {
+		return fmt.Errorf("%w: LLM services are not implemented for Scaleway", ErrContainerUnsupported)
+	}
+	if platform := svc.GetPlatform(); platform != "linux/amd64" {
+		return fmt.Errorf("%w: Scaleway Serverless Containers require linux/amd64 images, got %q", ErrContainerUnsupported, platform)
+	}
+	return nil
+}
+
 func containerProtocol(svc compose.ServiceConfig) string {
 	if len(svc.Ports) == 0 {
 		return "http1"
@@ -104,6 +171,26 @@ func containerMinScale(svc compose.ServiceConfig) pulumi.IntPtrInput {
 
 func containerMaxScale(svc compose.ServiceConfig) pulumi.IntPtrInput {
 	return pulumi.IntPtr(int(svc.GetReplicas()))
+}
+
+func containerHealthChecks(svc compose.ServiceConfig) containers.ContainerHealthCheckArrayInput {
+	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 {
+		return nil
+	}
+	check := &containers.ContainerHealthCheckArgs{
+		Https: containers.ContainerHealthCheckHttpArray{
+			&containers.ContainerHealthCheckHttpArgs{
+				Path: pulumi.String("/"),
+			},
+		},
+	}
+	if svc.HealthCheck.Retries > 0 {
+		check.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
+	}
+	if svc.HealthCheck.IntervalSeconds > 0 {
+		check.Interval = pulumi.String((time.Duration(svc.HealthCheck.IntervalSeconds) * time.Second).String())
+	}
+	return containers.ContainerHealthCheckArray{check}
 }
 
 func containerEnvironment(
@@ -150,6 +237,9 @@ func CreateContainerService(
 	if infra == nil || infra.Namespace == nil {
 		return nil, ErrContainerNamespaceMissing
 	}
+	if err := validateContainerService(svc); err != nil {
+		return nil, err
+	}
 	env, secrets := containerEnvironment(ctx, configProvider, serviceName, svc, infra)
 	args := &containers.ContainerArgs{
 		Name:                       pulumi.StringPtr(serviceName),
@@ -165,6 +255,7 @@ func CreateContainerService(
 		Deploy:                     pulumi.BoolPtr(true),
 		Commands:                   compose.ToPulumiStringArray(svc.Entrypoint),
 		Args:                       compose.ToPulumiStringArray(svc.Command),
+		HealthChecks:               containerHealthChecks(svc),
 		EnvironmentVariables:       env,
 		SecretEnvironmentVariables: secrets,
 	}

@@ -26,6 +26,63 @@ func TestContainerProtocol(t *testing.T) {
 	assert.Equal(t, "h2c", containerProtocol(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolGRPC}}}))
 }
 
+func TestValidateContainerServiceRejectsUnsupportedInputs(t *testing.T) {
+	t.Run("host port", func(t *testing.T) {
+		err := validateContainerService(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Mode: compose.PortModeHost, Target: 8080}}})
+		require.ErrorIs(t, err, ErrContainerUnsupported)
+		assert.Contains(t, err.Error(), "host-mode ports")
+	})
+
+	t.Run("multiple ingress ports", func(t *testing.T) {
+		err := validateContainerService(compose.ServiceConfig{Ports: []compose.ServicePortConfig{
+			{Mode: compose.PortModeIngress, Target: 8080},
+			{Mode: compose.PortModeIngress, Target: 9092},
+		}})
+		require.ErrorIs(t, err, ErrContainerUnsupported)
+		assert.Contains(t, err.Error(), "exactly one public port")
+	})
+
+	t.Run("reserved port", func(t *testing.T) {
+		err := validateContainerService(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Target: 8008}}})
+		require.ErrorIs(t, err, ErrContainerUnsupported)
+		assert.Contains(t, err.Error(), "reserved")
+	})
+
+	t.Run("reserved env", func(t *testing.T) {
+		err := validateContainerService(compose.ServiceConfig{Environment: map[string]*string{"SCW_REGION": ptr("fr-par")}})
+		require.ErrorIs(t, err, ErrContainerUnsupported)
+		assert.Contains(t, err.Error(), "reserved")
+	})
+
+	t.Run("unsupported llm", func(t *testing.T) {
+		err := validateContainerService(compose.ServiceConfig{LLM: &compose.LlmConfig{}})
+		require.ErrorIs(t, err, ErrContainerUnsupported)
+		assert.Contains(t, err.Error(), "LLM")
+	})
+
+	t.Run("unsupported platform", func(t *testing.T) {
+		err := validateContainerService(compose.ServiceConfig{Platform: ptr("linux/arm64")})
+		require.ErrorIs(t, err, ErrContainerUnsupported)
+		assert.Contains(t, err.Error(), "linux/amd64")
+	})
+}
+
+func TestValidateContainerServiceRejectsInvalidResourceLimits(t *testing.T) {
+	cpus := 8.0
+	err := validateContainerService(compose.ServiceConfig{
+		Deploy: &compose.DeployConfig{Resources: &compose.Resources{Reservations: &compose.ResourceConfig{CPUs: &cpus}}},
+	})
+	require.ErrorIs(t, err, ErrContainerUnsupported)
+	assert.Contains(t, err.Error(), "CPU limit")
+
+	memory := "13g"
+	err = validateContainerService(compose.ServiceConfig{
+		Deploy: &compose.DeployConfig{Resources: &compose.Resources{Reservations: &compose.ResourceConfig{Memory: &memory}}},
+	})
+	require.ErrorIs(t, err, ErrContainerUnsupported)
+	assert.Contains(t, err.Error(), "memory limit")
+}
+
 func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	mocks := &recordingMocks{}
 	secretRef := "${API_KEY}"
@@ -39,6 +96,11 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 			Environment: map[string]*string{
 				"API_KEY": &secretRef,
 				"MODE":    ptr("prod"),
+			},
+			HealthCheck: &compose.HealthCheckConfig{
+				Test:            []string{"CMD", "curl", "-f", "http://localhost:8080/"},
+				IntervalSeconds: 5,
+				Retries:         3,
 			},
 		}, &SharedInfra{Namespace: namespace, Region: "fr-par", Etag: "deploy-123"})
 		return err
@@ -59,4 +121,9 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	require.True(t, secretValue.IsSecret())
 	secrets := secretValue.SecretValue().Element.ObjectValue()
 	assert.Equal(t, "secret-value", secrets[resource.PropertyKey("API_KEY")].StringValue())
+	healthChecks := container.inputs[resource.PropertyKey("healthChecks")].ArrayValue()
+	require.Len(t, healthChecks, 1)
+	healthCheck := healthChecks[0].ObjectValue()
+	assert.Equal(t, float64(3), healthCheck[resource.PropertyKey("failureThreshold")].NumberValue())
+	assert.Equal(t, "5s", healthCheck[resource.PropertyKey("interval")].StringValue())
 }
