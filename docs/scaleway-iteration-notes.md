@@ -61,13 +61,27 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
 
 **Implications for Defang:**
 - The `privacy: private` setting for background workers is correct (no public endpoint needed)
-- But inter-service communication between Serverless Containers must go through public URLs
+- **Serverless Container to Serverless Container internal networking is not available on Scaleway.** Defang cannot implement a private service mesh between Scaleway Serverless Containers with the current platform APIs.
+- Inter-service communication between Serverless Containers must go through public HTTPS URLs.
 - Managed databases and Redis on the private network ARE reachable from containers (egress)
 - The private network primarily serves database/Redis connectivity, not inter-service mesh
+- This means the Scaleway provider cannot currently preserve Docker Compose service-name networking for container-to-container calls (for example, `http://api:8080`).
 
 **Changes applied:**
 - Removed explicit `ActivateVpcIntegration`; the Scaleway provider now treats VPC integration as always enabled
 - All container endpoints use `https://` public URLs (even private containers get a domain)
+
+### Database Connectivity and Local Connection Strings
+
+The live E2E demo proved application-level DB interaction, but it did **not** prove same-hostname local/cloud parity for Postgres:
+
+- The E2E demo used standalone `Postgres` plus standalone `Service` resources.
+- Because those standalone resources did not share a provider-created `PrivateNetwork`, the API connected to the managed database through the managed database endpoint output, not through a Compose-style hostname like `db`.
+- The successful API connection string used the provider output shape `postgres://defang:<password>@<resolved-host>:<resolved-port>/defang?sslmode=require`.
+- In the Project component path, the provider does create shared private network infrastructure and attaches managed Postgres to it. `postgresHostAndPort` prefers the private network hostname/IP when Scaleway returns one.
+- However, we have **not** validated that an app container can use `db` as a hostname on Scaleway the same way it would locally with Docker Compose.
+
+Open follow-up: decide whether the Scaleway provider should rewrite/inject Compose-style database URLs so application code can keep using local `db` hostnames, or whether Scaleway managed database endpoints require provider-generated connection strings for now.
 
 ### Live Testing
 
@@ -79,10 +93,11 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
   - Published temporary public API/web images with `ko` because Docker was unavailable in the workspace
   - Created standalone managed PostgreSQL plus standalone API and web Serverless Containers
   - Deployed in phases: DB first, then API with `DATABASE_URL`, then web with `API_URL`
+  - API used the managed Postgres endpoint from `db.connectionUrl`; it did not use hostname `db`
   - Verified direct API response inserted/read a Postgres hit count
   - Verified public web response called API, API wrote to Postgres, and the rendered page showed `API status: 200` plus the incrementing database hit count
   - Destroyed all 11 temporary resources and removed the local Pulumi stack metadata
-- PostgreSQL private network endpoint resolution from a container
+- PostgreSQL private network endpoint resolution from a container using a Compose-style hostname such as `db`
 - Redis private network connectivity from a container
 - Container scaling behavior (minScale 0 → cold start latency)
 - Custom domain attachment and DNS verification

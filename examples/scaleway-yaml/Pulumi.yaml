@@ -44,6 +44,8 @@ resources:
         # Current Service environment inputs are plain strings, so deploy the
         # database first, then set DATABASE_URL from `pulumi stack output
         # databaseUrl --show-secrets` before creating API.
+        # This uses the provider-generated managed DB endpoint. It does not
+        # validate Docker Compose hostname parity such as postgres://...@db:5432.
         DATABASE_URL: $${DATABASE_URL}
   web:
     type: defang-scaleway:index:Service

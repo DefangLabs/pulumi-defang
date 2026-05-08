@@ -42,8 +42,17 @@ The Pulumi YAML program in `examples/scaleway-yaml` defines:
 - `web` reads `API_URL` from Pulumi config
 
 Scaleway Serverless Container Private Networks are egress-only. Containers can
-reach managed databases on a private network, but container-to-container
-traffic must use public HTTPS endpoints, which is why `web` calls `${api.endpoint}`.
+reach managed databases on a private network, but Serverless Containers cannot
+receive inbound private traffic from other Serverless Containers. That means
+container-to-container traffic must use public HTTPS endpoints, which is why
+`web` calls the API service's public endpoint.
+
+The live E2E validation proved that the API can write to and read from managed
+Postgres, but it did not prove Docker Compose hostname parity for the database.
+The API used the `db.connectionUrl` provider output, not a local-style hostname
+such as `db`. The Project component path attaches managed Postgres to shared
+private networking and prefers Scaleway's private DB endpoint when available,
+but using `db` as the cloud hostname remains unvalidated follow-up work.
 
 Current `Service.environment` inputs are plain strings, so this demo is deployed
 in phases: create DB, set `DATABASE_URL`, create API, set `API_URL`, then create
