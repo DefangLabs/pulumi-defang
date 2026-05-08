@@ -159,7 +159,21 @@ func containerPort(svc compose.ServiceConfig) pulumi.IntPtrInput {
 			return pulumi.IntPtr(int(p.Target))
 		}
 	}
+	// For private services, expose the first target port (if any) so other
+	// services on the same private network can reach this container.
+	for _, p := range svc.Ports {
+		if p.Target > 0 {
+			return pulumi.IntPtr(int(p.Target))
+		}
+	}
 	return nil
+}
+
+func containerPrivacy(svc compose.ServiceConfig) string {
+	if svc.HasIngressPorts() {
+		return "public"
+	}
+	return "private"
 }
 
 func containerMinScale(svc compose.ServiceConfig) pulumi.IntPtrInput {
@@ -241,6 +255,7 @@ func CreateContainerService(
 		return nil, err
 	}
 	env, secrets := containerEnvironment(ctx, configProvider, serviceName, svc, infra)
+	privacy := containerPrivacy(svc)
 	args := &containers.ContainerArgs{
 		Name:                       pulumi.StringPtr(serviceName),
 		NamespaceId:                infra.Namespace.ID(),
@@ -250,7 +265,7 @@ func CreateContainerService(
 		MemoryLimit:                pulumi.IntPtr(containerMemoryLimit(svc.GetMemoryMiB())),
 		MinScale:                   containerMinScale(svc),
 		MaxScale:                   containerMaxScale(svc),
-		Privacy:                    pulumi.StringPtr("public"),
+		Privacy:                    pulumi.StringPtr(privacy),
 		Protocol:                   pulumi.StringPtr(containerProtocol(svc)),
 		Deploy:                     pulumi.BoolPtr(true),
 		Commands:                   compose.ToPulumiStringArray(svc.Entrypoint),
@@ -283,5 +298,15 @@ func CreateContainerService(
 		}
 	}
 
-	return &ContainerResult{Container: container, Domain: domain, Endpoint: container.DomainName}, nil
+	var endpoint pulumi.StringOutput
+	if privacy == "public" {
+		endpoint = pulumi.Sprintf("https://%s", container.DomainName)
+	} else {
+		// Private containers are reachable via their name on the private network.
+		// The Scaleway private network hostname follows the pattern: <name>.functions.fnc.<region>.scw.cloud
+		// but the actual hostname is only resolvable from within the private network.
+		endpoint = container.DomainName
+	}
+
+	return &ContainerResult{Container: container, Domain: domain, Endpoint: endpoint}, nil
 }

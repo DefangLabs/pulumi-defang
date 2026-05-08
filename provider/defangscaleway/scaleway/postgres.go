@@ -123,12 +123,17 @@ func CreatePostgres(
 		return nil, ErrPostgresConfigNil
 	}
 
-	engine := pg.Version.ToStringPtrOutput().ApplyT(func(version *string) string {
-		if version == nil || *version == "" {
-			return postgresEngine(0)
-		}
-		return postgresEngine(compose.GetPostgresVersion(*version))
-	}).(pulumi.StringOutput)
+	var engine pulumi.StringOutput
+	if pg.Version != nil {
+		engine = pg.Version.ToStringPtrOutput().ApplyT(func(version *string) string {
+			if version == nil || *version == "" {
+				return postgresEngine(0)
+			}
+			return postgresEngine(compose.GetPostgresVersion(*version))
+		}).(pulumi.StringOutput)
+	} else {
+		engine = pulumi.String(postgresEngine(0)).ToStringOutput()
+	}
 
 	args := &databases.InstanceArgs{
 		Name:              pulumi.String(serviceName),

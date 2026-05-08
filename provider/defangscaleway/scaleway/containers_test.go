@@ -11,6 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestContainerPrivacy(t *testing.T) {
+	// Explicit ingress is public
+	assert.Equal(t, "public", containerPrivacy(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 80, Mode: compose.PortModeIngress}},
+	}))
+	// Empty mode defaults to ingress per Compose spec, so also public
+	assert.Equal(t, "public", containerPrivacy(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 80, Mode: ""}},
+	}))
+	// No ports means private (background worker, consumer, etc.)
+	assert.Equal(t, "private", containerPrivacy(compose.ServiceConfig{}))
+}
+
 func TestContainerSizing(t *testing.T) {
 	assert.Equal(t, 140, containerCPULimit(0))
 	assert.Equal(t, 250, containerCPULimit(0.25))
@@ -126,4 +139,22 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	healthCheck := healthChecks[0].ObjectValue()
 	assert.Equal(t, float64(3), healthCheck[resource.PropertyKey("failureThreshold")].NumberValue())
 	assert.Equal(t, "5s", healthCheck[resource.PropertyKey("interval")].StringValue())
+}
+
+func TestCreateContainerServicePrivateService(t *testing.T) {
+	mocks := &recordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		namespace, err := containers.NewNamespace(ctx, "ns", &containers.NamespaceArgs{})
+		if err != nil {
+			return err
+		}
+		// A private service has no ports (background worker, consumer, etc.)
+		_, err = CreateContainerService(ctx, &mockConfigProvider{}, "worker", pulumi.String("myapp:latest"), compose.ServiceConfig{}, &SharedInfra{Namespace: namespace, Region: "fr-par"})
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+
+	require.NoError(t, err)
+	container := mocks.findType("scaleway:containers/container:Container")
+	require.NotNil(t, container)
+	assert.Equal(t, "private", container.inputs[resource.PropertyKey("privacy")].StringValue())
 }

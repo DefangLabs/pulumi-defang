@@ -1,23 +1,42 @@
 name: defang-scaleway
 runtime: yaml
-description: Example using defang-scaleway to deploy services to Scaleway
+description: Example using defang-scaleway to deploy a multi-service app to Scaleway
 
 plugins:
   providers:
     - name: defang-scaleway
       path: ../../bin
 
+config:
+  POSTGRES_PASSWORD:
+    type: string
+    secret: true
+
 resources:
   scaleway-demo:
     type: defang-scaleway:index:Project
     properties:
       services:
-        app:
-          image: nginx
+        # Public web server reachable from the internet
+        web:
+          image: nginx:latest
           ports:
             - target: 80
               mode: ingress
               appProtocol: http
+          environment:
+            DATABASE_URL: postgres://defang:${POSTGRES_PASSWORD}@db:5432/defang?sslmode=require
+          dependsOn:
+            db: {}
+        # Private background worker with no public endpoint
+        worker:
+          image: busybox:latest
+          command: ["sh", "-c", "while true; do echo worker running; sleep 60; done"]
+        # Managed PostgreSQL database on Scaleway
+        db:
+          x-defang-postgres: {}
+          environment:
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
 outputs:
   endpoints: ${scaleway-demo.endpoints}
