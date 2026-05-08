@@ -47,14 +47,34 @@ All 29 tests passing:
 - Validation of Scaleway-specific limits (CPU, memory, max scale, reserved ports/env vars)
 - Dependency ordering via `common.TopologicalSort`
 
+### Critical Finding: Private Network is Egress-Only
+
+From Scaleway documentation (serverless-containers/reference-content/containers-private-networks):
+
+- **Egress only**: Containers can reach databases/Redis on the private network
+- **No inbound private traffic**: Container-to-container communication via private network is NOT supported
+- **VPC must be enabled at namespace creation** (`ActivateVpcIntegration: true`) and cannot be changed later
+- **Only one Private Network per container**
+- Container-to-container communication must use public HTTPS endpoints
+- DNS resolution uses VPC DNS server (169.254.169.254) for `*.internal` records
+
+**Implications for Defang:**
+- The `privacy: private` setting for background workers is correct (no public endpoint needed)
+- But inter-service communication between Serverless Containers must go through public URLs
+- Managed databases and Redis on the private network ARE reachable from containers (egress)
+- The private network primarily serves database/Redis connectivity, not inter-service mesh
+
+**Changes applied:**
+- Set `ActivateVpcIntegration: true` on namespace creation
+- All container endpoints use `https://` public URLs (even private containers get a domain)
+
 ### What Needs Live Testing
 
 - Actual Scaleway deployment with full credentials (need `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, project/org IDs)
-- Private network container-to-container connectivity
-- PostgreSQL private network endpoint resolution
-- Redis private network connectivity
-- Container scaling behavior
-- Custom domain attachment
+- PostgreSQL private network endpoint resolution from a container
+- Redis private network connectivity from a container
+- Container scaling behavior (minScale 0 → cold start latency)
+- Custom domain attachment and DNS verification
 
 ### Known Limitations
 
@@ -62,7 +82,8 @@ All 29 tests passing:
 - LLM/Managed Inference not implemented
 - No CD state upload (like GCP's GCS state URL)
 - DNS/load-balancer abstraction not comparable to GCP
-- Container-to-container service discovery via private network hostname needs live validation
+- **Container-to-container private networking not supported** (Scaleway limitation, egress-only PN)
+- Cold starts may be slightly longer when private network is attached (IP booking overhead)
 
 ### Credentials Status
 

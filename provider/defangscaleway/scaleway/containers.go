@@ -45,6 +45,10 @@ func CreateContainerNamespace(
 	}
 	args := &containers.NamespaceArgs{
 		Name: pulumi.StringPtr(projectName),
+		// VPC integration must be enabled at namespace creation time and cannot
+		// be changed later. Required for containers to reach managed databases
+		// and Redis on a private network.
+		ActivateVpcIntegration: pulumi.BoolPtr(true),
 		Tags: pulumi.StringArray{
 			pulumi.String("defang"),
 			pulumi.String(projectName),
@@ -291,15 +295,11 @@ func CreateContainerService(
 		}
 	}
 
-	var endpoint pulumi.StringOutput
-	if privacy == "public" {
-		endpoint = pulumi.Sprintf("https://%s", container.DomainName)
-	} else {
-		// Private containers are reachable via their name on the private network.
-		// The Scaleway private network hostname follows the pattern: <name>.functions.fnc.<region>.scw.cloud
-		// but the actual hostname is only resolvable from within the private network.
-		endpoint = container.DomainName
-	}
+	// All container endpoints use the public HTTPS URL. Scaleway private networks
+	// are egress-only for Serverless Containers: containers can reach databases/Redis
+	// on the PN, but inbound private traffic between containers is not supported.
+	// Container-to-container communication must use public endpoints.
+	endpoint := pulumi.Sprintf("https://%s", container.DomainName)
 
 	return &ContainerResult{Container: container, Domain: domain, Endpoint: endpoint}, nil
 }
