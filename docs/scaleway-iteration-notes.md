@@ -73,15 +73,33 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
 
 ### Database Connectivity and Local Connection Strings
 
-The live E2E demo proved application-level DB interaction, but it did **not** prove same-hostname local/cloud parity for Postgres:
+The live E2E demo proved application-level DB interaction, and a follow-up
+Project-component hostname test clarified what hostname forms work on Scaleway:
 
-- The E2E demo used standalone `Postgres` plus standalone `Service` resources.
-- Because those standalone resources did not share a provider-created `PrivateNetwork`, the API connected to the managed database through the managed database endpoint output, not through a Compose-style hostname like `db`.
-- The successful API connection string used the provider output shape `postgres://defang:<password>@<resolved-host>:<resolved-port>/defang?sslmode=require`.
-- In the Project component path, the provider does create shared private network infrastructure and attaches managed Postgres to it. `postgresHostAndPort` prefers the private network hostname/IP when Scaleway returns one.
-- However, we have **not** validated that an app container can use `db` as a hostname on Scaleway the same way it would locally with Docker Compose.
+- The standalone E2E demo used `Postgres` plus standalone `Service` resources.
+- Because those standalone resources did not share a provider-created
+  `PrivateNetwork`, the API connected to the managed database through the
+  managed database endpoint output, not through a Compose-style hostname like
+  `db`.
+- The successful standalone E2E connection string used the provider output shape
+  `postgres://defang:<password>@<resolved-host>:<resolved-port>/defang?sslmode=require`.
+- In the Project component path, the provider creates shared private network
+  infrastructure and attaches managed Postgres and Serverless Containers to it.
+- A live Project-component test deployed two public API containers against the
+  same managed Postgres instance:
+  - `DATABASE_URL=postgres://defang:<password>@db:5432/defang?sslmode=require`
+    returned HTTP 500 with `lookup db on 169.254.169.254:53: no such host`.
+  - `DATABASE_URL=postgres://defang:<password>@db.demo.internal:5432/defang?sslmode=require`
+    returned HTTP 200 and inserted/read a row from Postgres.
 
-Open follow-up: decide whether the Scaleway provider should rewrite/inject Compose-style database URLs so application code can keep using local `db` hostnames, or whether Scaleway managed database endpoints require provider-generated connection strings for now.
+**Conclusion:** Scaleway does not provide bare Docker Compose-style service-name
+DNS for managed database resources. The working private DNS form is the Scaleway
+VPC form `<resource-name>.<private-network-name>.internal` (or the equivalent
+UUID-based forms). For Defang's local/cloud connection-string value prop, the
+Scaleway provider should preserve the application-facing environment variable
+shape by rewriting/injecting a cloud connection string that points at Scaleway's
+private DB hostname/IP. It should not expect the literal local hostname `db` to
+resolve in Scaleway Serverless Containers.
 
 ### Live Testing
 
@@ -97,7 +115,14 @@ Open follow-up: decide whether the Scaleway provider should rewrite/inject Compo
   - Verified direct API response inserted/read a Postgres hit count
   - Verified public web response called API, API wrote to Postgres, and the rendered page showed `API status: 200` plus the incrementing database hit count
   - Destroyed all 11 temporary resources and removed the local Pulumi stack metadata
-- PostgreSQL private network endpoint resolution from a container using a Compose-style hostname such as `db`
+- Project-component Postgres hostname validation also succeeded on 2026-05-08:
+  - Deployed managed Postgres plus two public API containers on the same
+    provider-created private network
+  - Confirmed bare Compose-style hostname `db` does **not** resolve from
+    Scaleway Serverless Containers
+  - Confirmed Scaleway internal DNS hostname `db.demo.internal` resolves and
+    reaches the managed database over the private network
+  - Destroyed all 12 temporary resources and removed the local Pulumi stack metadata
 - Redis private network connectivity from a container
 - Container scaling behavior (minScale 0 → cold start latency)
 - Custom domain attachment and DNS verification

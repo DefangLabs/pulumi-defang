@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang/examples/scaleway-e2e-demo
 
-go 1.25.9
+go 1.25
 
 require github.com/jackc/pgx/v5 v5.7.6
 

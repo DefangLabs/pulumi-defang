@@ -44,8 +44,10 @@ resources:
         # Current Service environment inputs are plain strings, so deploy the
         # database first, then set DATABASE_URL from `pulumi stack output
         # databaseUrl --show-secrets` before creating API.
-        # This uses the provider-generated managed DB endpoint. It does not
-        # validate Docker Compose hostname parity such as postgres://...@db:5432.
+        # This uses the provider-generated managed DB endpoint. A live
+        # Project-component test confirmed that Scaleway resolves the private
+        # DNS form db.<private-network>.internal, but does not resolve the bare
+        # Docker Compose hostname db from Serverless Containers.
         DATABASE_URL: $${DATABASE_URL}
   web:
     type: defang-scaleway:index:Service

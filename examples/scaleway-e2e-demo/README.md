@@ -48,11 +48,16 @@ container-to-container traffic must use public HTTPS endpoints, which is why
 `web` calls the API service's public endpoint.
 
 The live E2E validation proved that the API can write to and read from managed
-Postgres, but it did not prove Docker Compose hostname parity for the database.
-The API used the `db.connectionUrl` provider output, not a local-style hostname
-such as `db`. The Project component path attaches managed Postgres to shared
-private networking and prefers Scaleway's private DB endpoint when available,
-but using `db` as the cloud hostname remains unvalidated follow-up work.
+Postgres. It used the `db.connectionUrl` provider output, not a local-style
+hostname such as `db`.
+
+A separate live Project-component hostname test validated Scaleway private DNS
+behavior. Bare Compose-style hostname `db` did not resolve from a Serverless
+Container (`lookup db on 169.254.169.254:53: no such host`). The Scaleway
+internal DNS form `db.demo.internal` did resolve and the API returned HTTP 200
+after writing to Postgres. For Scaleway, the provider should inject/rewrite the
+cloud connection string to use the provider-generated private DB endpoint rather
+than expecting the literal local hostname `db` to work in the cloud.
 
 Current `Service.environment` inputs are plain strings, so this demo is deployed
 in phases: create DB, set `DATABASE_URL`, create API, set `API_URL`, then create
