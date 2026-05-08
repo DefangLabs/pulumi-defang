@@ -100,7 +100,7 @@ func TestPostgresNodeType(t *testing.T) {
 
 func TestCreatePostgresManagedResources(t *testing.T) {
 	mocks := &recordingMocks{}
-	password := "secret"
+	password := "Secret123!"
 	dbName := "app"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := CreatePostgres(ctx, &mockConfigProvider{}, "db", compose.ServiceConfig{
@@ -121,6 +121,7 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 	assert.Equal(t, "PostgreSQL-16", inst.inputs[resource.PropertyKey("engine")].StringValue())
 	assert.True(t, inst.inputs[resource.PropertyKey("encryptionAtRest")].BoolValue())
 	assert.False(t, inst.inputs[resource.PropertyKey("disableBackup")].BoolValue())
+	assert.Equal(t, defaultScalewayPostgresUser, inst.inputs[resource.PropertyKey("userName")].StringValue())
 
 	db := mocks.findType("scaleway:databases/database:Database")
 	require.NotNil(t, db)
@@ -133,7 +134,7 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 
 func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {
 	mocks := &recordingMocks{}
-	password := "secret"
+	password := "Secret123!"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		pn, err := network.NewPrivateNetwork(ctx, "pn", &network.PrivateNetworkArgs{})
 		if err != nil {

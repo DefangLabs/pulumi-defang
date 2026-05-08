@@ -3,6 +3,8 @@ package scaleway
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"unicode"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -14,7 +16,11 @@ import (
 var (
 	ErrPostgresConfigNil       = errors.New("postgres config is nil")
 	ErrPostgresPasswordMissing = errors.New("POSTGRES_PASSWORD is required for Scaleway Managed Database for PostgreSQL")
+	ErrPostgresPasswordInvalid = errors.New("POSTGRES_PASSWORD must be 8-128 characters and include uppercase, lowercase, digit, and special characters for Scaleway Managed Database for PostgreSQL")
 )
+
+const defaultScalewayPostgresUser = "defang"
+const defaultScalewayPostgresDB = "defang"
 
 // SharedInfra contains Scaleway resources shared by project-level components.
 type SharedInfra struct {
@@ -65,8 +71,53 @@ func postgresPassword(password pulumi.StringInput) pulumi.StringPtrInput {
 		if p == "" {
 			return nil, fmt.Errorf("%w; set it with `defang config set POSTGRES_PASSWORD`", ErrPostgresPasswordMissing)
 		}
+		if !validScalewayPostgresPassword(p) {
+			return nil, ErrPostgresPasswordInvalid
+		}
 		return &p, nil
 	}).(pulumi.StringPtrOutput)
+}
+
+func validScalewayPostgresPassword(password string) bool {
+	if len(password) < 8 || len(password) > 128 {
+		return false
+	}
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			hasUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		default:
+			hasSpecial = true
+		}
+	}
+	return hasUpper && hasLower && hasDigit && hasSpecial
+}
+
+func scalewayPostgresUsername(svc compose.ServiceConfig, username pulumi.StringInput) pulumi.StringInput {
+	if _, ok := svc.Environment["POSTGRES_USER"]; !ok {
+		return pulumi.String(defaultScalewayPostgresUser)
+	}
+	return username.ToStringOutput().ApplyT(func(u string) (string, error) {
+		if strings.EqualFold(u, "postgres") {
+			return "", fmt.Errorf("POSTGRES_USER %q is reserved by Scaleway Managed Database for PostgreSQL", u)
+		}
+		return u, nil
+	}).(pulumi.StringOutput)
+}
+
+func scalewayPostgresDBName(svc compose.ServiceConfig, pg *compose.PostgresConfigArgs) (pulumi.StringInput, string, error) {
+	if _, ok := svc.Environment["POSTGRES_DB"]; !ok {
+		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB, nil
+	}
+	if strings.EqualFold(pg.DBNameStr, compose.DEFAULT_POSTGRES_DB) {
+		return nil, "", fmt.Errorf("POSTGRES_DB %q is reserved by Scaleway Managed Database for PostgreSQL", pg.DBNameStr)
+	}
+	return pg.DBName, pg.DBNameStr, nil
 }
 
 func postgresHostAndPort(instance *databases.Instance) (pulumi.StringOutput, pulumi.IntOutput) {
@@ -122,6 +173,11 @@ func CreatePostgres(
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
+	username := scalewayPostgresUsername(svc, pg.Username)
+	dbName, dbNameStr, err := scalewayPostgresDBName(svc, pg)
+	if err != nil {
+		return nil, err
+	}
 
 	var engine pulumi.StringOutput
 	if pg.Version != nil {
@@ -139,7 +195,7 @@ func CreatePostgres(
 		Name:              pulumi.String(serviceName),
 		NodeType:          pulumi.String(postgresNodeType(svc.GetCPUs(), svc.GetMemoryMiB())),
 		Engine:            engine,
-		UserName:          pg.Username.ToStringOutput().ToStringPtrOutput(),
+		UserName:          username.ToStringOutput().ToStringPtrOutput(),
 		PasswordWo:        postgresPassword(pg.Password),
 		PasswordWoVersion: pulumi.Int(1),
 		IsHaCluster:       pulumi.Bool(svc.GetReplicas() > 1),
@@ -179,11 +235,10 @@ func CreatePostgres(
 		Port:     port,
 	}
 
-	dbName := pg.DBName
-	if pg.DBNameStr != "" && pg.DBNameStr != compose.DEFAULT_POSTGRES_DB {
+	if dbNameStr != "" {
 		db, err := databases.NewDatabase(ctx, serviceName+"-db", &databases.DatabaseArgs{
 			InstanceId: instance.ID(),
-			Name:       pg.DBName.ToStringOutput().ToStringPtrOutput(),
+			Name:       dbName.ToStringOutput().ToStringPtrOutput(),
 			Region:     args.Region,
 		}, append(opts, pulumi.Parent(instance))...)
 		if err != nil {
@@ -196,7 +251,7 @@ func CreatePostgres(
 	privilege, err := databases.NewPrivilege(ctx, serviceName+"-privilege", &databases.PrivilegeArgs{
 		InstanceId:   instance.ID(),
 		DatabaseName: dbName,
-		UserName:     pg.Username,
+		UserName:     username,
 		Permission:   pulumi.String("all"),
 		Region:       args.Region,
 	}, append(opts, pulumi.Parent(instance))...)
@@ -207,7 +262,7 @@ func CreatePostgres(
 
 	result.ConnectionURL = pulumi.ToSecret(pulumi.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=require",
-		pg.Username, pg.Password, host, port, dbName,
+		username, pg.Password, host, port, dbName,
 	)).(pulumi.StringOutput)
 
 	return result, nil

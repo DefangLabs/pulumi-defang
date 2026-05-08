@@ -45,10 +45,6 @@ func CreateContainerNamespace(
 	}
 	args := &containers.NamespaceArgs{
 		Name: pulumi.StringPtr(projectName),
-		// VPC integration must be enabled at namespace creation time and cannot
-		// be changed later. Required for containers to reach managed databases
-		// and Redis on a private network.
-		ActivateVpcIntegration: pulumi.BoolPtr(true),
 		Tags: pulumi.StringArray{
 			pulumi.String("defang"),
 			pulumi.String(projectName),

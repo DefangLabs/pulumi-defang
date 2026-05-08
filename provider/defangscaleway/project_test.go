@@ -138,7 +138,7 @@ func TestBuildProjectMultiServiceWithPostgres(t *testing.T) {
 				"db": {
 					Postgres: &compose.PostgresConfig{},
 					Environment: map[string]*string{
-						"POSTGRES_PASSWORD": strPtr("test-password"),
+						"POSTGRES_PASSWORD": strPtr("Secret123!"),
 					},
 				},
 			},

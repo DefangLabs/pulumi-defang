@@ -53,7 +53,7 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
 
 - **Egress only**: Containers can reach databases/Redis on the private network
 - **No inbound private traffic**: Container-to-container communication via private network is NOT supported
-- **VPC must be enabled at namespace creation** (`ActivateVpcIntegration: true`) and cannot be changed later
+- VPC integration is now always enabled for namespaces in the Scaleway Pulumi provider; `activateVpcIntegration` is deprecated and should not be set explicitly
 - **Only one Private Network per container**
 - Container-to-container communication must use public HTTPS endpoints
 - DNS resolution uses VPC DNS server (169.254.169.254) for `*.internal` records
@@ -65,12 +65,15 @@ From Scaleway documentation (serverless-containers/reference-content/containers-
 - The private network primarily serves database/Redis connectivity, not inter-service mesh
 
 **Changes applied:**
-- Set `ActivateVpcIntegration: true` on namespace creation
+- Removed explicit `ActivateVpcIntegration`; the Scaleway provider now treats VPC integration as always enabled
 - All container endpoints use `https://` public URLs (even private containers get a domain)
 
-### What Needs Live Testing
+### Live Testing
 
-- Actual Scaleway deployment with full credentials (need `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, project/org IDs)
+- Actual Scaleway deployment with full credentials succeeded on 2026-05-08 using the filesystem Pulumi backend:
+  - Created namespace, private network, managed PostgreSQL instance, database, privilege, public web container, and private worker container
+  - Verified the public web endpoint returned HTTP 200
+  - Destroyed all 12 temporary resources after validation
 - PostgreSQL private network endpoint resolution from a container
 - Redis private network connectivity from a container
 - Container scaling behavior (minScale 0 → cold start latency)
