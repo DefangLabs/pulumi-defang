@@ -101,6 +101,16 @@ shape by rewriting/injecting a cloud connection string that points at Scaleway's
 private DB hostname/IP. It should not expect the literal local hostname `db` to
 resolve in Scaleway Serverless Containers.
 
+**Decision for this PR:** do not try to make the literal hostname `db` work on
+Scaleway. There is no platform-level knob for adding Docker Compose-style DNS
+aliases to Serverless Containers, and container-to-container private networking
+is unavailable. Workarounds such as mutating `/etc/hosts`, running a private
+DNS/proxy service, or depending on user image entrypoints would be brittle and
+would not match Defang's provider-level portability goal. The correct Scaleway
+implementation path is provider-managed connection string translation: keep the
+same env var contract for the application, but set the cloud value to Scaleway's
+private database endpoint.
+
 ### Live Testing
 
 - Actual Scaleway deployment with full credentials succeeded on 2026-05-08 using the filesystem Pulumi backend:

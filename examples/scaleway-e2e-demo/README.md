@@ -59,6 +59,12 @@ after writing to Postgres. For Scaleway, the provider should inject/rewrite the
 cloud connection string to use the provider-generated private DB endpoint rather
 than expecting the literal local hostname `db` to work in the cloud.
 
+Do not implement this by trying to force `db` DNS inside Scaleway Serverless
+Containers. Scaleway does not expose a Compose-style DNS alias mechanism for
+managed database resources, and container-to-container private networking is not
+available for a private DNS/proxy workaround. Provider-managed connection string
+translation is the intended compatibility layer.
+
 Current `Service.environment` inputs are plain strings, so this demo is deployed
 in phases: create DB, set `DATABASE_URL`, create API, set `API_URL`, then create
 web. The live validation followed this flow.
