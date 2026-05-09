@@ -184,18 +184,22 @@ func containerHealthChecks(svc compose.ServiceConfig) containers.ContainerHealth
 	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 {
 		return nil
 	}
+	retries := svc.HealthCheck.Retries
+	if retries <= 0 {
+		retries = 3 // Scaleway requires failure_threshold; default to 3
+	}
+	interval := svc.HealthCheck.IntervalSeconds
+	if interval <= 0 {
+		interval = 10 // Scaleway requires interval; default to 10s
+	}
 	check := &containers.ContainerHealthCheckArgs{
 		Https: containers.ContainerHealthCheckHttpArray{
 			&containers.ContainerHealthCheckHttpArgs{
 				Path: pulumi.String("/"),
 			},
 		},
-	}
-	if svc.HealthCheck.Retries > 0 {
-		check.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
-	}
-	if svc.HealthCheck.IntervalSeconds > 0 {
-		check.Interval = pulumi.String((time.Duration(svc.HealthCheck.IntervalSeconds) * time.Second).String())
+		FailureThreshold: pulumi.Int(retries),
+		Interval:         pulumi.String((time.Duration(interval) * time.Second).String()),
 	}
 	return containers.ContainerHealthCheckArray{check}
 }

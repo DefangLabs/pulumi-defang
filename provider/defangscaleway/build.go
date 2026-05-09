@@ -142,6 +142,7 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		"--cache=true",
 		"--snapshot-mode=redo",
 		"--force",
+		"--verbosity=debug",
 	}
 	if inputs.Target != nil && *inputs.Target != "" {
 		kanikoCmd = append(kanikoCmd, "--target="+*inputs.Target)
@@ -156,8 +157,10 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 
 	// Build the shell script that writes Docker config for registry auth,
 	// then runs the Kaniko executor.
+	// Write Docker config for registry auth at both KANIKO_DIR (/workspace)
+	// and the default /kaniko/.docker/ location.
 	shellCmd := fmt.Sprintf(
-		`mkdir -p /kaniko/.docker && echo "$DOCKER_CONFIG_JSON" > /kaniko/.docker/config.json && %s`,
+		`mkdir -p /workspace/.docker /kaniko/.docker && echo "$DOCKER_CONFIG_JSON" > /workspace/.docker/config.json && cp /workspace/.docker/config.json /kaniko/.docker/config.json && %s`,
 		strings.Join(kanikoCmd, " "),
 	)
 
@@ -166,13 +169,15 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 	// - DOCKER_CONFIG_JSON for registry authentication (written by script)
 	// - KANIKO_SCRIPT holds the full build script, executed via eval
 	env := map[string]string{
-		"AWS_ACCESS_KEY_ID":     os.Getenv("AWS_ACCESS_KEY_ID"),
-		"AWS_SECRET_ACCESS_KEY": os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		"AWS_REGION":            os.Getenv("AWS_REGION"),
-		"S3_ENDPOINT":           fmt.Sprintf("https://s3.%s.scw.cloud", inputs.Region),
-		"S3_FORCE_PATH_STYLE":   "true",
-		"DOCKER_CONFIG_JSON":    dockerConfig,
-		"KANIKO_SCRIPT":         shellCmd,
+		"AWS_ACCESS_KEY_ID":          os.Getenv("AWS_ACCESS_KEY_ID"),
+		"AWS_SECRET_ACCESS_KEY":      os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		"AWS_REGION":                 os.Getenv("AWS_REGION"),
+		"AWS_EC2_METADATA_DISABLED":  "true",          // Prevent SDK from falling through to IMDS
+		"S3_ENDPOINT":                fmt.Sprintf("https://s3.%s.scw.cloud", inputs.Region),
+		"S3_FORCE_PATH_STYLE":        "true",
+		"KANIKO_DIR":                 "/workspace",    // Use writable dir; /kaniko is read-only in sandbox
+		"DOCKER_CONFIG_JSON":         dockerConfig,
+		"KANIKO_SCRIPT":              shellCmd,
 	}
 
 	defID, err := client.createJobDefinition(ctx, inputs.ProjectId, sanitizeJobName(inputs.Destination), env)
@@ -298,9 +303,10 @@ func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name 
 	body := map[string]any{
 		"name":                  name,
 		"project_id":            projectID,
-		"cpu_limit":             2000, // 2 vCPU for builds
-		"memory_limit":          4096, // 4 GB RAM for builds
-		"image_uri":             "gcr.io/kaniko-project/executor:debug",
+		"cpu_limit":             2000,  // 2 vCPU for builds
+		"memory_limit":          4096,  // 4 GB RAM for builds
+		"local_storage_capacity": 10000, // 10 GB local storage for builds
+		"image_uri":             "rg." + c.region + ".scw.cloud/defang-cd/kaniko-executor:patched",
 		"command":               "sh -c eval$IFS$KANIKO_SCRIPT",
 		"environment_variables": env,
 	}
