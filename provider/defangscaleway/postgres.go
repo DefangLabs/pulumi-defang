@@ -89,6 +89,12 @@ func createPostgres(
 	comp.Instance = result.Instance
 	comp.Dependency = result.Privilege
 
+	// Store the managed Postgres host so container services can rewrite
+	// env values like POSTGRES_HOST=database to the actual hostname.
+	if infra != nil && infra.ManagedHosts != nil {
+		infra.ManagedHosts[serviceName] = result.Host
+	}
+
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoint":      comp.Endpoint,
 		"connectionUrl": comp.ConnectionURL,

@@ -112,6 +112,10 @@ func buildSharedInfra(
 		return nil, err
 	}
 	infra.Namespace = namespace
+	infra.BuildInfra = &providerscaleway.BuildInfra{
+		RegistryEndpoint: namespace.RegistryEndpoint,
+	}
+	infra.ManagedHosts = make(map[string]pulumi.StringOutput)
 
 	pn, err := network.NewPrivateNetwork(ctx, projectName+"-private-network", &network.PrivateNetworkArgs{
 		Name: pulumi.StringPtr(projectName),
@@ -162,17 +166,15 @@ func buildService(
 		}
 		return redisComp.Endpoint, redisComp, nil
 	default:
-		if svc.Build != nil && svc.Image == nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("service %s: Scaleway Project currently requires a pre-built image when build is specified", svcName)
-		}
-		if svc.Image == nil || *svc.Image == "" {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("service %s: %w", svcName, common.ErrStandaloneServiceRequiresImage)
-		}
 		svcComp := &ScalewayServiceOutputs{}
 		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering Scaleway Service component %s: %w", svcName, err)
 		}
-		if err := createService(ctx, svcComp, configProvider, svcName, pulumi.String(*svc.Image), svc, infra); err != nil {
+		imageURI, err := providerscaleway.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, pulumi.Parent(svcComp))
+		if err != nil {
+			return pulumi.StringOutput{}, nil, err
+		}
+		if err := createService(ctx, svcComp, configProvider, svcName, imageURI, svc, infra); err != nil {
 			return pulumi.StringOutput{}, nil, err
 		}
 		return svcComp.Endpoint, svcComp, nil

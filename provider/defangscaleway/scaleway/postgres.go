@@ -34,6 +34,11 @@ type SharedInfra struct {
 	PrivateNetwork *network.PrivateNetwork
 	ConfigProvider compose.ConfigProvider
 	Etag           string
+	BuildInfra     *BuildInfra
+	// ManagedHosts maps Compose service names (e.g., "database") to the actual
+	// hostname of the managed resource. Used by container services to rewrite
+	// environment variables that reference managed services by Compose name.
+	ManagedHosts map[string]pulumi.StringOutput
 }
 
 type PostgresResult struct {
@@ -101,24 +106,26 @@ func validScalewayPostgresPassword(password string) bool {
 	return hasUpper && hasLower && hasDigit && hasSpecial
 }
 
-func scalewayPostgresUsername(svc compose.ServiceConfig, username pulumi.StringInput) pulumi.StringInput {
+func scalewayPostgresUsername(ctx *pulumi.Context, svc compose.ServiceConfig, username pulumi.StringInput) pulumi.StringInput {
 	if _, ok := svc.Environment["POSTGRES_USER"]; !ok {
 		return pulumi.String(defaultScalewayPostgresUser)
 	}
-	return username.ToStringOutput().ApplyT(func(u string) (string, error) {
+	return username.ToStringOutput().ApplyT(func(u string) string {
 		if strings.EqualFold(u, "postgres") {
-			return "", fmt.Errorf("POSTGRES_USER %q is reserved by Scaleway Managed Database for PostgreSQL", u)
+			ctx.Log.Warn(fmt.Sprintf("POSTGRES_USER %q is reserved by Scaleway; using %q instead", u, defaultScalewayPostgresUser), nil)
+			return defaultScalewayPostgresUser
 		}
-		return u, nil
+		return u
 	}).(pulumi.StringOutput)
 }
 
-func scalewayPostgresDBName(svc compose.ServiceConfig, pg *compose.PostgresConfigArgs) (pulumi.StringInput, string, error) {
+func scalewayPostgresDBName(ctx *pulumi.Context, svc compose.ServiceConfig, pg *compose.PostgresConfigArgs) (pulumi.StringInput, string, error) {
 	if _, ok := svc.Environment["POSTGRES_DB"]; !ok {
 		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB, nil
 	}
 	if strings.EqualFold(pg.DBNameStr, compose.DEFAULT_POSTGRES_DB) {
-		return nil, "", fmt.Errorf("POSTGRES_DB %q is reserved by Scaleway Managed Database for PostgreSQL", pg.DBNameStr)
+		ctx.Log.Warn(fmt.Sprintf("POSTGRES_DB %q is reserved by Scaleway; using %q instead", pg.DBNameStr, defaultScalewayPostgresDB), nil)
+		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB, nil
 	}
 	return pg.DBName, pg.DBNameStr, nil
 }
@@ -176,8 +183,8 @@ func CreatePostgres(
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
-	username := scalewayPostgresUsername(svc, pg.Username)
-	dbName, dbNameStr, err := scalewayPostgresDBName(svc, pg)
+	username := scalewayPostgresUsername(ctx, svc, pg.Username)
+	dbName, dbNameStr, err := scalewayPostgresDBName(ctx, svc, pg)
 	if err != nil {
 		return nil, err
 	}

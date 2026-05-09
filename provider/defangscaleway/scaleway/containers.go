@@ -224,6 +224,21 @@ func containerEnvironment(
 		if v != nil {
 			raw = *v
 		}
+		// Replace env values that reference managed services:
+		// - Values matching a managed service name (e.g., POSTGRES_HOST=database)
+		//   are replaced with the actual hostname.
+		// - POSTGRES_USER and POSTGRES_DB set to "postgres" are remapped to "defang"
+		//   because Scaleway reserves the "postgres" name.
+		if infra != nil && infra.ManagedHosts != nil {
+			if managedHost, ok := infra.ManagedHosts[raw]; ok {
+				env[k] = managedHost
+				continue
+			}
+			if (k == "POSTGRES_USER" || k == "POSTGRES_DB") && strings.EqualFold(raw, "postgres") && len(infra.ManagedHosts) > 0 {
+				env[k] = pulumi.String(defaultScalewayPostgresUser)
+				continue
+			}
+		}
 		env[k] = compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
 	}
 	return env, secrets

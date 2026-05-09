@@ -42,6 +42,9 @@ func (m *projectRecordingMocks) NewResource(args pulumi.MockResourceArgs) (strin
 		outputs[resource.PropertyKey("name")] = resource.NewStringProperty("defang")
 	case "scaleway:databases/privilege:Privilege":
 		// no extra outputs needed
+	case "defang-scaleway:index:Build":
+		outputs[resource.PropertyKey("buildId")] = resource.NewStringProperty("build-123")
+		outputs[resource.PropertyKey("image")] = resource.NewStringProperty("rg.fr-par.scw.cloud/defang/app:latest")
 	}
 	m.mu.Lock()
 	m.records = append(m.records, projectResourceRecord{typ: string(args.TypeToken), name: args.Name, inputs: args.Inputs})
@@ -175,7 +178,8 @@ func TestBuildProjectMultiServiceWithPostgres(t *testing.T) {
 	assert.Equal(t, "private", workerContainer.inputs[resource.PropertyKey("privacy")].StringValue())
 }
 
-func TestBuildProjectRejectsBuildOnlyServices(t *testing.T) {
+func TestBuildProjectCreatesBuildResourceForBuildOnlyServices(t *testing.T) {
+	mocks := &projectRecordingMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := buildProject(ctx, "demo", ProjectInputs{
 			Services: compose.Services{
@@ -185,8 +189,9 @@ func TestBuildProjectRejectsBuildOnlyServices(t *testing.T) {
 			},
 		})
 		return err
-	}, pulumi.WithMocks("proj", "stack", &projectRecordingMocks{}))
+	}, pulumi.WithMocks("proj", "stack", mocks))
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires a pre-built image")
+	require.NoError(t, err)
+	build := mocks.findType("defang-scaleway:index:Build")
+	assert.NotNil(t, build, "a Build resource should be created for build-only services")
 }
