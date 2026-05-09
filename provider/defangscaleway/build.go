@@ -131,7 +131,9 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		dockerfile = *inputs.Dockerfile
 	}
 
-	// Build the Kaniko executor command line
+	// Build the Kaniko executor command line.
+	// --force is required because Scaleway Serverless Jobs uses a sandboxed
+	// runtime (like gVisor) that doesn't support chown on all files.
 	kanikoCmd := []string{
 		"/kaniko/executor",
 		"--context=" + inputs.Source,
@@ -139,6 +141,7 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		"--dockerfile=" + dockerfile,
 		"--cache=true",
 		"--snapshot-mode=redo",
+		"--force",
 	}
 	if inputs.Target != nil && *inputs.Target != "" {
 		kanikoCmd = append(kanikoCmd, "--target="+*inputs.Target)
