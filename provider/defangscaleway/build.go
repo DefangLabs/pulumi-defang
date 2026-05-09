@@ -139,7 +139,6 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		"--dockerfile=" + dockerfile,
 		"--cache=true",
 		"--snapshot-mode=redo",
-		"--compressed-caching=false",
 	}
 	if inputs.Target != nil && *inputs.Target != "" {
 		kanikoCmd = append(kanikoCmd, "--target="+*inputs.Target)
@@ -164,8 +163,10 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		"DOCKER_CONFIG_JSON":    dockerConfig,
 	}
 
-	// Use the Kaniko debug image which includes a shell. The shell command
-	// writes the Docker config for registry auth, then runs the executor.
+	// Build the shell script that writes Docker config for registry auth,
+	// then runs the Kaniko executor. Scaleway Serverless Jobs wraps the
+	// command string in `sh -c` internally, so we must NOT add our own
+	// `sh -c '...'` wrapper (which caused quoting issues).
 	shellCmd := fmt.Sprintf(
 		`mkdir -p /kaniko/.docker && echo "$DOCKER_CONFIG_JSON" > /kaniko/.docker/config.json && %s`,
 		strings.Join(kanikoCmd, " "),
@@ -280,14 +281,20 @@ func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body a
 }
 
 func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name string, env map[string]string, command string) (string, error) {
+	// Use "command" to override the image ENTRYPOINT (kaniko executor) with
+	// a plain shell, and "startup_command" to set CMD with -c and the script.
+	// Scaleway splits "command" by whitespace into an exec array, so shell
+	// operators (&&, >, etc.) in the script would break if placed there.
+	// The startup_command array preserves the script as a single argument.
 	body := map[string]any{
-		"name":                   name,
-		"project_id":             projectID,
-		"cpu_limit":              2000, // 2 vCPU for builds
-		"memory_limit":           4096, // 4 GB RAM for builds
-		"image_uri":              "gcr.io/kaniko-project/executor:debug",
-		"command":                "sh -c '" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'",
-		"environment_variables":  env,
+		"name":                  name,
+		"project_id":            projectID,
+		"cpu_limit":             2000, // 2 vCPU for builds
+		"memory_limit":          4096, // 4 GB RAM for builds
+		"image_uri":             "gcr.io/kaniko-project/executor:debug",
+		"command":               "sh",
+		"startup_command":       []string{"-c", command},
+		"environment_variables": env,
 	}
 
 	resp, err := c.doRequest(ctx, "POST", c.baseURL()+"/job-definitions", body)

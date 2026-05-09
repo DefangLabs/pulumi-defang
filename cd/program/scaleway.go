@@ -6,10 +6,22 @@ import (
 	defangscaleway "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway"
 	scalewaycompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	scaleway "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway"
+	scalewayconfig "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/config"
 )
 
 func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
-	project, err := defangscaleway.NewProject(ctx, cf.Name, toScalewayArgs(cf, etag))
+	// Create an explicit Scaleway provider because pulumi:disable-default-providers
+	// excludes "scaleway" (see cd/main.go projectConfig).
+	scwProvider, err := scaleway.NewProvider(ctx, "scaleway", &scaleway.ProviderArgs{
+		ProjectId: pulumi.StringPtr(scalewayconfig.GetProjectId(ctx)),
+		Region:    pulumi.StringPtr(scalewayconfig.GetRegion(ctx)),
+	})
+	if err != nil {
+		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	project, err := defangscaleway.NewProject(ctx, cf.Name, toScalewayArgs(cf, etag), pulumi.Providers(scwProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}

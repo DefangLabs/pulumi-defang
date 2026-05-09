@@ -105,7 +105,7 @@ func buildSharedInfra(
 	opts ...pulumi.ResourceOption,
 ) (*providerscaleway.SharedInfra, error) {
 	infra := providerscaleway.NewStandaloneInfra(ctx, projectName)
-	infra.ConfigProvider = &compose.PulumiConfigProvider{}
+	infra.ConfigProvider = providerscaleway.NewConfigProvider(projectName)
 
 	namespace, err := providerscaleway.CreateContainerNamespace(ctx, projectName, infra, opts...)
 	if err != nil {

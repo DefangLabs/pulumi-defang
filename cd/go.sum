@@ -335,6 +335,8 @@ github.com/pulumi/pulumi-gcp/sdk/v9 v9.21.0 h1:E5oFyW2+lLoP+FZv6E7KhP7EdUkKmzQVb
 github.com/pulumi/pulumi-gcp/sdk/v9 v9.21.0/go.mod h1:H1Fnf8QWRx5BrmLovtbE0yT1YCWxOCwUrx8CRWNNOqg=
 github.com/pulumi/pulumi/sdk/v3 v3.231.0 h1:iAulagysgpFd3l2k3B2fsNtvcEy1ruOkyi++vwVQE2w=
 github.com/pulumi/pulumi/sdk/v3 v3.231.0/go.mod h1:l5TYGBUlKrkq3z/SbmTGIUD6JrzyRtPWI3wKZA+IXeo=
+github.com/pulumiverse/pulumi-scaleway/sdk v1.48.0 h1:zmelLnuswmPZxT9Atx3oO28wPPXE9omvS8cOBORE2JA=
+github.com/pulumiverse/pulumi-scaleway/sdk v1.48.0/go.mod h1:dYY45NvmAVJER4vCDu8o1UesXkVDguFXXevEvv9JUXg=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
