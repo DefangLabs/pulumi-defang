@@ -151,9 +151,17 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 	host := registryHost(inputs.Destination)
 	dockerConfig := dockerConfigJSON(host, secretKey)
 
+	// Build the shell script that writes Docker config for registry auth,
+	// then runs the Kaniko executor.
+	shellCmd := fmt.Sprintf(
+		`mkdir -p /kaniko/.docker && echo "$DOCKER_CONFIG_JSON" > /kaniko/.docker/config.json && %s`,
+		strings.Join(kanikoCmd, " "),
+	)
+
 	// Environment for Kaniko:
 	// - AWS SDK env vars for S3-compatible build context access
-	// - DOCKER_CONFIG_JSON for registry authentication (written by entrypoint)
+	// - DOCKER_CONFIG_JSON for registry authentication (written by script)
+	// - KANIKO_SCRIPT holds the full build script, executed via eval
 	env := map[string]string{
 		"AWS_ACCESS_KEY_ID":     os.Getenv("AWS_ACCESS_KEY_ID"),
 		"AWS_SECRET_ACCESS_KEY": os.Getenv("AWS_SECRET_ACCESS_KEY"),
@@ -161,18 +169,10 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		"S3_ENDPOINT":           fmt.Sprintf("https://s3.%s.scw.cloud", inputs.Region),
 		"S3_FORCE_PATH_STYLE":   "true",
 		"DOCKER_CONFIG_JSON":    dockerConfig,
+		"KANIKO_SCRIPT":         shellCmd,
 	}
 
-	// Build the shell script that writes Docker config for registry auth,
-	// then runs the Kaniko executor. Scaleway Serverless Jobs wraps the
-	// command string in `sh -c` internally, so we must NOT add our own
-	// `sh -c '...'` wrapper (which caused quoting issues).
-	shellCmd := fmt.Sprintf(
-		`mkdir -p /kaniko/.docker && echo "$DOCKER_CONFIG_JSON" > /kaniko/.docker/config.json && %s`,
-		strings.Join(kanikoCmd, " "),
-	)
-
-	defID, err := client.createJobDefinition(ctx, inputs.ProjectId, sanitizeJobName(inputs.Destination), env, shellCmd)
+	defID, err := client.createJobDefinition(ctx, inputs.ProjectId, sanitizeJobName(inputs.Destination), env)
 	if err != nil {
 		return "", fmt.Errorf("creating Kaniko job definition: %w", err)
 	}
@@ -280,20 +280,25 @@ func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body a
 	return resp, nil
 }
 
-func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name string, env map[string]string, command string) (string, error) {
-	// Use "command" to override the image ENTRYPOINT (kaniko executor) with
-	// a plain shell, and "startup_command" to set CMD with -c and the script.
-	// Scaleway splits "command" by whitespace into an exec array, so shell
-	// operators (&&, >, etc.) in the script would break if placed there.
-	// The startup_command array preserves the script as a single argument.
+func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name string, env map[string]string) (string, error) {
+	// Scaleway Serverless Jobs splits the "command" string by whitespace into
+	// an exec array. Only "command" and "environment_variables" are inherited
+	// by job runs; "args" and "startup_command" are NOT.
+	//
+	// To run a multi-command shell script we use an env-var bootstrap:
+	//   command: "sh -c eval$IFS$KANIKO_SCRIPT"
+	// After whitespace split → exec["sh", "-c", "eval$IFS$KANIKO_SCRIPT"]
+	// sh parses the script text "eval$IFS$KANIKO_SCRIPT":
+	//   - $IFS expands to space/tab/newline (no literal whitespace in token)
+	//   - $KANIKO_SCRIPT expands to the full build script
+	//   - eval re-parses the expansion as shell code (with &&, >, etc.)
 	body := map[string]any{
 		"name":                  name,
 		"project_id":            projectID,
 		"cpu_limit":             2000, // 2 vCPU for builds
 		"memory_limit":          4096, // 4 GB RAM for builds
 		"image_uri":             "gcr.io/kaniko-project/executor:debug",
-		"command":               "sh",
-		"startup_command":       []string{"-c", command},
+		"command":               "sh -c eval$IFS$KANIKO_SCRIPT",
 		"environment_variables": env,
 	}
 
@@ -317,11 +322,17 @@ func (c *scwAPIClient) runJob(ctx context.Context, definitionID string) (string,
 	}
 	defer resp.Body.Close()
 
-	var run jobRunResponse
-	if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
+	// The start endpoint returns {"job_runs": [...]} not a flat object
+	var result struct {
+		JobRuns []jobRunResponse `json:"job_runs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("decoding job run response: %w", err)
 	}
-	return run.ID, nil
+	if len(result.JobRuns) == 0 {
+		return "", fmt.Errorf("no job runs returned from start")
+	}
+	return result.JobRuns[0].ID, nil
 }
 
 func (c *scwAPIClient) getJobRunStatus(ctx context.Context, runID string) (state, errMsg string, err error) {
