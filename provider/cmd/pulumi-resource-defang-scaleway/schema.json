@@ -261,6 +261,98 @@
   },
   "provider": {},
   "resources": {
+    "defang-scaleway:index:Build": {
+      "properties": {
+        "buildArgs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "buildId": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "maxWaitTime": {
+          "type": "integer"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "region",
+        "projectId",
+        "source",
+        "destination",
+        "buildId",
+        "image"
+      ],
+      "inputProperties": {
+        "buildArgs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "destination": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "maxWaitTime": {
+          "type": "integer"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "requiredInputs": [
+        "region",
+        "projectId",
+        "source",
+        "destination"
+      ]
+    },
     "defang-scaleway:index:Postgres": {
       "properties": {
         "connectionUrl": {
