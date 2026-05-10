@@ -153,6 +153,8 @@ func containerProtocol(svc compose.ServiceConfig) string {
 	}
 }
 
+const defaultHealthShimPort = 8080
+
 func containerPort(svc compose.ServiceConfig) pulumi.IntPtrInput {
 	for _, p := range svc.Ports {
 		if p.Target > 0 {
@@ -160,6 +162,67 @@ func containerPort(svc compose.ServiceConfig) pulumi.IntPtrInput {
 		}
 	}
 	return nil
+}
+
+// needsHealthShim returns true when the service has no ports defined.
+// Scaleway Serverless Containers require a listening HTTP port; background
+// workers without ports need a small HTTP health responder injected.
+func needsHealthShim(svc compose.ServiceConfig) bool {
+	return containerPort(svc) == nil
+}
+
+// healthShimScript returns a shell script that starts a minimal HTTP health
+// responder in the background on $PORT (defaulting to 8080), then execs the
+// original command. The responder tries multiple runtimes in order of
+// preference: node, python3, python. If none are available it falls back to
+// a busybox-compatible shell+nc loop.
+func healthShimScript(svc compose.ServiceConfig) string {
+	// Build the original command to exec into. If the service has an
+	// explicit entrypoint+command we use that; otherwise we fall back to
+	// "exec" with whatever command was specified (the image ENTRYPOINT
+	// handles the rest).
+	var original string
+	if len(svc.Entrypoint) > 0 {
+		original = shellJoin(append(svc.Entrypoint, svc.Command...))
+	} else if len(svc.Command) > 0 {
+		original = shellJoin(svc.Command)
+	} else {
+		// No explicit command — we cannot wrap something we don't know.
+		// Return empty to signal the caller should not inject the shim.
+		return ""
+	}
+
+	// The health server candidates. Each is a self-contained one-liner
+	// that listens on $PORT and responds 200 OK to any request.
+	// We chain them with || so the first available runtime wins.
+	return `(` +
+		`node -e "require('http').createServer((_,r)=>{r.writeHead(200);r.end('OK')}).listen(process.env.PORT||8080)" 2>/dev/null || ` +
+		`python3 -c "from http.server import HTTPServer,BaseHTTPRequestHandler;import os;HTTPServer(('0.0.0.0',int(os.environ.get('PORT',8080))),BaseHTTPRequestHandler).serve_forever()" 2>/dev/null || ` +
+		`python -c "from http.server import HTTPServer,BaseHTTPRequestHandler;import os;HTTPServer(('0.0.0.0',int(os.environ.get('PORT',8080))),BaseHTTPRequestHandler).serve_forever()" 2>/dev/null || ` +
+		`while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK' | nc -l -p ${PORT:-8080} -q 0 2>/dev/null || break; done` +
+		`) & exec ` + original
+}
+
+// shellJoin quotes each argument for safe shell evaluation.
+func shellJoin(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, a := range args {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		// If the arg is safe (no spaces/special chars), use it as-is
+		if !strings.ContainsAny(a, " \t\n\"'\\$;|&(){}[]<>?*~`!#") {
+			b.WriteString(a)
+		} else {
+			b.WriteByte('\'')
+			b.WriteString(strings.ReplaceAll(a, "'", "'\"'\"'"))
+			b.WriteByte('\'')
+		}
+	}
+	return b.String()
 }
 
 func containerPrivacy(svc compose.ServiceConfig) string {
@@ -310,11 +373,27 @@ func CreateContainerService(
 	}
 	env, secrets := containerEnvironment(ctx, configProvider, serviceName, svc, infra)
 	privacy := containerPrivacy(svc)
+
+	port := containerPort(svc)
+	commands := compose.ToPulumiStringArray(svc.Entrypoint)
+	cmdArgs := compose.ToPulumiStringArray(svc.Command)
+
+	// Scaleway Serverless Containers require a listening HTTP port. For
+	// background workers with no ports we inject a minimal health shim
+	// that starts a tiny HTTP responder on $PORT then execs the real command.
+	if needsHealthShim(svc) {
+		if script := healthShimScript(svc); script != "" {
+			port = pulumi.IntPtr(defaultHealthShimPort)
+			commands = pulumi.StringArray{pulumi.String("/bin/sh"), pulumi.String("-c")}
+			cmdArgs = pulumi.StringArray{pulumi.String(script)}
+		}
+	}
+
 	args := &containers.ContainerArgs{
 		Name:                       pulumi.StringPtr(serviceName),
 		NamespaceId:                infra.Namespace.ID(),
 		RegistryImage:              image.ToStringOutput().ToStringPtrOutput(),
-		Port:                       containerPort(svc),
+		Port:                       port,
 		CpuLimit:                   pulumi.IntPtr(containerCPULimit(svc.GetCPUs())),
 		MemoryLimit:                pulumi.IntPtr(containerMemoryLimit(svc.GetMemoryMiB())),
 		MinScale:                   containerMinScale(svc),
@@ -322,8 +401,8 @@ func CreateContainerService(
 		Privacy:                    pulumi.StringPtr(privacy),
 		Protocol:                   pulumi.StringPtr(containerProtocol(svc)),
 		Deploy:                     pulumi.BoolPtr(true),
-		Commands:                   compose.ToPulumiStringArray(svc.Entrypoint),
-		Args:                       compose.ToPulumiStringArray(svc.Command),
+		Commands:                   commands,
+		Args:                       cmdArgs,
 		HealthChecks:               containerHealthChecks(svc),
 		EnvironmentVariables:       env,
 		SecretEnvironmentVariables: secrets,
