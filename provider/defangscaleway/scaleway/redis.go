@@ -3,7 +3,6 @@ package scaleway
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -37,22 +36,8 @@ func redisNodeType(memMiB int) string {
 }
 
 func redisVersionFromImage(image *string) string {
-	if image == nil {
-		return "7.2.5"
-	}
-	tag := compose.ParseImageTag(*image)
-	if tag == "" {
-		return "7.2.5"
-	}
-	parts := strings.Split(tag, ".")
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return "7.2.5"
-	}
-	if major <= 6 {
-		return "6.2.7"
-	}
-	return "7.2.5"
+	// Scaleway only offers Redis 8.4.0 as of 2026-05; always use it.
+	return "8.4.0"
 }
 
 func redisPassword(password pulumi.StringInput) pulumi.StringPtrInput {
