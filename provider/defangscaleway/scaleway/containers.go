@@ -233,6 +233,13 @@ func containerPrivacy(svc compose.ServiceConfig) string {
 }
 
 func containerMinScale(svc compose.ServiceConfig) pulumi.IntPtrInput {
+	// Background workers (no ports) must always have at least one instance
+	// running because Scaleway only wakes scaled-to-zero containers on
+	// inbound HTTP requests. Queue consumers and other background processes
+	// won't receive HTTP traffic to trigger a scale-up.
+	if needsHealthShim(svc) {
+		return pulumi.IntPtr(1)
+	}
 	if svc.GetReplicas() <= 1 {
 		return pulumi.IntPtr(0)
 	}
