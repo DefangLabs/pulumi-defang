@@ -168,6 +168,12 @@ For a service with `command: ["npm", "run", "worker"]` and no ports:
 
 The shim uses a cascade of common runtimes so it works across Node.js, Python, Alpine, and other base images. The `exec` ensures the real command replaces the shell as PID 1 for proper signal handling.
 
+### Critical: min_scale=1 for Portless Workers
+
+Scaleway Serverless Containers only wake scaled-to-zero instances on **inbound HTTP requests**. Background workers that poll Redis/databases internally (like BullMQ consumers) never receive HTTP traffic, so they stay at zero instances permanently after scaling down. This was discovered when the mastra-extended worker container stopped processing queue jobs after scaling to zero.
+
+**Fix:** `containerMinScale()` now returns 1 for services that need the health shim (no ports). This ensures they always have at least one running instance. Services with ports can still scale to zero since HTTP traffic will wake them.
+
 ### Mastra Extended End-to-End Validation
 
 Deployed `samples/mastra-extended` (6-service compose) on Scaleway with full success:
