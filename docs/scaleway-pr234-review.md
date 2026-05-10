@@ -31,8 +31,9 @@ The Scaleway provider is intentionally smaller:
 - App services map to Scaleway Serverless Containers.
 - Postgres maps to Scaleway Managed Database for PostgreSQL.
 - Redis maps to Scaleway Managed Redis.
-- Build-from-source is not implemented; services need pre-built images.
-- There is no Scaleway equivalent yet for GCP's DNS/load-balancer layer, project state upload, LLM support, or build pipeline.
+- Build-from-source uses Kaniko via Scaleway Serverless Jobs (patched for gVisor sandbox compatibility).
+- LLM support works via CLI-level compose fixup pointing to Scaleway's Generative API (no sidecar needed).
+- There is no Scaleway equivalent yet for GCP's DNS/load-balancer layer or CD state upload.
 
 ## Findings And Fixes
 
@@ -52,7 +53,7 @@ The Scaleway provider is intentionally smaller:
 
 These are not regressions from the patch above, but they remain real limitations compared with GCP:
 
-- Build-from-source for Scaleway is still missing. GCP provisions build infra and resolves images; Scaleway requires pre-built images.
+- ~~Build-from-source for Scaleway is still missing.~~ **Resolved (2026-05-09):** Build-from-source implemented via Kaniko running in Scaleway Serverless Jobs. The Kaniko image is patched for gVisor sandbox compatibility (chown, setgroups, apt sandbox). Source context is uploaded to Scaleway Object Storage (S3-compatible), built images are pushed to Scaleway Container Registry. Validated end-to-end with `nextjs-postgres` sample.
 - Scaleway CD does not upload a post-deploy `ProjectUpdate` artifact like GCP does for `gs://` state URLs.
 - ~~There is no Scaleway LLM resource mapping.~~ **Resolved (2026-05-10):** LLM support works via CLI-level fixup. The CLI strips model services and injects env vars pointing to Scaleway's Generative API (`https://api.scaleway.ai/v1/`). No Pulumi resources needed — unlike AWS/GCP which deploy LiteLLM sidecars, Scaleway uses a public OpenAI-compatible endpoint. Chat and embedding models validated end-to-end.
 - There is no Scaleway DNS/load-balancer abstraction comparable to GCP's wildcard certificate and load-balancer path.

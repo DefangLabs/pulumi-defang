@@ -10,11 +10,13 @@ The API service creates a `demo_hits` table if needed, inserts one row for each
 request, and returns the current row count. The web service calls the API and
 renders the API response.
 
-## Why this is not a Compose build example
+## Why this demo uses pre-built images
 
-The Scaleway provider currently requires pre-built images. Build-from-source is
-not implemented for Scaleway Serverless Containers in this PR, so publish the
-two images first and pass their image references to the Pulumi example.
+The Scaleway provider supports build-from-source via Kaniko in Serverless Jobs,
+but this standalone Pulumi example uses pre-built images for simplicity. The
+build pipeline is wired through the `Project` component and CD task, not through
+standalone `Service` resources. To test build-from-source, use `defang compose up`
+with a compose file that has `build:` directives.
 
 ## Publish images without Docker
 

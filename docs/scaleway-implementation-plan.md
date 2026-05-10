@@ -182,7 +182,7 @@ AWS, GCP, and Azure all have a custom `Build` resource that invokes a managed cl
 2. Use Scaleway Serverless Jobs to run a build container and push to Container Registry.
 3. Use the current CD sandbox build path and push directly to Scaleway Container Registry from the CD environment.
 
-Recommended first implementation: option 1 or 3. The current prototype omits the public `Build` resource and returns a clear error for `build:` services in `Project`; avoid inventing a complex Serverless Jobs builder until there is a product requirement.
+**Implemented:** Option 2 — Scaleway Serverless Jobs runs a patched Kaniko executor. See `provider/defangscaleway/build.go` for the `Build` custom resource and `provider/defangscaleway/scaleway/image.go` for the `GetServiceImage` dispatch. The Kaniko image is patched for gVisor sandbox compatibility (chown, setgroups, apt sandbox). Source context is fetched from Scaleway Object Storage (S3-compatible), and built images are pushed to Scaleway Container Registry.
 
 ### Runtime
 
@@ -242,7 +242,7 @@ Scaleway Managed Inference can map to the existing `svc.LLM` path:
 - Create `scaleway.inference.Deployment` with `acceptEula` where needed.
 - Export the deployment endpoint/base URL into dependent service env vars.
 
-This should be a second-phase feature unless Scaleway LLM support is required for first launch.
+**Implemented differently:** Scaleway LLM support works via CLI-level compose fixup rather than Pulumi resources. The CLI strips `provider: type: model` services and injects env vars pointing to Scaleway's Generative API (`https://api.scaleway.ai/v1/`), which is OpenAI-compatible. No sidecar or Managed Inference deployment needed. See `src/pkg/cli/compose/fixup.go` in the CLI repo.
 
 ## Detailed Checklist
 
@@ -266,7 +266,7 @@ This should be a second-phase feature unless Scaleway LLM support is required fo
 ### Provider Schema
 
 - [x] Implement `provider/defangscaleway/provider.go`.
-- [ ] Register `Build` resource if a build path is included.
+- [x] Register `Build` resource if a build path is included.
 - [x] Register `Project`, `Service`, `Postgres`, and `Redis` components.
 - [x] Set metadata: description, keywords, homepage, repo, publisher, logo, license, plugin download URL.
 - [x] Set language package names, likely `@defang-io/pulumi-defang-scaleway` and matching Go/Python/.NET names.
@@ -299,10 +299,10 @@ This should be a second-phase feature unless Scaleway LLM support is required fo
 ### Image Handling
 
 - [x] Implement `GetServiceImage` for pre-built images.
-- [ ] Implement `GetServiceImage` for `build:` services once the build decision is made.
+- [x] Implement `GetServiceImage` for `build:` services once the build decision is made.
 - [x] Keep standalone `Service` image-only unless all other providers are changed consistently.
-- [ ] If building in CD, push to Scaleway registry and feed the immutable image URI into Pulumi.
-- [ ] If building in Pulumi, implement `Build` custom resource, polling, timeout, dry-run behavior, replacement triggers, and image output.
+- [x] If building in CD, push to Scaleway registry and feed the immutable image URI into Pulumi.
+- [x] If building in Pulumi, implement `Build` custom resource, polling, timeout, dry-run behavior, replacement triggers, and image output.
 - [ ] Add unit tests for image URI parsing and build trigger hashing.
 
 ### Service Component
@@ -371,7 +371,7 @@ This should be a second-phase feature unless Scaleway LLM support is required fo
 
 ## Risks and Open Questions
 
-- Scaleway does not appear to expose a managed build service equivalent to CodeBuild, Cloud Build, or ACR Tasks in the Pulumi provider. Decide whether the build lives in CD/CLI or is modeled through Serverless Jobs.
+- ~~Scaleway does not appear to expose a managed build service equivalent to CodeBuild, Cloud Build, or ACR Tasks in the Pulumi provider.~~ **Resolved:** Build implemented via Kaniko in Scaleway Serverless Jobs. Requires a patched Kaniko image for gVisor sandbox compatibility.
 - Serverless Containers support Private Network egress to private resources, but private inbound service-to-service discovery needs validation before replacing current provider behavior for internal services.
 - Serverless Containers have one primary port. Multiple ports, UDP, and arbitrary TCP service exposure may require a fallback runtime or an explicit unsupported error.
 - Custom domains require a DNS CNAME to the generated container endpoint. Scaleway `containers.Domain` can attach the domain, but DNS automation depends on whether the zone is managed by Scaleway or external.

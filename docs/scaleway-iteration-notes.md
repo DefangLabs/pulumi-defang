@@ -205,7 +205,6 @@ Unlike AWS (Bedrock + LiteLLM sidecar) and GCP (Vertex AI + LiteLLM sidecar), Sc
 
 ### Known Limitations
 
-- Build-from-source not supported (requires pre-built images)
 - No CD state upload (like GCP's GCS state URL)
 - DNS/load-balancer abstraction not comparable to GCP
 - **Container-to-container private networking not supported** (Scaleway limitation, egress-only PN)
