@@ -137,14 +137,75 @@ private database endpoint.
 - Container scaling behavior (minScale 0 → cold start latency)
 - Custom domain attachment and DNS verification
 
+## 2026-05-10: Health Shim, Redis 8.4.0, and LLM End-to-End
+
+### Changes Made
+
+1. **Redis version updated to 8.4.0** (`provider/defangscaleway/scaleway/redis.go`)
+   - Scaleway removed Redis 6.2.7 and 7.2.5; only 8.4.0 is available as of 2026-05
+   - `redisVersionFromImage()` now always returns `"8.4.0"` regardless of compose image tag
+   - Tests updated accordingly
+
+2. **Health shim for portless background workers** (`provider/defangscaleway/scaleway/containers.go`)
+   - Scaleway Serverless Containers **require** a listening HTTP port (documented requirement: "It must expose a webserver port and be listening on `0.0.0.0`")
+   - Background workers (queue consumers, cron jobs) that don't expose ports previously failed with "Container is unable to start OR is not listening on port 8080"
+   - Added automatic health shim injection: when a service has no ports but has a command defined, the provider wraps the command with a shell script that:
+     1. Starts a tiny HTTP health responder on `$PORT` in the background
+     2. Tries runtimes in order: `node`, `python3`, `python`, `nc` (shell+netcat fallback)
+     3. Execs the original command as PID 1
+   - Port is set to 8080 (Scaleway's default)
+   - `Commands` becomes `["/bin/sh", "-c"]`, `Args` becomes the shim script
+   - Helper functions: `needsHealthShim()`, `healthShimScript()`, `shellJoin()`
+   - Full test coverage: `TestHealthShim`, `TestHealthShimInjectedInContainer`, `TestShellJoin`
+
+### Shim Script Shape
+
+For a service with `command: ["npm", "run", "worker"]` and no ports:
+
+```sh
+/bin/sh -c '(node -e "require('"'"'http'"'"').createServer((_,r)=>{...}).listen(process.env.PORT||8080)" 2>/dev/null || python3 -c "..." 2>/dev/null || ...) & exec npm run worker'
+```
+
+The shim uses a cascade of common runtimes so it works across Node.js, Python, Alpine, and other base images. The `exec` ensures the real command replaces the shell as PID 1 for proper signal handling.
+
+### Mastra Extended End-to-End Validation
+
+Deployed `samples/mastra-extended` (6-service compose) on Scaleway with full success:
+
+| Service | Type | Status | Notes |
+|---------|------|--------|-------|
+| **app** | Serverless Container | ready | Next.js UI + Mastra agent API, port 3000 |
+| **worker** | Serverless Container | ready | BullMQ queue consumer, health shim on port 8080 |
+| **postgres** | Managed Database | ready | Scaleway Managed PostgreSQL |
+| **redis** | Managed Redis | ready | Scaleway Managed Redis 8.4.0 |
+| **chat** | Scaleway Generative API | N/A | `llama-3.3-70b-instruct` (CLI resolves, no container) |
+| **embedding** | Scaleway Generative API | N/A | `bge-multilingual-gemma2` (CLI resolves, no container) |
+
+**Validated flows:**
+- App serves Next.js UI (HTTP 200)
+- Data seeding: 20 items generated, all 20 classified via embedding model, 0 failures
+- BullMQ queue: worker processes jobs from Redis queue correctly
+- Chat API: LLM calls tools (`getTasks`, `getEvents`), returns structured responses
+- Streaming: NDJSON stream with tool calls and text deltas working
+
+### LLM Architecture on Scaleway
+
+Unlike AWS (Bedrock + LiteLLM sidecar) and GCP (Vertex AI + LiteLLM sidecar), Scaleway uses **direct API access**:
+
+- CLI strips `provider: type: model` services during compose fixup
+- Dependent services receive env vars pointing to `https://api.scaleway.ai/v1/`
+- No sidecar container deployed; authentication via `OPENAI_API_KEY` (user's Scaleway secret key)
+- Model resolution: `chat-default` → `llama-3.3-70b-instruct`, `embedding-default` → `bge-multilingual-gemma2`
+
 ### Known Limitations
 
 - Build-from-source not supported (requires pre-built images)
-- LLM/Managed Inference not implemented
 - No CD state upload (like GCP's GCS state URL)
 - DNS/load-balancer abstraction not comparable to GCP
 - **Container-to-container private networking not supported** (Scaleway limitation, egress-only PN)
 - Cold starts may be slightly longer when private network is attached (IP booking overhead)
+- Health shim for portless services requires at least `sh` in the container image; if the service has no explicit command AND the image ENTRYPOINT is unknown, the shim cannot be injected
+- Scaleway Generative API model selection is hardcoded (no dynamic model discovery like Azure)
 
 ### Credentials Status
 
