@@ -188,3 +188,79 @@ func TestCreateContainerServicePrivateService(t *testing.T) {
 	require.NotNil(t, container)
 	assert.Equal(t, "private", container.inputs[resource.PropertyKey("privacy")].StringValue())
 }
+
+func TestHealthShim(t *testing.T) {
+	t.Run("no ports and command triggers shim", func(t *testing.T) {
+		svc := compose.ServiceConfig{
+			Command: []string{"npm", "run", "worker"},
+		}
+		assert.True(t, needsHealthShim(svc))
+		script := healthShimScript(svc)
+		assert.NotEmpty(t, script)
+		assert.Contains(t, script, "exec npm run worker")
+		assert.Contains(t, script, "node -e")
+		assert.Contains(t, script, "python3 -c")
+	})
+
+	t.Run("no ports and entrypoint+command", func(t *testing.T) {
+		svc := compose.ServiceConfig{
+			Entrypoint: []string{"/usr/bin/env"},
+			Command:    []string{"node", "worker.js"},
+		}
+		script := healthShimScript(svc)
+		assert.Contains(t, script, "exec /usr/bin/env node worker.js")
+	})
+
+	t.Run("no ports and no command returns empty", func(t *testing.T) {
+		svc := compose.ServiceConfig{}
+		assert.True(t, needsHealthShim(svc))
+		assert.Empty(t, healthShimScript(svc))
+	})
+
+	t.Run("has ports does not need shim", func(t *testing.T) {
+		svc := compose.ServiceConfig{
+			Ports:   []compose.ServicePortConfig{{Target: 3000, Mode: compose.PortModeIngress}},
+			Command: []string{"npm", "start"},
+		}
+		assert.False(t, needsHealthShim(svc))
+	})
+}
+
+func TestHealthShimInjectedInContainer(t *testing.T) {
+	mocks := &recordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		namespace, err := containers.NewNamespace(ctx, "ns", &containers.NamespaceArgs{})
+		if err != nil {
+			return err
+		}
+		_, err = CreateContainerService(ctx, &mockConfigProvider{}, "worker", pulumi.String("myapp:latest"), compose.ServiceConfig{
+			Command: []string{"npm", "run", "worker"},
+		}, &SharedInfra{Namespace: namespace, Region: "fr-par"})
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+
+	require.NoError(t, err)
+	container := mocks.findType("scaleway:containers/container:Container")
+	require.NotNil(t, container)
+
+	// Port should be set to default health shim port
+	assert.Equal(t, float64(defaultHealthShimPort), container.inputs[resource.PropertyKey("port")].NumberValue())
+
+	// Commands should be ["/bin/sh", "-c"]
+	cmds := container.inputs[resource.PropertyKey("commands")].ArrayValue()
+	require.Len(t, cmds, 2)
+	assert.Equal(t, "/bin/sh", cmds[0].StringValue())
+	assert.Equal(t, "-c", cmds[1].StringValue())
+
+	// Args should contain the shim script wrapping the original command
+	args := container.inputs[resource.PropertyKey("args")].ArrayValue()
+	require.Len(t, args, 1)
+	assert.Contains(t, args[0].StringValue(), "exec npm run worker")
+	assert.Contains(t, args[0].StringValue(), "node -e")
+}
+
+func TestShellJoin(t *testing.T) {
+	assert.Equal(t, "npm run worker", shellJoin([]string{"npm", "run", "worker"}))
+	assert.Equal(t, "echo 'hello world'", shellJoin([]string{"echo", "hello world"}))
+	assert.Equal(t, "cmd 'it'\"'\"'s'", shellJoin([]string{"cmd", "it's"}))
+}
