@@ -141,6 +141,36 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	assert.Equal(t, "5s", healthCheck[resource.PropertyKey("interval")].StringValue())
 }
 
+func TestFindManagedHostInURL(t *testing.T) {
+	hosts := map[string]pulumi.StringOutput{
+		"postgres": {},
+		"redis":    {},
+	}
+
+	tests := []struct {
+		name    string
+		raw     string
+		wantSvc string
+		wantOK  bool
+	}{
+		{"postgres URL with userinfo", "postgres://user:pass@postgres:5432/db", "postgres", true},
+		{"redis URL", "redis://redis:6379", "redis", true},
+		{"rediss URL with path", "rediss://default:secret@redis:6379/0", "redis", true},
+		{"no scheme", "postgres:5432", "", false},
+		{"plain value", "postgres", "", false},
+		{"unknown host", "postgres://user:pass@unknown:5432/db", "", false},
+		{"http URL", "http://postgres/health", "postgres", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, ok := findManagedHostInURL(tt.raw, hosts)
+			assert.Equal(t, tt.wantSvc, svc)
+			assert.Equal(t, tt.wantOK, ok)
+		})
+	}
+}
+
 func TestCreateContainerServicePrivateService(t *testing.T) {
 	mocks := &recordingMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {

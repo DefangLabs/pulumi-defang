@@ -242,10 +242,52 @@ func containerEnvironment(
 				env[k] = pulumi.String(defaultScalewayPostgresUser)
 				continue
 			}
+			// Check if the value is a URL containing a managed service name as the hostname.
+			if infra.ManagedConnectionURLs != nil {
+				if svcName, ok := findManagedHostInURL(raw, infra.ManagedHosts); ok {
+					if connURL, ok := infra.ManagedConnectionURLs[svcName]; ok {
+						// Preserve query parameters from the original URL.
+						if queryStart := strings.IndexByte(raw, '?'); queryStart >= 0 {
+							extraParams := raw[queryStart+1:]
+							env[k] = connURL.ApplyT(func(u string) string {
+								if strings.Contains(u, "?") {
+									return u + "&" + extraParams
+								}
+								return u + "?" + extraParams
+							}).(pulumi.StringOutput)
+						} else {
+							env[k] = connURL
+						}
+						continue
+					}
+				}
+			}
 		}
 		env[k] = compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
 	}
 	return env, secrets
+}
+
+// findManagedHostInURL checks whether a raw string looks like a URL whose
+// hostname matches one of the managed service names.
+func findManagedHostInURL(raw string, managedHosts map[string]pulumi.StringOutput) (string, bool) {
+	schemeEnd := strings.Index(raw, "://")
+	if schemeEnd < 0 {
+		return "", false
+	}
+	hostPart := raw[schemeEnd+3:]
+	if at := strings.LastIndex(hostPart, "@"); at >= 0 {
+		hostPart = hostPart[at+1:]
+	}
+	if colon := strings.IndexByte(hostPart, ':'); colon >= 0 {
+		hostPart = hostPart[:colon]
+	} else if slash := strings.IndexByte(hostPart, '/'); slash >= 0 {
+		hostPart = hostPart[:slash]
+	}
+	if _, ok := managedHosts[hostPart]; ok {
+		return hostPart, true
+	}
+	return "", false
 }
 
 func CreateContainerService(

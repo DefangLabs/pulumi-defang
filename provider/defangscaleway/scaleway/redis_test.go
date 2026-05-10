@@ -24,8 +24,8 @@ func TestRedisVersionFromImage(t *testing.T) {
 }
 
 func TestRedisAddressFromConnectionString(t *testing.T) {
-	assert.Equal(t, "10.0.0.7:6379", redisAddressFromConnectionString("redis://10.0.0.7:6379"))
-	assert.Equal(t, "10.0.0.7:6379", redisAddressFromConnectionString("rediss://default:secret@10.0.0.7:6379/0"))
+	assert.Equal(t, "10.0.0.7:6379", RedisAddressFromConnectionString("redis://10.0.0.7:6379"))
+	assert.Equal(t, "10.0.0.7:6379", RedisAddressFromConnectionString("rediss://default:secret@10.0.0.7:6379/0"))
 }
 
 func TestRedisNodeType(t *testing.T) {

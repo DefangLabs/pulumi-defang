@@ -92,6 +92,16 @@ func createRedis(
 	comp.Cluster = result.Cluster
 	comp.Dependency = result.Cluster
 
+	// Store the managed Redis host and connection URL for container env rewriting.
+	if infra != nil && infra.ManagedHosts != nil {
+		infra.ManagedHosts[serviceName] = result.Cluster.ConnectionString.ApplyT(
+			providerscaleway.RedisAddressFromConnectionString,
+		).(pulumi.StringOutput)
+	}
+	if infra != nil && infra.ManagedConnectionURLs != nil {
+		infra.ManagedConnectionURLs[serviceName] = result.ConnectionURL
+	}
+
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoint":      comp.Endpoint,
 		"connectionUrl": comp.ConnectionURL,

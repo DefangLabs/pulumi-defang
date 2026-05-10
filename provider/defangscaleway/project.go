@@ -116,6 +116,7 @@ func buildSharedInfra(
 		RegistryEndpoint: namespace.RegistryEndpoint,
 	}
 	infra.ManagedHosts = make(map[string]pulumi.StringOutput)
+	infra.ManagedConnectionURLs = make(map[string]pulumi.StringOutput)
 
 	pn, err := network.NewPrivateNetwork(ctx, projectName+"-private-network", &network.PrivateNetworkArgs{
 		Name: pulumi.StringPtr(projectName),

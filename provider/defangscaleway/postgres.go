@@ -94,6 +94,9 @@ func createPostgres(
 	if infra != nil && infra.ManagedHosts != nil {
 		infra.ManagedHosts[serviceName] = result.Host
 	}
+	if infra != nil && infra.ManagedConnectionURLs != nil {
+		infra.ManagedConnectionURLs[serviceName] = result.ConnectionURL
+	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoint":      comp.Endpoint,

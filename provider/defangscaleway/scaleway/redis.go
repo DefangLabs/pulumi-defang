@@ -75,7 +75,7 @@ func redisClusterSize(svc compose.ServiceConfig) int {
 	return int(replicas)
 }
 
-func redisAddressFromConnectionString(s string) string {
+func RedisAddressFromConnectionString(s string) string {
 	s = strings.TrimPrefix(s, "redis://")
 	s = strings.TrimPrefix(s, "rediss://")
 	if at := strings.LastIndex(s, "@"); at >= 0 {
@@ -166,7 +166,7 @@ func CreateRedis(
 			return "redis"
 		}).(pulumi.StringOutput),
 		password,
-		cluster.ConnectionString.ApplyT(redisAddressFromConnectionString).(pulumi.StringOutput),
+		cluster.ConnectionString.ApplyT(RedisAddressFromConnectionString).(pulumi.StringOutput),
 	)).(pulumi.StringOutput)
 
 	return &RedisResult{Cluster: cluster, ConnectionURL: connectionURL}, nil

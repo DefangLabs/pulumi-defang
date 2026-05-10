@@ -39,6 +39,10 @@ type SharedInfra struct {
 	// hostname of the managed resource. Used by container services to rewrite
 	// environment variables that reference managed services by Compose name.
 	ManagedHosts map[string]pulumi.StringOutput
+	// ManagedConnectionURLs maps Compose service names to their full connection
+	// URLs (e.g., "postgres://user:pass@host:port/db"). Used to replace env
+	// values that contain URLs pointing to managed services.
+	ManagedConnectionURLs map[string]pulumi.StringOutput
 }
 
 type PostgresResult struct {
