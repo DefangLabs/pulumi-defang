@@ -54,9 +54,15 @@ These are not regressions from the patch above, but they remain real limitations
 
 - Build-from-source for Scaleway is still missing. GCP provisions build infra and resolves images; Scaleway requires pre-built images.
 - Scaleway CD does not upload a post-deploy `ProjectUpdate` artifact like GCP does for `gs://` state URLs.
-- There is no Scaleway LLM resource mapping.
+- ~~There is no Scaleway LLM resource mapping.~~ **Resolved (2026-05-10):** LLM support works via CLI-level fixup. The CLI strips model services and injects env vars pointing to Scaleway's Generative API (`https://api.scaleway.ai/v1/`). No Pulumi resources needed — unlike AWS/GCP which deploy LiteLLM sidecars, Scaleway uses a public OpenAI-compatible endpoint. Chat and embedding models validated end-to-end.
 - There is no Scaleway DNS/load-balancer abstraction comparable to GCP's wildcard certificate and load-balancer path.
 - Postgres and Redis still need real Scaleway preview/apply validation for private-network endpoint shape, service-to-database connectivity, and custom domain behavior.
+
+## Post-Review Additions (2026-05-10)
+
+- **Health shim for background workers:** Scaleway Serverless Containers require a listening HTTP port. The provider now auto-injects a health shim for services with no ports, starting a tiny HTTP responder then exec'ing the real command. Validated with mastra-extended worker.
+- **Redis 8.4.0:** Scaleway removed older Redis versions. Provider updated to always use 8.4.0.
+- **Full mastra-extended deployment:** 6-service compose app deployed end-to-end on Scaleway with managed Postgres, managed Redis, background worker, and LLM (chat + embedding) all functional.
 
 ## Verification
 
