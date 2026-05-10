@@ -246,6 +246,9 @@ func TestHealthShimInjectedInContainer(t *testing.T) {
 	// Port should be set to default health shim port
 	assert.Equal(t, float64(defaultHealthShimPort), container.inputs[resource.PropertyKey("port")].NumberValue())
 
+	// Min scale must be 1 for portless workers (no HTTP traffic to wake them)
+	assert.Equal(t, float64(1), container.inputs[resource.PropertyKey("minScale")].NumberValue())
+
 	// Commands should be ["/bin/sh", "-c"]
 	cmds := container.inputs[resource.PropertyKey("commands")].ArrayValue()
 	require.Len(t, cmds, 2)
@@ -257,6 +260,20 @@ func TestHealthShimInjectedInContainer(t *testing.T) {
 	require.Len(t, args, 1)
 	assert.Contains(t, args[0].StringValue(), "exec npm run worker")
 	assert.Contains(t, args[0].StringValue(), "node -e")
+}
+
+func TestContainerMinScaleWorkerAlwaysOne(t *testing.T) {
+	// Portless worker must have min_scale=1 since Scaleway only wakes
+	// containers on HTTP requests; queue consumers get no HTTP traffic.
+	worker := compose.ServiceConfig{Command: []string{"npm", "run", "worker"}}
+	assert.Equal(t, pulumi.IntPtr(1), containerMinScale(worker))
+
+	// Service with ports can scale to zero (HTTP traffic wakes it)
+	web := compose.ServiceConfig{
+		Ports:   []compose.ServicePortConfig{{Target: 3000, Mode: compose.PortModeIngress}},
+		Command: []string{"npm", "start"},
+	}
+	assert.Equal(t, pulumi.IntPtr(0), containerMinScale(web))
 }
 
 func TestShellJoin(t *testing.T) {
