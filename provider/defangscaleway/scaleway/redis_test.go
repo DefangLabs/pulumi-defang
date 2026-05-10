@@ -16,11 +16,10 @@ func ptr[T any](v T) *T {
 }
 
 func TestRedisVersionFromImage(t *testing.T) {
-	assert.Equal(t, "7.2.5", redisVersionFromImage(nil))
-	assert.Equal(t, "7.2.5", redisVersionFromImage(ptr("redis:7")))
-	assert.Equal(t, "7.2.5", redisVersionFromImage(ptr("redis:7.2")))
-	assert.Equal(t, "6.2.7", redisVersionFromImage(ptr("redis:6")))
-	assert.Equal(t, "7.2.5", redisVersionFromImage(ptr("redis@sha256:abc")))
+	// Scaleway only offers Redis 8.4.0 as of 2026-05
+	assert.Equal(t, "8.4.0", redisVersionFromImage(nil))
+	assert.Equal(t, "8.4.0", redisVersionFromImage(ptr("redis:7")))
+	assert.Equal(t, "8.4.0", redisVersionFromImage(ptr("redis:6")))
 }
 
 func TestRedisAddressFromConnectionString(t *testing.T) {
@@ -53,7 +52,7 @@ func TestCreateRedisCluster(t *testing.T) {
 	require.NoError(t, err)
 	cluster := mocks.findType("scaleway:redis/cluster:Cluster")
 	require.NotNil(t, cluster)
-	assert.Equal(t, "7.2.5", cluster.inputs[resource.PropertyKey("version")].StringValue())
+	assert.Equal(t, "8.4.0", cluster.inputs[resource.PropertyKey("version")].StringValue())
 	assert.Equal(t, "RED1-MICRO", cluster.inputs[resource.PropertyKey("nodeType")].StringValue())
 	assert.Equal(t, "default", cluster.inputs[resource.PropertyKey("userName")].StringValue())
 	assert.True(t, cluster.inputs[resource.PropertyKey("tlsEnabled")].BoolValue())
