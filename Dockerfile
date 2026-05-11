@@ -132,7 +132,10 @@ RUN pulumi plugin install resource scaleway $(grep 'pulumiverse/pulumi-scaleway/
 FROM plugins-base AS plugins-scaleway-defang
 ARG PROVIDER_VERSION
 COPY --link --from=build-scaleway /out/pulumi-resource-defang-scaleway /tmp/
-RUN pulumi plugin install resource defang-scaleway ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-scaleway
+RUN mkdir -p /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION} && \
+    cp /tmp/pulumi-resource-defang-scaleway /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION}/pulumi-resource-defang-scaleway && \
+    chmod 700 /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION} && \
+    chmod 700 /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION}/pulumi-resource-defang-scaleway
 
 # Final minimal image — no OS, no language runtimes
 FROM ${CDBASE} AS cd-base

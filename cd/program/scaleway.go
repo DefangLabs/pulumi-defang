@@ -1,13 +1,19 @@
 package program
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangscaleway "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway"
 	scalewaycompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	scaleway "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway"
 	scalewayconfig "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/config"
+	"google.golang.org/protobuf/proto"
 )
 
 func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
@@ -26,7 +32,59 @@ func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, proje
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
+	// Upload ProjectUpdate protobuf as a Pulumi-managed object after the
+	// project component has converged so the CLI can read back service status.
+	if projectUpdate != nil {
+		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
+			for _, svc := range projectUpdate.Services {
+				svc.Status = "PROVISIONING"
+				svc.State = defangv1.ServiceState_DEPLOYMENT_COMPLETED
+				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
+					svc.Endpoints = []string{ep}
+				}
+			}
+			return proto.Marshal(projectUpdate)
+		}).(pulumi.AnyOutput)
+
+		if err := saveProjectPbScaleway(ctx, updatedPb, project, pulumi.Provider(scwProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+	}
+
 	return project.Endpoints, project.LoadBalancerDns, nil
+}
+
+func saveProjectPbScaleway(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
+	u, err := parseStateURL(ctx)
+	if err != nil || u == nil {
+		return err
+	}
+	if u.Scheme != "s3" || u.Host == "" {
+		return fmt.Errorf("DEFANG_STATE_URL must be an s3:// URL with a bucket for Scaleway uploads, got %q", u.String())
+	}
+
+	file := data.ApplyT(func(v any) (string, error) {
+		asset, err := NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
+		if err != nil {
+			return "", err
+		}
+		return asset.Path(), nil
+	}).(pulumi.StringOutput)
+	hash := data.ApplyT(func(v any) string {
+		sum := sha256.Sum256(v.([]byte))
+		return hex.EncodeToString(sum[:])
+	}).(pulumi.StringOutput)
+
+	_, err = scaleway.NewObjectItem(ctx, "project-pb", &scaleway.ObjectItemArgs{
+		Bucket:      pulumi.String(u.Host),
+		Key:         pulumi.String(projectPbKey(ctx)),
+		File:        file,
+		Hash:        hash,
+		ContentType: pulumi.String(protobufContentType),
+		ProjectId:   pulumi.String(scalewayconfig.GetProjectId(ctx)),
+		Region:      pulumi.StringPtr(scalewayconfig.GetRegion(ctx)),
+	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
+	return err
 }
 
 func toScalewayArgs(cf *compose.Project, etag string) *defangscaleway.ProjectArgs {
