@@ -1,1 +1,1 @@
-pulumi-defang-scaleway==2.0.0-beta.5+dirty
+pulumi-defang-scaleway==2.0.0-beta.5
