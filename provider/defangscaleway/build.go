@@ -180,7 +180,7 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		"--cache=true",
 		"--snapshot-mode=redo",
 		"--force",
-		"--verbosity=debug",
+		"--verbosity=info",
 	}
 	if inputs.Target != nil && *inputs.Target != "" {
 		kanikoCmd = append(kanikoCmd, "--target="+*inputs.Target)
