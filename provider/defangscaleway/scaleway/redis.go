@@ -120,22 +120,10 @@ func CreateRedis(
 				}
 			}
 		} else {
-			args.TlsEnabled = pulumi.Bool(true)
-			args.Acls = redis.ClusterAclArray{
-				&redis.ClusterAclArgs{
-					Ip:          pulumi.String("0.0.0.0/0"),
-					Description: pulumi.String("Allow public Redis access"),
-				},
-			}
+			return nil, fmt.Errorf("Redis requires a private network for security; public access (0.0.0.0/0) is not allowed. Configure a private network for your Scaleway project")
 		}
 	} else {
-		args.TlsEnabled = pulumi.Bool(true)
-		args.Acls = redis.ClusterAclArray{
-			&redis.ClusterAclArgs{
-				Ip:          pulumi.String("0.0.0.0/0"),
-				Description: pulumi.String("Allow public Redis access"),
-			},
-		}
+		return nil, fmt.Errorf("Redis requires a private network for security; public access (0.0.0.0/0) is not allowed. Configure a private network for your Scaleway project")
 	}
 
 	cluster, err := redis.NewCluster(ctx, serviceName, args, opts...)

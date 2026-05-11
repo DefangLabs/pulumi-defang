@@ -164,6 +164,12 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		strings.Join(kanikoCmd, " "),
 	)
 
+	// WARNING: Scaleway Serverless Jobs API does not support secret injection.
+	// These credentials are passed as plain-text environment variables and stored
+	// in the job definition body. This is a known security limitation.
+	// TODO: Use Scaleway Secret Manager integration when/if Scaleway adds native
+	// secret injection support for Serverless Jobs.
+	//
 	// Environment for Kaniko:
 	// - AWS SDK env vars for S3-compatible build context access
 	// - DOCKER_CONFIG_JSON for registry authentication (written by script)
