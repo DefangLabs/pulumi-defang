@@ -202,26 +202,22 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		strings.Join(kanikoCmd, " "),
 	)
 
-	// WARNING: Scaleway Serverless Jobs API does not support secret injection.
-	// These credentials are passed as plain-text environment variables and stored
-	// in the job definition body. This is a known security limitation.
-	// TODO: Use Scaleway Secret Manager integration when/if Scaleway adds native
-	// secret injection support for Serverless Jobs.
-	//
 	// Environment for Kaniko:
 	// - AWS SDK env vars for S3-compatible build context access
 	// - DOCKER_CONFIG_JSON for registry authentication (written by script)
-	// - KANIKO_SCRIPT holds the full build script, executed via eval
+	// - KANIKO_SCRIPT holds the full build script
 	env := map[string]string{
-		"AWS_ACCESS_KEY_ID":          os.Getenv("AWS_ACCESS_KEY_ID"),
-		"AWS_SECRET_ACCESS_KEY":      os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		"AWS_REGION":                 os.Getenv("AWS_REGION"),
-		"AWS_EC2_METADATA_DISABLED":  "true",          // Prevent SDK from falling through to IMDS
-		"S3_ENDPOINT":                fmt.Sprintf("https://s3.%s.scw.cloud", inputs.Region),
-		"S3_FORCE_PATH_STYLE":        "true",
-		"KANIKO_DIR":                 "/workspace",    // Use writable dir; /kaniko is read-only in sandbox
-		"DOCKER_CONFIG_JSON":         dockerConfig,
-		"KANIKO_SCRIPT":              shellCmd,
+		"AWS_ACCESS_KEY_ID":         os.Getenv("AWS_ACCESS_KEY_ID"),
+		"AWS_REGION":                os.Getenv("AWS_REGION"),
+		"AWS_EC2_METADATA_DISABLED": "true", // Prevent SDK from falling through to IMDS
+		"S3_ENDPOINT":               fmt.Sprintf("https://s3.%s.scw.cloud", inputs.Region),
+		"S3_FORCE_PATH_STYLE":       "true",
+		"KANIKO_DIR":                "/workspace", // Use writable dir; /kaniko is read-only in sandbox
+		"KANIKO_SCRIPT":             shellCmd,
+	}
+	secretEnv := map[string]string{
+		"AWS_SECRET_ACCESS_KEY": os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		"DOCKER_CONFIG_JSON":    dockerConfig,
 	}
 
 	defID, err := client.createJobDefinition(ctx, inputs.ProjectId, sanitizeJobName(inputs.Destination), env)
@@ -230,6 +226,16 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 	}
 	defer func() {
 		_ = client.deleteJobDefinition(ctx, defID)
+	}()
+
+	secrets, err := client.createBuildSecrets(ctx, inputs.ProjectId, defID, sanitizeJobName(inputs.Destination), secretEnv)
+	if err != nil {
+		return "", fmt.Errorf("creating Kaniko job secrets: %w", err)
+	}
+	defer func() {
+		for _, secret := range secrets {
+			_ = client.deleteSecret(ctx, secret.id)
+		}
 	}()
 
 	runID, err := client.runJob(ctx, defID)
@@ -260,9 +266,9 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 		switch state {
 		case "succeeded":
 			return runID, nil
-		case "failed", "canceled":
+		case "failed", "interrupted":
 			return runID, fmt.Errorf("build %s: %w: %s", runID, ErrBuildFailed, errMsg)
-		case "queued", "running", "pending":
+		case "initialized", "validated", "queued", "running", "retrying":
 			continue
 		default:
 			continue
@@ -277,6 +283,14 @@ func sanitizeJobName(dest string) string {
 		s = s[:50]
 	}
 	return strings.TrimRight(s, "-")
+}
+
+func sanitizeSecretName(name string) string {
+	s := strings.NewReplacer("/", "-", ":", "-", ".", "-", "_", "-").Replace(name)
+	if len(s) > 240 {
+		s = s[:240]
+	}
+	return strings.Trim(s, "-")
 }
 
 // scwAPIClient is a minimal Scaleway API client for the Serverless Jobs API.
@@ -294,11 +308,16 @@ type jobDefinitionResponse struct {
 type jobRunResponse struct {
 	ID           string `json:"id"`
 	State        string `json:"state"`
+	Reason       string `json:"reason"`
 	ErrorMessage string `json:"error_message"`
 }
 
 func (c *scwAPIClient) baseURL() string {
-	return fmt.Sprintf("https://api.scaleway.com/serverless-jobs/v1alpha1/regions/%s", c.region)
+	return fmt.Sprintf("https://api.scaleway.com/serverless-jobs/v1alpha2/regions/%s", c.region)
+}
+
+func (c *scwAPIClient) secretManagerBaseURL() string {
+	return fmt.Sprintf("https://api.scaleway.com/secret-manager/v1beta1/regions/%s", c.region)
 }
 
 func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body any) (*http.Response, error) {
@@ -333,26 +352,16 @@ func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body a
 }
 
 func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name string, env map[string]string) (string, error) {
-	// Scaleway Serverless Jobs splits the "command" string by whitespace into
-	// an exec array. Only "command" and "environment_variables" are inherited
-	// by job runs; "args" and "startup_command" are NOT.
-	//
-	// To run a multi-command shell script we use an env-var bootstrap:
-	//   command: "sh -c eval$IFS$KANIKO_SCRIPT"
-	// After whitespace split → exec["sh", "-c", "eval$IFS$KANIKO_SCRIPT"]
-	// sh parses the script text "eval$IFS$KANIKO_SCRIPT":
-	//   - $IFS expands to space/tab/newline (no literal whitespace in token)
-	//   - $KANIKO_SCRIPT expands to the full build script
-	//   - eval re-parses the expansion as shell code (with &&, >, etc.)
 	body := map[string]any{
-		"name":                  name,
-		"project_id":            projectID,
-		"cpu_limit":             2000,  // 2 vCPU for builds
-		"memory_limit":          4096,  // 4 GB RAM for builds
+		"name":                   name,
+		"project_id":             projectID,
+		"cpu_limit":              2000,  // 2 vCPU for builds
+		"memory_limit":           4096,  // 4 GB RAM for builds
 		"local_storage_capacity": 10000, // 10 GB local storage for builds
-		"image_uri":             "rg." + c.region + ".scw.cloud/defang-cd/kaniko-executor:patched",
-		"command":               "sh -c eval$IFS$KANIKO_SCRIPT",
-		"environment_variables": env,
+		"image_uri":              "rg." + c.region + ".scw.cloud/defang-cd/kaniko-executor:patched",
+		"startup_command":        []string{"sh", "-c"},
+		"args":                   []string{"eval \"$KANIKO_SCRIPT\""},
+		"environment_variables":  env,
 	}
 
 	resp, err := c.doRequest(ctx, "POST", c.baseURL()+"/job-definitions", body)
@@ -366,6 +375,119 @@ func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name 
 		return "", fmt.Errorf("decoding job definition response: %w", err)
 	}
 	return def.ID, nil
+}
+
+type buildSecret struct {
+	id       string
+	revision int
+	envName  string
+}
+
+func (c *scwAPIClient) createSecret(ctx context.Context, projectID, name string) (string, error) {
+	body := map[string]string{
+		"name":       name,
+		"project_id": projectID,
+	}
+	resp, err := c.doRequest(ctx, "POST", c.secretManagerBaseURL()+"/secrets", body)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decoding secret response: %w", err)
+	}
+	return result.ID, nil
+}
+
+func (c *scwAPIClient) createSecretVersion(ctx context.Context, secretID string, value string) (int, error) {
+	body := map[string]any{
+		"data": base64.StdEncoding.EncodeToString([]byte(value)),
+	}
+	resp, err := c.doRequest(ctx, "POST", c.secretManagerBaseURL()+"/secrets/"+secretID+"/versions", body)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Revision int `json:"revision"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decoding secret version response: %w", err)
+	}
+	return result.Revision, nil
+}
+
+func (c *scwAPIClient) createJobSecrets(ctx context.Context, definitionID string, secrets []buildSecret) error {
+	if len(secrets) == 0 {
+		return nil
+	}
+	refs := make([]map[string]string, 0, len(secrets))
+	for _, secret := range secrets {
+		refs = append(refs, map[string]string{
+			"secret_manager_id":      secret.id,
+			"secret_manager_version": fmt.Sprint(secret.revision),
+			"env_var_name":           secret.envName,
+		})
+	}
+	body := map[string]any{
+		"job_definition_id": definitionID,
+		"secrets":           refs,
+	}
+	resp, err := c.doRequest(ctx, "POST", c.baseURL()+"/secrets", body)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+func (c *scwAPIClient) createBuildSecrets(ctx context.Context, projectID, definitionID, buildName string, env map[string]string) ([]buildSecret, error) {
+	secrets := make([]buildSecret, 0, len(env))
+	suffix := time.Now().UTC().Format("20060102150405")
+	for _, key := range []string{"AWS_SECRET_ACCESS_KEY", "DOCKER_CONFIG_JSON"} {
+		value := env[key]
+		if value == "" {
+			continue
+		}
+		secretName := sanitizeSecretName("defang-build-" + buildName + "-" + strings.ToLower(strings.ReplaceAll(key, "_", "-")) + "-" + suffix)
+		secretID, err := c.createSecret(ctx, projectID, secretName)
+		if err != nil {
+			for _, secret := range secrets {
+				_ = c.deleteSecret(ctx, secret.id)
+			}
+			return nil, err
+		}
+		revision, err := c.createSecretVersion(ctx, secretID, value)
+		if err != nil {
+			_ = c.deleteSecret(ctx, secretID)
+			for _, secret := range secrets {
+				_ = c.deleteSecret(ctx, secret.id)
+			}
+			return nil, err
+		}
+		secrets = append(secrets, buildSecret{id: secretID, revision: revision, envName: key})
+	}
+	if err := c.createJobSecrets(ctx, definitionID, secrets); err != nil {
+		for _, secret := range secrets {
+			_ = c.deleteSecret(ctx, secret.id)
+		}
+		return nil, err
+	}
+	return secrets, nil
+}
+
+func (c *scwAPIClient) deleteSecret(ctx context.Context, secretID string) error {
+	resp, err := c.doRequest(ctx, "DELETE", c.secretManagerBaseURL()+"/secrets/"+secretID, nil)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 func (c *scwAPIClient) runJob(ctx context.Context, definitionID string) (string, error) {
@@ -399,7 +521,10 @@ func (c *scwAPIClient) getJobRunStatus(ctx context.Context, runID string) (state
 	if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
 		return "", "", fmt.Errorf("decoding job run status: %w", err)
 	}
-	return run.State, run.ErrorMessage, nil
+	if run.ErrorMessage != "" {
+		return run.State, run.ErrorMessage, nil
+	}
+	return run.State, run.Reason, nil
 }
 
 func (c *scwAPIClient) deleteJobDefinition(ctx context.Context, definitionID string) error {

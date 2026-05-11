@@ -177,6 +177,10 @@ func needsHealthShim(svc compose.ServiceConfig) bool {
 // preference: node, python3, python. If none are available it falls back to
 // a busybox-compatible shell+nc loop.
 func healthShimScript(svc compose.ServiceConfig) string {
+	// TODO(scaleway): replace this runtime-dependent shim with a provider-side
+	// worker path once Scaleway offers a non-HTTP long-running serverless
+	// primitive, or generate a tiny static health binary into the image during
+	// Defang builds so workers do not depend on node/python/nc being present.
 	// Build the original command to exec into. If the service has an
 	// explicit entrypoint+command we use that; otherwise we fall back to
 	// "exec" with whatever command was specified (the image ENTRYPOINT

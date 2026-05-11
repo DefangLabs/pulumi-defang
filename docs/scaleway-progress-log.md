@@ -54,3 +54,35 @@ Preserved intentionally for now:
 
 - `defang-cd` registry namespace and images. It currently contains the CD/Kaniko images needed to rebuild and test. This should be replaced/re-tagged as part of the CD image work rather than left stale.
 
+### Implementation Pass 1
+
+Scaleway API research:
+
+- Current Serverless Jobs API is `v1alpha2`.
+- `command` is deprecated in favor of `startup_command` and `args`.
+- Job secret injection is now supported through Serverless Jobs secret references backed by Secret Manager. The reference is created after the job definition and points either to an env var name or a file path.
+
+Code changes made:
+
+- CLI `projects/defang`:
+  - Switched the Scaleway Jobs client from `v1alpha1` to `v1alpha2`.
+  - Updated job run parsing for the `{"job_runs":[...]}` start response.
+  - Added Secret Manager-backed job secret references for CD job env values:
+    - `AWS_SECRET_ACCESS_KEY`
+    - `SCW_SECRET_KEY`
+    - `PULUMI_CONFIG_PASSPHRASE`
+  - Recreate the CD job definition during setup when a stale one already exists, so the image/env/secret refs match the current run.
+  - Auto-create Defang config `OPENAI_API_KEY` from the Scaleway API key when a Compose model service has been fixed up to Scaleway Managed Inference and the config is missing.
+  - Expanded CD teardown to delete CD job definitions, CD Secret Manager entries, registry images/namespace, and the CD S3 bucket contents/bucket.
+- Pulumi provider `projects/pulumi-defang`:
+  - Switched Kaniko build jobs to `v1alpha2` `startup_command`/`args`.
+  - Moved Kaniko secrets (`AWS_SECRET_ACCESS_KEY`, `DOCKER_CONFIG_JSON`) into Secret Manager-backed job secret references.
+  - Added cleanup for temporary build secrets.
+  - Added the requested TODO beside the runtime-dependent worker health shim.
+
+Validation status:
+
+- Installed Go tooling in the workspace because it was missing from the base image.
+- Used Go 1.25.9 for tests to match `pulumi-defang/go.mod`.
+- Passed: `projects/defang/src`: `go1.25.9 test ./pkg/clouds/scaleway ./pkg/cli/compose ./pkg/cli/client/byoc/scaleway`
+- Passed: `projects/pulumi-defang`: `go1.25.9 test ./provider/defangscaleway/...`
