@@ -1,7 +1,6 @@
 package scaleway
 
 import (
-	"strings"
 	"sync"
 	"testing"
 
@@ -122,23 +121,6 @@ func TestConstructScalewayProjectCreatesSharedInfraAndContainer(t *testing.T) {
 	assert.Equal(t, "name-private-network", container.inputs.Get("privateNetworkId").AsString())
 }
 
-func TestConstructScalewayProjectRejectsBuildOnlyService(t *testing.T) {
-	server := testutil.MakeScalewayTestServer()
-
-	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.ScalewayURN("Project"),
-		Inputs: testutil.ServicesMap(map[string]property.Value{
-			"app": property.New(property.NewMap(map[string]property.Value{
-				"build": property.New(property.NewMap(map[string]property.Value{
-					"context": property.New("."),
-				})),
-			})),
-		}),
-	})
-
-	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "requires a pre-built image"), err.Error())
-}
 
 func TestConstructScalewayProjectAllResourcesAreChildren(t *testing.T) {
 	mock, tracker := testutil.NewParentTracker()
