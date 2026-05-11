@@ -133,3 +133,35 @@ Known limitations observed:
 
 - Defang delegated domain DNS was not created because this Scaleway credential cannot create the `defang.app` DNS zone (`HTTP 403`). The native Scaleway serverless container domain worked.
 - Explicit `mode: host` ports are rejected by the Scaleway provider because Serverless Containers expose HTTP ingress only. The live test used `mode: ingress`.
+
+### Mastra Extended Validation
+
+Validated the unmodified `projects/samples/samples/mastra-extended` sample on Scaleway using stack `mastraextended`.
+
+Config supplied through Defang config only; no sample files were edited:
+
+- `POSTGRES_PASSWORD`: required by the sample README. `defang config set --random` generated a value that did not satisfy Scaleway Managed Database password policy, so a policy-compliant value was set with `config set --env`.
+- `REDIS_PASSWORD`: required by the Scaleway Managed Redis provider path even though the sample README does not mention it.
+- `OPENAI_API_KEY`: auto-created by the Scaleway LLM auth path from the Scaleway API key.
+
+Deployment notes:
+
+- First deploy failed on Scaleway Postgres password policy.
+- Second deploy failed because `REDIS_PASSWORD` config was absent.
+- Third deploy completed with managed Postgres, managed Redis, app, and worker.
+- Defang delegated DNS still failed with Scaleway domain `HTTP 403`; validation used the native Scaleway Serverless Container domain.
+- `compose ps` reported app healthy and worker `unhealthy (403 Forbidden)`. The worker container itself was `ready` in Scaleway; this appears to be the portless-worker health shim/status-reporting path rather than a runtime failure.
+
+Playwright validation:
+
+- Installed Playwright Chromium and OS dependencies in a temp directory outside the sample.
+- Used Playwright against the native Scaleway domain.
+- Clicked `Generate sample items` in the browser and verified the UI reached:
+  - `Ready · 20 items`
+  - `Tasks = 10`
+  - `Events = 10`
+  - `Classified = 20`
+- Waited 15 seconds after generation.
+- Asked through the chat UI: `What should I look at first? Mention at least one task or event.`
+- Verified the chat answer completed and included task/event content.
+- Playwright result: `1 passed`.
