@@ -33,14 +33,25 @@ func ConfigNotFoundOutput(key string) pulumi.StringOutput {
 	}).(pulumi.StringOutput)
 }
 
-type DryRunConfigProvider struct{}
+// DryRunConfigProvider returns placeholder values during preview (dry-run).
+// Set PlaceholderFormat to override the default "dry-run-%s" pattern. For
+// providers that validate password complexity (e.g. Scaleway), use a
+// password-shaped format like "DryRun1!-%s".
+type DryRunConfigProvider struct {
+	// PlaceholderFormat is a fmt pattern with one %s verb for the key name.
+	// If empty, defaults to "dry-run-%s".
+	PlaceholderFormat string
+}
 
-// GetConfigValue returns a dummy config value for dry runs. Keep the placeholder
-// password-shaped so provider-specific validations can still run during preview.
+// GetConfigValue returns a dummy config value for dry runs.
 func (p *DryRunConfigProvider) GetConfigValue(
 	ctx *pulumi.Context, key string, opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
-	return pulumi.ToSecret(pulumi.Sprintf("DryRun1!-%s", key)).(pulumi.StringOutput)
+	format := p.PlaceholderFormat
+	if format == "" {
+		format = "dry-run-%s"
+	}
+	return pulumi.ToSecret(pulumi.Sprintf(format, key)).(pulumi.StringOutput)
 }
 
 // GetSecretRef returns a placeholder secret reference for dry runs.
