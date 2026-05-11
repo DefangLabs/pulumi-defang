@@ -94,6 +94,44 @@ func (*Build) Create(
 	}, nil
 }
 
+// Update compares inputs and re-runs the build if source or configuration changed.
+func (*Build) Update(
+	ctx context.Context, req infer.UpdateRequest[BuildInputs, BuildState],
+) (infer.UpdateResponse[BuildState], error) {
+	inputs := req.Inputs
+
+	if req.DryRun {
+		return infer.UpdateResponse[BuildState]{
+			Output: BuildState{
+				BuildInputs: inputs,
+				BuildId:     req.State.BuildId,
+				Image:       inputs.Destination,
+			},
+		}, nil
+	}
+
+	// Re-run the build (source reference or config changed)
+	runID, err := runKanikoBuild(ctx, inputs)
+	if err != nil {
+		return infer.UpdateResponse[BuildState]{}, fmt.Errorf("Kaniko build failed: %w", err)
+	}
+
+	return infer.UpdateResponse[BuildState]{
+		Output: BuildState{
+			BuildInputs: inputs,
+			BuildId:     runID,
+			Image:       inputs.Destination,
+		},
+	}, nil
+}
+
+// Delete cleans up any resources associated with the build.
+// Scaleway Serverless Jobs definitions are deleted immediately after the build
+// completes (see runKanikoBuild), so there is nothing to clean up here.
+func (*Build) Delete(ctx context.Context, req infer.DeleteRequest[BuildState]) error {
+	return nil
+}
+
 // dockerConfigJSON generates a Docker config.json for authenticating with the
 // Scaleway Container Registry. The registry uses "nologin" as the username
 // and the SCW_SECRET_KEY as the password.
