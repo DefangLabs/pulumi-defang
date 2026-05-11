@@ -12,7 +12,7 @@ import (
 // Postgres is the controller struct for the defang-scaleway:index:Postgres component.
 type Postgres struct{}
 
-// PostgresInputs defines the inputs for a standalone Scaleway PostgreSQL instance.
+// ScalewayPostgresInputs defines the inputs for a standalone Scaleway PostgreSQL instance.
 type ScalewayPostgresInputs struct {
 	ProjectName string                        `pulumi:"projectName"`
 	Postgres    *compose.PostgresConfig       `pulumi:"postgres,optional"`
@@ -23,7 +23,7 @@ type ScalewayPostgresInputs struct {
 	Scaleway    *providerscaleway.SharedInfra `pulumi:"scaleway,optional"`
 }
 
-// PostgresOutputs holds the outputs of a Scaleway Postgres component.
+// ScalewayPostgresOutputs holds the outputs of a Scaleway Postgres component.
 type ScalewayPostgresOutputs struct {
 	pulumi.ResourceState
 	Endpoint      pulumi.StringOutput `pulumi:"endpoint"`

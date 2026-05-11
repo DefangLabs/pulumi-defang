@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 var (
 	ErrBuildFailed  = errors.New("build failed")
 	ErrBuildTimeout = errors.New("build timed out")
+	errScalewayAPI  = errors.New("scaleway API error")
+	errNoJobRuns    = errors.New("no job runs returned from start")
 )
 
 // Build is a custom resource that triggers a Kaniko build via Scaleway Serverless Jobs.
@@ -81,7 +84,7 @@ func (*Build) Create(
 
 	runID, err := runKanikoBuild(ctx, inputs)
 	if err != nil {
-		return infer.CreateResponse[BuildState]{}, fmt.Errorf("Kaniko build failed: %w", err)
+		return infer.CreateResponse[BuildState]{}, fmt.Errorf("kaniko build failed: %w", err)
 	}
 
 	return infer.CreateResponse[BuildState]{
@@ -113,7 +116,7 @@ func (*Build) Update(
 	// Re-run the build (source reference or config changed)
 	runID, err := runKanikoBuild(ctx, inputs)
 	if err != nil {
-		return infer.UpdateResponse[BuildState]{}, fmt.Errorf("Kaniko build failed: %w", err)
+		return infer.UpdateResponse[BuildState]{}, fmt.Errorf("kaniko build failed: %w", err)
 	}
 
 	return infer.UpdateResponse[BuildState]{
@@ -137,14 +140,17 @@ func (*Build) Delete(ctx context.Context, req infer.DeleteRequest[BuildState]) e
 // and the SCW_SECRET_KEY as the password.
 func dockerConfigJSON(registryHost, secretKey string) string {
 	auth := base64.StdEncoding.EncodeToString([]byte("nologin:" + secretKey))
-	config := map[string]any{
-		"auths": map[string]any{
+	config := map[string]map[string]map[string]string{
+		"auths": {
 			registryHost: map[string]string{
 				"auth": auth,
 			},
 		},
 	}
-	b, _ := json.Marshal(config)
+	b, err := json.Marshal(config)
+	if err != nil {
+		return "{}"
+	}
 	return string(b)
 }
 
@@ -155,6 +161,52 @@ func registryHost(destination string) string {
 		return destination[:idx]
 	}
 	return destination
+}
+
+func kanikoEnvironment(inputs BuildInputs, shellCmd string) map[string]string {
+	return map[string]string{
+		"AWS_ACCESS_KEY_ID":         os.Getenv("AWS_ACCESS_KEY_ID"),
+		"AWS_REGION":                os.Getenv("AWS_REGION"),
+		"AWS_EC2_METADATA_DISABLED": "true", // Prevent SDK from falling through to IMDS
+		"S3_ENDPOINT":               "https://s3." + inputs.Region + ".scw.cloud",
+		"S3_FORCE_PATH_STYLE":       "true",
+		"KANIKO_DIR":                "/workspace", // Use writable dir; /kaniko is read-only in sandbox
+		"KANIKO_SCRIPT":             shellCmd,
+	}
+}
+
+func waitForKanikoBuild(
+	ctx context.Context,
+	client *scwAPIClient,
+	runID string,
+	maxWait int,
+) error {
+	deadline := time.Now().Add(time.Duration(maxWait) * time.Second)
+	pollInterval := 5 * time.Second
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("build %s: %w after %ds", runID, ErrBuildTimeout, maxWait)
+		}
+		if err := common.SleepWithContext(ctx, pollInterval); err != nil {
+			return err
+		}
+
+		state, errMsg, err := client.getJobRunStatus(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("polling build status: %w", err)
+		}
+
+		switch state {
+		case "succeeded":
+			return nil
+		case "failed", "interrupted":
+			return fmt.Errorf("build %s: %w: %s", runID, ErrBuildFailed, errMsg)
+		case "initialized", "validated", "queued", "running", "retrying":
+			continue
+		default:
+			continue
+		}
+	}
 }
 
 func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
@@ -197,24 +249,16 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 	// then runs the Kaniko executor.
 	// Write Docker config for registry auth at both KANIKO_DIR (/workspace)
 	// and the default /kaniko/.docker/ location.
-	shellCmd := fmt.Sprintf(
-		`mkdir -p /workspace/.docker /kaniko/.docker && echo "$DOCKER_CONFIG_JSON" > /workspace/.docker/config.json && cp /workspace/.docker/config.json /kaniko/.docker/config.json && %s`,
-		strings.Join(kanikoCmd, " "),
-	)
+	shellCmd := "mkdir -p /workspace/.docker /kaniko/.docker && " +
+		"echo \"$DOCKER_CONFIG_JSON\" > /workspace/.docker/config.json && " +
+		"cp /workspace/.docker/config.json /kaniko/.docker/config.json && " +
+		strings.Join(kanikoCmd, " ")
 
 	// Environment for Kaniko:
 	// - AWS SDK env vars for S3-compatible build context access
 	// - DOCKER_CONFIG_JSON for registry authentication (written by script)
 	// - KANIKO_SCRIPT holds the full build script
-	env := map[string]string{
-		"AWS_ACCESS_KEY_ID":         os.Getenv("AWS_ACCESS_KEY_ID"),
-		"AWS_REGION":                os.Getenv("AWS_REGION"),
-		"AWS_EC2_METADATA_DISABLED": "true", // Prevent SDK from falling through to IMDS
-		"S3_ENDPOINT":               fmt.Sprintf("https://s3.%s.scw.cloud", inputs.Region),
-		"S3_FORCE_PATH_STYLE":       "true",
-		"KANIKO_DIR":                "/workspace", // Use writable dir; /kaniko is read-only in sandbox
-		"KANIKO_SCRIPT":             shellCmd,
-	}
+	env := kanikoEnvironment(inputs, shellCmd)
 	secretEnv := map[string]string{
 		"AWS_SECRET_ACCESS_KEY": os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		"DOCKER_CONFIG_JSON":    dockerConfig,
@@ -247,33 +291,7 @@ func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
 	if inputs.MaxWaitTime != nil {
 		maxWait = *inputs.MaxWaitTime
 	}
-	deadline := time.Now().Add(time.Duration(maxWait) * time.Second)
-	pollInterval := 5 * time.Second
-
-	for {
-		if time.Now().After(deadline) {
-			return runID, fmt.Errorf("build %s: %w after %ds", runID, ErrBuildTimeout, maxWait)
-		}
-		if err := common.SleepWithContext(ctx, pollInterval); err != nil {
-			return runID, err
-		}
-
-		state, errMsg, err := client.getJobRunStatus(ctx, runID)
-		if err != nil {
-			return runID, fmt.Errorf("polling build status: %w", err)
-		}
-
-		switch state {
-		case "succeeded":
-			return runID, nil
-		case "failed", "interrupted":
-			return runID, fmt.Errorf("build %s: %w: %s", runID, ErrBuildFailed, errMsg)
-		case "initialized", "validated", "queued", "running", "retrying":
-			continue
-		default:
-			continue
-		}
-	}
+	return runID, waitForKanikoBuild(ctx, client, runID, maxWait)
 }
 
 // sanitizeJobName creates a safe job name from a destination string.
@@ -313,11 +331,11 @@ type jobRunResponse struct {
 }
 
 func (c *scwAPIClient) baseURL() string {
-	return fmt.Sprintf("https://api.scaleway.com/serverless-jobs/v1alpha2/regions/%s", c.region)
+	return "https://api.scaleway.com/serverless-jobs/v1alpha2/regions/" + c.region
 }
 
 func (c *scwAPIClient) secretManagerBaseURL() string {
-	return fmt.Sprintf("https://api.scaleway.com/secret-manager/v1beta1/regions/%s", c.region)
+	return "https://api.scaleway.com/secret-manager/v1beta1/regions/" + c.region
 }
 
 func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body any) (*http.Response, error) {
@@ -344,14 +362,19 @@ func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body a
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		defer resp.Body.Close()
+		defer closeBody(resp.Body)
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Scaleway API error %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("%w: status %d: %s", errScalewayAPI, resp.StatusCode, string(respBody))
 	}
 	return resp, nil
 }
 
-func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name string, env map[string]string) (string, error) {
+func (c *scwAPIClient) createJobDefinition(
+	ctx context.Context,
+	projectID string,
+	name string,
+	env map[string]string,
+) (string, error) {
 	body := map[string]any{
 		"name":                   name,
 		"project_id":             projectID,
@@ -368,7 +391,7 @@ func (c *scwAPIClient) createJobDefinition(ctx context.Context, projectID, name 
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	var def jobDefinitionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&def); err != nil {
@@ -392,7 +415,7 @@ func (c *scwAPIClient) createSecret(ctx context.Context, projectID, name string)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	var result struct {
 		ID string `json:"id"`
@@ -411,7 +434,7 @@ func (c *scwAPIClient) createSecretVersion(ctx context.Context, secretID string,
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	var result struct {
 		Revision int `json:"revision"`
@@ -430,7 +453,7 @@ func (c *scwAPIClient) createJobSecrets(ctx context.Context, definitionID string
 	for _, secret := range secrets {
 		refs = append(refs, map[string]string{
 			"secret_manager_id":      secret.id,
-			"secret_manager_version": fmt.Sprint(secret.revision),
+			"secret_manager_version": strconv.Itoa(secret.revision),
 			"env_var_name":           secret.envName,
 		})
 	}
@@ -442,11 +465,19 @@ func (c *scwAPIClient) createJobSecrets(ctx context.Context, definitionID string
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	func() {
+		_ = resp.Body.Close()
+	}()
 	return nil
 }
 
-func (c *scwAPIClient) createBuildSecrets(ctx context.Context, projectID, definitionID, buildName string, env map[string]string) ([]buildSecret, error) {
+func (c *scwAPIClient) createBuildSecrets(
+	ctx context.Context,
+	projectID string,
+	definitionID string,
+	buildName string,
+	env map[string]string,
+) ([]buildSecret, error) {
 	secrets := make([]buildSecret, 0, len(env))
 	suffix := time.Now().UTC().Format("20060102150405")
 	for _, key := range []string{"AWS_SECRET_ACCESS_KEY", "DOCKER_CONFIG_JSON"} {
@@ -454,7 +485,12 @@ func (c *scwAPIClient) createBuildSecrets(ctx context.Context, projectID, defini
 		if value == "" {
 			continue
 		}
-		secretName := sanitizeSecretName("defang-build-" + buildName + "-" + strings.ToLower(strings.ReplaceAll(key, "_", "-")) + "-" + suffix)
+		secretName := sanitizeSecretName(
+			"defang-build-" +
+				buildName + "-" +
+				strings.ToLower(strings.ReplaceAll(key, "_", "-")) +
+				"-" + suffix,
+		)
 		secretID, err := c.createSecret(ctx, projectID, secretName)
 		if err != nil {
 			for _, secret := range secrets {
@@ -486,7 +522,9 @@ func (c *scwAPIClient) deleteSecret(ctx context.Context, secretID string) error 
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	func() {
+		_ = resp.Body.Close()
+	}()
 	return nil
 }
 
@@ -495,7 +533,7 @@ func (c *scwAPIClient) runJob(ctx context.Context, definitionID string) (string,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	// The start endpoint returns {"job_runs": [...]} not a flat object
 	var result struct {
@@ -505,17 +543,17 @@ func (c *scwAPIClient) runJob(ctx context.Context, definitionID string) (string,
 		return "", fmt.Errorf("decoding job run response: %w", err)
 	}
 	if len(result.JobRuns) == 0 {
-		return "", fmt.Errorf("no job runs returned from start")
+		return "", errNoJobRuns
 	}
 	return result.JobRuns[0].ID, nil
 }
 
-func (c *scwAPIClient) getJobRunStatus(ctx context.Context, runID string) (state, errMsg string, err error) {
+func (c *scwAPIClient) getJobRunStatus(ctx context.Context, runID string) (string, string, error) {
 	resp, err := c.doRequest(ctx, "GET", c.baseURL()+"/job-runs/"+runID, nil)
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	var run jobRunResponse
 	if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
@@ -532,6 +570,12 @@ func (c *scwAPIClient) deleteJobDefinition(ctx context.Context, definitionID str
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	func() {
+		_ = resp.Body.Close()
+	}()
 	return nil
+}
+
+func closeBody(body io.Closer) {
+	_ = body.Close()
 }

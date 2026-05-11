@@ -27,7 +27,7 @@ func (m *projectRecordingMocks) NewResource(args pulumi.MockResourceArgs) (strin
 	for k, v := range args.Inputs {
 		outputs[k] = v
 	}
-	switch string(args.TypeToken) {
+	switch args.TypeToken {
 	case "scaleway:containers/namespace:Namespace":
 		outputs[resource.PropertyKey("registryEndpoint")] = resource.NewStringProperty("rg.fr-par.scw.cloud/defang")
 	case "scaleway:containers/container:Container":
@@ -47,7 +47,7 @@ func (m *projectRecordingMocks) NewResource(args pulumi.MockResourceArgs) (strin
 		outputs[resource.PropertyKey("image")] = resource.NewStringProperty("rg.fr-par.scw.cloud/defang/app:latest")
 	}
 	m.mu.Lock()
-	m.records = append(m.records, projectResourceRecord{typ: string(args.TypeToken), name: args.Name, inputs: args.Inputs})
+	m.records = append(m.records, projectResourceRecord{typ: args.TypeToken, name: args.Name, inputs: args.Inputs})
 	m.mu.Unlock()
 	return args.Name + "_id", outputs, nil
 }
@@ -107,7 +107,7 @@ func TestBuildProjectCreatesServerlessContainerResources(t *testing.T) {
 	container := mocks.findType("scaleway:containers/container:Container")
 	require.NotNil(t, container)
 	assert.Equal(t, "nginx:latest", container.inputs[resource.PropertyKey("registryImage")].StringValue())
-	assert.Equal(t, float64(80), container.inputs[resource.PropertyKey("port")].NumberValue())
+	assert.InDelta(t, 80, container.inputs[resource.PropertyKey("port")].NumberValue(), 0)
 	assert.Equal(t, "public", container.inputs[resource.PropertyKey("privacy")].StringValue())
 	assert.False(t, container.inputs[resource.PropertyKey("privateNetworkId")].IsNull())
 	env := container.inputs[resource.PropertyKey("environmentVariables")].ObjectValue()
@@ -165,9 +165,10 @@ func TestBuildProjectMultiServiceWithPostgres(t *testing.T) {
 	// Find web (public) and worker (private)
 	var webContainer, workerContainer *projectResourceRecord
 	for i := range containers {
-		if containers[i].name == "web" {
+		switch containers[i].name {
+		case "web":
 			webContainer = &containers[i]
-		} else if containers[i].name == "worker" {
+		case "worker":
 			workerContainer = &containers[i]
 		}
 	}

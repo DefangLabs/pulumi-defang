@@ -15,8 +15,12 @@ import (
 
 var (
 	ErrPostgresConfigNil       = errors.New("postgres config is nil")
-	ErrPostgresPasswordMissing = errors.New("POSTGRES_PASSWORD is required for Scaleway Managed Database for PostgreSQL")
-	ErrPostgresPasswordInvalid = errors.New("POSTGRES_PASSWORD must be 8-128 characters and include uppercase, lowercase, digit, and special characters for Scaleway Managed Database for PostgreSQL")
+	ErrPostgresPasswordMissing = errors.New(
+		"postgres password is required for Scaleway Managed Database for PostgreSQL",
+	)
+	ErrPostgresPasswordInvalid = errors.New(
+		"postgres password must be 8-128 characters and include uppercase, lowercase, digit, and special character",
+	)
 )
 
 // Scaleway reserves the default PostgreSQL user/database name "postgres" for
@@ -110,28 +114,42 @@ func validScalewayPostgresPassword(password string) bool {
 	return hasUpper && hasLower && hasDigit && hasSpecial
 }
 
-func scalewayPostgresUsername(ctx *pulumi.Context, svc compose.ServiceConfig, username pulumi.StringInput) pulumi.StringInput {
+func scalewayPostgresUsername(
+	ctx *pulumi.Context,
+	svc compose.ServiceConfig,
+	username pulumi.StringInput,
+) pulumi.StringInput {
 	if _, ok := svc.Environment["POSTGRES_USER"]; !ok {
 		return pulumi.String(defaultScalewayPostgresUser)
 	}
 	return username.ToStringOutput().ApplyT(func(u string) string {
 		if strings.EqualFold(u, "postgres") {
-			ctx.Log.Warn(fmt.Sprintf("POSTGRES_USER %q is reserved by Scaleway; using %q instead", u, defaultScalewayPostgresUser), nil)
+			_ = ctx.Log.Warn(
+				fmt.Sprintf("POSTGRES_USER %q is reserved by Scaleway; using %q instead", u, defaultScalewayPostgresUser),
+				nil,
+			)
 			return defaultScalewayPostgresUser
 		}
 		return u
 	}).(pulumi.StringOutput)
 }
 
-func scalewayPostgresDBName(ctx *pulumi.Context, svc compose.ServiceConfig, pg *compose.PostgresConfigArgs) (pulumi.StringInput, string, error) {
+func scalewayPostgresDBName(
+	ctx *pulumi.Context,
+	svc compose.ServiceConfig,
+	pg *compose.PostgresConfigArgs,
+) (pulumi.StringInput, string) {
 	if _, ok := svc.Environment["POSTGRES_DB"]; !ok {
-		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB, nil
+		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB
 	}
 	if strings.EqualFold(pg.DBNameStr, compose.DEFAULT_POSTGRES_DB) {
-		ctx.Log.Warn(fmt.Sprintf("POSTGRES_DB %q is reserved by Scaleway; using %q instead", pg.DBNameStr, defaultScalewayPostgresDB), nil)
-		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB, nil
+		_ = ctx.Log.Warn(
+			fmt.Sprintf("POSTGRES_DB %q is reserved by Scaleway; using %q instead", pg.DBNameStr, defaultScalewayPostgresDB),
+			nil,
+		)
+		return pulumi.String(defaultScalewayPostgresDB), defaultScalewayPostgresDB
 	}
-	return pg.DBName, pg.DBNameStr, nil
+	return pg.DBName, pg.DBNameStr
 }
 
 func postgresHostAndPort(instance *databases.Instance) (pulumi.StringOutput, pulumi.IntOutput) {
@@ -172,6 +190,7 @@ func postgresHostAndPort(instance *databases.Instance) (pulumi.StringOutput, pul
 	return host, port
 }
 
+//nolint:funlen // Pulumi resource construction is clearer kept in one function.
 func CreatePostgres(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -188,10 +207,7 @@ func CreatePostgres(
 		return nil, ErrPostgresConfigNil
 	}
 	username := scalewayPostgresUsername(ctx, svc, pg.Username)
-	dbName, dbNameStr, err := scalewayPostgresDBName(ctx, svc, pg)
-	if err != nil {
-		return nil, err
-	}
+	dbName, dbNameStr := scalewayPostgresDBName(ctx, svc, pg)
 
 	var engine pulumi.StringOutput
 	if pg.Version != nil {

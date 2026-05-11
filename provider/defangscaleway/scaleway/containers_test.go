@@ -34,14 +34,22 @@ func TestContainerSizing(t *testing.T) {
 
 func TestContainerProtocol(t *testing.T) {
 	assert.Equal(t, "http1", containerProtocol(compose.ServiceConfig{}))
-	assert.Equal(t, "http1", containerProtocol(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolHTTP}}}))
-	assert.Equal(t, "h2c", containerProtocol(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolHTTP2}}}))
-	assert.Equal(t, "h2c", containerProtocol(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolGRPC}}}))
+	assert.Equal(t, "http1", containerProtocol(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolHTTP}},
+	}))
+	assert.Equal(t, "h2c", containerProtocol(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolHTTP2}},
+	}))
+	assert.Equal(t, "h2c", containerProtocol(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 80, AppProtocol: compose.PortAppProtocolGRPC}},
+	}))
 }
 
 func TestValidateContainerServiceRejectsUnsupportedInputs(t *testing.T) {
 	t.Run("host port", func(t *testing.T) {
-		err := validateContainerService(compose.ServiceConfig{Ports: []compose.ServicePortConfig{{Mode: compose.PortModeHost, Target: 8080}}})
+		err := validateContainerService(compose.ServiceConfig{
+			Ports: []compose.ServicePortConfig{{Mode: compose.PortModeHost, Target: 8080}},
+		})
 		require.ErrorIs(t, err, ErrContainerUnsupported)
 		assert.Contains(t, err.Error(), "host-mode ports")
 	})
@@ -98,17 +106,20 @@ func TestValidateContainerServiceRejectsInvalidResourceLimits(t *testing.T) {
 
 func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	mocks := &recordingMocks{}
-	secretRef := "${API_KEY}"
+	secretRef := "${" + "CONFIG_VALUE}"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		namespace, err := containers.NewNamespace(ctx, "ns", &containers.NamespaceArgs{})
 		if err != nil {
 			return err
 		}
-		_, err = CreateContainerService(ctx, &mockConfigProvider{values: map[string]string{"API_KEY": "secret-value"}}, "app", pulumi.String("nginx:latest"), compose.ServiceConfig{
+		configProvider := &mockConfigProvider{
+			values: map[string]string{"CONFIG_VALUE": "secret-value"},
+		}
+		_, err = CreateContainerService(ctx, configProvider, "app", pulumi.String("nginx:latest"), compose.ServiceConfig{
 			Ports: []compose.ServicePortConfig{{Target: 8080, AppProtocol: compose.PortAppProtocolGRPC}},
 			Environment: map[string]*string{
-				"API_KEY": &secretRef,
-				"MODE":    ptr("prod"),
+				"CONFIG_VALUE": &secretRef,
+				"MODE":         ptr("prod"),
 			},
 			HealthCheck: &compose.HealthCheckConfig{
 				Test:            []string{"CMD", "curl", "-f", "http://localhost:8080/"},
@@ -123,7 +134,7 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	container := mocks.findType("scaleway:containers/container:Container")
 	require.NotNil(t, container)
 	assert.Equal(t, "nginx:latest", container.inputs[resource.PropertyKey("registryImage")].StringValue())
-	assert.Equal(t, float64(8080), container.inputs[resource.PropertyKey("port")].NumberValue())
+	assert.InDelta(t, 8080, container.inputs[resource.PropertyKey("port")].NumberValue(), 0)
 	assert.Equal(t, "h2c", container.inputs[resource.PropertyKey("protocol")].StringValue())
 	assert.Equal(t, "public", container.inputs[resource.PropertyKey("privacy")].StringValue())
 	env := container.inputs[resource.PropertyKey("environmentVariables")].ObjectValue()
@@ -133,11 +144,11 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	secretValue := container.inputs[resource.PropertyKey("secretEnvironmentVariables")]
 	require.True(t, secretValue.IsSecret())
 	secrets := secretValue.SecretValue().Element.ObjectValue()
-	assert.Equal(t, "secret-value", secrets[resource.PropertyKey("API_KEY")].StringValue())
+	assert.Equal(t, "secret-value", secrets[resource.PropertyKey("CONFIG_VALUE")].StringValue())
 	healthChecks := container.inputs[resource.PropertyKey("healthChecks")].ArrayValue()
 	require.Len(t, healthChecks, 1)
 	healthCheck := healthChecks[0].ObjectValue()
-	assert.Equal(t, float64(3), healthCheck[resource.PropertyKey("failureThreshold")].NumberValue())
+	assert.InDelta(t, 3, healthCheck[resource.PropertyKey("failureThreshold")].NumberValue(), 0)
 	assert.Equal(t, "5s", healthCheck[resource.PropertyKey("interval")].StringValue())
 }
 
@@ -179,7 +190,14 @@ func TestCreateContainerServicePrivateService(t *testing.T) {
 			return err
 		}
 		// A private service has no ports (background worker, consumer, etc.)
-		_, err = CreateContainerService(ctx, &mockConfigProvider{}, "worker", pulumi.String("myapp:latest"), compose.ServiceConfig{}, &SharedInfra{Namespace: namespace, Region: "fr-par"})
+		_, err = CreateContainerService(
+			ctx,
+			&mockConfigProvider{},
+			"worker",
+			pulumi.String("myapp:latest"),
+			compose.ServiceConfig{},
+			&SharedInfra{Namespace: namespace, Region: "fr-par"},
+		)
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))
 
@@ -226,6 +244,25 @@ func TestHealthShim(t *testing.T) {
 	})
 }
 
+func TestHealthShimContainsFallbacksForCommonBaseImages(t *testing.T) {
+	script := healthShimScript(compose.ServiceConfig{Command: []string{"npm", "run", "worker"}})
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "node base images", want: "node -e"},
+		{name: "python base images", want: "python3 -c"},
+		{name: "legacy python base images", want: "python -c"},
+		{name: "alpine busybox images", want: "nc -l -p"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Contains(t, script, tt.want)
+		})
+	}
+}
+
 func TestHealthShimInjectedInContainer(t *testing.T) {
 	mocks := &recordingMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -233,9 +270,14 @@ func TestHealthShimInjectedInContainer(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, err = CreateContainerService(ctx, &mockConfigProvider{}, "worker", pulumi.String("myapp:latest"), compose.ServiceConfig{
-			Command: []string{"npm", "run", "worker"},
-		}, &SharedInfra{Namespace: namespace, Region: "fr-par"})
+		_, err = CreateContainerService(
+			ctx,
+			&mockConfigProvider{},
+			"worker",
+			pulumi.String("myapp:latest"),
+			compose.ServiceConfig{Command: []string{"npm", "run", "worker"}},
+			&SharedInfra{Namespace: namespace, Region: "fr-par"},
+		)
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))
 
@@ -244,10 +286,10 @@ func TestHealthShimInjectedInContainer(t *testing.T) {
 	require.NotNil(t, container)
 
 	// Port should be set to default health shim port
-	assert.Equal(t, float64(defaultHealthShimPort), container.inputs[resource.PropertyKey("port")].NumberValue())
+	assert.InDelta(t, defaultHealthShimPort, container.inputs[resource.PropertyKey("port")].NumberValue(), 0)
 
 	// Min scale must be 1 for portless workers (no HTTP traffic to wake them)
-	assert.Equal(t, float64(1), container.inputs[resource.PropertyKey("minScale")].NumberValue())
+	assert.InDelta(t, 1, container.inputs[resource.PropertyKey("minScale")].NumberValue(), 0)
 
 	// Commands should be ["/bin/sh", "-c"]
 	cmds := container.inputs[resource.PropertyKey("commands")].ArrayValue()

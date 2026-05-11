@@ -1,12 +1,15 @@
 package scaleway
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var errBuildConfigNil = errors.New("build config is nil")
 
 // BuildInfra holds shared infrastructure for building container images on Scaleway.
 // Created once per project by buildSharedInfra, shared across all services that need builds.
@@ -35,7 +38,7 @@ func buildServiceImage(
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build == nil {
-		return pulumi.StringOutput{}, fmt.Errorf("service %s: build config is nil", serviceName)
+		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, errBuildConfigNil)
 	}
 
 	// Destination image: registryEndpoint/serviceName:etag

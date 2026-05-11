@@ -1,8 +1,10 @@
 package scaleway
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +14,13 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+var (
+	errSecretManagerConfig   = errors.New("scaleway secret manager config error")
+	errSecretManagerAPI      = errors.New("scaleway secret manager API error")
+	errSecretRefNotSupported = errors.New("scaleway ConfigProvider does not support secret references")
+	errScalewayConfigMissing = errors.New("SCW_ACCESS_KEY and SCW_SECRET_KEY must be set")
 )
 
 // ConfigProvider reads config values from Scaleway Secret Manager.
@@ -70,7 +79,7 @@ func (cp *ConfigProvider) GetConfigValue(
 func (cp *ConfigProvider) GetSecretRef(
 	_ *pulumi.Context, key string, _ ...pulumi.InvokeOption,
 ) (string, error) {
-	return "", fmt.Errorf("Scaleway ConfigProvider does not support GetSecretRef for key %q", key)
+	return "", fmt.Errorf("%w: %q", errSecretRefNotSupported, key)
 }
 
 // secretListResponse models the Scaleway Secret Manager list-secrets API response.
@@ -96,7 +105,7 @@ func (cp *ConfigProvider) fetchSecrets(stackName string) (map[string]string, err
 	region := os.Getenv("SCW_DEFAULT_REGION")
 	projectID := os.Getenv("SCW_DEFAULT_PROJECT_ID")
 	if accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("SCW_ACCESS_KEY and SCW_SECRET_KEY must be set")
+		return nil, errScalewayConfigMissing
 	}
 	if region == "" {
 		region = "fr-par"
@@ -105,8 +114,11 @@ func (cp *ConfigProvider) fetchSecrets(stackName string) (map[string]string, err
 	prefix := cp.getSecretPrefix(stackName)
 
 	// List secrets in the project, paginating through all results
-	baseURL := fmt.Sprintf("https://api.scaleway.com/secret-manager/v1beta1/regions/%s/secrets?project_id=%s&page_size=100",
-		region, url.QueryEscape(projectID))
+	baseURL := fmt.Sprintf(
+		"https://api.scaleway.com/secret-manager/v1beta1/regions/%s/secrets?project_id=%s&page_size=100",
+		region,
+		url.QueryEscape(projectID),
+	)
 
 	var secrets []struct {
 		ID   string `json:"id"`
@@ -115,7 +127,7 @@ func (cp *ConfigProvider) fetchSecrets(stackName string) (map[string]string, err
 	page := 1
 	for {
 		pageURL := fmt.Sprintf("%s&page=%d", baseURL, page)
-		pageSecrets, err := cp.listSecrets(pageURL, secretKey)
+		pageSecrets, err := cp.listSecretsWithContext(context.Background(), pageURL, secretKey)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +149,7 @@ func (cp *ConfigProvider) fetchSecrets(stackName string) (map[string]string, err
 			continue
 		}
 
-		value, err := cp.accessSecretVersion(region, s.ID, secretKey)
+		value, err := cp.accessSecretVersionWithContext(context.Background(), region, s.ID, secretKey)
 		if err != nil {
 			continue // skip secrets we can't read
 		}
@@ -147,11 +159,11 @@ func (cp *ConfigProvider) fetchSecrets(stackName string) (map[string]string, err
 	return result, nil
 }
 
-func (cp *ConfigProvider) listSecrets(apiURL, secretKey string) ([]struct {
+func (cp *ConfigProvider) listSecretsWithContext(ctx context.Context, apiURL, secretKey string) ([]struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }, error) {
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -161,11 +173,11 @@ func (cp *ConfigProvider) listSecrets(apiURL, secretKey string) ([]struct {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("listing secrets: HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: listing secrets: HTTP %d: %s", errSecretManagerAPI, resp.StatusCode, string(body))
 	}
 
 	var result secretListResponse
@@ -175,11 +187,19 @@ func (cp *ConfigProvider) listSecrets(apiURL, secretKey string) ([]struct {
 	return result.Secrets, nil
 }
 
-func (cp *ConfigProvider) accessSecretVersion(region, secretID, secretKey string) (string, error) {
-	apiURL := fmt.Sprintf("https://api.scaleway.com/secret-manager/v1beta1/regions/%s/secrets/%s/versions/latest/access",
-		region, secretID)
+func (cp *ConfigProvider) accessSecretVersionWithContext(
+	ctx context.Context,
+	region string,
+	secretID string,
+	secretKey string,
+) (string, error) {
+	apiURL := fmt.Sprintf(
+		"https://api.scaleway.com/secret-manager/v1beta1/regions/%s/secrets/%s/versions/latest/access",
+		region,
+		secretID,
+	)
 
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -189,11 +209,16 @@ func (cp *ConfigProvider) accessSecretVersion(region, secretID, secretKey string
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("accessing secret version: HTTP %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf(
+			"%w: accessing secret version: HTTP %d: %s",
+			errSecretManagerAPI,
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var result secretVersionAccessResponse
@@ -204,7 +229,11 @@ func (cp *ConfigProvider) accessSecretVersion(region, secretID, secretKey string
 	// The API returns the data as base64-encoded
 	decoded, err := base64.StdEncoding.DecodeString(result.Data)
 	if err != nil {
-		return "", fmt.Errorf("decoding secret data: %w", err)
+		return "", fmt.Errorf("%w: decoding secret data: %w", errSecretManagerConfig, err)
 	}
 	return string(decoded), nil
+}
+
+func closeResponseBody(body io.Closer) {
+	_ = body.Close()
 }

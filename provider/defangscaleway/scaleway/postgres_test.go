@@ -47,7 +47,7 @@ func (m *recordingMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 	for k, v := range args.Inputs {
 		outputs[k] = v
 	}
-	switch string(args.TypeToken) {
+	switch args.TypeToken {
 	case "scaleway:databases/instance:Instance":
 		outputs[resource.PropertyKey("endpointIp")] = resource.NewStringProperty("10.0.0.5")
 		outputs[resource.PropertyKey("endpointPort")] = resource.NewNumberProperty(5432)
@@ -61,7 +61,7 @@ func (m *recordingMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 
 	m.mu.Lock()
 	m.records = append(m.records, resourceRecord{
-		typ:    string(args.TypeToken),
+		typ:    args.TypeToken,
 		name:   args.Name,
 		inputs: args.Inputs,
 	})

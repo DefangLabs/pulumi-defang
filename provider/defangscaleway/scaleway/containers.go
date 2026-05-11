@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	ErrContainerImageMissing     = errors.New("Scaleway Serverless Containers require a pre-built image")
-	ErrContainerNamespaceMissing = errors.New("Scaleway Serverless Containers require a namespace")
+	ErrContainerImageMissing     = errors.New("scaleway Serverless Containers require a pre-built image")
+	ErrContainerNamespaceMissing = errors.New("scaleway Serverless Containers require a namespace")
 	ErrContainerUnsupported      = errors.New("unsupported Scaleway Serverless Container configuration")
 )
 
@@ -80,15 +80,27 @@ func containerMemoryLimit(memMiB int) int {
 func validateContainerResources(svc compose.ServiceConfig) error {
 	cpu := containerCPULimit(svc.GetCPUs())
 	if cpu < 70 || cpu > 6000 {
-		return fmt.Errorf("%w: CPU limit %d mvCPU is outside Scaleway's documented 70-6000 mvCPU range", ErrContainerUnsupported, cpu)
+		return fmt.Errorf(
+			"%w: CPU limit %d mvCPU is outside Scaleway's documented 70-6000 mvCPU range",
+			ErrContainerUnsupported,
+			cpu,
+		)
 	}
 	mem := containerMemoryLimit(svc.GetMemoryMiB())
 	if mem < 128 || mem > 12228 {
-		return fmt.Errorf("%w: memory limit %d MB is outside Scaleway's documented 128-12228 MB range", ErrContainerUnsupported, mem)
+		return fmt.Errorf(
+			"%w: memory limit %d MB is outside Scaleway's documented 128-12228 MB range",
+			ErrContainerUnsupported,
+			mem,
+		)
 	}
 	replicas := svc.GetReplicas()
 	if replicas < 1 || replicas > 50 {
-		return fmt.Errorf("%w: max scale %d is outside Scaleway's documented 1-50 instance range", ErrContainerUnsupported, replicas)
+		return fmt.Errorf(
+			"%w: max scale %d is outside Scaleway's documented 1-50 instance range",
+			ErrContainerUnsupported,
+			replicas,
+		)
 	}
 	return nil
 }
@@ -116,7 +128,11 @@ func validateContainerPorts(svc compose.ServiceConfig) error {
 func validateContainerEnvironment(svc compose.ServiceConfig) error {
 	for k := range svc.Environment {
 		if k == "PORT" || strings.HasPrefix(k, "SCW_") {
-			return fmt.Errorf("%w: environment variable %q is reserved by Scaleway Serverless Containers", ErrContainerUnsupported, k)
+			return fmt.Errorf(
+				"%w: environment variable %q is reserved by Scaleway Serverless Containers",
+				ErrContainerUnsupported,
+				k,
+			)
 		}
 	}
 	return nil
@@ -136,24 +152,30 @@ func validateContainerService(svc compose.ServiceConfig) error {
 		return fmt.Errorf("%w: LLM services are not implemented for Scaleway", ErrContainerUnsupported)
 	}
 	if platform := svc.GetPlatform(); platform != "linux/amd64" {
-		return fmt.Errorf("%w: Scaleway Serverless Containers require linux/amd64 images, got %q", ErrContainerUnsupported, platform)
+		return fmt.Errorf(
+			"%w: Scaleway Serverless Containers require linux/amd64 images, got %q",
+			ErrContainerUnsupported,
+			platform,
+		)
 	}
 	return nil
 }
 
 func containerProtocol(svc compose.ServiceConfig) string {
 	if len(svc.Ports) == 0 {
-		return "http1"
+		return containerProtocolHTTP1
 	}
 	switch svc.Ports[0].GetAppProtocol() {
 	case compose.PortAppProtocolHTTP2, compose.PortAppProtocolGRPC:
 		return "h2c"
-	default:
-		return "http1"
+	case compose.PortAppProtocolUnknown, compose.PortAppProtocolHTTP:
+		return containerProtocolHTTP1
 	}
+	return containerProtocolHTTP1
 }
 
 const defaultHealthShimPort = 8080
+const containerProtocolHTTP1 = "http1"
 
 func containerPort(svc compose.ServiceConfig) pulumi.IntPtrInput {
 	for _, p := range svc.Ports {
@@ -186,11 +208,12 @@ func healthShimScript(svc compose.ServiceConfig) string {
 	// "exec" with whatever command was specified (the image ENTRYPOINT
 	// handles the rest).
 	var original string
-	if len(svc.Entrypoint) > 0 {
+	switch {
+	case len(svc.Entrypoint) > 0:
 		original = shellJoin(append(svc.Entrypoint, svc.Command...))
-	} else if len(svc.Command) > 0 {
+	case len(svc.Command) > 0:
 		original = shellJoin(svc.Command)
-	} else {
+	default:
 		// No explicit command — we cannot wrap something we don't know.
 		// Return empty to signal the caller should not inject the shim.
 		return ""
@@ -199,13 +222,20 @@ func healthShimScript(svc compose.ServiceConfig) string {
 	// The health server candidates. Each is a self-contained one-liner
 	// that listens on $PORT and responds 200 OK to any request.
 	// We chain them with || so the first available runtime wins.
-	return `(` +
-		`node -e "require('http').createServer((_,r)=>{r.writeHead(200);r.end('OK')}).listen(process.env.PORT||8080)" 2>/dev/null || ` +
-		`python3 -c "from http.server import HTTPServer,BaseHTTPRequestHandler;import os;HTTPServer(('0.0.0.0',int(os.environ.get('PORT',8080))),BaseHTTPRequestHandler).serve_forever()" 2>/dev/null || ` +
-		`python -c "from http.server import HTTPServer,BaseHTTPRequestHandler;import os;HTTPServer(('0.0.0.0',int(os.environ.get('PORT',8080))),BaseHTTPRequestHandler).serve_forever()" 2>/dev/null || ` +
-		`while true; do printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK' | nc -l -p ${PORT:-8080} -q 0 2>/dev/null || break; done` +
-		`) & exec ` + original
+	healthServers := []string{
+		`node -e "require('http').createServer((_,r)=>{r.writeHead(200);r.end('OK')}).listen(process.env.PORT||8080)"`,
+		`python3 -c "` + pythonHealthServer + `"`,
+		`python -c "` + pythonHealthServer + `"`,
+		`while true; do ` +
+			`printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK' | ` +
+			`nc -l -p ${PORT:-8080} -q 0 2>/dev/null || break; ` +
+			`done`,
+	}
+	return `(` + strings.Join(healthServers, " 2>/dev/null || ") + `) & exec ` + original
 }
+
+const pythonHealthServer = "from http.server import HTTPServer,BaseHTTPRequestHandler;import os;" +
+	"HTTPServer(('0.0.0.0',int(os.environ.get('PORT',8080))),BaseHTTPRequestHandler).serve_forever()"
 
 // shellJoin quotes each argument for safe shell evaluation.
 func shellJoin(args []string) string {
@@ -312,7 +342,9 @@ func containerEnvironment(
 				env[k] = managedHost
 				continue
 			}
-			if (k == "POSTGRES_USER" || k == "POSTGRES_DB") && strings.EqualFold(raw, "postgres") && len(infra.ManagedHosts) > 0 {
+			if (k == "POSTGRES_USER" || k == "POSTGRES_DB") &&
+				strings.EqualFold(raw, "postgres") &&
+				len(infra.ManagedHosts) > 0 {
 				env[k] = pulumi.String(defaultScalewayPostgresUser)
 				continue
 			}

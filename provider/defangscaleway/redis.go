@@ -12,7 +12,7 @@ import (
 // Redis is the controller struct for the defang-scaleway:index:Redis component.
 type Redis struct{}
 
-// RedisInputs defines the inputs for a standalone Scaleway Redis cluster.
+// ScalewayRedisInputs defines the inputs for a standalone Scaleway Redis cluster.
 type ScalewayRedisInputs struct {
 	Redis       *compose.RedisConfig          `pulumi:"redis,optional"`
 	Image       *string                       `pulumi:"image,optional"`
@@ -22,7 +22,7 @@ type ScalewayRedisInputs struct {
 	Scaleway    *providerscaleway.SharedInfra `pulumi:"scaleway,optional"`
 }
 
-// RedisOutputs holds the outputs of a Scaleway Redis component.
+// ScalewayRedisOutputs holds the outputs of a Scaleway Redis component.
 type ScalewayRedisOutputs struct {
 	pulumi.ResourceState
 	Endpoint      pulumi.StringOutput `pulumi:"endpoint"`

@@ -12,7 +12,10 @@ import (
 
 var (
 	ErrRedisConfigNil       = errors.New("redis config is nil")
-	ErrRedisPasswordMissing = errors.New("REDIS_PASSWORD is required for Scaleway Managed Redis")
+	ErrRedisPasswordMissing = errors.New("redis password is required for Scaleway Managed Redis")
+	errRedisPrivateNetwork  = errors.New(
+		"redis requires a private network for security; public access is not allowed",
+	)
 )
 
 type RedisResult struct {
@@ -120,10 +123,10 @@ func CreateRedis(
 				}
 			}
 		} else {
-			return nil, fmt.Errorf("Redis requires a private network for security; public access (0.0.0.0/0) is not allowed. Configure a private network for your Scaleway project")
+			return nil, errRedisPrivateNetwork
 		}
 	} else {
-		return nil, fmt.Errorf("Redis requires a private network for security; public access (0.0.0.0/0) is not allowed. Configure a private network for your Scaleway project")
+		return nil, errRedisPrivateNetwork
 	}
 
 	cluster, err := redis.NewCluster(ctx, serviceName, args, opts...)
