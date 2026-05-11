@@ -79,6 +79,7 @@ type secretListResponse struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"secrets"`
+	TotalCount int `json:"total_count"`
 }
 
 // secretVersionAccessResponse models the access-secret-version API response.
@@ -103,13 +104,26 @@ func (cp *ConfigProvider) fetchSecrets(stackName string) (map[string]string, err
 
 	prefix := cp.getSecretPrefix(stackName)
 
-	// List secrets in the project
-	listURL := fmt.Sprintf("https://api.scaleway.com/secret-manager/v1beta1/regions/%s/secrets?project_id=%s&page_size=100",
+	// List secrets in the project, paginating through all results
+	baseURL := fmt.Sprintf("https://api.scaleway.com/secret-manager/v1beta1/regions/%s/secrets?project_id=%s&page_size=100",
 		region, url.QueryEscape(projectID))
 
-	secrets, err := cp.listSecrets(listURL, secretKey)
-	if err != nil {
-		return nil, err
+	var secrets []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	page := 1
+	for {
+		pageURL := fmt.Sprintf("%s&page=%d", baseURL, page)
+		pageSecrets, err := cp.listSecrets(pageURL, secretKey)
+		if err != nil {
+			return nil, err
+		}
+		secrets = append(secrets, pageSecrets...)
+		if len(pageSecrets) < 100 {
+			break
+		}
+		page++
 	}
 
 	// Filter by prefix and read each secret's latest version
