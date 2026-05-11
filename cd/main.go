@@ -108,6 +108,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 				"google-beta",
 				"google-native",
 				"kubernetes",
+				"scaleway",
 			},
 		},
 	}
@@ -124,9 +125,14 @@ func stackConfig() (auto.ConfigMap, error) {
 		"defang:version":  auto.ConfigValue{Value: version},
 	}
 
-	// Cloud provider config read by the explicit providers in the program
+	// Cloud provider config read by the explicit providers in the program.
+	// Check Scaleway before AWS because Scaleway sets AWS_REGION for S3-compatible storage.
 	var providers []string
-	if awsRegion != "" {
+	if scwProjectId != "" {
+		providers = append(providers, "scaleway")
+		cfg["scaleway:projectId"] = auto.ConfigValue{Value: scwProjectId}
+		cfg["scaleway:region"] = auto.ConfigValue{Value: scwRegion}
+	} else if awsRegion != "" {
 		providers = append(providers, "aws")
 		cfg["aws:region"] = auto.ConfigValue{Value: awsRegion}
 		if awsProfile != "" {
@@ -162,7 +168,7 @@ func stackConfig() (auto.ConfigMap, error) {
 	}
 
 	if len(providers) == 0 {
-		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCP_PROJECT_ID, or AZURE_SUBSCRIPTION_ID environment variable"}
+		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCP_PROJECT_ID, AZURE_SUBSCRIPTION_ID, or SCW_DEFAULT_PROJECT_ID environment variable"}
 	} else if len(providers) > 1 {
 		return nil, &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
 	} else {

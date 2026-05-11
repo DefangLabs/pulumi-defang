@@ -59,6 +59,23 @@ builds:
       - -w
       - -X github.com/DefangLabs/pulumi-defang/provider/defangazure.Version={{.Tag}}
     main: ./cmd/pulumi-resource-defang-azure/
+  - id: pulumi-resource-defang-scaleway
+    binary: pulumi-resource-defang-scaleway
+    dir: provider
+    env:
+      - CGO_ENABLED=0
+    goarch:
+      - amd64
+      - arm64
+    goos:
+      - darwin
+      - windows
+      - linux
+    ldflags:
+      - -s
+      - -w
+      - -X github.com/DefangLabs/pulumi-defang/provider/defangscaleway.Version={{.Tag}}
+    main: ./cmd/pulumi-resource-defang-scaleway/
 
 changelog:
   disable: true
@@ -75,6 +92,8 @@ release:
       name_template: schema-defang-gcp.json
     - glob: provider/cmd/pulumi-resource-defang-azure/schema.json
       name_template: schema-defang-azure.json
+    - glob: provider/cmd/pulumi-resource-defang-scaleway/schema.json
+      name_template: schema-defang-scaleway.json
 
 snapshot:
   version_template: '{{ .Tag }}-SNAPSHOT'

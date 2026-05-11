@@ -7,19 +7,21 @@ layout: package
 
 The Pulumi Provider for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi.
 
-The Defang Pulumi Provider is available as separate packages per cloud (AWS, GCP, Azure) in most Pulumi languages.
+The Defang Pulumi Provider is available as separate packages per cloud (AWS, GCP, Azure, Scaleway) in most Pulumi languages.
 
 | Cloud | JavaScript/TypeScript | Python | Go | .NET |
 |-------|----------------------|--------|----|------|
 | AWS | [`@defang-io/pulumi-defang-aws`](https://www.npmjs.com/package/@defang-io/pulumi-defang-aws) | [`pulumi-defang-aws`](https://pypi.org/project/pulumi-defang-aws/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangAws`](https://www.nuget.org/packages/DefangLabs.DefangAws/) |
 | GCP | [`@defang-io/pulumi-defang-gcp`](https://www.npmjs.com/package/@defang-io/pulumi-defang-gcp) | [`pulumi-defang-gcp`](https://pypi.org/project/pulumi-defang-gcp/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangGcp`](https://www.nuget.org/packages/DefangLabs.DefangGcp/) |
 | Azure | [`@defang-io/pulumi-defang-azure`](https://www.npmjs.com/package/@defang-io/pulumi-defang-azure) | [`pulumi-defang-azure`](https://pypi.org/project/pulumi-defang-azure/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangAzure`](https://www.nuget.org/packages/DefangLabs.DefangAzure/) |
+| Scaleway | [`@defang-io/pulumi-defang-scaleway`](https://www.npmjs.com/package/@defang-io/pulumi-defang-scaleway) | [`pulumi-defang-scaleway`](https://pypi.org/project/pulumi-defang-scaleway/) | [`github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway`](https://github.com/DefangLabs/pulumi-defang) | [`DefangLabs.DefangScaleway`](https://www.nuget.org/packages/DefangLabs.DefangScaleway/) |
 
 ### Installing the Pulumi Plugins directly
 ```
 pulumi plugin install resource defang-aws --server github://api.github.com/DefangLabs
 pulumi plugin install resource defang-gcp --server github://api.github.com/DefangLabs
 pulumi plugin install resource defang-azure --server github://api.github.com/DefangLabs
+pulumi plugin install resource defang-scaleway --server github://api.github.com/DefangLabs
 ```
 
 ## Authentication
@@ -44,6 +46,7 @@ You will also need to authenticate with your cloud provider.
     - Use the [`aws-actions/configure-aws-credentials`](https://github.com/aws-actions/configure-aws-credentials) Github Action
     - Use AWS Access Keys by setting the `AWS_ACCESS_KEY_ID`, and `AWS_ACCESS_KEY_SECRET` env vars.
 * For Google Cloud, you may wish to use the [`google-github-actions/auth`](https://github.com/google-github-actions/auth) Github Action
+* For Scaleway, set `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_ORGANIZATION_ID`, and `SCW_DEFAULT_PROJECT_ID`.
 
 ## Using Pulumi Cloud
 

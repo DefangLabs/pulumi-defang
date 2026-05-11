@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"cloud.google.com/go/storage"
@@ -53,7 +54,15 @@ func fetchS3(ctx context.Context, uri string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := s3.NewFromConfig(cfg).GetObject(ctx, &s3.GetObjectInput{
+	var opts []func(*s3.Options)
+	// Support S3-compatible endpoints (e.g., Scaleway Object Storage)
+	if endpoint := os.Getenv("S3_ENDPOINT"); endpoint != "" {
+		opts = append(opts, func(o *s3.Options) {
+			o.BaseEndpoint = &endpoint
+			o.UsePathStyle = true
+		})
+	}
+	result, err := s3.NewFromConfig(cfg, opts...).GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	})

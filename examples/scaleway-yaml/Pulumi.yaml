@@ -1,0 +1,71 @@
+name: defang-scaleway
+runtime: yaml
+description: "End-to-end Scaleway demo: public web -> public api -> managed Postgres"
+
+plugins:
+  providers:
+    - name: defang-scaleway
+      path: ../../bin
+
+config:
+  POSTGRES_PASSWORD:
+    type: string
+    secret: true
+  DATABASE_URL:
+    type: string
+    secret: true
+  API_URL:
+    type: string
+  API_IMAGE:
+    type: string
+  WEB_IMAGE:
+    type: string
+
+resources:
+  db:
+    type: defang-scaleway:index:Postgres
+    properties:
+      projectName: scaleway-e2e
+      postgres: {}
+      environment:
+        POSTGRES_DB: defang
+        POSTGRES_USER: defang
+        POSTGRES_PASSWORD: $${POSTGRES_PASSWORD}
+  api:
+    type: defang-scaleway:index:Service
+    properties:
+      projectName: scaleway-e2e-api
+      image: ${API_IMAGE}
+      ports:
+        - target: 8080
+          mode: ingress
+          appProtocol: http
+      environment:
+        # Current Service environment inputs are plain strings, so deploy the
+        # database first, then set DATABASE_URL from `pulumi stack output
+        # databaseUrl --show-secrets` before creating API.
+        # This uses the provider-generated managed DB endpoint. A live
+        # Project-component test confirmed that Scaleway resolves the private
+        # DNS form db.<private-network>.internal, but does not resolve the bare
+        # Docker Compose hostname db from Serverless Containers.
+        DATABASE_URL: $${DATABASE_URL}
+  web:
+    type: defang-scaleway:index:Service
+    properties:
+      projectName: scaleway-e2e-web
+      image: ${WEB_IMAGE}
+      ports:
+        - target: 8080
+          mode: ingress
+          appProtocol: http
+      environment:
+        # Scaleway Serverless Container Private Networks are egress-only, so
+        # service-to-service calls use the public HTTPS endpoint.
+        # Deploy API first, then set API_URL from the apiEndpoint stack output.
+        API_URL: $${API_URL}
+
+outputs:
+  dbEndpoint: ${db.endpoint}
+  databaseUrl: ${db.connectionUrl}
+  apiEndpoint: ${api.endpoint}
+  webEndpoint: ${web.endpoint}

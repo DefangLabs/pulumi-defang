@@ -24,14 +24,16 @@ var (
 	_, noColor          = os.LookupEnv("NO_COLOR")
 	org                 = getenv("DEFANG_ORG", "defang")
 	prefix              = getenv("DEFANG_PREFIX", "Defang")
-	privateDomain       = os.Getenv("PRIVATE_DOMAIN") // AWS only
+	privateDomain       = os.Getenv("PRIVATE_DOMAIN")                        // AWS only
 	projectName         = getenv("PROJECT", org)
 	pulumiDebug         = getenvBool("DEFANG_PULUMI_DEBUG")
 	pulumiDiff          = getenvBool("DEFANG_PULUMI_DIFF")
 	pulumiTargets       = splitByComma(os.Getenv("DEFANG_PULUMI_TARGETS"))
 	region              = os.Getenv("REGION")
-	registryCredsArn    = os.Getenv("CI_REGISTRY_CREDENTIALS_ARN") // AWS only
-	stackName           = os.Getenv("STACK")                       // required
+	registryCredsArn    = os.Getenv("CI_REGISTRY_CREDENTIALS_ARN")           // AWS only
+	scwProjectId        = os.Getenv("SCW_DEFAULT_PROJECT_ID")                // Scaleway only
+	scwRegion           = getenv("SCW_DEFAULT_REGION", "fr-par")             // Scaleway only; defaults to Paris
+	stackName           = os.Getenv("STACK")                                 // required
 	statesUploadUrl     = os.Getenv("DEFANG_STATES_UPLOAD_URL")
 	stateUrl            = getenv("DEFANG_STATE_URL", os.Getenv("PULUMI_BACKEND_URL"))
 )

@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Pulumi multi-cloud provider that deploys Docker Compose applications to AWS, GCP, and Azure. Written in Go, it generates SDKs for TypeScript, Python, Go, and .NET from provider schemas.
+A Pulumi multi-cloud provider that deploys Docker Compose applications to AWS, GCP, Azure, and Scaleway. Written in Go, it generates SDKs for TypeScript, Python, Go, and .NET from provider schemas.
 
 ## Build Commands
 
 ```bash
-make provider          # Build all three provider binaries (to ./bin/)
+make provider          # Build all provider binaries (to ./bin/)
 make schema            # Generate OpenAPI schemas from provider binaries
 make go_sdk            # Generate Go SDKs (also checks for InputInput type bugs)
 make sdks              # Generate all language SDKs (go, nodejs, python, dotnet)
@@ -41,20 +41,20 @@ Run `make install-git-hooks` to set up:
 - **Pre-commit:** `lint-staged` — runs golangci-lint and tests only for affected providers
 - **Pre-push:** `make provider test go_sdk` — full build + test
 
-The lint-staged config (`.lintstagedrc.js`) is smart: changes to `provider/compose` or `provider/common` trigger all provider tests since all three import them.
+The lint-staged config (`.lintstagedrc.js`) is smart: changes to `provider/compose` or `provider/common` trigger all provider tests since every cloud provider imports them.
 
 ## Architecture
 
 ### Provider Pattern
 
-Each cloud (AWS/GCP/Azure) follows the same structure:
-- `provider/defang{aws,gcp,azure}/provider.go` — registers components via `pulumi-go-provider`'s `infer.Provider()`
-- `provider/defang{aws,gcp,azure}/project.go` — top-level Project component
-- `provider/defang{aws,gcp,azure}/build.go` — image build component
-- `provider/defang{aws,gcp,azure}/service.go` — individual container Service component (requires image)
-- `provider/defang{aws,gcp,azure}/postgres.go` — Postgres-compatible managed database component
-- `provider/defang{aws,gcp,azure}/redis.go` — Redis-compatible managed cache component
-- `provider/defang{aws,gcp,azure}/{aws,gcp,azure}/` — cloud-specific resource creation
+Each cloud (AWS/GCP/Azure/Scaleway) follows the same structure:
+- `provider/defang{aws,gcp,azure,scaleway}/provider.go` — registers components via `pulumi-go-provider`'s `infer.Provider()`
+- `provider/defang{aws,gcp,azure,scaleway}/project.go` — top-level Project component
+- `provider/defang{aws,gcp,azure,scaleway}/build.go` — image build component where supported
+- `provider/defang{aws,gcp,azure,scaleway}/service.go` — individual container Service component (requires image)
+- `provider/defang{aws,gcp,azure,scaleway}/postgres.go` — Postgres-compatible managed database component
+- `provider/defang{aws,gcp,azure,scaleway}/redis.go` — Redis-compatible managed cache component
+- `provider/defang{aws,gcp,azure,scaleway}/{aws,gcp,azure,scaleway}/` — cloud-specific resource creation
 
 Components: **Project** (orchestrator), **Service** (container), **Postgres** (managed DB), **Redis** (managed cache), **Build** (AWS only, resource not component).
 
@@ -89,11 +89,18 @@ Untagged fields are ignored by the Pulumi infer framework (`introspect.ParseTag`
 
 Done by `make sdks`:
 
-1. Build provider binary → `./bin/pulumi-resource-defang-{aws,gcp,azure}`
+1. Build provider binary → `./bin/pulumi-resource-defang-{aws,gcp,azure,scaleway}`
 2. Extract schema → `provider/cmd/*/schema.json`
 3. `pulumi package gen-sdk` generates each language SDK into `sdk/`
 
-Per-provider build logic is in `defang-{aws,gcp,azure}.mk`.
+Per-provider build logic is in `defang-{aws,gcp,azure,scaleway}.mk`.
+
+### No-Infra Provider Tests
+
+Prefer Pulumi mock tests for provider behavior that can be validated without cloud credentials:
+- Unit-level resource mapping: use `pulumi.RunErr(..., pulumi.WithMocks(...))` inside provider packages to inspect registered cloud resources and inputs.
+- Provider-server construction: use `integration.NewServer` / `testutil.Make*TestServer` with `integration.MockResourceMonitor` in `tests/<cloud>` to construct SDK-facing components and assert resource shapes.
+- Keep these tests short-mode compatible and deterministic. They should validate resource types, key inputs, component registration, dependency/resource parenting, and clear unsupported-path errors without making cloud API calls.
 
 ### Tooling
 
@@ -149,4 +156,3 @@ Do NOT store: code patterns derivable from the codebase, git history, ephemeral 
 ### Subprocess Restriction
 
 Do NOT launch `claude` as a subprocess — use SAM's `dispatch_task` instead.
-

@@ -1,0 +1,5 @@
+{
+  "resource": true,
+  "name": "defang-scaleway",
+  "server": "github://api.github.com/DefangLabs/pulumi-defang"
+}
