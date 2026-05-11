@@ -35,7 +35,7 @@ func TestRedisNodeType(t *testing.T) {
 	assert.Equal(t, "RED1-XL", redisNodeType(16384))
 }
 
-func TestCreateRedisCluster(t *testing.T) {
+func TestCreateRedisClusterRequiresPrivateNetwork(t *testing.T) {
 	mocks := &recordingMocks{}
 	password := "secret"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -49,14 +49,8 @@ func TestCreateRedisCluster(t *testing.T) {
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))
 
-	require.NoError(t, err)
-	cluster := mocks.findType("scaleway:redis/cluster:Cluster")
-	require.NotNil(t, cluster)
-	assert.Equal(t, "8.4.0", cluster.inputs[resource.PropertyKey("version")].StringValue())
-	assert.Equal(t, "RED1-MICRO", cluster.inputs[resource.PropertyKey("nodeType")].StringValue())
-	assert.Equal(t, "default", cluster.inputs[resource.PropertyKey("userName")].StringValue())
-	assert.True(t, cluster.inputs[resource.PropertyKey("tlsEnabled")].BoolValue())
-	assert.Len(t, cluster.inputs[resource.PropertyKey("acls")].ArrayValue(), 1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "private network")
 }
 
 func TestCreateRedisAttachesPrivateNetwork(t *testing.T) {
