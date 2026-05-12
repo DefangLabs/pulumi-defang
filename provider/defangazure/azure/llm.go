@@ -145,7 +145,9 @@ func CreateLLMInfra(
 	// here, but a cautious guard is cheaper than debugging preview-time
 	// ARM slowness). Consumers get ErrModelSelectorUnavailable in preview.
 	var selector ModelSelector
-	if !ctx.DryRun() {
+	if ctx.DryRun() {
+		selector = &StaticModelSelector{}
+	} else {
 		selector = NewDynamicModelSelector(
 			config.GetSubscriptionId(ctx),
 			infra.ResourceGroup.Name.ToStringOutput(),
