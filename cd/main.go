@@ -154,11 +154,6 @@ func stackConfig() (auto.ConfigMap, error) {
 		// from (project, stack, location) and (subscription, RG) respectively
 		// inside the provider — matching the CLI's conventions. No need to
 		// pass them through as stack config or env vars.
-
-		// Azure logs don't have structured fields we can filter on, so include
-		// the etag in every log line.
-		stderrLogger = withEtagPrefix(os.Stderr)
-		stdoutLogger = withEtagPrefix(os.Stdout)
 	}
 
 	if len(providers) == 0 {
