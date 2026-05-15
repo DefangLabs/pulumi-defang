@@ -24,7 +24,7 @@ type SharedInfra struct {
 	LLMInfra           *LLMInfra              // nil when no LLM services are present
 	ConfigProvider     compose.ConfigProvider // reads project secrets (set via `defang config set`)
 	KeyVaultURL        string                 // Key Vault URL for secret references (empty if no vault)
-	KeyVaultIdentityID pulumi.StringPtrOutput // user-assigned identity for KV access (zero if no vault)
+	KeyVaultIdentityID pulumi.StringPtrInput  // user-assigned identity for KV access (zero if no vault)
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string

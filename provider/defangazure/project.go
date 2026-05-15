@@ -365,10 +365,14 @@ func setupSharedInfra(
 	keyVaultURL := "https://" + kvName + ".vault.azure.net"
 
 	infra := &providerazure.SharedInfra{
-		ResourceGroup:  rg,
-		KeyVaultURL:    keyVaultURL, // FIXME: don't set if vault doesn't exist
-		ConfigProvider: providerazure.NewConfigProvider(keyVaultURL),
-		Etag:           inputs.Etag,
+		ResourceGroup: rg,
+		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
+		Etag:          inputs.Etag,
+	}
+	if ctx.DryRun() {
+		infra.ConfigProvider = &compose.DryRunConfigProvider{}
+	} else {
+		infra.ConfigProvider = providerazure.NewConfigProvider(keyVaultURL)
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {
