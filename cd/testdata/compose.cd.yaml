@@ -1,0 +1,65 @@
+services:
+  cd-aws:
+    build:
+      context: ../..
+      target: aws
+    restart: no
+    command:
+      - ${COMMAND-preview}
+      - IlpzZXJ2aWNlczoKICBuZ2lueDoKICAgIGltYWdlOiBuZ2lueAogICAgcG9ydHM6CiAgICAgIC0gdGFyZ2V0OiA4MAogICAgICAgIHB1Ymxpc2hlZDogIjgwIgo=
+    environment:
+      - PULUMI_ACCESS_TOKEN # for Pulumi Cloud
+      - USER # for Pulumi Cloud
+      - STACK=aws
+      - PROJECT=cd-test
+      - DEFANG_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/events-aws.json
+      - STATES_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/states-aws.json
+      - AWS_PROFILE=defang-lab
+      - AWS_REGION=us-west-2
+    volumes:
+      - $HOME/.aws:/root/.aws:ro
+      - /tmp/defang-cd:/tmp/defang-cd
+
+  cd-azure:
+    build:
+      context: ../..
+      target: azure
+    restart: no
+    command:
+      - ${COMMAND-preview}
+      - IlpzZXJ2aWNlczoKICBuZ2lueDoKICAgIGltYWdlOiBuZ2lueAogICAgcG9ydHM6CiAgICAgIC0gdGFyZ2V0OiA4MAogICAgICAgIHB1Ymxpc2hlZDogIjgwIgo=
+    environment:
+      - PULUMI_ACCESS_TOKEN # for Pulumi Cloud
+      - USER # for Pulumi Cloud
+      - STACK=azure
+      - PROJECT=cd-test
+      - DEFANG_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/events-azure.json
+      - STATES_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/states-azure.json
+      - AZURE_SUBSCRIPTION_ID=f311c4db-e998-4c94-906c-7e2637303a05
+      - AZURE_LOCATION=westus
+      - AZURE_TENANT_ID=12c0f515-fa47-402f-9982-de7646d3cb28
+      - AZURE_CLIENT_ID=80fc261c-daa9-4d91-86f7-74c110dac086
+      - AZURE_CLIENT_SECRET
+    volumes:
+      - /tmp/defang-cd:/tmp/defang-cd
+
+  cd-gcp:
+    build:
+      context: ../..
+      target: gcp
+    restart: no
+    command:
+      - ${COMMAND-preview}
+      - IlpzZXJ2aWNlczoKICBuZ2lueDoKICAgIGltYWdlOiBuZ2lueAogICAgcG9ydHM6CiAgICAgIC0gdGFyZ2V0OiA4MAogICAgICAgIHB1Ymxpc2hlZDogIjgwIgo=
+    environment:
+      - PULUMI_ACCESS_TOKEN # for Pulumi Cloud
+      - USER # for Pulumi Cloud
+      - STACK=gcp
+      - PROJECT=cd-test
+      - DEFANG_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/events-gcp.json
+      - STATES_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/states-gcp.json
+      - GCP_PROJECT_ID=liotest-443018
+      - GCP_REGION=us-central1
+    volumes:
+      - $HOME/.config/gcloud:/root/.config/gcloud:ro
+      - /tmp/defang-cd:/tmp/defang-cd

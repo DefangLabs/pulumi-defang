@@ -1,0 +1,159 @@
+name: crewai
+services:
+  app:
+    build:
+      context: /Users/llunesu/dev/samples/samples/crewai/app
+      dockerfile: Dockerfile
+    command:
+      - ./run.sh
+    depends_on:
+      postgres:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        reservations:
+          cpus: 0.5
+          memory: "536870912"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=require
+      DJANGO_SECRET_KEY: null
+      DJANGO_SETTINGS_MODULE: config.settings
+      REDIS_URL: redis://redis:6379/0
+      SSL_MODE: null
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8000/
+      timeout: 2s
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8000"
+        protocol: tcp
+        app_protocol: http
+  chat:
+    deploy:
+      resources:
+        reservations:
+          cpus: 0.5
+          memory: "536870912"
+    environment:
+      OPENAI_API_KEY: defang
+    image: defangio/openai-access-gateway
+    networks:
+      model_provider_private: null
+    ports:
+      - mode: host
+        target: 80
+        protocol: tcp
+    x-defang-llm: true
+  embedding:
+    deploy:
+      resources:
+        reservations:
+          cpus: 0.5
+          memory: "536870912"
+    environment:
+      OPENAI_API_KEY: defang
+    image: defangio/openai-access-gateway
+    networks:
+      model_provider_private: null
+    ports:
+      - mode: host
+        target: 80
+        protocol: tcp
+    x-defang-llm: true
+  postgres:
+    deploy:
+      resources:
+        reservations:
+          cpus: 0.5
+          memory: "536870912"
+    environment:
+      POSTGRES_PASSWORD: null
+    image: pgvector/pgvector:pg16
+    networks:
+      default: null
+    ports:
+      - mode: host
+        target: 5432
+        published: "5432"
+        protocol: tcp
+    x-defang-postgres: true
+  redis:
+    deploy:
+      resources:
+        reservations:
+          cpus: 0.5
+          memory: "536870912"
+    image: redis:6.2
+    networks:
+      default: null
+    ports:
+      - mode: host
+        target: 6379
+        published: "6379"
+        protocol: tcp
+    x-defang-redis: true
+  worker:
+    build:
+      context: /Users/llunesu/dev/samples/samples/crewai/app
+      dockerfile: Dockerfile
+    command:
+      - celery
+      - -A
+      - config
+      - worker
+      - -l
+      - info
+    depends_on:
+      chat:
+        condition: service_started
+        required: true
+      embedding:
+        condition: service_started
+        required: true
+      postgres:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        reservations:
+          cpus: 0.5
+          memory: "536870912"
+    environment:
+      CHAT_MODEL: chat-default
+      CHAT_URL: http://chat/api/v1/
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=require
+      DJANGO_SECRET_KEY: null
+      DJANGO_SETTINGS_MODULE: config.settings
+      EMBEDDING_MODEL: embedding-default
+      EMBEDDING_URL: http://embedding/api/v1/
+      OPENAI_API_KEY: defang
+      REDIS_URL: redis://redis:6379/0
+      SSL_MODE: null
+    networks:
+      default: null
+      model_provider_private: null
+networks:
+  default:
+    name: crewai_default
+  model_provider_private:
+    name: model_provider_private
+

@@ -16,7 +16,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 )
 
-func uploadEvents[T any](ctx context.Context, engineEvents []T) {
+func uploadEvents[T any](ctx context.Context, eventsUploadUrl string, engineEvents []T) {
 	if eventsUploadUrl == "" {
 		return
 	}
@@ -28,7 +28,7 @@ func uploadEvents[T any](ctx context.Context, engineEvents []T) {
 	}
 }
 
-func uploadState(ctx context.Context, stack auto.Stack) {
+func uploadState(ctx context.Context, statesUploadUrl string, stack auto.Stack) {
 	if statesUploadUrl == "" {
 		return
 	}

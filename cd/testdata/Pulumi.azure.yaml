@@ -1,0 +1,10 @@
+config:
+  azure-native:location: westus
+  azure-native:subscriptionId: f311c4db-e998-4c94-906c-7e2637303a05
+  azure-native:tenantId: 12c0f515-fa47-402f-9982-de7646d3cb28
+  # defang:cdImage: ""
+  defang:etag: test123
+  defang:org: DefangLabs
+  defang:provider: azure
+  # defang:stateUrl: ""
+  defang:version: development

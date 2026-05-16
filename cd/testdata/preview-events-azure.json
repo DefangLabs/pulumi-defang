@@ -1,0 +1,1136 @@
+{
+  "events": [
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "preludeEvent": {
+        "config": {
+          "azure-native:location": "westus",
+          "azure-native:subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+          "azure-native:useMsi": "true",
+          "defang:cdImage": "",
+          "defang:etag": "defang",
+          "defang:org": "defang",
+          "defang:provider": "azure",
+          "defang:stateUrl": "",
+          "defang:version": "development",
+          "pulumi:autonaming": "{\"pattern\":\"Defang-${project}-${stack}-${name}-${hex(7)}\",\"providers\":{\"aws\":{\"resources\":{\"aws:ecr/repository:Repository\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\"},\"aws:ecs/service:Service\":{\"pattern\":\"${name}-${hex(7)}\"},\"aws:elasticache/subnetGroup:SubnetGroup\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\"},\"aws:lb/loadBalancer:LoadBalancer\":{\"pattern\":\"${project}-${stack}-${hex(4)}\"},\"aws:lb/targetGroup:TargetGroup\":{\"pattern\":\"${name}-${hex(4)}\"},\"aws:rds/subnetGroup:SubnetGroup\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\"}}},\"azure-native\":{\"resources\":{\"azure-native:app:ManagedEnvironment\":{\"pattern\":\"Defang-${project}-${stack}-${hex(7)}\"},\"azure-native:containerregistry:Registry\":{\"pattern\":\"${name}${stack}${hex(7)}\"},\"azure-native:containerregistry:Task\":{\"pattern\":\"${name}-${hex(7)}\"}}},\"gcp\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\",\"resources\":{\"gcp:cloudrunv2/service:Service\":{\"pattern\":\"${project}-${stack}-${name}-${hex(7)}\"},\"gcp:redis/instance:Instance\":{\"pattern\":\"${project}-${name}-${hex(7)}\"},\"gcp:serviceaccount/account:Account\":{\"pattern\":\"${name}-${hex(4)}\"}}}}}",
+          "pulumi:disable-default-providers": "[\"aws-native\",\"aws\",\"azure-native\",\"azure\",\"eks\",\"gcp\",\"google-beta\",\"google-native\",\"kubernetes\"]"
+        }
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "diagnosticEvent": {
+        "prefix": "warning: ",
+        "message": "using pulumi-resource-defang-azure from $PATH at /Users/llunesu/go/bin/pulumi-resource-defang-azure\n",
+        "color": "never",
+        "severity": "warning"
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "summaryEvent": {
+        "maybeCorrupt": false,
+        "durationSeconds": 42,
+        "resourceChanges": {
+          "create": 9
+        },
+        "PolicyPacks": {},
+        "isPreview": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "cancelEvent": {},
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+          "type": "azure-native:app:ManagedEnvironment",
+          "old": null,
+          "new": {
+            "type": "azure-native:app:ManagedEnvironment",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {
+              "__createBeforeDelete": true,
+              "appLogsConfiguration": {
+                "destination": "log-analytics",
+                "logAnalyticsConfiguration": {
+                  "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "sharedKey": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                }
+              },
+              "azureApiVersion": "2025-02-02-preview",
+              "environmentName": "Defang-cd-test-azure-***",
+              "location": "westus",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              }
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+          "type": "azure-native:app:ManagedEnvironment",
+          "old": null,
+          "new": {
+            "type": "azure-native:app:ManagedEnvironment",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {
+              "__createBeforeDelete": true,
+              "appLogsConfiguration": {
+                "destination": "log-analytics",
+                "logAnalyticsConfiguration": {
+                  "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "sharedKey": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                }
+              },
+              "azureApiVersion": "2025-02-02-preview",
+              "environmentName": "Defang-cd-test-azure-***",
+              "location": "westus",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              }
+            },
+            "outputs": {
+              "appInsightsConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "appLogsConfiguration": {
+                "destination": "log-analytics",
+                "logAnalyticsConfiguration": {
+                  "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "dynamicJsonColumns": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                }
+              },
+              "availabilityZones": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "customDomainConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "daprAIConnectionString": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "daprAIInstrumentationKey": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "daprConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "defaultDomain": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "deploymentErrors": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "diskEncryptionConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "eventStreamEndpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "identity": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "infrastructureResourceGroup": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ingressConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "kedaConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "kind": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "location": "westus",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "openTelemetryConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "peerAuthentication": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "peerTrafficConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "privateEndpointConnections": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "privateLinkDefaultDomain": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "provisioningState": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "publicNetworkAccess": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "staticIp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              },
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "vnetConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "workloadProfiles": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "zoneRedundant": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
+          "type": "azure-native:operationalinsights:Table",
+          "old": null,
+          "new": {
+            "type": "azure-native:operationalinsights:Table",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {
+              "azureApiVersion": "2023-09-01",
+              "plan": "Basic",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tableName": "ContainerAppConsoleLogs",
+              "workspaceName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
+          "type": "azure-native:operationalinsights:Table",
+          "old": null,
+          "new": {
+            "type": "azure-native:operationalinsights:Table",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {
+              "azureApiVersion": "2023-09-01",
+              "plan": "Basic",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tableName": "ContainerAppConsoleLogs",
+              "workspaceName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "archiveRetentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "lastPlanModifiedDate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "plan": "Basic",
+              "provisioningState": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "restoredLogs": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "resultStatistics": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDaysAsDefault": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "schema": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "searchResults": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "totalRetentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "totalRetentionInDaysAsDefault": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+          "type": "azure-native:operationalinsights:Workspace",
+          "old": null,
+          "new": {
+            "type": "azure-native:operationalinsights:Workspace",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {
+              "__createBeforeDelete": true,
+              "azureApiVersion": "2023-09-01",
+              "location": "westus",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDays": 30,
+              "sku": {
+                "name": "PerGB2018"
+              },
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              },
+              "workspaceCapping": {
+                "dailyQuotaGb": 1
+              },
+              "workspaceName": "Defang-cd-test-azure-cd-test-***"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+          "type": "azure-native:operationalinsights:Workspace",
+          "old": null,
+          "new": {
+            "type": "azure-native:operationalinsights:Workspace",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {
+              "__createBeforeDelete": true,
+              "azureApiVersion": "2023-09-01",
+              "location": "westus",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDays": 30,
+              "sku": {
+                "name": "PerGB2018"
+              },
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              },
+              "workspaceCapping": {
+                "dailyQuotaGb": 1
+              },
+              "workspaceName": "Defang-cd-test-azure-cd-test-***"
+            },
+            "outputs": {
+              "createdDate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "defaultDataCollectionRuleResourceId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "etag": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "features": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "forceCmkForQuery": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "identity": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "location": "westus",
+              "modifiedDate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "privateLinkScopedResources": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "provisioningState": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "publicNetworkAccessForIngestion": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "publicNetworkAccessForQuery": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDays": 30,
+              "sku": {
+                "capacityReservationLevel": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "lastSkuUpdate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "name": "PerGB2018"
+              },
+              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              },
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "workspaceCapping": {
+                "dailyQuotaGb": 1,
+                "dataIngestionStatus": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "quotaNextResetTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+              }
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:resources:ResourceGroup::cd-test",
+          "type": "azure-native:resources:ResourceGroup",
+          "old": null,
+          "new": {
+            "type": "azure-native:resources:ResourceGroup",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:resources:ResourceGroup::cd-test",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "azureApiVersion": "2024-03-01",
+              "location": "westus",
+              "resourceGroupName": "Defang-cd-test-azure",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              }
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:resources:ResourceGroup::cd-test",
+          "type": "azure-native:resources:ResourceGroup",
+          "old": null,
+          "new": {
+            "type": "azure-native:resources:ResourceGroup",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:resources:ResourceGroup::cd-test",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "azureApiVersion": "2024-03-01",
+              "location": "westus",
+              "resourceGroupName": "Defang-cd-test-azure",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              }
+            },
+            "outputs": {
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "location": "westus",
+              "managedBy": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "properties": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-stack": "azure"
+              },
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+          "type": "azure-native:app:ContainerApp",
+          "old": null,
+          "new": {
+            "type": "azure-native:app:ContainerApp",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "inputs": {
+              "azureApiVersion": "2025-02-02-preview",
+              "configuration": {
+                "activeRevisionsMode": "Single",
+                "ingress": {
+                  "allowInsecure": false,
+                  "external": true,
+                  "targetPort": 80,
+                  "transport": "auto"
+                },
+                "registries": [],
+                "secrets": []
+              },
+              "containerAppName": "nginx",
+              "location": "westus",
+              "managedEnvironmentId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-service": "nginx",
+                "defang-stack": "azure"
+              },
+              "template": {
+                "containers": [
+                  {
+                    "args": [],
+                    "command": [],
+                    "env": [
+                      {
+                        "name": "DEFANG_SERVICE",
+                        "value": "nginx"
+                      },
+                      {
+                        "name": "DEFANG_ETAG",
+                        "value": "defang"
+                      }
+                    ],
+                    "image": "nginx",
+                    "name": "nginx",
+                    "probes": [],
+                    "resources": {
+                      "cpu": 0.25,
+                      "memory": "0.50Gi"
+                    }
+                  }
+                ],
+                "revisionSuffix": "defang",
+                "scale": {
+                  "maxReplicas": 1,
+                  "minReplicas": 1
+                }
+              }
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+          "type": "azure-native:app:ContainerApp",
+          "old": null,
+          "new": {
+            "type": "azure-native:app:ContainerApp",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "inputs": {
+              "azureApiVersion": "2025-02-02-preview",
+              "configuration": {
+                "activeRevisionsMode": "Single",
+                "ingress": {
+                  "allowInsecure": false,
+                  "external": true,
+                  "targetPort": 80,
+                  "transport": "auto"
+                },
+                "registries": [],
+                "secrets": []
+              },
+              "containerAppName": "nginx",
+              "location": "westus",
+              "managedEnvironmentId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-service": "nginx",
+                "defang-stack": "azure"
+              },
+              "template": {
+                "containers": [
+                  {
+                    "args": [],
+                    "command": [],
+                    "env": [
+                      {
+                        "name": "DEFANG_SERVICE",
+                        "value": "nginx"
+                      },
+                      {
+                        "name": "DEFANG_ETAG",
+                        "value": "defang"
+                      }
+                    ],
+                    "image": "nginx",
+                    "name": "nginx",
+                    "probes": [],
+                    "resources": {
+                      "cpu": 0.25,
+                      "memory": "0.50Gi"
+                    }
+                  }
+                ],
+                "revisionSuffix": "defang",
+                "scale": {
+                  "maxReplicas": 1,
+                  "minReplicas": 1
+                }
+              }
+            },
+            "outputs": {
+              "configuration": {
+                "activeRevisionsMode": "Single",
+                "dapr": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "identitySettings": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "ingress": {
+                  "additionalPortMappings": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "allowInsecure": false,
+                  "clientCertificateMode": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "corsPolicy": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "customDomains": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "exposedPort": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "external": true,
+                  "fqdn": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "ipSecurityRestrictions": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "stickySessions": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "targetPort": 80,
+                  "targetPortHttpScheme": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "traffic": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "transport": "auto"
+                },
+                "maxInactiveRevisions": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "registries": [],
+                "revisionTransitionThreshold": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "runtime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "secrets": [],
+                "service": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "targetLabel": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+              },
+              "customDomainVerificationId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "deploymentErrors": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "environmentId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "eventStreamEndpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "extendedLocation": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "identity": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "kind": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "latestReadyRevisionName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "latestRevisionFqdn": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "latestRevisionName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "location": "westus",
+              "managedBy": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "managedEnvironmentId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "outboundIpAddresses": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "patchingConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "provisioningState": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "runningStatus": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tags": {
+                "defang-etag": "defang",
+                "defang-org": "organization",
+                "defang-project": "cd-test",
+                "defang-service": "nginx",
+                "defang-stack": "azure"
+              },
+              "template": {
+                "containers": [
+                  {
+                    "args": [],
+                    "command": [],
+                    "env": [
+                      {
+                        "name": "DEFANG_SERVICE",
+                        "secretRef": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                        "value": "nginx"
+                      },
+                      {
+                        "name": "DEFANG_ETAG",
+                        "secretRef": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                        "value": "defang"
+                      }
+                    ],
+                    "image": "nginx",
+                    "imageType": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "name": "nginx",
+                    "probes": [],
+                    "resources": {
+                      "cpu": 0.25,
+                      "ephemeralStorage": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "gpu": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "memory": "0.50Gi"
+                    },
+                    "volumeMounts": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                  }
+                ],
+                "initContainers": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "revisionSuffix": "defang",
+                "scale": {
+                  "cooldownPeriod": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxReplicas": 1,
+                  "minReplicas": 1,
+                  "pollingInterval": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "rules": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                },
+                "serviceBinds": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "terminationGracePeriodSeconds": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "volumes": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+              },
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "workloadProfileName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+          "type": "defang-azure:index:AzureContainerApp",
+          "old": null,
+          "new": {
+            "type": "defang-azure:index:AzureContainerApp",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+          "type": "defang-azure:index:AzureContainerApp",
+          "old": null,
+          "new": {
+            "type": "defang-azure:index:AzureContainerApp",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+          "type": "defang-azure:index:AzureContainerApp",
+          "old": null,
+          "new": {
+            "type": "defang-azure:index:AzureContainerApp",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "inputs": {},
+            "outputs": {
+              "endpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+          "type": "defang-azure:index:Project",
+          "old": null,
+          "new": {
+            "type": "defang-azure:index:Project",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+          "type": "defang-azure:index:Project",
+          "old": null,
+          "new": {
+            "type": "defang-azure:index:Project",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+          "type": "defang-azure:index:Project",
+          "old": null,
+          "new": {
+            "type": "defang-azure:index:Project",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "inputs": {},
+            "outputs": {
+              "endpoints": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "loadBalancerDns": ""
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure",
+          "type": "pulumi:providers:azure-native",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:azure-native",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "inputs": {
+              "__internal": {},
+              "environment": "public",
+              "location": "westus",
+              "subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+              "useDefaultAzureCredential": true,
+              "version": "3.17.0"
+            },
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure",
+          "type": "pulumi:providers:azure-native",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:azure-native",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure",
+            "custom": true,
+            "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "inputs": {
+              "__internal": {},
+              "environment": "public",
+              "location": "westus",
+              "subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+              "useDefaultAzureCredential": true,
+              "version": "3.17.0"
+            },
+            "outputs": {
+              "environment": "public",
+              "location": "westus",
+              "subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+              "useDefaultAzureCredential": true,
+              "version": "3.17.0"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:providers:defang-azure::default_github_/api.github.com/DefangLabs/pulumi-defang",
+          "type": "pulumi:providers:defang-azure",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:defang-azure",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:providers:defang-azure::default_github_/api.github.com/DefangLabs/pulumi-defang",
+            "custom": true,
+            "id": "",
+            "parent": "",
+            "inputs": {
+              "__internal": {
+                "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang"
+              },
+              "__pulumi-go-provider-version": "1.2.0"
+            },
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:providers:defang-azure::default_github_/api.github.com/DefangLabs/pulumi-defang",
+          "type": "pulumi:providers:defang-azure",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:defang-azure",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:providers:defang-azure::default_github_/api.github.com/DefangLabs/pulumi-defang",
+            "custom": true,
+            "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "parent": "",
+            "inputs": {
+              "__internal": {
+                "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang"
+              },
+              "__pulumi-go-provider-version": "1.2.0"
+            },
+            "outputs": {
+              "__pulumi-go-provider-version": "1.2.0"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+          "type": "pulumi:pulumi:Stack",
+          "old": null,
+          "new": {
+            "type": "pulumi:pulumi:Stack",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "id": "",
+            "parent": "",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+          "type": "pulumi:pulumi:Stack",
+          "old": null,
+          "new": {
+            "type": "pulumi:pulumi:Stack",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "id": "",
+            "parent": "",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+          "type": "pulumi:pulumi:Stack",
+          "old": null,
+          "new": {
+            "type": "pulumi:pulumi:Stack",
+            "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+            "id": "",
+            "parent": "",
+            "inputs": {},
+            "outputs": {
+              "endpoints": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "loadBalancerDns": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    }
+  ]
+}
