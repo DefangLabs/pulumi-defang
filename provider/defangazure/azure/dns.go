@@ -57,7 +57,7 @@ func CreateDNSZones(
 			Location:            pulumi.String("global"),
 			RegistrationEnabled: pulumi.Bool(false),
 			VirtualNetwork:      &privatedns.SubResourceArgs{Id: networking.VNet.ID().ToStringOutput()},
-		}, append(opts, pulumi.Parent(pgZone))...)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating postgres DNS VNet link: %w", err)
 		}
@@ -86,7 +86,7 @@ func CreateDNSZones(
 			Location:            pulumi.String("global"),
 			RegistrationEnabled: pulumi.Bool(false),
 			VirtualNetwork:      &privatedns.SubResourceArgs{Id: networking.VNet.ID().ToStringOutput()},
-		}, append(opts, pulumi.Parent(redisZone))...)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Redis DNS VNet link: %w", err)
 		}

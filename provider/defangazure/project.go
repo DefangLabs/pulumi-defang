@@ -319,6 +319,22 @@ func createManagedEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
+
+	// Pin the plan for ContainerAppConsoleLogs (Container Apps' stdout sink).
+	// Default plan is Basic (see LogConsoleLogsPlan) — ~4-5x ingest savings vs
+	// the Analytics tier the table would otherwise default to. The table is
+	// auto-created by Container Apps; this resource just sets the plan upfront
+	// so the first day of logs already lands on the chosen tier.
+	consoleLogsPlan := providerazure.LogConsoleLogsPlan.Get(ctx)
+	if _, err := operationalinsights.NewTable(ctx, name+"-console-logs", &operationalinsights.TableArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		WorkspaceName:     logWorkspace.Name,
+		TableName:         pulumi.String("ContainerAppConsoleLogs"),
+		Plan:              pulumi.String(consoleLogsPlan),
+	}, parentOpt, pulumi.DeletedWith(logWorkspace)); err != nil {
+		return nil, fmt.Errorf("setting %s plan on ContainerAppConsoleLogs: %w", consoleLogsPlan, err)
+	}
+
 	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		WorkspaceName:     logWorkspace.Name,

@@ -168,8 +168,6 @@ func CreatePostgresFlexible(
 		return nil, fmt.Errorf("creating PostgreSQL Flexible Server: %w", err)
 	}
 
-	serverChildOpts := append([]pulumi.ResourceOption{pulumi.Parent(server)}, opts...)
-
 	// Allowlist extensions. Azure Postgres Flexible Server blocks CREATE EXTENSION
 	// unless the extension is listed in the azure.extensions server parameter first.
 	// This list mirrors what AWS RDS and GCP Cloud SQL permit by default, restricted
@@ -191,7 +189,7 @@ func CreatePostgresFlexible(
 				"TEMPORAL_TABLES,TSM_SYSTEM_ROWS,TSM_SYSTEM_TIME,UNACCENT,UUID-OSSP,VECTOR",
 		),
 		Source: pulumi.String("user-override"),
-	}, serverChildOpts...)
+	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("enabling extensions: %w", err)
 	}
@@ -203,7 +201,7 @@ func CreatePostgresFlexible(
 	//
 	// Azure serializes server-parameter changes — applying two Configurations in
 	// parallel yields `ServerIsBusy` on the loser. Sequence this after extensions.
-	noTlsOpts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{extensionsCfg})}, serverChildOpts...)
+	noTlsOpts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{extensionsCfg})}, opts...)
 	noTlsCfg, err := dbforpostgresql.NewConfiguration(ctx, "no-tls", &dbforpostgresql.ConfigurationArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ServerName:        server.Name,
@@ -221,7 +219,7 @@ func CreatePostgresFlexible(
 			ResourceGroupName: infra.ResourceGroup.Name,
 			ServerName:        server.Name,
 			DatabaseName:      pg.DBName,
-		}, serverChildOpts...)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating PostgreSQL database: %w", err)
 		}
@@ -235,7 +233,7 @@ func CreatePostgresFlexible(
 			ServerName:        server.Name,
 			StartIpAddress:    pulumi.String("0.0.0.0"),
 			EndIpAddress:      pulumi.String("0.0.0.0"),
-		}, serverChildOpts...)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating PostgreSQL firewall rule: %w", err)
 		}
