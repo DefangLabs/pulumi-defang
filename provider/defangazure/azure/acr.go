@@ -104,24 +104,10 @@ func createACRTask(
 	ctx *pulumi.Context,
 	serviceName string,
 	encodedYAML string,
-	contextURL pulumi.StringInput,
 	registry *containerregistry.Registry,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*containerregistry.Task, error) {
-	// Log context URL for debugging (without exposing the token value).
-	contextURL.ToStringOutput().ApplyT(func(s string) string {
-		if idx := strings.Index(s, "?"); idx >= 0 {
-			base := s[:idx]
-			msg := fmt.Sprintf("ACR task %s: build context URL: %s (SAS token present, %d bytes)",
-				serviceName, base, len(s)-idx-1)
-			_ = ctx.Log.Info(msg, nil)
-		} else {
-			_ = ctx.Log.Info(fmt.Sprintf("ACR task %s: build context URL: %s (no SAS token)", serviceName, s), nil)
-		}
-		return s
-	})
-
 	task, err := containerregistry.NewTask(ctx, serviceName, &containerregistry.TaskArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		RegistryName:      registry.Name,

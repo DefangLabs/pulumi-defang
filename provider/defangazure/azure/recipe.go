@@ -23,8 +23,14 @@ var (
 	// default — measured against a real app, a 2K prompt was rejected at
 	// capacity 1 and accepted at 10.
 	LLMDeploymentCapacity = recipe.Int("llm-deployment-capacity", 10)
-	LogRetentionDays      = recipe.Int("log-retention-days", 1)
-	LogWorkspaceSku       = recipe.String("log-workspace-sku", "PerGB2018")
+	// LogConsoleLogsPlan controls the table plan for ContainerAppConsoleLogs.
+	// Default "Basic" (~$0.50/GB ingest, 8-day retention, per-query scan cost,
+	// no log alerts) — covers `defang logs` style live browsing of stdout.
+	// HA override: "Analytics" (~$2.30/GB, full retention + alerts + KQL).
+	// "Auxiliary" (~$0.13/GB) is also accepted; loses most query power.
+	LogConsoleLogsPlan = recipe.String("log-console-logs-plan", "Basic")
+	LogRetentionDays   = recipe.Int("log-retention-days", 1)
+	LogWorkspaceSku    = recipe.String("log-workspace-sku", "PerGB2018")
 	// LogWorkspaceDailyQuotaGb caps daily ingestion in GB. 0 = no cap.
 	// Default 1 GB/day = ~30 GB/mo, ~$70 ceiling on PerGB2018 (~$2.30/GB).
 	// Chatty workloads (AI agents) override upward; an unbounded default
