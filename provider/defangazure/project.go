@@ -320,21 +320,6 @@ func createManagedEnvironment(
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
 
-	// Pin the plan for ContainerAppConsoleLogs (Container Apps' stdout sink).
-	// Default plan is Basic (see LogConsoleLogsPlan) — ~4-5x ingest savings vs
-	// the Analytics tier the table would otherwise default to. The table is
-	// auto-created by Container Apps; this resource just sets the plan upfront
-	// so the first day of logs already lands on the chosen tier.
-	consoleLogsPlan := providerazure.LogConsoleLogsPlan.Get(ctx)
-	if _, err := operationalinsights.NewTable(ctx, name+"-console-logs", &operationalinsights.TableArgs{
-		ResourceGroupName: infra.ResourceGroup.Name,
-		WorkspaceName:     logWorkspace.Name,
-		TableName:         pulumi.String("ContainerAppConsoleLogs"),
-		Plan:              pulumi.String(consoleLogsPlan),
-	}, parentOpt, pulumi.DeletedWith(logWorkspace)); err != nil {
-		return nil, fmt.Errorf("setting %s plan on ContainerAppConsoleLogs: %w", consoleLogsPlan, err)
-	}
-
 	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		WorkspaceName:     logWorkspace.Name,
@@ -363,6 +348,33 @@ func createManagedEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
+
+	// Pin the plan on ContainerAppConsoleLogs (Container Apps' stdout sink).
+	// The table schema isn't a true workspace built-in — it's registered by
+	// the Container Apps Monitor solution, which attaches when an env links
+	// the workspace as its log-analytics destination. So we must wait for
+	// `env` before the table is queryable (or its ID resolvable for Import).
+	// Plain Create would race with the solution registration and fail with
+	// "cannot create already existing resource"; Import + DependsOn(env)
+	// guarantees the schema exists, then applies the Plan diff.
+	consoleLogsPlan := providerazure.LogConsoleLogsPlan.Get(ctx)
+	consoleLogsImportID := logWorkspace.ID().ToStringOutput().ApplyT(func(id string) pulumi.ID {
+		return pulumi.ID(id + "/tables/ContainerAppConsoleLogs")
+	}).(pulumi.IDOutput)
+	if _, err := operationalinsights.NewTable(ctx, name+"-console-logs", &operationalinsights.TableArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		WorkspaceName:     logWorkspace.Name,
+		TableName:         pulumi.String("ContainerAppConsoleLogs"),
+		Plan:              pulumi.String(consoleLogsPlan),
+	},
+		parentOpt,
+		pulumi.Parent(logWorkspace),
+		pulumi.DependsOn([]pulumi.Resource{env}),
+		pulumi.Import(consoleLogsImportID),
+	); err != nil {
+		return nil, fmt.Errorf("setting %s plan on ContainerAppConsoleLogs: %w", consoleLogsPlan, err)
+	}
+
 	return env, nil
 }
 

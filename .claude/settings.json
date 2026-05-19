@@ -14,6 +14,7 @@
       "Bash(az monitor log-analytics workspace table list:*)",
       "Bash(az monitor log-analytics workspace table show:*)",
       "Bash(az role assignment list:*)",
+      "Bash(az role assignment show:*)",
       "Bash(cat:*)",
       "Bash(curl -sf http://localhost:*)",
       "Bash(diff:*)",
