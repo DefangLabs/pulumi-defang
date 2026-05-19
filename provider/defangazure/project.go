@@ -301,14 +301,24 @@ func createManagedEnvironment(
 	infra *providerazure.SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*app.ManagedEnvironment, error) {
-	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
+	wsArgs := &operationalinsights.WorkspaceArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
 		RetentionInDays: pulumi.Int(max(30, common.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
-	}, parentOpt)
+	}
+	// Daily ingestion cap: once exceeded Azure stops ingesting for the day.
+	// Backstop against runaway $$$ from chatty containers (a single AI agent
+	// workload has been seen burning >$700/mo here). Omit the field entirely
+	// when quota=0 so the API doesn't see a 0 GB cap.
+	if quotaGB := providerazure.LogWorkspaceDailyQuotaGb.Get(ctx); quotaGB > 0 {
+		wsArgs.WorkspaceCapping = &operationalinsights.WorkspaceCappingArgs{
+			DailyQuotaGb: pulumi.Float64Ptr(float64(quotaGB)),
+		}
+	}
+	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, wsArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
