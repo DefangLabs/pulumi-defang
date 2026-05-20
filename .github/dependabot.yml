@@ -24,3 +24,14 @@ updates:
       - "/cd"
     schedule:
       interval: "weekly"
+    groups:
+      # azure-native is the only Pulumi SDK we use that ships as many
+      # independently-versioned subpackages (app/v3, network/v3,
+      # operationalinsights/v3, ...). Bumping them separately drifts versions
+      # apart, which mismatches the plugin version baked into
+      # PkgResourceDefaultOpts and breaks resource dispatch ("Resource type
+      # azure-native:<svc>:<Resource> not found"). Grouping forces one PR for
+      # the whole family.
+      pulumi-azure-native-sdk:
+        patterns:
+          - "github.com/pulumi/pulumi-azure-native-sdk*"
