@@ -20,7 +20,7 @@ type Service struct{}
 type ServiceInputs struct {
 	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
-	ProjectName string                      `pulumi:"projectName"`
+	ProjectName string                      `pulumi:"projectName,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
 	Environment map[string]*string          `pulumi:"environment,optional"`
