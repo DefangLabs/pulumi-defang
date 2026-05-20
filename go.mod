@@ -28,6 +28,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/monitor/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0

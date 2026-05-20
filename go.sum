@@ -512,6 +512,8 @@ github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.17.0 h1:M0Wkrkh9jqgGmMW
 github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.17.0/go.mod h1:JuLBlQN5TH2BBNH7cZnixMouv/zlIgiUHmi21Yfxnxk=
 github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0 h1:uhCgqKSaOU3rkjUkzsDz0TbU50XSSygVQUX2/6+VWhc=
 github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0/go.mod h1:dHaprf7wwcp8Y/L3mGW8u2geqeaYQybjn9cScB2+yLo=
+github.com/pulumi/pulumi-azure-native-sdk/monitor/v3 v3.16.0 h1:TLByM7uXDhE2g4ByAd+9IfC6kB/S7iBGVQPAl2YKWC4=
+github.com/pulumi/pulumi-azure-native-sdk/monitor/v3 v3.16.0/go.mod h1:sfdbOpdqiA6Q66jhd21bPiTBUusL7VNLX5sk2NNH+xY=
 github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0 h1:EXdiCzZNHpNc4gSem7e6VVpI/CrF2O8JdQcNFQus1tI=
 github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0/go.mod h1:2r+Vt14MLHpCr2bz/aXO6+VIGOl9dHXncqCoGsUsQUI=
 github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.16.0 h1:CbMcj7hGu6lMITRoxMGzg/q9E+SwuQ/YNaIKfhy9H74=

@@ -65,11 +65,13 @@ func TestRunPreviewGCP(t *testing.T) {
 }
 
 func testProviderPreview(t *testing.T, provider, accountId string) {
-	t.Helper()
-
-	if err := exec.CommandContext(t.Context(), "make", "-C", "..", "install_defang-"+provider).Run(); err != nil {
-		t.Fatalf("failed to install defang-%s provider: %v", provider, err)
-	}
+	t.Run("install defang-"+provider, func(t *testing.T) {
+		makeCmd := exec.CommandContext(t.Context(), "make", "-C", "..", "install_defang-"+provider)
+		makeCmd.Stderr = t.Output()
+		if err := makeCmd.Run(); err != nil {
+			t.Fatalf("failed to install defang-%s provider: %v", provider, err)
+		}
+	})
 
 	eventsFile := t.TempDir() + "/events.json.gz"
 	t.Setenv("DEFANG_EVENTS_UPLOAD_URL", "file://"+eventsFile)

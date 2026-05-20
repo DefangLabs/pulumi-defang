@@ -38,7 +38,7 @@
         "maybeCorrupt": false,
         "durationSeconds": 42,
         "resourceChanges": {
-          "create": 8
+          "create": 10
         },
         "PolicyPacks": {},
         "isPreview": true
@@ -49,6 +49,121 @@
       "sequence": 42,
       "timestamp": 42,
       "cancelEvent": {},
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment$azure-native:monitor:DiagnosticSetting::cd-test-aca-logs",
+          "type": "azure-native:monitor:DiagnosticSetting",
+          "old": null,
+          "new": {
+            "type": "azure-native:monitor:DiagnosticSetting",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment$azure-native:monitor:DiagnosticSetting::cd-test-aca-logs",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+            "inputs": {
+              "__createBeforeDelete": true,
+              "azureApiVersion": "2021-05-01-preview",
+              "logAnalyticsDestinationType": "Dedicated",
+              "logs": [
+                {
+                  "category": "ContainerAppConsoleLogs",
+                  "enabled": true
+                },
+                {
+                  "category": "ContainerAppSystemLogs",
+                  "enabled": true
+                }
+              ],
+              "name": "Defang-cd-test-azure-cd-test-aca-logs-***",
+              "resourceUri": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "workspaceId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment$azure-native:monitor:DiagnosticSetting::cd-test-aca-logs",
+          "type": "azure-native:monitor:DiagnosticSetting",
+          "old": null,
+          "new": {
+            "type": "azure-native:monitor:DiagnosticSetting",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment$azure-native:monitor:DiagnosticSetting::cd-test-aca-logs",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+            "inputs": {
+              "__createBeforeDelete": true,
+              "azureApiVersion": "2021-05-01-preview",
+              "logAnalyticsDestinationType": "Dedicated",
+              "logs": [
+                {
+                  "category": "ContainerAppConsoleLogs",
+                  "enabled": true
+                },
+                {
+                  "category": "ContainerAppSystemLogs",
+                  "enabled": true
+                }
+              ],
+              "name": "Defang-cd-test-azure-cd-test-aca-logs-***",
+              "resourceUri": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "workspaceId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "eventHubAuthorizationRuleId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "eventHubName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "logAnalyticsDestinationType": "Dedicated",
+              "logs": [
+                {
+                  "category": "ContainerAppConsoleLogs",
+                  "categoryGroup": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "enabled": true,
+                  "retentionPolicy": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                },
+                {
+                  "category": "ContainerAppSystemLogs",
+                  "categoryGroup": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "enabled": true,
+                  "retentionPolicy": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                }
+              ],
+              "marketplacePartnerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "metrics": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "Defang-cd-test-azure-cd-test-aca-logs-***",
+              "serviceBusRuleId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "storageAccountId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "workspaceId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
       "Error": null
     },
     {
@@ -69,11 +184,7 @@
             "inputs": {
               "__createBeforeDelete": true,
               "appLogsConfiguration": {
-                "destination": "log-analytics",
-                "logAnalyticsConfiguration": {
-                  "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-                  "sharedKey": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-                }
+                "destination": "azure-monitor"
               },
               "azureApiVersion": "2025-02-02-preview",
               "environmentName": "Defang-cd-test-azure-***",
@@ -115,11 +226,7 @@
             "inputs": {
               "__createBeforeDelete": true,
               "appLogsConfiguration": {
-                "destination": "log-analytics",
-                "logAnalyticsConfiguration": {
-                  "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-                  "sharedKey": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-                }
+                "destination": "azure-monitor"
               },
               "azureApiVersion": "2025-02-02-preview",
               "environmentName": "Defang-cd-test-azure-***",
@@ -135,11 +242,8 @@
             "outputs": {
               "appInsightsConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
               "appLogsConfiguration": {
-                "destination": "log-analytics",
-                "logAnalyticsConfiguration": {
-                  "customerId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-                  "dynamicJsonColumns": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-                }
+                "destination": "azure-monitor",
+                "logAnalyticsConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
               },
               "availabilityZones": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
               "customDomainConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
@@ -177,6 +281,89 @@
               "vnetConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
               "workloadProfiles": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
               "zoneRedundant": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace$azure-native:operationalinsights:Table::cd-test-console-logs",
+          "type": "azure-native:operationalinsights:Table",
+          "old": null,
+          "new": {
+            "type": "azure-native:operationalinsights:Table",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace$azure-native:operationalinsights:Table::cd-test-console-logs",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+            "inputs": {
+              "azureApiVersion": "2023-09-01",
+              "plan": "Basic",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tableName": "ContainerAppConsoleLogs",
+              "workspaceName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace$azure-native:operationalinsights:Table::cd-test-console-logs",
+          "type": "azure-native:operationalinsights:Table",
+          "old": null,
+          "new": {
+            "type": "azure-native:operationalinsights:Table",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace$azure-native:operationalinsights:Table::cd-test-console-logs",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+            "inputs": {
+              "azureApiVersion": "2023-09-01",
+              "plan": "Basic",
+              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tableName": "ContainerAppConsoleLogs",
+              "workspaceName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "archiveRetentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "lastPlanModifiedDate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "plan": "Basic",
+              "provisioningState": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "restoredLogs": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "resultStatistics": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "retentionInDaysAsDefault": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "schema": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "searchResults": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "totalRetentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "totalRetentionInDaysAsDefault": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
             },
             "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
           },
