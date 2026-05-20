@@ -20,6 +20,8 @@ func uploadEvents[T any](ctx context.Context, engineEvents []T) {
 	if eventsUploadUrl == "" {
 		return
 	}
+	// We also upload empty events to signal the Portal that the deployment has
+	// completed, so log at least the count even if the upload fails.
 	Println("Sending", len(engineEvents), "deployment events to Portal...")
 	if err := doUpload(ctx, eventsUploadUrl, map[string]any{"events": engineEvents}); err != nil {
 		warn("Failed to send events:", err)

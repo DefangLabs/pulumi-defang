@@ -24,7 +24,7 @@ type SharedInfra struct {
 	LLMInfra           *LLMInfra              // nil when no LLM services are present
 	ConfigProvider     compose.ConfigProvider // reads project secrets (set via `defang config set`)
 	KeyVaultURL        string                 // Key Vault URL for secret references (empty if no vault)
-	KeyVaultIdentityID pulumi.StringPtrOutput // user-assigned identity for KV access (zero if no vault)
+	KeyVaultIdentityID pulumi.StringPtrInput  // user-assigned identity for KV access (zero if no vault)
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
@@ -150,7 +150,7 @@ func KeyVaultName(ctx *pulumi.Context, composeProject string) string {
 // compose file's top-level `name:`), which may differ from ctx.Project() —
 // a single Pulumi project can host multiple Defang Compose projects.
 func ProjectResourceGroupName(ctx *pulumi.Context, composeProject string) string {
-	prefix := strings.ToLower(common.Prefix.Get(ctx))
+	prefix := common.Prefix.Get(ctx)
 	if prefix != "" {
 		prefix += "-"
 	}

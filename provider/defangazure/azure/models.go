@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -41,6 +42,24 @@ const (
 // created in Azure (not just registered in Pulumi state).
 type ModelSelector interface {
 	SelectModel(role ModelRole) pulumi.Output
+}
+
+type StaticModelSelector struct {
+	ChatModel      ModelSpec
+	EmbeddingModel ModelSpec
+}
+
+func (s *StaticModelSelector) SelectModel(role ModelRole) pulumi.Output {
+	var spec ModelSpec
+	switch role {
+	case ModelRoleChat:
+		spec = s.ChatModel
+	case ModelRoleEmbedding:
+		spec = s.EmbeddingModel
+	default:
+		return common.ErrorOutput(fmt.Errorf("unsupported ModelRole: %q", role)) //nolint:err113
+	}
+	return pulumi.ToOutput(spec)
 }
 
 // chatPreference and embeddingPreference define model preference order.

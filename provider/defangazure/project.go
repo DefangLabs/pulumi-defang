@@ -10,7 +10,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
-	"github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -263,7 +262,15 @@ func createProjectResourceGroup(
 		ResourceGroupName: pulumi.String(projectRG),
 		// Location: pulumi.String(location),
 	}
-	rgOpts := []pulumi.ResourceOption{childOpt}
+	// RetainOnDelete: the CLI provisions the project Key Vault inside this RG
+	// (see defang/src/pkg/clouds/azure/keyvault.SetUp). Deleting the RG would
+	// trigger an Azure cascade delete that wipes the vault and its secrets,
+	// regardless of any RetainOnDelete on the vault itself. Retaining the RG
+	// stops Pulumi from issuing the delete API call, so `defang compose down`
+	// preserves user secrets. The CLI already keeps this RG around between
+	// deploys (it hosts the Pulumi state storage account too), so there's no
+	// new orphan-resource cost.
+	rgOpts := []pulumi.ResourceOption{childOpt, pulumi.RetainOnDelete(true)}
 
 	if existingRG, err := resources.LookupResourceGroup(ctx, &resources.LookupResourceGroupArgs{
 		ResourceGroupName: projectRG,
@@ -291,14 +298,24 @@ func createManagedEnvironment(
 	infra *providerazure.SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*app.ManagedEnvironment, error) {
-	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
+	wsArgs := &operationalinsights.WorkspaceArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
 		RetentionInDays: pulumi.Int(max(30, common.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
-	}, parentOpt)
+	}
+	// Daily ingestion cap: once exceeded Azure stops ingesting for the day.
+	// Backstop against runaway $$$ from chatty containers (a single AI agent
+	// workload has been seen burning >$700/mo here). Omit the field entirely
+	// when quota=0 so the API doesn't see a 0 GB cap.
+	if quotaGB := providerazure.LogWorkspaceDailyQuotaGb.Get(ctx); quotaGB > 0 {
+		wsArgs.WorkspaceCapping = &operationalinsights.WorkspaceCappingArgs{
+			DailyQuotaGb: pulumi.Float64Ptr(float64(quotaGB)),
+		}
+	}
+	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, wsArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
@@ -355,10 +372,14 @@ func setupSharedInfra(
 	keyVaultURL := "https://" + kvName + ".vault.azure.net"
 
 	infra := &providerazure.SharedInfra{
-		ResourceGroup:  rg,
-		KeyVaultURL:    keyVaultURL, // FIXME: don't set if vault doesn't exist
-		ConfigProvider: providerazure.NewConfigProvider(projectName, keyVaultURL),
-		Etag:           inputs.Etag,
+		ResourceGroup: rg,
+		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
+		Etag:          inputs.Etag,
+	}
+	if ctx.DryRun() {
+		infra.ConfigProvider = &compose.DryRunConfigProvider{}
+	} else {
+		infra.ConfigProvider = providerazure.NewConfigProvider(keyVaultURL)
 	}
 
 	if types.pgServiceName != "" || types.redisServiceName != "" {
@@ -399,12 +420,12 @@ func setupSharedInfra(
 		infra.BuildInfra = buildInfra
 	}
 
-	if _, err := keyvault.LookupVault(ctx, &keyvault.LookupVaultArgs{
-		ResourceGroupName: providerazure.ProjectResourceGroupName(ctx, projectName),
-		VaultName:         kvName,
-	}, parentOpt); err == nil {
-		// Only create the KV access identity and role assignment if the vault exists
-		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, kvName, projectName, infra, parentOpt)
+	vault, err := providerazure.EnsureKeyVault(ctx, projectName, infra, parentOpt)
+	if err != nil && !errors.Is(err, providerazure.ErrNoKeyVault) {
+		return nil, nil, err
+	}
+	if vault != nil {
+		kvIdentityID, err := providerazure.CreateKeyVaultIdentity(ctx, vault, infra, parentOpt)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating Key Vault identity: %w", err)
 		}

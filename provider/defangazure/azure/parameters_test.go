@@ -12,12 +12,18 @@ import (
 )
 
 func TestNewConfigProvider(t *testing.T) {
-	cp := NewConfigProvider("proj", "")
+	cp := NewConfigProvider("")
 	require.NotNil(t, cp)
 	assert.NotNil(t, cp.cache)
 	assert.Empty(t, cp.cache)
 	assert.False(t, cp.fetched)
-	assert.Equal(t, "Defang", cp.prefix)
+}
+
+func TestNewConfigProvider_TrimsTrailingSlash(t *testing.T) {
+	// Trailing slashes on the vault URL would produce double-slash secret
+	// refs (".../secrets//foo") that Container Apps rejects.
+	cp := NewConfigProvider("https://kv.vault.azure.net/")
+	assert.Equal(t, "https://kv.vault.azure.net", cp.keyVaultURL)
 }
 
 // TestGetConfigValue_ReturnsCachedValue verifies the cache hit path: when a
@@ -25,7 +31,7 @@ func TestNewConfigProvider(t *testing.T) {
 // returned as a secret-marked StringOutput.
 func TestGetConfigValue_ReturnsCachedValue(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		cp := NewConfigProvider("myproject", "")
+		cp := NewConfigProvider("")
 		// Pre-seed the cache as if a prior fetch succeeded. `fetched=true`
 		// keeps GetConfigValue from re-running the (nonexistent) fetch in
 		// this in-package unit test.
@@ -50,7 +56,7 @@ func TestGetConfigValue_ReturnsCachedValue(t *testing.T) {
 func TestGetConfigValue_UnknownKeyReturnsError(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		// No vault URL → fetch is skipped; cache stays empty.
-		cp := NewConfigProvider("myproject", "")
+		cp := NewConfigProvider("")
 
 		out := cp.GetConfigValue(ctx, "MISSING")
 
@@ -67,7 +73,7 @@ func TestGetConfigValue_CachesOutput(t *testing.T) {
 	// Verify repeated calls for the same key return the identical cached
 	// pulumi.StringOutput (same OutputState pointer) instead of re-wrapping.
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		cp := NewConfigProvider("proj", "")
+		cp := NewConfigProvider("")
 		// Pre-seed the cache; the fetch path isn't exercised in this unit test.
 		cp.cache["K"] = pulumi.ToSecret(pulumi.String("v").ToStringOutput()).(pulumi.StringOutput)
 		cp.fetched = true
@@ -89,19 +95,24 @@ func TestGetSecretRef(t *testing.T) {
 		{
 			name: "replaces underscores with hyphens",
 			key:  "DB_PASSWORD",
-			want: vaultURL + "/secrets/Defang--myproject--mystack--DB-PASSWORD",
+			want: vaultURL + "/secrets/DB-PASSWORD",
 		},
 		{
 			name: "key without underscores passes through",
 			key:  "APIKEY",
-			want: vaultURL + "/secrets/Defang--myproject--mystack--APIKEY",
+			want: vaultURL + "/secrets/APIKEY",
+		},
+		{
+			name: "multiple underscores all replaced",
+			key:  "MY_DB_PASSWORD",
+			want: vaultURL + "/secrets/MY-DB-PASSWORD",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				cp := NewConfigProvider("myproject", vaultURL)
+				cp := NewConfigProvider(vaultURL)
 				ref, err := cp.GetSecretRef(ctx, tt.key)
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, ref)
@@ -117,7 +128,7 @@ func TestGetSecretRef(t *testing.T) {
 // (Container App env builder) must gate on KeyVaultURL before calling this.
 func TestGetSecretRef_NoVault(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		cp := NewConfigProvider("myproject", "")
+		cp := NewConfigProvider("")
 		_, err := cp.GetSecretRef(ctx, "SOMETHING")
 		assert.ErrorIs(t, err, ErrNoKeyVaultConfigured)
 		return nil

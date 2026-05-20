@@ -58,7 +58,7 @@ func (*Postgres) Construct(
 	} else {
 		// Standalone Postgres has no Key Vault wiring, so secret refs are
 		// unavailable and the lazy fetch is a no-op; pass an empty URL.
-		configProvider = azure.NewConfigProvider(inputs.ProjectName, "")
+		configProvider = azure.NewConfigProvider("")
 	}
 
 	pgResult, err := azure.CreatePostgresFlexible(ctx, configProvider, name, svc, infra, childOpt)

@@ -67,6 +67,12 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 							// 5-50	Alphanumerics, hyphens, and underscores
 							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
+							// Requirements for Container App Environment resource names:
+							// Between 2 and 60 characters long.
+							// This resource name is not case-sensitive even though it is written as lowercase only in the docs.
+							// Numbers and hyphens are also allowed.
+							// https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ContainerApp.EnvNaming
+							"azure-native:app:ManagedEnvironment": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
 						},
 					},
 					// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
@@ -148,11 +154,6 @@ func stackConfig() (auto.ConfigMap, error) {
 		// from (project, stack, location) and (subscription, RG) respectively
 		// inside the provider — matching the CLI's conventions. No need to
 		// pass them through as stack config or env vars.
-
-		// Azure logs don't have structured fields we can filter on, so include
-		// the etag in every log line.
-		stderrLogger = withEtagPrefix(os.Stderr)
-		stdoutLogger = withEtagPrefix(os.Stdout)
 	}
 
 	if len(providers) == 0 {
@@ -199,14 +200,18 @@ func collectEvents(ctx context.Context) (chan<- events.EngineEvent, func()) {
 		// LIFO: close(done) runs last so waitEvents() only unblocks after
 		// uploadEvents returns, even on panic in the loop.
 		defer close(done)
-		var engineEvents []events.EngineEvent
+		// The events are marshaled asap so we capture the original event data
+		// before any of it gets mutated. This also allows the GC to collect
+		// the original event objects sooner instead of keeping them alive.
+		var engineEvents []json.RawMessage
 		defer func() {
 			uploadEvents(ctx, engineEvents)
 		}()
 		// Pulumi automation will close the channel when done: https://github.com/pulumi/pulumi/blob/master/sdk/go/auto/stack.go#L1956
 		for evt := range eventsChannel {
 			if eventsUploadUrl != "" {
-				engineEvents = append(engineEvents, evt)
+				bytes, _ := json.Marshal(evt)
+				engineEvents = append(engineEvents, json.RawMessage(bytes))
 			}
 			if jsonOutput {
 				if evt.ResourcePreEvent != nil {

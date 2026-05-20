@@ -45,7 +45,7 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 			identityID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kv"
 		)
 		infra := &SharedInfra{
-			ConfigProvider:     NewConfigProvider("proj", vaultURL),
+			ConfigProvider:     NewConfigProvider(vaultURL),
 			KeyVaultURL:        vaultURL,
 			KeyVaultIdentityID: pulumi.String(identityID).ToStringPtrOutput(),
 		}

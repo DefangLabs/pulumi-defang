@@ -7,6 +7,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/commontypesv5"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -248,12 +249,12 @@ func CreateContainerApp(
 		}
 		userIdentities = append(userIdentities, identityID)
 	}
-	if len(result.Secrets) > 0 && infra.KeyVaultURL != "" {
-		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.Elem())
+	if len(result.Secrets) > 0 && infra.KeyVaultIdentityID != nil {
+		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
 	}
-	var identity *app.ManagedServiceIdentityArgs
+	var identity *commontypesv5.ManagedServiceIdentityArgs
 	if len(userIdentities) > 0 {
-		identity = &app.ManagedServiceIdentityArgs{
+		identity = &commontypesv5.ManagedServiceIdentityArgs{
 			Type:                   pulumi.String("UserAssigned"),
 			UserAssignedIdentities: userIdentities,
 		}
@@ -285,6 +286,13 @@ func CreateContainerApp(
 	if infra.Etag != "" {
 		template.RevisionSuffix = pulumi.String(infra.Etag)
 	}
+
+	// `customDomains` is managed out-of-band by `defang cert generate`
+	// (BYOD flow). Ignoring it prevents subsequent `pulumi up` calls from
+	// clobbering the binding when other fields on the app change.
+	opts = append(opts, pulumi.IgnoreChanges([]string{
+		"configuration.ingress.customDomains",
+	}))
 
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,

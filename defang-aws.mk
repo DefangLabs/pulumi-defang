@@ -29,7 +29,9 @@ $(WORKING_DIR)/bin/$(PROVIDER): $(shell find . -name "*.go" -not -path "./sdk/*"
 
 .PHONY: schema
 schema: provider
-	pulumi package get-schema "$(WORKING_DIR)/bin/${PROVIDER}" > "${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json"
+	# Strip the version field so the committed schema is deterministic across builds —
+	# version flows binary -> gen-sdk -> SDK package metadata, not via this file.
+	pulumi package get-schema "$(WORKING_DIR)/bin/${PROVIDER}" | jq 'del(.version)' > "${PROVIDER_PATH}/cmd/$(PROVIDER)/schema.json"
 
 .PHONY: version
 version:
@@ -103,6 +105,14 @@ build: provider schema sdks
 .PHONY: install
 install: provider
 	cp "$(WORKING_DIR)/bin/${PROVIDER}" "${GOPATH}/bin"
+
+# install_plugin overwrites the resource-defang-azure plugin in
+# ~/.pulumi/plugins/ so that local Pulumi CLI / inline programs
+# (DEFANG_PULUMI_DIR mode) pick up the freshly-built provider rather
+# than a stale binary from a prior `pulumi plugin install` run.
+.PHONY: install_plugin
+install_plugin: provider
+	pulumi plugin install resource $(PACK) $(VERSION) -f "$(WORKING_DIR)/bin/$(PROVIDER)" --reinstall
 
 .PHONY: clean
 clean:

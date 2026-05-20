@@ -50,11 +50,17 @@ type postgresResult struct {
 // buildPostgresServerArgs constructs the ServerArgs for an Azure PostgreSQL Flexible Server.
 func buildPostgresServerArgs(
 	pg *compose.PostgresConfigArgs,
+	svc compose.ServiceConfig,
 	serviceName, sanitized string,
 	infra *SharedInfra,
 	ctx *pulumi.Context,
 	opts ...pulumi.ResourceOption,
 ) (*dbforpostgresql.ServerArgs, error) {
+	// Pick a SKU that satisfies the compose `deploy.resources.reservations`,
+	// constrained to the recipe-selected tier. The picker also returns the
+	// tier so Sku.Name and Sku.Tier can never disagree (Azure rejects mismatches).
+	skuName, skuTier := postgresFlexibleSku(svc.GetCPUs(), svc.GetMemoryMiB(), PostgresTier.Get(ctx))
+
 	// Backup config
 	backupRetention := BackupRetentionDays.Get(ctx)
 	geoBackup := dbforpostgresql.GeoRedundantBackupDisabled
@@ -94,11 +100,11 @@ func buildPostgresServerArgs(
 		Version:           pg.Version,
 		Tags:              ServiceTags(serviceName),
 		Sku: &dbforpostgresql.SkuArgs{
-			Name: pulumi.String(SkuName.Get(ctx)),
-			Tier: pulumi.String(string(dbforpostgresql.SkuTierBurstable)),
+			Name: pulumi.String(skuName),
+			Tier: pulumi.String(string(skuTier)),
 		},
 		Storage: &dbforpostgresql.StorageArgs{
-			StorageSizeGB: pulumi.Int(StorageSizeGB.Get(ctx)),
+			StorageSizeGB: pulumi.Int(PostgresStorageSizeGB.Get(ctx)),
 		},
 		Backup: &dbforpostgresql.BackupTypeArgs{
 			BackupRetentionDays: pulumi.Int(backupRetention),
@@ -153,7 +159,7 @@ func CreatePostgresFlexible(
 	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
 	sanitized := sanitizePostgresName(serviceName)
 
-	serverArgs, err := buildPostgresServerArgs(pg, serviceName, sanitized, infra, ctx, opts...)
+	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

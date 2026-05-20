@@ -41,20 +41,17 @@ func TestUpload(t *testing.T) {
 
 func TestUploadEventsEmpty(t *testing.T) {
 	// Should still send request when events are empty
-	var called atomic.Bool
+	var called atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called.Store(true)
+		called.Add(1)
 	}))
 	t.Cleanup(srv.Close)
 
-	saved := eventsUploadUrl
-	eventsUploadUrl = srv.URL
-	t.Cleanup(func() { eventsUploadUrl = saved })
+	uploadEvents[any](t.Context(), srv.URL, nil)
+	uploadEvents(t.Context(), srv.URL, []events.EngineEvent{})
 
-	uploadEvents(t.Context(), []events.EngineEvent{})
-
-	if !called.Load() {
-		t.Error("expected HTTP requests for empty events")
+	if called.Load() != 2 {
+		t.Error("expected 2 HTTP requests for empty events")
 	}
 }
 
@@ -66,11 +63,7 @@ func TestUploadEventsNoUrl(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	saved := eventsUploadUrl
-	eventsUploadUrl = ""
-	t.Cleanup(func() { eventsUploadUrl = saved })
-
-	uploadEvents(t.Context(), []events.EngineEvent{{}})
+	uploadEvents(t.Context(), "", []events.EngineEvent{{}})
 
 	if called.Load() {
 		t.Error("expected no HTTP request when URL is empty")
@@ -85,11 +78,7 @@ func TestUploadEventsSendsPayload(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	saved := eventsUploadUrl
-	eventsUploadUrl = srv.URL
-	t.Cleanup(func() { eventsUploadUrl = saved })
-
-	uploadEvents(t.Context(), []events.EngineEvent{{}})
+	uploadEvents(t.Context(), srv.URL, []events.EngineEvent{{}})
 
 	evts, ok := got["events"].([]any)
 	if !ok || len(evts) != 1 {
