@@ -45,7 +45,7 @@ type serviceArgs struct {
 	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports"`
-	ProjectName string                      `pulumi:"projectName"`
+	ProjectName *string                     `pulumi:"projectName"`
 }
 
 // The set of arguments for constructing a Service resource.
@@ -59,7 +59,7 @@ type ServiceArgs struct {
 	Image       string
 	Platform    *string
 	Ports       compose.ServicePortConfigArrayInput
-	ProjectName string
+	ProjectName *string
 }
 
 func (ServiceArgs) ElementType() reflect.Type {
