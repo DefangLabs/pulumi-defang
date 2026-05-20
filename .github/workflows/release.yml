@@ -258,6 +258,7 @@ jobs:
         if: matrix.clouds == 'azure'
         uses: DefangLabs/defang-github-action@482e8e65caf00bc48ad2044d0e41cde178b3e2b6 # v2.3.0
         with:
+          cli-version: nightly
           project: ecs
           stack: awsprod1oidc
           command: "config set -e cd_image_azure" # TODO: only Azure for now; AWS/GCP/DO are still handled by old TS code
