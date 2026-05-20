@@ -133,6 +133,15 @@ func buildEnvVars(
 			Name:  pulumi.String("DEFANG_SERVICE"),
 			Value: pulumi.String(serviceName),
 		},
+		// Set the HOSTNAME env var to the save value as CONTAINER_APP_HOSTNAME using the reference syntax
+		// To make it feature on-par with aws ecs's automatic HOSTNAME env var
+		// See:
+		// https://azureossd.github.io/2024/10/03/Container-Apps-Referencing-env-vars-through-other-environment-variables/
+		// https://learn.microsoft.com/en-us/azure/container-apps/environment-variables?tabs=portal#apps
+		app.EnvironmentVarArgs{
+			Name:  pulumi.String("HOSTNAME"),
+			Value: pulumi.String("$(CONTAINER_APP_HOSTNAME)"),
+		},
 	}
 	if infra.Etag != "" {
 		envs = append(envs, app.EnvironmentVarArgs{
