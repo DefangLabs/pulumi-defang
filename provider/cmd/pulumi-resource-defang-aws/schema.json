@@ -1,5 +1,6 @@
 {
   "name": "defang-aws",
+  "displayName": "Defang AWS",
   "description": "Deploy containerized services to AWS with Pulumi.",
   "keywords": [
     "category/cloud",
@@ -15,7 +16,7 @@
   "homepage": "https://github.com/DefangLabs/pulumi-defang",
   "license": "Apache-2.0",
   "repository": "https://github.com/DefangLabs/pulumi-defang",
-  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
+  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.svg",
   "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang",
   "publisher": "Defang",
   "language": {
