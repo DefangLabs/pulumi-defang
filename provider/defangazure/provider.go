@@ -23,7 +23,7 @@ func Provider() p.Provider {
 		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),
-			infer.Component[*Service, AzureContainerAppInputs, *AzureContainerAppOutputs](&Service{}),
+			infer.Component[*Service, ServiceInputs, *ServiceOutputs](&Service{}),
 			infer.Component[*Postgres, AzurePostgresInputs, *AzurePostgresOutputs](&Postgres{}),
 			infer.Component[*Redis, AzureRedisInputs, *AzureRedisOutputs](&Redis{}),
 		},

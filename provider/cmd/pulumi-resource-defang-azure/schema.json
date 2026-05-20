@@ -533,6 +533,10 @@
           "items": {
             "$ref": "#/types/defang-azure:compose:ServicePortConfig"
           }
+        },
+        "projectName": {
+          "type": "string",
+          "plain": true
         }
       },
       "requiredInputs": [
