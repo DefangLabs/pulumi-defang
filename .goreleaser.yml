@@ -3,6 +3,9 @@ version: 2
 archives:
   - id: archive
     name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 before:
   hooks: []
