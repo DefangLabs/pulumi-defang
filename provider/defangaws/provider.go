@@ -34,7 +34,7 @@ func Provider() p.Provider {
 
 		Metadata: schema.Metadata{
 			DisplayName: "Defang AWS",
-			Description: "Deploy containerized services to AWS with Pulumi.",
+			Description: "Deploy Compose projects to AWS with Pulumi. Part of the Defang multi-cloud provider family — also available for GCP (defang-gcp) and Azure (defang-azure).", //nolint:lll
 			Keywords: []string{
 				"category/cloud", "category/infrastructure", "kind/native", "defang", "docker",
 				"cloud", "aws", "ecs", "fargate",

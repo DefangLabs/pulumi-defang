@@ -1,7 +1,7 @@
 {
   "name": "defang-azure",
   "displayName": "Defang Azure",
-  "description": "Deploy containerized services to Azure with Pulumi.",
+  "description": "Deploy Compose projects to Azure with Pulumi. Part of the Defang multi-cloud provider family — also available for AWS (defang-aws) and GCP (defang-gcp).",
   "keywords": [
     "category/cloud",
     "category/infrastructure",
