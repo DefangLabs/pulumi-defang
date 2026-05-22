@@ -2,7 +2,7 @@ name: crewai
 services:
   app:
     build:
-      context: /Users/llunesu/dev/samples/samples/crewai/app
+      context: https://defangcd1pscydgesiqo.blob.core.windows.net/projects/uploads%2Fsha256-KQoGaUVs6prCu_NIGpohr1hAqA++xbjz6Xtn1r8XTh8=.tar.gz
       dockerfile: Dockerfile
     command:
       - ./run.sh
@@ -25,7 +25,6 @@ services:
       DJANGO_SECRET_KEY: null
       DJANGO_SETTINGS_MODULE: config.settings
       REDIS_URL: redis://redis:6379/0
-      SSL_MODE: null
     healthcheck:
       test:
         - CMD
@@ -110,7 +109,7 @@ services:
     x-defang-redis: true
   worker:
     build:
-      context: /Users/llunesu/dev/samples/samples/crewai/app
+      context: https://defangcd1pscydgesiqo.blob.core.windows.net/projects/uploads%2Fsha256-KQoGaUVs6prCu_NIGpohr1hAqA++xbjz6Xtn1r8XTh8=.tar.gz
       dockerfile: Dockerfile
     command:
       - celery
@@ -147,7 +146,6 @@ services:
       EMBEDDING_URL: http://embedding/api/v1/
       OPENAI_API_KEY: defang
       REDIS_URL: redis://redis:6379/0
-      SSL_MODE: null
     networks:
       default: null
       model_provider_private: null
@@ -156,4 +154,3 @@ networks:
     name: crewai_default
   model_provider_private:
     name: model_provider_private
-

@@ -1,4 +1,4 @@
-name: cd-test
+name: crewai
 runtime: go
 description: A Pulumi program to test Defang CD with the pulumi-defang providers.
 plugins:
