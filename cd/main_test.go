@@ -97,7 +97,9 @@ func testProviderPreview(t *testing.T, provider, accountId string) {
 	// (followed by `@`). Match both so the suffix gets erased in either spot.
 	uploaded = regexp.MustCompile(`-[0-9a-f]{4,7}(["@])`).ReplaceAll(uploaded, []byte(`-***$1`))
 	// Remove references to $HOME (diagnostic messages)
-	uploaded = bytes.ReplaceAll(uploaded, []byte(os.Getenv("HOME")), []byte("${HOME}"))
+	if home := os.Getenv("HOME"); home != "" {
+		uploaded = bytes.ReplaceAll(uploaded, []byte(home), []byte("${HOME}"))
+	}
 	if accountId != "" {
 		// Remove references to cloud account ID
 		uploaded = bytes.ReplaceAll(uploaded, []byte(accountId), []byte("***"))
