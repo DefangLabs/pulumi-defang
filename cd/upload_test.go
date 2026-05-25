@@ -47,12 +47,8 @@ func TestUploadEventsEmpty(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	saved := eventsUploadUrl
-	eventsUploadUrl = srv.URL
-	t.Cleanup(func() { eventsUploadUrl = saved })
-
-	uploadEvents[any](t.Context(), nil)
-	uploadEvents(t.Context(), []events.EngineEvent{})
+	uploadEvents[any](t.Context(), srv.URL, nil)
+	uploadEvents(t.Context(), srv.URL, []events.EngineEvent{})
 
 	if called.Load() != 2 {
 		t.Error("expected 2 HTTP requests for empty events")
@@ -67,11 +63,7 @@ func TestUploadEventsNoUrl(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	saved := eventsUploadUrl
-	eventsUploadUrl = ""
-	t.Cleanup(func() { eventsUploadUrl = saved })
-
-	uploadEvents(t.Context(), []events.EngineEvent{{}})
+	uploadEvents(t.Context(), "", []events.EngineEvent{{}})
 
 	if called.Load() {
 		t.Error("expected no HTTP request when URL is empty")
@@ -86,11 +78,7 @@ func TestUploadEventsSendsPayload(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	saved := eventsUploadUrl
-	eventsUploadUrl = srv.URL
-	t.Cleanup(func() { eventsUploadUrl = saved })
-
-	uploadEvents(t.Context(), []events.EngineEvent{{}})
+	uploadEvents(t.Context(), srv.URL, []events.EngineEvent{{}})
 
 	evts, ok := got["events"].([]any)
 	if !ok || len(evts) != 1 {
