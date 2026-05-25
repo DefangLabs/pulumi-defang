@@ -203,9 +203,16 @@ func TestStackConfigAzure(t *testing.T) {
 func TestCollectEvents(t *testing.T) {
 	var engineEvents map[string][]events.EngineEvent
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gz, _ := gzip.NewReader(r.Body)
+		gz, err := gzip.NewReader(r.Body)
+		if err != nil {
+			http.Error(w, "invalid gzip", http.StatusBadRequest)
+			return
+		}
 		defer gz.Close()
-		json.NewDecoder(gz).Decode(&engineEvents)
+		if err := json.NewDecoder(gz).Decode(&engineEvents); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(srv.Close)

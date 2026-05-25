@@ -32,27 +32,39 @@ func TestRunUsageError(t *testing.T) {
 }
 
 func TestRunPreviewAzure(t *testing.T) {
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "f311c4db-e998-4c94-906c-7e2637303a05")
+	if os.Getenv("AZURE_SUBSCRIPTION_ID") == "" {
+		t.Skip("AZURE_SUBSCRIPTION_ID not set; skipping Azure preview integration test")
+	}
 	t.Setenv("AZURE_LOCATION", "westus")
+	unsetenv(t, "AWS_REGION")
+	unsetenv(t, "GCP_PROJECT")
 
-	testProviderPreview(t, "azure")
+	testProviderPreview(t, "azure", "f311c4db-e998-4c94-906c-7e2637303a05")
 }
 
 func TestRunPreviewAWS(t *testing.T) {
-	t.Setenv("AWS_PROFILE", "defang-lab")
+	if os.Getenv("AWS_PROFILE") == "" {
+		t.Skip("AWS_PROFILE not set; skipping AWS preview integration test")
+	}
 	t.Setenv("AWS_REGION", "us-west-2")
+	unsetenv(t, "AZURE_SUBSCRIPTION_ID")
+	unsetenv(t, "GCP_PROJECT")
 
-	testProviderPreview(t, "aws")
+	testProviderPreview(t, "aws", "") // account ID doesn't matter
 }
 
 func TestRunPreviewGCP(t *testing.T) {
-	t.Setenv("GCP_PROJECT", "liotest-443018") // TODO: pick a neutral project for integration testing
+	if os.Getenv("GCP_PROJECT") == "" {
+		t.Skip("GCP_PROJECT not set; skipping GCP preview integration test")
+	}
 	t.Setenv("GCP_REGION", "us-central1")
+	unsetenv(t, "AWS_REGION")
+	unsetenv(t, "AZURE_SUBSCRIPTION_ID")
 
-	testProviderPreview(t, "gcp")
+	testProviderPreview(t, "gcp", os.Getenv("GCP_PROJECT"))
 }
 
-func testProviderPreview(t *testing.T, provider string) {
+func testProviderPreview(t *testing.T, provider, accountId string) {
 	t.Helper()
 
 	if err := exec.CommandContext(t.Context(), "make", "-C", "..", "install_defang-"+provider).Run(); err != nil {
@@ -84,6 +96,12 @@ func testProviderPreview(t *testing.T, provider string) {
 	// string (followed by `"`) and embedded in GCP service-account emails
 	// (followed by `@`). Match both so the suffix gets erased in either spot.
 	uploaded = regexp.MustCompile(`-[0-9a-f]{4,7}(["@])`).ReplaceAll(uploaded, []byte(`-***$1`))
+	// Remove references to $HOME (diagnostic messages)
+	uploaded = bytes.ReplaceAll(uploaded, []byte(os.Getenv("HOME")), []byte("${HOME}"))
+	if accountId != "" {
+		// Remove references to cloud account ID
+		uploaded = bytes.ReplaceAll(uploaded, []byte(accountId), []byte("***"))
+	}
 
 	var eventJson struct {
 		Events []events.EngineEvent `json:"events"`
@@ -154,5 +172,13 @@ func readFile(path string) ([]byte, error) {
 		return io.ReadAll(gz)
 	} else {
 		return b, nil
+	}
+}
+
+func unsetenv(t *testing.T, key string) {
+	t.Helper()
+	if _, ok := os.LookupEnv(key); ok {
+		t.Setenv(key, "") // sets up restoration and checks for parallel test interference
+		os.Unsetenv(key)
 	}
 }

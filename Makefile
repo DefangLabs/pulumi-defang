@@ -64,7 +64,7 @@ GO_TEST_COVER_FLAGS := $(if $(COVER),-count=1 -cover)
 GO_TEST	:= go test -v $(GO_TEST_COVER_FLAGS) -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
-test_provider: provider ## Provider integration tests
+test_provider: provider ## Provider tests
 	cd tests && ${GO_TEST} $(if $(COVER),-coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/...) -short ./... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test_unit
@@ -74,6 +74,10 @@ test_unit: ## Unit tests only
 .PHONY: test_cd
 test_cd: go_sdk
 	cd cd && $(GO_TEST) -race | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
+
+.PHONY: integ
+integ: ## Run CD integration tests
+	cd cd && go test -v -tags=integration | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test
 test: test_unit test_provider test_cd ## Run all tests

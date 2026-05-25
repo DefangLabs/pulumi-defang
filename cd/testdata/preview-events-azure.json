@@ -6,7 +6,7 @@
       "preludeEvent": {
         "config": {
           "azure-native:location": "westus",
-          "azure-native:subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+          "azure-native:subscriptionId": "***",
           "azure-native:useMsi": "true",
           "defang:cdImage": "",
           "defang:etag": "defang",
@@ -25,7 +25,7 @@
       "timestamp": 42,
       "diagnosticEvent": {
         "prefix": "warning: ",
-        "message": "using pulumi-resource-defang-azure from $PATH at /Users/llunesu/go/bin/pulumi-resource-defang-azure\n",
+        "message": "using pulumi-resource-defang-azure from $PATH at ${HOME}/go/bin/pulumi-resource-defang-azure\n",
         "color": "never",
         "severity": "warning"
       },
@@ -38,7 +38,7 @@
         "maybeCorrupt": false,
         "durationSeconds": 42,
         "resourceChanges": {
-          "create": 9
+          "create": 8
         },
         "PolicyPacks": {},
         "isPreview": true
@@ -177,89 +177,6 @@
               "vnetConfiguration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
               "workloadProfiles": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
               "zoneRedundant": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-            },
-            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-          },
-          "detailedDiff": null,
-          "logical": true,
-          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-        },
-        "planning": true
-      },
-      "Error": null
-    },
-    {
-      "sequence": 42,
-      "timestamp": 42,
-      "resourcePreEvent": {
-        "metadata": {
-          "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
-          "type": "azure-native:operationalinsights:Table",
-          "old": null,
-          "new": {
-            "type": "azure-native:operationalinsights:Table",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
-            "custom": true,
-            "id": "",
-            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
-            "inputs": {
-              "azureApiVersion": "2023-09-01",
-              "plan": "Basic",
-              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "tableName": "ContainerAppConsoleLogs",
-              "workspaceName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-            },
-            "outputs": {},
-            "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-          },
-          "detailedDiff": null,
-          "logical": true,
-          "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-        },
-        "planning": true
-      },
-      "Error": null
-    },
-    {
-      "sequence": 42,
-      "timestamp": 42,
-      "resOutputsEvent": {
-        "metadata": {
-          "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
-          "type": "azure-native:operationalinsights:Table",
-          "old": null,
-          "new": {
-            "type": "azure-native:operationalinsights:Table",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Table::cd-test-console-logs",
-            "custom": true,
-            "id": "",
-            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
-            "inputs": {
-              "azureApiVersion": "2023-09-01",
-              "plan": "Basic",
-              "resourceGroupName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "tableName": "ContainerAppConsoleLogs",
-              "workspaceName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
-            },
-            "outputs": {
-              "archiveRetentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "lastPlanModifiedDate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "plan": "Basic",
-              "provisioningState": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "restoredLogs": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "resultStatistics": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "retentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "retentionInDaysAsDefault": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "schema": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "searchResults": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "systemData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "totalRetentionInDays": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "totalRetentionInDaysAsDefault": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
-              "type": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
             },
             "provider": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
           },
@@ -493,15 +410,15 @@
       "resourcePreEvent": {
         "metadata": {
           "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service$azure-native:app:ContainerApp::nginx",
           "type": "azure-native:app:ContainerApp",
           "old": null,
           "new": {
             "type": "azure-native:app:ContainerApp",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service$azure-native:app:ContainerApp::nginx",
             "custom": true,
             "id": "",
-            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
             "inputs": {
               "azureApiVersion": "2025-02-02-preview",
               "configuration": {
@@ -574,15 +491,15 @@
       "resOutputsEvent": {
         "metadata": {
           "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service$azure-native:app:ContainerApp::nginx",
           "type": "azure-native:app:ContainerApp",
           "old": null,
           "new": {
             "type": "azure-native:app:ContainerApp",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp$azure-native:app:ContainerApp::nginx",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service$azure-native:app:ContainerApp::nginx",
             "custom": true,
             "id": "",
-            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
             "inputs": {
               "azureApiVersion": "2025-02-02-preview",
               "configuration": {
@@ -756,12 +673,12 @@
       "resourcePreEvent": {
         "metadata": {
           "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
-          "type": "defang-azure:index:AzureContainerApp",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
+          "type": "defang-azure:index:Service",
           "old": null,
           "new": {
-            "type": "defang-azure:index:AzureContainerApp",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "type": "defang-azure:index:Service",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
             "id": "",
             "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
             "inputs": {},
@@ -782,12 +699,12 @@
       "resOutputsEvent": {
         "metadata": {
           "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
-          "type": "defang-azure:index:AzureContainerApp",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
+          "type": "defang-azure:index:Service",
           "old": null,
           "new": {
-            "type": "defang-azure:index:AzureContainerApp",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "type": "defang-azure:index:Service",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
             "id": "",
             "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
             "inputs": {},
@@ -808,12 +725,12 @@
       "resOutputsEvent": {
         "metadata": {
           "op": "create",
-          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
-          "type": "defang-azure:index:AzureContainerApp",
+          "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
+          "type": "defang-azure:index:Service",
           "old": null,
           "new": {
-            "type": "defang-azure:index:AzureContainerApp",
-            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:AzureContainerApp::nginx",
+            "type": "defang-azure:index:Service",
+            "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
             "id": "",
             "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
             "inputs": {},
@@ -930,7 +847,7 @@
               "__internal": {},
               "environment": "public",
               "location": "westus",
-              "subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+              "subscriptionId": "***",
               "useDefaultAzureCredential": true,
               "version": "3.17.0"
             },
@@ -964,14 +881,14 @@
               "__internal": {},
               "environment": "public",
               "location": "westus",
-              "subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+              "subscriptionId": "***",
               "useDefaultAzureCredential": true,
               "version": "3.17.0"
             },
             "outputs": {
               "environment": "public",
               "location": "westus",
-              "subscriptionId": "f311c4db-e998-4c94-906c-7e2637303a05",
+              "subscriptionId": "***",
               "useDefaultAzureCredential": true,
               "version": "3.17.0"
             },

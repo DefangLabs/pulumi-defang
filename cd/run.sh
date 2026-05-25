@@ -2,7 +2,7 @@
 export STACK=lioazure
 export PROJECT=test
 export DEFANG_EVENTS_UPLOAD_URL=file:///tmp/events-azure.json
-export STATES_EVENTS_UPLOAD_URL=file:///tmp/states-azure.json
+export DEFANG_STATES_UPLOAD_URL=file:///tmp/states-azure.json
 export DEFANG_PULUMI_DIFF=1
 
 export AZURE_SUBSCRIPTION_ID=f311c4db-e998-4c94-906c-7e2637303a05
