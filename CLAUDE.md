@@ -16,32 +16,40 @@ make sdks              # Generate all language SDKs (go, nodejs, python, dotnet)
 make build             # Full build: provider + schema + sdks
 make install           # Install provider binaries to $GOPATH/bin
 make lint              # golangci-lint with --fix
-make ensure            # go mod tidy for both root and tests/
+make ensure            # go mod tidy for every go.mod in the tree (root, tests/, cd/)
 ```
 
 ## Testing
 
 ```bash
-make test              # Run both unit and provider tests
+make test              # Run all three suites: test_unit + test_provider + test_cd
 make test_unit         # Unit tests only: go test ./provider/...
 make test_provider     # Provider integration tests: cd tests && go test -short ./...
+make test_cd           # cd/ module tests with -race
+COVER=1 make test      # Bust the test cache and write coverage_*.out
+make coverage          # COVER=1 test + merged HTML report (opens in browser)
 ```
 
 Run a single test:
 ```bash
 go test -v -run TestName ./provider/compose/...           # unit test
 cd tests && go test -v -run TestName -short ./aws/...     # provider test
+cd cd && go test -v -run TestName -race                   # cd test
 ```
 
-Provider tests live in a separate `tests/` module with their own `go.mod`. They use a mock Pulumi server from `tests/testutil/`.
+Provider tests live in a separate `tests/` module with their own `go.mod`. They use a mock Pulumi server from `tests/testutil/`. The `cd/` module is also a separate Go module (see Architecture).
 
 ## Git Hooks
 
 Run `make install-git-hooks` to set up:
-- **Pre-commit:** `lint-staged` — runs golangci-lint and tests only for affected providers
-- **Pre-push:** `make provider test go_sdk` — full build + test
+- **Pre-commit / pre-merge-commit:** `make pre-commit` → `lint-staged` (golangci-lint + `go test` for affected providers only). The pre-merge-commit hook additionally fails if `make ensure` would dirty `go.mod`/`go.sum`.
+- **Pre-push:** `make -j4 pre-push` → `provider test image_all`, then fails if `sdk/v2/` has uncommitted or staged changes.
 
 The lint-staged config (`.lintstagedrc.js`) is smart: changes to `provider/compose` or `provider/common` trigger all provider tests since all three import them.
+
+**Generated SDKs must be committed alongside the change that regenerated them.** The pre-push hook enforces a clean `sdk/v2/` tree — when provider/schema changes regenerate SDKs, stage and commit the resulting `sdk/v2/` diff in the same push.
+
+**Pre-push hang gotcha.** `make -j4 pre-push` reaches `pulumi package gen-sdk` via `image_%: go_sdk` and runs the aws/gcp/azure variants in parallel. They all share the invoking terminal, so if `pulumi` needs an interactive prompt (e.g. expired login) the push hangs silently with no visible question. Run `pulumi whoami` before pushing; if a push appears stuck, look for sleeping `pulumi package gen-sdk` children holding `/dev/tty` (`lsof -p <pid> | grep /dev/tty`).
 
 ## Architecture
 
@@ -85,6 +93,10 @@ Untagged fields are ignored by the Pulumi infer framework (`introspect.ParseTag`
 - `provider/compose/` — Docker Compose types (`ServiceConfig`, `BuildConfig`, `DeployConfig`, etc.) shared across all providers
 - `provider/common/` — Cross-provider utilities (health checks, ingress detection, DNS, topology sorting)
 
+### `cd/` — the deploy-driver
+
+`cd/` is a separate Go module that compiles to the binary the Defang CLI runs inside the customer's cloud. It reads `compose.yaml` from S3/GCS/Azure Blob, then invokes the Pulumi program built from this repo's providers. It has its own `go.mod` and its own test suite (`make test_cd`, run with `-race`).
+
 ### SDK Generation Flow
 
 Done by `make sdks`:
@@ -94,6 +106,11 @@ Done by `make sdks`:
 3. `pulumi package gen-sdk` generates each language SDK into `sdk/`
 
 Per-provider build logic is in `defang-{aws,gcp,azure}.mk`.
+
+### Generated files: README and SDKs
+
+- `README.md`'s code blocks are regenerated from `examples/*/` by `scripts/check-readme-examples.sh --update` (run via `make README.md`). Don't hand-edit the embedded snippets — edit the example files and regenerate.
+- `sdk/v2/**` is generated from provider schemas (see SDK Generation Flow). Treat it as build output that must be committed alongside the source change that produced it.
 
 ### Tooling
 
