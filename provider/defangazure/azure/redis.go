@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
 	redis "github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3"
@@ -119,8 +120,7 @@ func CreateRedisEnterprise(
 		ClientProtocol:    pulumi.String(clientProtocol),
 		ClusteringPolicy:  pulumi.String("EnterpriseCluster"),
 		Port:              pulumi.Int(10000),
-	}, append(opts,
-		pulumi.Parent(cluster),
+	}, common.MergeOptions(opts,
 		pulumi.ReplaceOnChanges([]string{"clusteringPolicy", "clientProtocol"}),
 		pulumi.DeleteBeforeReplace(true),
 	)...)

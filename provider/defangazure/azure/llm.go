@@ -216,7 +216,7 @@ func CreateLLMDeployment(
 			Name:     modelSKU,
 			Capacity: pulumi.Int(1),
 		},
-	}, append(opts, pulumi.Parent(llmInfra.Account))...)
+	}, opts...)
 	if err != nil {
 		return fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
@@ -342,7 +342,7 @@ func createLLMPrivateEndpoint(
 				PrivateDnsZoneId: openaiZone.ID().ToStringOutput(),
 			},
 		},
-	}, append(opts, pulumi.Parent(pe))...); err != nil {
+	}, opts...); err != nil {
 		return fmt.Errorf("creating LLM private DNS zone group: %w", err)
 	}
 	return nil
