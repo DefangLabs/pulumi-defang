@@ -915,7 +915,7 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoCloudRun(t *testing.T) {
 	for _, envName := range []string{
 		"GOOGLE_VERTEX_PROJECT",
 		"GOOGLE_VERTEX_LOCATION",
-		"GOOGLE_CLOUD_PROJECT",
+		"GCLOUD_PROJECT",
 		"GOOGLE_CLOUD_LOCATION",
 	} {
 		assert.NotNil(t, findEnvInCloudRun(capturedCR, envName),
@@ -947,7 +947,7 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing
 	for _, envName := range []string{
 		"GOOGLE_VERTEX_PROJECT",
 		"GOOGLE_VERTEX_LOCATION",
-		"GOOGLE_CLOUD_PROJECT",
+		"GCLOUD_PROJECT",
 		"GOOGLE_CLOUD_LOCATION",
 	} {
 		assert.Contains(t, userData, envName,

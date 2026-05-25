@@ -37,7 +37,7 @@ func TestRunPreviewAzure(t *testing.T) {
 	}
 	t.Setenv("AZURE_LOCATION", "westus")
 	unsetenv(t, "AWS_REGION")
-	unsetenv(t, "GCP_PROJECT")
+	unsetenv(t, "GCLOUD_PROJECT")
 
 	testProviderPreview(t, "azure", "f311c4db-e998-4c94-906c-7e2637303a05")
 }
@@ -48,20 +48,20 @@ func TestRunPreviewAWS(t *testing.T) {
 	}
 	t.Setenv("AWS_REGION", "us-west-2")
 	unsetenv(t, "AZURE_SUBSCRIPTION_ID")
-	unsetenv(t, "GCP_PROJECT")
+	unsetenv(t, "GCLOUD_PROJECT")
 
 	testProviderPreview(t, "aws", "") // account ID doesn't matter
 }
 
 func TestRunPreviewGCP(t *testing.T) {
-	if os.Getenv("GCP_PROJECT") == "" {
-		t.Skip("GCP_PROJECT not set; skipping GCP preview integration test")
+	if os.Getenv("GCLOUD_PROJECT") == "" {
+		t.Skip("GCLOUD_PROJECT not set; skipping GCP preview integration test")
 	}
-	t.Setenv("GCP_REGION", "us-central1")
+	t.Setenv("GCLOUD_REGION", "us-central1")
 	unsetenv(t, "AWS_REGION")
 	unsetenv(t, "AZURE_SUBSCRIPTION_ID")
 
-	testProviderPreview(t, "gcp", os.Getenv("GCP_PROJECT"))
+	testProviderPreview(t, "gcp", os.Getenv("GCLOUD_PROJECT"))
 }
 
 func testProviderPreview(t *testing.T, provider, accountId string) {

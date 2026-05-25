@@ -58,8 +58,8 @@ services:
       - PROJECT=cd-test
       - DEFANG_EVENTS_UPLOAD_URL=file:///tmp/defang-cd/events-gcp.json
       - DEFANG_STATES_UPLOAD_URL=file:///tmp/defang-cd/states-gcp.json
-      - GCP_PROJECT_ID=liotest-443018
-      - GCP_REGION=us-central1
+      - GCLOUD_PROJECT=liotest-443018
+      - GCLOUD_REGION=us-central1
     volumes:
       - $HOME/.config/gcloud:/root/.config/gcloud:ro
       - /tmp/defang-cd:/tmp/defang-cd

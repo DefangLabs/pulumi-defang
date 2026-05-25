@@ -82,7 +82,7 @@ func TestStackConfigAWS(t *testing.T) {
 	// Clear ambient env that could pick a second provider or override fallbacks.
 	t.Setenv("REGION", "")
 	t.Setenv("GCP_PROJECT", "")
-	t.Setenv("GCP_PROJECT_ID", "")
+	t.Setenv("GCLOUD_PROJECT", "")
 	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
 	t.Setenv("PULUMI_BACKEND_URL", "")
 
@@ -134,10 +134,10 @@ func TestStackConfigGCP(t *testing.T) {
 	t.Setenv("REGION", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
-	t.Setenv("GCP_PROJECT_ID", "")
+	t.Setenv("GCLOUD_PROJECT", "")
 
-	t.Setenv("GCP_PROJECT", "my-gcp-project")
-	t.Setenv("GCP_REGION", "us-central1")
+	t.Setenv("GCLOUD_PROJECT", "my-gcp-project")
+	t.Setenv("GCLOUD_REGION", "us-central1")
 	t.Setenv("DEFANG_ORG", "testorg")
 	t.Setenv("DOMAIN", "")
 	t.Setenv("PRIVATE_DOMAIN", "")
@@ -171,7 +171,7 @@ func TestStackConfigAzure(t *testing.T) {
 	t.Setenv("REGION", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("GCP_PROJECT", "")
-	t.Setenv("GCP_PROJECT_ID", "")
+	t.Setenv("GCLOUD_PROJECT", "")
 
 	t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
 	t.Setenv("AZURE_LOCATION", "westus2")

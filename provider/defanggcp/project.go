@@ -300,7 +300,7 @@ func enableLLM(
 	setDefault("VERTEX_LOCATION", infra.Region)
 
 	// Inject environment variables for Google ADK to have access to GCP Vertex AI
-	setDefault("GOOGLE_CLOUD_PROJECT", infra.GcpProject)
+	setDefault("GCLOUD_PROJECT", infra.GcpProject)
 	setDefault("GOOGLE_CLOUD_LOCATION", infra.Region)
 	return nil
 }

@@ -350,10 +350,10 @@ func stackConfigFromEnv() (auto.ConfigMap, error) {
 	domain := os.Getenv("DOMAIN")
 	org := getenv("DEFANG_ORG", "defang")
 	etag := getenv("DEFANG_ETAG", org)
-	gcpProjectId := getenv("GCP_PROJECT", os.Getenv("GCP_PROJECT_ID")) // GCP only; keep GCP_PROJECT for backward compat
-	gcpRegion := getenv("GCP_REGION", region)                          // GCP only
-	privateDomain := os.Getenv("PRIVATE_DOMAIN")                       // AWS only
-	registryCredsArn := os.Getenv("CI_REGISTRY_CREDENTIALS_ARN")       // AWS only
+	gcpProject := getenv("GCLOUD_PROJECT", os.Getenv("GCP_PROJECT")) // GCP only; keep GCP_PROJECT for old CLI compat
+	gcpRegion := getenv("GCLOUD_REGION", region)                     // GCP only
+	privateDomain := os.Getenv("PRIVATE_DOMAIN")                     // AWS only
+	registryCredsArn := os.Getenv("CI_REGISTRY_CREDENTIALS_ARN")     // AWS only
 	stateUrl := getenv("DEFANG_STATE_URL", os.Getenv("PULUMI_BACKEND_URL"))
 
 	cfg := auto.ConfigMap{
@@ -375,9 +375,9 @@ func stackConfigFromEnv() (auto.ConfigMap, error) {
 		}
 	}
 
-	if gcpProjectId != "" {
+	if gcpProject != "" {
 		providers = append(providers, "gcp")
-		cfg["gcp:project"] = auto.ConfigValue{Value: gcpProjectId}
+		cfg["gcp:project"] = auto.ConfigValue{Value: gcpProject}
 		if gcpRegion != "" {
 			cfg["gcp:region"] = auto.ConfigValue{Value: gcpRegion}
 		}
@@ -398,7 +398,7 @@ func stackConfigFromEnv() (auto.ConfigMap, error) {
 	}
 
 	if len(providers) == 0 {
-		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCP_PROJECT_ID, or AZURE_SUBSCRIPTION_ID environment variable"}
+		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCLOUD_PROJECT, or AZURE_SUBSCRIPTION_ID environment variable"}
 	} else if len(providers) > 1 {
 		return nil, &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
 	} else {
