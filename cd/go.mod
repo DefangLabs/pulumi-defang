@@ -1,4 +1,4 @@
-module github.com/DefangLabs/pulumi-defang/examples/cd
+module github.com/DefangLabs/pulumi-defang/cd
 
 go 1.25.9
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
-	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
+	"github.com/DefangLabs/pulumi-defang/cd/program"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
