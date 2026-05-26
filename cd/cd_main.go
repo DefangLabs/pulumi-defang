@@ -82,11 +82,16 @@ func cdMain(ctx context.Context, args ...string) error {
 			return pulumiErr(err)
 		}
 		// Set stack-level config (provider settings, defang config)
-		cfg, err := stackConfigFromEnv()
-		if err != nil {
-			return err
+		if len(projectUpdate.PulumiConfig) != 0 {
+			err = stack.SetAllConfigJson(ctx, string(projectUpdate.PulumiConfig), nil)
+		} else {
+			cfg, err := stackConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			err = stack.SetAllConfig(ctx, cfg)
 		}
-		if err := stack.SetAllConfig(ctx, cfg); err != nil {
+		if err != nil {
 			return pulumiErr(err)
 		}
 	case client.CdCommandDestroy, client.CdCommandDown, client.CdCommandRefresh, client.CdCommandCancel, client.CdCommandOutputs:
@@ -420,7 +425,6 @@ func stackConfigFromEnv() (auto.ConfigMap, error) {
 		// FIXME: should use defang-aws namespace
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
 	}
-	// TODO: set recipe values based on deployment mode from `mode` var
 	return cfg, nil
 }
 

@@ -78,13 +78,9 @@ func TestProjectConfigEmptyPrefix(t *testing.T) {
 	}
 }
 
-func TestStackConfigAWS(t *testing.T) {
+func TestStackConfigFromEnvAWS(t *testing.T) {
 	// Clear ambient env that could pick a second provider or override fallbacks.
-	t.Setenv("REGION", "")
-	t.Setenv("GCP_PROJECT", "")
-	t.Setenv("GCLOUD_PROJECT", "")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
-	t.Setenv("PULUMI_BACKEND_URL", "")
+	unsetenv(t, "REGION", "GCP_PROJECT", "GCLOUD_PROJECT", "AZURE_SUBSCRIPTION_ID", "PULUMI_BACKEND_URL")
 
 	t.Setenv("AWS_REGION", "us-east-1")
 	t.Setenv("AWS_PROFILE", "myprofile")
@@ -130,11 +126,9 @@ func TestStackConfigAWS(t *testing.T) {
 	}
 }
 
-func TestStackConfigGCP(t *testing.T) {
-	t.Setenv("REGION", "")
-	t.Setenv("AWS_REGION", "")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
-	t.Setenv("GCLOUD_PROJECT", "")
+func TestStackConfigFromEnvGCP(t *testing.T) {
+	// Clear ambient env that could pick a second provider or override fallbacks.
+	unsetenv(t, "REGION", "AWS_REGION", "AZURE_SUBSCRIPTION_ID", "GCLOUD_PROJECT")
 
 	t.Setenv("GCLOUD_PROJECT", "my-gcp-project")
 	t.Setenv("GCLOUD_REGION", "us-central1")
@@ -167,11 +161,9 @@ func TestStackConfigGCP(t *testing.T) {
 	}
 }
 
-func TestStackConfigAzure(t *testing.T) {
-	t.Setenv("REGION", "")
-	t.Setenv("AWS_REGION", "")
-	t.Setenv("GCP_PROJECT", "")
-	t.Setenv("GCLOUD_PROJECT", "")
+func TestStackConfigFromEnvAzure(t *testing.T) {
+	// Clear ambient env that could pick a second provider or override fallbacks.
+	unsetenv(t, "REGION", "AWS_REGION", "GCP_PROJECT", "GCLOUD_PROJECT")
 
 	t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
 	t.Setenv("AZURE_LOCATION", "westus2")
@@ -225,5 +217,14 @@ func TestCollectEvents(t *testing.T) {
 
 	if len(engineEvents["events"]) != 2 {
 		t.Errorf("expected 2 events, got %d", len(engineEvents["events"]))
+	}
+}
+
+func unsetenv(t *testing.T, keys ...string) {
+	for _, key := range keys {
+		if _, ok := os.LookupEnv(key); ok {
+			t.Setenv(key, "") // sets up restoration and checks for parallel test interference
+			os.Unsetenv(key)
+		}
 	}
 }
