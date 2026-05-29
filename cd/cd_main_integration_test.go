@@ -34,7 +34,7 @@ func TestRunPreviewAzure(t *testing.T) {
 		t.Setenv("AZURE_LOCATION", azureLocation)
 		unsetenv(t, "AWS_REGION", "GCLOUD_PROJECT")
 
-		testProviderPreview(t, "azure", azureSubscriptionId, nil)
+		testProviderPreview(t, "azure", azureSubscriptionId, "")
 	})
 
 	t.Run("config from JSON", func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestRunPreviewAzure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal config: %v", err)
 		}
-		testProviderPreview(t, "azure", azureSubscriptionId, configBytes)
+		testProviderPreview(t, "azure", azureSubscriptionId, string(configBytes))
 	})
 }
 
@@ -68,7 +68,7 @@ func TestRunPreviewAWS(t *testing.T) {
 		t.Setenv("AWS_REGION", awsRegion)
 		unsetenv(t, "AZURE_SUBSCRIPTION_ID", "GCLOUD_PROJECT")
 
-		testProviderPreview(t, "aws", "", nil) // account ID doesn't matter
+		testProviderPreview(t, "aws", "", "") // account ID doesn't matter
 	})
 
 	t.Run("config from JSON", func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestRunPreviewAWS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal config: %v", err)
 		}
-		testProviderPreview(t, "aws", "", configBytes)
+		testProviderPreview(t, "aws", "", string(configBytes))
 	})
 }
 
@@ -101,7 +101,7 @@ func TestRunPreviewGCP(t *testing.T) {
 		t.Setenv("GCLOUD_REGION", gloudRegion)
 		unsetenv(t, "AWS_REGION", "AZURE_SUBSCRIPTION_ID")
 
-		testProviderPreview(t, "gcp", gcloudProject, nil)
+		testProviderPreview(t, "gcp", gcloudProject, "")
 	})
 
 	t.Run("config from JSON", func(t *testing.T) {
@@ -119,11 +119,10 @@ func TestRunPreviewGCP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal config: %v", err)
 		}
-		testProviderPreview(t, "gcp", gcloudProject, configBytes)
+		testProviderPreview(t, "gcp", gcloudProject, string(configBytes))
 	})
 }
-
-func testProviderPreview(t *testing.T, provider, accountId string, config []byte) {
+func testProviderPreview(t *testing.T, provider, accountId string, pulumiConfig string) {
 	t.Run("install defang-"+provider, func(t *testing.T) {
 		makeCmd := exec.CommandContext(t.Context(), "make", "-C", "..", "install_defang-"+provider)
 		makeCmd.Stderr = t.Output()
@@ -143,7 +142,10 @@ func testProviderPreview(t *testing.T, provider, accountId string, config []byte
 	t.Setenv("STACK", provider)
 
 	projectUpdate := defangv1.ProjectUpdate{
-		PulumiConfig: config,
+		Recipe: &defangv1.Recipe{
+			Name:         "test-recipe",
+			PulumiConfig: pulumiConfig,
+		},
 		Compose: []byte(`services:
   nginx:
     image: nginx

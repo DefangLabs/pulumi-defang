@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"testing"
 
+	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 )
@@ -226,5 +228,93 @@ func unsetenv(t *testing.T, keys ...string) {
 			t.Setenv(key, "") // sets up restoration and checks for parallel test interference
 			os.Unsetenv(key)
 		}
+	}
+}
+
+func Test_stackConfigFromRecipe(t *testing.T) {
+	expected := auto.ConfigMap{
+		"defang:string":  auto.ConfigValue{Value: "foo"},
+		"defang:string2": auto.ConfigValue{Value: `{"value":"bar"}`},
+		"defang:null":    auto.ConfigValue{Value: ""},
+		"defang:number":  auto.ConfigValue{Value: "42"},
+		"defang:bool":    auto.ConfigValue{Value: "true"},
+		"defang:array":   auto.ConfigValue{Value: `["a","b","c"]`},
+		"defang:object":  auto.ConfigValue{Value: `{"nestedString":"nested"}`},
+		"defang:object2": auto.ConfigValue{Value: `{"nestedObject":{"nested":"nested"}}`},
+	}
+
+	tests := []struct {
+		name         string
+		pulumiConfig string
+	}{
+		{
+			name: "from Pulumi stack config YAML",
+			pulumiConfig: `# Comments are ignored
+config:
+  defang:array: ["a", "b", "c"]
+  defang:bool: true
+  defang:null: null
+  defang:number: 42
+  defang:object:
+    nestedString: "nested"
+  defang:object2:
+    nestedObject:
+      nested: "nested"
+  defang:string: "foo"
+  defang:string2:
+    value: "bar"`,
+		},
+		{
+			name: "from Pulumi stack config JSON, objectValue overrides value",
+			pulumiConfig: `{
+    "defang:array":{"value":"overridden","objectValue":["a","b","c"],"secret":false},
+    "defang:bool":{"value":"true","secret":false},
+    "defang:null":{"value":"","secret":false},
+    "defang:number":{"value":"42","secret":false},
+    "defang:object":{"value":"overridden","objectValue":{"nestedString":"nested"},"secret":false},
+    "defang:object2":{"value":"overridden","objectValue":{"nestedObject":{"nested":"nested"}},"secret":false},
+    "defang:string":{"value":"foo","secret":false},
+    "defang:string2":{"value":"overridden","objectValue":{"value":"bar"},"secret":false}
+}`,
+		},
+		{
+			name: "from Pulumi stack config JSON with objectValue",
+			pulumiConfig: `{
+    "defang:array":{"objectValue":["a","b","c"],"secret":false},
+    "defang:bool":{"value":"true","secret":false},
+    "defang:null":{"value":"","secret":false},
+    "defang:number":{"value":"42","secret":false},
+    "defang:object":{"objectValue":{"nestedString":"nested"},"secret":false},
+    "defang:object2":{"objectValue":{"nestedObject":{"nested":"nested"}},"secret":false},
+    "defang:string":{"value":"foo","secret":false},
+    "defang:string2":{"objectValue":{"value":"bar"},"secret":false}
+}`,
+		},
+		{
+			name: "from Pulumi stack config JSON with value",
+			pulumiConfig: `{
+    "defang:array":{"value":"[\"a\",\"b\",\"c\"]"},
+    "defang:bool":{"value":"true","secret":false},
+    "defang:null":{"value":"","secret":false},
+    "defang:number":{"value":"42","secret":false},
+    "defang:object":{"value":"{\"nestedString\":\"nested\"}"},
+    "defang:object2":{"value":"{\"nestedObject\":{\"nested\":\"nested\"}}"},
+    "defang:string":{"value":"foo","secret":false},
+    "defang:string2":{"value":"{\"value\":\"bar\"}"}
+}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configMap, err := stackConfigFromRecipe(tt.pulumiConfig)
+			if err != nil {
+				t.Fatalf("stackConfigFromRecipe() error: %v", err)
+			}
+
+			if !reflect.DeepEqual(expected, configMap) {
+				t.Errorf("expected config %+v, got %+v", expected, configMap)
+			}
+		})
 	}
 }

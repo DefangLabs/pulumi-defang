@@ -42,8 +42,8 @@ github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 h1:XRzhVemXdgv
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0/go.mod h1:HKpQxkWaGLJ+D/5H8QRpyQXA1eKjxkFlOMwck5+33Jk=
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
-github.com/DefangLabs/defang/src v0.0.0-20260526023001-9f7e405d4071 h1:CC/i03cCSC7aINjBhesx7L72g4w7/7pwi2AF+EnVs1o=
-github.com/DefangLabs/defang/src v0.0.0-20260526023001-9f7e405d4071/go.mod h1:6phrEiZ/scI+udk66ldzyySiUDC5m8JBOeOYS/AmHbU=
+github.com/DefangLabs/defang/src v0.0.0-20260528224834-56389634ab5f h1:s4qGFlUHKXCNDQA0or63+AA8Sc2xOUkkBIbSteSzS0U=
+github.com/DefangLabs/defang/src v0.0.0-20260528224834-56389634ab5f/go.mod h1:6phrEiZ/scI+udk66ldzyySiUDC5m8JBOeOYS/AmHbU=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 h1:DHa2U07rk8syqvCge0QIGMCE1WxGj9njT44GH7zNJLQ=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0/go.mod h1:P4WPRUkOhJC13W//jWpyfJNDAIpvRbAUIYLX/4jtlE0=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 h1:UnDZ/zFfG1JhH/DqxIZYU/1CUAlTUScoXD/LcM2Ykk8=
