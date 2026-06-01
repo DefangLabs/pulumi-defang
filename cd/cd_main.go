@@ -18,8 +18,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
-	"google.golang.org/protobuf/proto"
 	"go.yaml.in/yaml/v4"
+	"google.golang.org/protobuf/proto"
 )
 
 func cdMain(ctx context.Context, args ...string) error {
@@ -352,10 +352,10 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 // (a map of "namespace:key" to a {value: "<string>"} wrapper). Objects and
 // arrays are serialized to their compact JSON string form, matching how Pulumi
 // stores structured config.
-func stackConfigFromRecipe(pulumiConfig string) (auto.ConfigMap, error) {
+func stackConfigFromRecipe(recipePulumiConfig string) (auto.ConfigMap, error) {
 	// JSON is a subset of YAML, so a single YAML decoder handles both formats.
 	var root map[string]any
-	if err := yaml.Unmarshal([]byte(pulumiConfig), &root); err != nil {
+	if err := yaml.Unmarshal([]byte(recipePulumiConfig), &root); err != nil {
 		return nil, err
 	}
 
