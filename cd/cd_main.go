@@ -9,7 +9,7 @@ import (
 
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
-	"github.com/DefangLabs/pulumi-defang/examples/cd/program"
+	"github.com/DefangLabs/pulumi-defang/cd/program"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
@@ -18,6 +18,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
+	"go.yaml.in/yaml/v4"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -82,11 +83,18 @@ func cdMain(ctx context.Context, args ...string) error {
 			return pulumiErr(err)
 		}
 		// Set stack-level config (provider settings, defang config)
-		cfg, err := stackConfigFromEnv()
+		var cfg auto.ConfigMap
+		if pulumiConfig := projectUpdate.Recipe.GetPulumiConfig(); len(pulumiConfig) != 0 {
+			cfg, err = stackConfigFromRecipe(pulumiConfig)
+		} else {
+			// Legacy path: create stack config from env vars
+			cfg, err = stackConfigFromEnv()
+		}
 		if err != nil {
 			return err
 		}
-		if err := stack.SetAllConfig(ctx, cfg); err != nil {
+		err = stack.SetAllConfig(ctx, cfg) // TODO: consider using SetAllConfigJson (but no clear advantage)
+		if err != nil {
 			return pulumiErr(err)
 		}
 	case client.CdCommandDestroy, client.CdCommandDown, client.CdCommandRefresh, client.CdCommandCancel, client.CdCommandOutputs:
@@ -338,7 +346,68 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 	}
 }
 
-// stackConfigFromEnv returns config for Pulumi.<stack>.yaml (stack-level settings).
+// stackConfigFromRecipe returns stack config from the recipe's PulumiConfig.
+// It accepts either a Pulumi stack settings YAML (everything nested under a
+// top-level "config:" key) or the flat JSON emitted by `pulumi config --json`
+// (a map of "namespace:key" to a {value: "<string>"} wrapper). Objects and
+// arrays are serialized to their compact JSON string form, matching how Pulumi
+// stores structured config.
+func stackConfigFromRecipe(recipePulumiConfig string) (auto.ConfigMap, error) {
+	// JSON is a subset of YAML, so a single YAML decoder handles both formats.
+	var root map[string]any
+	if err := yaml.Unmarshal([]byte(recipePulumiConfig), &root); err != nil {
+		return nil, err
+	}
+
+	// Stack settings nest config under "config:"; `pulumi config --json` is flat
+	// and wraps each value in a {value: "<string>"} object. We only unwrap in the
+	// flat case so a genuine object literal named "value" in stack settings is
+	// preserved rather than mistaken for a wrapper.
+	section, flat := root, true
+	if cfg, ok := root["config"].(map[string]any); ok {
+		section, flat = cfg, false
+	}
+
+	cfg := auto.ConfigMap{}
+	for key, val := range section {
+		if flat {
+			if wrapper, ok := val.(map[string]any); ok {
+				if v, ok := wrapper["objectValue"]; ok { // pulumi checks objectValue first
+					val = v
+				} else if v, ok := wrapper["value"]; ok { // pulumi emits "value" for scalar config
+					val = v
+				}
+			}
+		}
+		s, err := configValueToString(val)
+		if err != nil {
+			return nil, fmt.Errorf("config %q: %w", key, err)
+		}
+		cfg[key] = auto.ConfigValue{Value: s}
+	}
+	return cfg, nil
+}
+
+// configValueToString renders a decoded config value the way Pulumi stores it:
+// scalars verbatim, objects and arrays as compact JSON.
+func configValueToString(val any) (string, error) {
+	switch v := val.(type) {
+	case string:
+		return v, nil
+	case nil:
+		return "", nil
+	case map[string]any, []any:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	default: // numbers, bools
+		return fmt.Sprintf("%v", v), nil
+	}
+}
+
+// stackConfigFromEnv returns stack config from legacy environment variables.
 func stackConfigFromEnv() (auto.ConfigMap, error) {
 	region := os.Getenv("REGION")
 	awsProfile := os.Getenv("AWS_PROFILE")                    // AWS only
@@ -420,7 +489,6 @@ func stackConfigFromEnv() (auto.ConfigMap, error) {
 		// FIXME: should use defang-aws namespace
 		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
 	}
-	// TODO: set recipe values based on deployment mode from `mode` var
 	return cfg, nil
 }
 
