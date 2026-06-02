@@ -1,12 +1,18 @@
 package program
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/url"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/DefangLabs/defang/src/pkg/clouds/azure/aca"
+	"github.com/DefangLabs/defang/src/pkg/dns"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
 	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/storage/v3"
@@ -16,7 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &pulumiazure.ProviderArgs{
 		Location:                  pulumi.String(config.GetLocation(ctx)),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
@@ -29,9 +35,29 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf, etag), pulumi.Providers(azureProvider))
+	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf, domain, etag), pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Provision delegate-domain TLS certs as part of the CD task itself —
+	// not the CLI — so the deploy converges even if the user disconnects
+	// after `defang compose up`. The work is chained off project.Endpoints
+	// (which transitively depends on every per-service Container App + its
+	// CNAME + asuid TXT records) so Pulumi sequences it after all required
+	// resources exist, and waits on it before declaring the deploy done.
+	// Each per-service call is idempotent: re-deploys are cheap, partial
+	// failures pick up where they left off.
+	if domain != "" {
+		rg := providerazure.ProjectResourceGroupName(ctx, cf.Name)
+		certsDone := project.Endpoints.ApplyT(func(map[string]string) (string, error) {
+			provisionDelegateDomainCerts(ctx.Context(), cf, domain, config.GetSubscriptionId(ctx), rg)
+			return "", nil
+		}).(pulumi.StringOutput)
+		// Export so Pulumi treats it as a stack output and won't garbage-collect
+		// the ApplyT before its side effects complete. The value is empty by
+		// design — we only care about the dependency edge.
+		ctx.Export("azureDelegateDomainCerts", certsDone)
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed Azure Blob, gated on
@@ -60,7 +86,38 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toAzureArgs(cf *compose.Project, etag string) *defangazure.ProjectArgs {
+// provisionDelegateDomainCerts walks the compose project's ingress services
+// and asks Azure to issue + bind a managed cert for each
+// `<service>.<domain>` hostname. Records (CNAME + asuid TXT) are already in
+// Azure DNS from the Pulumi-managed RecordSets, so aca.IssueCert's "wait for
+// DNS" step passes immediately and the flow proceeds straight to registering
+// the customDomain on the Container App, issuing the cert via CNAME
+// validation, and re-binding with SniEnabled.
+//
+// Failures are logged but not surfaced as Pulumi errors: the Container App is
+// already serving on its `*.azurecontainerapps.io` URL by this point, the
+// cert flow is idempotent, and the next deploy will retry. A hard error
+// would force a Pulumi destroy/replace cycle that doesn't actually fix
+// anything cert-side.
+func provisionDelegateDomainCerts(ctx context.Context, cf *compose.Project, domain, subscriptionID, resourceGroup string) {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		log.Printf("delegate-domain cert: build credential: %v", err)
+		return
+	}
+	for name, svc := range cf.Services {
+		if !svc.HasIngressPorts() {
+			continue
+		}
+		hostname := name + "." + domain
+		log.Printf("Issuing delegate-domain cert for %s at %s", name, hostname)
+		if err := aca.IssueCert(ctx, cred, subscriptionID, resourceGroup, name, hostname, dns.DirectResolverAt); err != nil {
+			log.Printf("delegate-domain cert: issuance for %s failed: %v", hostname, err)
+		}
+	}
+}
+
+func toAzureArgs(cf *compose.Project, domain, etag string) *defangazure.ProjectArgs {
 	args := &defangazure.ProjectArgs{
 		Services: toAzureServices(cf.Services),
 	}
@@ -74,6 +131,10 @@ func toAzureArgs(cf *compose.Project, etag string) *defangazure.ProjectArgs {
 	if etag != "" {
 		e := etag
 		args.Etag = &e
+	}
+	if domain != "" {
+		d := domain
+		args.Domain = &d
 	}
 	return args
 }

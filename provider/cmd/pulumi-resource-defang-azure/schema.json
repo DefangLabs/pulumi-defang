@@ -18,6 +18,9 @@
   "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.svg",
   "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang",
   "publisher": "Defang",
+  "meta": {
+    "moduleFormat": "(.*)"
+  },
   "language": {
     "csharp": {
       "rootNamespace": "DefangLabs"
@@ -257,7 +260,9 @@
       ]
     }
   },
-  "provider": {},
+  "provider": {
+    "type": "object"
+  },
   "resources": {
     "defang-azure:index:Build": {
       "properties": {
@@ -304,18 +309,19 @@
           }
         }
       },
+      "type": "object",
       "required": [
-        "subscriptionId",
-        "resourceGroupName",
-        "registryName",
-        "taskName",
-        "imageName",
-        "serviceName",
-        "loginServer",
         "contextPath",
         "encodedTaskContent",
+        "image",
+        "imageName",
+        "loginServer",
+        "registryName",
+        "resourceGroupName",
         "runId",
-        "image"
+        "serviceName",
+        "subscriptionId",
+        "taskName"
       ],
       "inputProperties": {
         "contextPath": {
@@ -356,15 +362,15 @@
         }
       },
       "requiredInputs": [
-        "subscriptionId",
-        "resourceGroupName",
-        "registryName",
-        "taskName",
-        "imageName",
-        "serviceName",
-        "loginServer",
         "contextPath",
-        "encodedTaskContent"
+        "encodedTaskContent",
+        "imageName",
+        "loginServer",
+        "registryName",
+        "resourceGroupName",
+        "serviceName",
+        "subscriptionId",
+        "taskName"
       ]
     },
     "defang-azure:index:Postgres": {
@@ -373,6 +379,7 @@
           "type": "string"
         }
       },
+      "type": "object",
       "required": [
         "endpoint"
       ],
@@ -409,18 +416,22 @@
         "endpoints": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "loadBalancerDns": {
           "type": "string"
         }
       },
+      "type": "object",
       "required": [
         "endpoints"
       ],
       "inputProperties": {
+        "domain": {
+          "type": "string",
+          "plain": true
+        },
         "etag": {
           "type": "string",
           "plain": true
@@ -449,6 +460,7 @@
           "type": "string"
         }
       },
+      "type": "object",
       "required": [
         "endpoint"
       ],
@@ -486,6 +498,7 @@
           "type": "string"
         }
       },
+      "type": "object",
       "required": [
         "endpoint"
       ],

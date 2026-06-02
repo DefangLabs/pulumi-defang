@@ -78,6 +78,9 @@ func postgresURLEndpoint(
 
 type containerAppResult struct {
 	App *app.ContainerApp
+	// CustomDomain is nil unless the project sets a delegate Domain *and* the
+	// service exposes a public ingress; see CreateCustomDomain.
+	CustomDomain *CustomDomainResult
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -288,8 +291,10 @@ func CreateContainerApp(
 	}
 
 	// `customDomains` is managed out-of-band by `defang cert generate`
-	// (BYOD flow). Ignoring it prevents subsequent `pulumi up` calls from
-	// clobbering the binding when other fields on the app change.
+	// (BYOD flow) and by the project delegate-domain reconcile loop. Ignoring
+	// it prevents subsequent `pulumi up` calls from clobbering the binding
+	// when other fields on the app change. See customdomain.go for the
+	// records + cert that Pulumi *does* own here.
 	opts = append(opts, pulumi.IgnoreChanges([]string{
 		"configuration.ingress.customDomains",
 	}))
@@ -311,7 +316,16 @@ func CreateContainerApp(
 		return nil, fmt.Errorf("creating Container App: %w", err)
 	}
 
-	return &containerAppResult{App: containerApp}, nil
+	// Provision per-service DNS records + managed cert under the project
+	// delegate domain (no-op when infra.Domain is empty or the service is
+	// internal-only). Bound to the CA's parent option set so failures here
+	// propagate through the normal component graph.
+	customDomain, err := CreateCustomDomain(ctx, serviceName, svc, containerApp, infra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating custom domain for %s: %w", serviceName, err)
+	}
+
+	return &containerAppResult{App: containerApp, CustomDomain: customDomain}, nil
 }
 
 // llmURLEndpoint checks whether v is an LLM gateway URL ("http://<name>/api/v1/") whose

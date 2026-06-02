@@ -28,6 +28,12 @@ type SharedInfra struct {
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
+	// Domain is the project delegate domain (e.g. "myproj-stack.tenant.defang.app").
+	// When non-empty, ingress services get per-service CNAME + asuid TXT records and
+	// a ManagedCertificate provisioned in the public DNS zone of the same name in
+	// ResourceGroup. The zone itself is created out-of-band by the defang CLI
+	// (PrepareDomainDelegation), so Pulumi only manages the records and the cert.
+	Domain string
 }
 
 // BaseTags returns the project-wide tag map: defang-project (Pulumi project),
