@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/DefangLabs/defang/src/pkg/clouds/azure/aca"
@@ -99,7 +100,27 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 // cert flow is idempotent, and the next deploy will retry. A hard error
 // would force a Pulumi destroy/replace cycle that doesn't actually fix
 // anything cert-side.
+// perServiceCertTimeout caps how long any single service's IssueCert call can
+// hang. aca.IssueCert bounds its DNS/TXT/TLS polling loops internally
+// (dnsWaitTimeout=30m, tokenDeadline=5m, tlsWaitTimeout=10m), but the ARM
+// long-running operations (addHostnameDisabled, submitManagedCert,
+// bindHostnameSniEnabled) run `poller.PollUntilDone(ctx, nil)` and have no
+// deadline beyond this ctx — so a throttled or busy ARM PATCH would otherwise
+// block the Pulumi run until the outer timeout fires. 45m fits the documented
+// worst-case sum and still trips faster than a stuck poll.
+const perServiceCertTimeout = 45 * time.Minute
+
 func provisionDelegateDomainCerts(ctx context.Context, cf *compose.Project, domain, subscriptionID, resourceGroup string) {
+	if subscriptionID == "" {
+		// deployAzure forwards config.GetSubscriptionId(ctx) unconditionally;
+		// when Pulumi config doesn't carry it, the ARM SDK clients we'd
+		// construct below fail with an opaque URL parse error. Surface that
+		// early — the Container App is already serving on its
+		// azurecontainerapps.io URL; cert binding is a separate concern the
+		// next deploy can retry.
+		log.Print("delegate-domain cert: skipping; AZURE_SUBSCRIPTION_ID not set in Pulumi config")
+		return
+	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		log.Printf("delegate-domain cert: build credential: %v", err)
@@ -111,9 +132,11 @@ func provisionDelegateDomainCerts(ctx context.Context, cf *compose.Project, doma
 		}
 		hostname := name + "." + domain
 		log.Printf("Issuing delegate-domain cert for %s at %s", name, hostname)
-		if err := aca.IssueCert(ctx, cred, subscriptionID, resourceGroup, name, hostname, dns.DirectResolverAt); err != nil {
+		svcCtx, cancel := context.WithTimeout(ctx, perServiceCertTimeout)
+		if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, name, hostname, dns.DirectResolverAt); err != nil {
 			log.Printf("delegate-domain cert: issuance for %s failed: %v", hostname, err)
 		}
+		cancel()
 	}
 }
 
