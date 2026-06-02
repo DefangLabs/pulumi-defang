@@ -1,4 +1,4 @@
-module github.com/DefangLabs/pulumi-defang/examples/cd
+module github.com/DefangLabs/pulumi-defang/cd
 
 go 1.25.9
 
@@ -28,8 +28,8 @@ require (
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.21.0
 	github.com/pulumi/pulumi/sdk/v3 v3.231.0
 	github.com/stretchr/testify v1.11.1
+	go.yaml.in/yaml/v4 v4.0.0-rc.4
 	google.golang.org/protobuf v1.36.11
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -210,7 +210,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792 // indirect
 	golang.org/x/mod v0.34.0 // indirect
@@ -229,6 +228,7 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/frand v1.5.1 // indirect
 	pgregory.net/rapid v1.1.0 // indirect
 )
