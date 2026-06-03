@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
@@ -312,7 +311,7 @@ func createManagedEnvironment(
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
-		RetentionInDays: pulumi.Int(max(30, common.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
+		RetentionInDays: pulumi.Int(max(30, providerazure.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
 	}
 	// Daily ingestion cap: once exceeded Azure stops ingesting for the day.
 	// Backstop against runaway $$$ from chatty containers (a single AI agent
