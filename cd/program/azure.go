@@ -3,7 +3,6 @@ package program
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -52,7 +52,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 	if domain != "" {
 		rg := providerazure.ProjectResourceGroupName(ctx, cf.Name)
 		certsDone := project.Endpoints.ApplyT(func(map[string]string) (string, error) {
-			provisionDelegateDomainCerts(ctx.Context(), cf, domain, config.GetSubscriptionId(ctx), rg)
+			provisionDelegateDomainCerts(ctx, cf, domain, config.GetSubscriptionId(ctx), rg)
 			return "", nil
 		}).(pulumi.StringOutput)
 		// Export so Pulumi treats it as a stack output and won't garbage-collect
@@ -87,6 +87,24 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
+const (
+	// perServiceCertTimeout caps how long any single service's IssueCert call
+	// can hang. aca.IssueCert bounds its DNS/TXT/TLS polling loops internally
+	// (dnsWaitTimeout=30m, tokenDeadline=5m, tlsWaitTimeout=10m), but the ARM
+	// long-running operations (addHostnameDisabled, submitManagedCert,
+	// bindHostnameSniEnabled) run `poller.PollUntilDone(ctx, nil)` and have no
+	// deadline beyond this ctx — so a throttled or busy ARM PATCH would
+	// otherwise block the Pulumi run until the outer timeout fires. 45m fits
+	// the documented worst-case sum and still trips faster than a stuck poll.
+	perServiceCertTimeout = 45 * time.Minute
+
+	// maxConcurrentCertIssuance bounds how many per-service cert flows run at
+	// once. Each drives several long-running ARM operations against the same
+	// subscription, so we fan out for speed but cap the parallelism to avoid
+	// ARM throttling when a project has many ingress services.
+	maxConcurrentCertIssuance = 8
+)
+
 // provisionDelegateDomainCerts walks the compose project's ingress services
 // and asks Azure to issue + bind a managed cert for each
 // `<service>.<domain>` hostname. Records (CNAME + asuid TXT) are already in
@@ -95,22 +113,16 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 // the customDomain on the Container App, issuing the cert via CNAME
 // validation, and re-binding with SniEnabled.
 //
-// Failures are logged but not surfaced as Pulumi errors: the Container App is
-// already serving on its `*.azurecontainerapps.io` URL by this point, the
-// cert flow is idempotent, and the next deploy will retry. A hard error
-// would force a Pulumi destroy/replace cycle that doesn't actually fix
-// anything cert-side.
-// perServiceCertTimeout caps how long any single service's IssueCert call can
-// hang. aca.IssueCert bounds its DNS/TXT/TLS polling loops internally
-// (dnsWaitTimeout=30m, tokenDeadline=5m, tlsWaitTimeout=10m), but the ARM
-// long-running operations (addHostnameDisabled, submitManagedCert,
-// bindHostnameSniEnabled) run `poller.PollUntilDone(ctx, nil)` and have no
-// deadline beyond this ctx — so a throttled or busy ARM PATCH would otherwise
-// block the Pulumi run until the outer timeout fires. 45m fits the documented
-// worst-case sum and still trips faster than a stuck poll.
-const perServiceCertTimeout = 45 * time.Minute
-
-func provisionDelegateDomainCerts(ctx context.Context, cf *compose.Project, domain, subscriptionID, resourceGroup string) {
+// Services are processed concurrently (bounded by maxConcurrentCertIssuance):
+// each aca.IssueCert can block up to perServiceCertTimeout, so a serial loop
+// would make the total wall-clock scale with the service count.
+//
+// Failures are logged as Pulumi warnings (so they surface in `pulumi up` and
+// the portal) but not surfaced as errors: the Container App is already serving
+// on its `*.azurecontainerapps.io` URL by this point, the cert flow is
+// idempotent, and the next deploy will retry. A hard error would force a
+// Pulumi destroy/replace cycle that doesn't actually fix anything cert-side.
+func provisionDelegateDomainCerts(pctx *pulumi.Context, cf *compose.Project, domain, subscriptionID, resourceGroup string) {
 	if subscriptionID == "" {
 		// deployAzure forwards config.GetSubscriptionId(ctx) unconditionally;
 		// when Pulumi config doesn't carry it, the ARM SDK clients we'd
@@ -118,26 +130,38 @@ func provisionDelegateDomainCerts(ctx context.Context, cf *compose.Project, doma
 		// early — the Container App is already serving on its
 		// azurecontainerapps.io URL; cert binding is a separate concern the
 		// next deploy can retry.
-		log.Print("delegate-domain cert: skipping; AZURE_SUBSCRIPTION_ID not set in Pulumi config")
+		_ = pctx.Log.Warn("delegate-domain cert: skipping; AZURE_SUBSCRIPTION_ID not set in Pulumi config", nil)
 		return
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		log.Printf("delegate-domain cert: build credential: %v", err)
+		_ = pctx.Log.Warn(fmt.Sprintf("delegate-domain cert: build credential: %v", err), nil)
 		return
 	}
+
+	ctx := pctx.Context()
+	var g errgroup.Group
+	g.SetLimit(maxConcurrentCertIssuance)
 	for name, svc := range cf.Services {
 		if !svc.HasIngressPorts() {
 			continue
 		}
 		hostname := name + "." + domain
-		log.Printf("Issuing delegate-domain cert for %s at %s", name, hostname)
-		svcCtx, cancel := context.WithTimeout(ctx, perServiceCertTimeout)
-		if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, name, hostname, dns.DirectResolverAt); err != nil {
-			log.Printf("delegate-domain cert: issuance for %s failed: %v", hostname, err)
-		}
-		cancel()
+		g.Go(func() error {
+			// Bounded context per service; defer cancel so a panic inside
+			// IssueCert can't leak the timer goroutine for the full timeout.
+			svcCtx, cancel := context.WithTimeout(ctx, perServiceCertTimeout)
+			defer cancel()
+			_ = pctx.Log.Info(fmt.Sprintf("Issuing delegate-domain cert for %s at %s", name, hostname), nil)
+			if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, name, hostname, dns.DirectResolverAt); err != nil {
+				_ = pctx.Log.Warn(fmt.Sprintf("delegate-domain cert: issuance for %s failed: %v", hostname, err), nil)
+			}
+			// Errors are logged, not returned: one service's failure must not
+			// cancel the others' contexts via errgroup.
+			return nil
+		})
 	}
+	_ = g.Wait()
 }
 
 func toAzureArgs(cf *compose.Project, domain, etag string) *defangazure.ProjectArgs {
