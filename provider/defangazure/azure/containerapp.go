@@ -1,13 +1,20 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	armappcontainers "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/v3/commontypesv5"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -231,6 +238,14 @@ func CreateContainerApp(
 	}
 
 	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
+	if ingress != nil {
+		// Preserve any customDomains binding added out-of-band by
+		// `defang cert generate` (BYOD) or the delegate-domain cert flow. The
+		// provider never sets customDomains itself, so feeding back the live
+		// value keeps the CreateOrUpdate below from dropping the binding. See
+		// readLiveCustomDomains.
+		ingress.CustomDomains = readLiveCustomDomains(ctx, infra, serviceName)
+	}
 	probes := buildProbes(svc)
 
 	var registries app.RegistryCredentialsArray
@@ -287,13 +302,6 @@ func CreateContainerApp(
 		template.RevisionSuffix = pulumi.String(infra.Etag)
 	}
 
-	// `customDomains` is managed out-of-band by `defang cert generate`
-	// (BYOD flow). Ignoring it prevents subsequent `pulumi up` calls from
-	// clobbering the binding when other fields on the app change.
-	opts = append(opts, pulumi.IgnoreChanges([]string{
-		"configuration.ingress.customDomains",
-	}))
-
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,
 		ContainerAppName:     pulumi.StringPtr(serviceName),
@@ -312,6 +320,81 @@ func CreateContainerApp(
 	}
 
 	return &containerAppResult{App: containerApp}, nil
+}
+
+// resolveSubscriptionID resolves the Azure subscription for the out-of-band
+// customDomains read. It prefers the azure-native:subscriptionId stack config
+// (what the provider itself is configured with), then falls back to the
+// ARM_SUBSCRIPTION_ID / AZURE_SUBSCRIPTION_ID env vars the Azure SDK / CLI use.
+// The env fallback matters for BYOD: `defang cert generate` takes its
+// subscription from the CLI driver, which isn't necessarily mirrored into the
+// Pulumi stack config — but the CD task's environment carries it.
+func resolveSubscriptionID(ctx *pulumi.Context) string {
+	if sub := config.GetSubscriptionId(ctx); sub != "" {
+		return sub
+	}
+	if sub := os.Getenv("ARM_SUBSCRIPTION_ID"); sub != "" {
+		return sub
+	}
+	return os.Getenv("AZURE_SUBSCRIPTION_ID")
+}
+
+// readLiveCustomDomains fetches the Container App's current
+// configuration.ingress.customDomains directly from ARM and returns them as a
+// Pulumi input, so the CreateOrUpdate this provider issues *preserves* any
+// binding added out-of-band — by `defang cert generate` (BYOD) or the
+// delegate-domain cert flow — instead of wiping it.
+//
+// This replaces an earlier pulumi.IgnoreChanges("...customDomains") guard,
+// which was ineffective: IgnoreChanges reuses the value from Pulumi's last
+// checkpoint, and since the provider never sets customDomains that value is
+// always empty — so the next deploy's PUT still dropped the binding. Reading
+// the live value each deploy makes the desired state match reality.
+//
+// On the first deploy the app (or its resource group) doesn't exist yet; a 404
+// is treated as "nothing to preserve". Any other read error is returned so the
+// deploy fails loudly rather than silently clobbering the binding. With no
+// subscription configured (e.g. a bare preview) the read is skipped.
+func readLiveCustomDomains(ctx *pulumi.Context, infra *SharedInfra, serviceName string) app.CustomDomainArrayOutput {
+	subscriptionID := resolveSubscriptionID(ctx)
+	return infra.ResourceGroup.Name.ApplyT(func(rgName string) ([]app.CustomDomain, error) {
+		if subscriptionID == "" {
+			return nil, nil
+		}
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, fmt.Errorf("custom-domain preserve: build credential: %w", err)
+		}
+		client, err := armappcontainers.NewContainerAppsClient(subscriptionID, cred, nil)
+		if err != nil {
+			return nil, fmt.Errorf("custom-domain preserve: build client: %w", err)
+		}
+		resp, err := client.Get(ctx.Context(), rgName, serviceName, nil)
+		if err != nil {
+			var respErr *azcore.ResponseError
+			if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+				return nil, nil // app/resource group not created yet — nothing to preserve
+			}
+			return nil, fmt.Errorf("custom-domain preserve: reading %s: %w", serviceName, err)
+		}
+		if resp.Properties == nil || resp.Properties.Configuration == nil ||
+			resp.Properties.Configuration.Ingress == nil {
+			return nil, nil
+		}
+		var domains []app.CustomDomain
+		for _, cd := range resp.Properties.Configuration.Ingress.CustomDomains {
+			if cd == nil || cd.Name == nil {
+				continue
+			}
+			domain := app.CustomDomain{Name: *cd.Name, CertificateId: cd.CertificateID}
+			if cd.BindingType != nil {
+				bt := string(*cd.BindingType)
+				domain.BindingType = &bt
+			}
+			domains = append(domains, domain)
+		}
+		return domains, nil
+	}).(app.CustomDomainArrayOutput)
 }
 
 // llmURLEndpoint checks whether v is an LLM gateway URL ("http://<name>/api/v1/") whose
