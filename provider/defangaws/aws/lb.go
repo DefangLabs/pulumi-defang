@@ -166,6 +166,12 @@ func createTgLrPair(
 		matcher = "0"
 	}
 
+	// Parse the health check URL from the compose `healthcheck.test` command
+	// (e.g. CMD curl http://localhost:PORT/healthz). When no compose healthcheck
+	// is defined, or the test command doesn't contain a parseable URL, falls
+	// back to "/" — matches the TS implementation (shared/aws/lb.ts:220).
+	healthCheckPath, _ := compose.GetHealthCheckPathAndPort(healthCheck)
+
 	tgArgs := &lb.TargetGroupArgs{
 		Port:                       pulumi.Int(port.Target),
 		Protocol:                   pulumi.String("HTTP"),
@@ -175,7 +181,7 @@ func createTgLrPair(
 		DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
 		HealthCheck: &lb.TargetGroupHealthCheckArgs{
 			// Port:               pulumi.String("traffic-port"),
-			Path:               pulumi.String("/"),
+			Path:               pulumi.String(healthCheckPath),
 			HealthyThreshold:   pulumi.Int(HealthCheckThreshold.Get(ctx)),
 			UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
 			Interval:           pulumi.Int(interval),

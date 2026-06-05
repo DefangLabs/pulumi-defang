@@ -228,7 +228,7 @@ func createInternalLoadBalancer(
 				port := service.Config.Ports[0]
 				portTargetStr := strconv.FormatInt(int64(port.Target), 10)
 				portProto := port.GetProtocol()
-				healthCheckPath, healthCheckPort := getHealthCheckPathAndPort(service.Config.HealthCheck)
+				healthCheckPath, healthCheckPort := compose.GetHealthCheckPathAndPort(service.Config.HealthCheck)
 				if int(port.Target) != healthCheckPort {
 					return fmt.Errorf(
 						"health check port %d does not match the ingress target port %d: %w",
@@ -805,27 +805,5 @@ func pathMatcherName(name string) string {
 	return name
 }
 
-// Based on cd/aws/defang_service.ts
-var healthcheckUrlRegex = regexp.MustCompile(
-	`(?i)(?:http:\/\/)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`)
-
-func getHealthCheckPathAndPort(hc *compose.HealthCheckConfig) (string, int) {
-	path := "/"
-	port := 80
-	if hc == nil || len(hc.Test) < 1 || (hc.Test[0] != "CMD" && hc.Test[0] != "CMD-SHELL") {
-		return path, port
-	}
-	for _, arg := range hc.Test[1:] {
-		if match := healthcheckUrlRegex.FindStringSubmatch(arg); match != nil {
-			if match[1] != "" {
-				if n, err := strconv.Atoi(match[1]); err == nil {
-					port = n
-				}
-			}
-			if match[2] != "" {
-				path = match[2]
-			}
-		}
-	}
-	return path, port
-}
+// healthcheck path/port parsing moved to provider/compose.GetHealthCheckPathAndPort
+// so the Azure Container Apps provider can share the same logic.

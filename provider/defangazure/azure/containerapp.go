@@ -432,15 +432,50 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.Ing
 	}
 }
 
+// buildProbes returns the liveness probe(s) for a Container App.
+//
+// When the compose service declares a `healthcheck:`, we emit an HTTP probe
+// against the path parsed from the `test:` command (e.g. CMD curl
+// http://localhost:PORT/healthz) — falling back to "/" if no URL is found.
+// Probe cadence (interval/timeout/retries/start period) is copied from the
+// compose healthcheck.
+//
+// When there's no compose healthcheck, we emit an explicit TCP probe on the
+// service's target port instead of returning nil. Returning nil here causes
+// Azure Container Apps to inject its DEFAULT liveness probe — HTTP GET on
+// `/`, which 404s for many services (Hasura is the canonical case) and puts
+// the container into a crash-loop. A TCP probe just checks the listener is
+// up, which is correct default behavior regardless of HTTP semantics.
 func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
-	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 || len(svc.Ports) == 0 {
+	if len(svc.Ports) == 0 {
 		return nil
 	}
+	targetPort := pulumi.Int(svc.Ports[0].Target)
+
+	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 {
+		// Fall back to a TCP probe so Azure's default HTTP-/ probe doesn't
+		// activate. Same probe shape as Azure's default (10s/5s/5) but TCP.
+		return app.ContainerAppProbeArray{
+			app.ContainerAppProbeArgs{
+				Type: pulumi.String("Liveness"),
+				TcpSocket: &app.ContainerAppProbeTcpSocketArgs{
+					Port: targetPort,
+				},
+			},
+		}
+	}
+
+	// Use the path AND port parsed from the test command — matches what the
+	// user literally wrote (e.g. `curl http://localhost:9000/healthz` probes
+	// :9000, not whatever svc.Ports[0].Target happens to be). When no port
+	// appears in the test URL, GetHealthCheckPathAndPort returns 80 — same
+	// semantics as TS (`cd/aws/healthcheck.ts`: `parsed.port || 80`).
+	path, port := compose.GetHealthCheckPathAndPort(svc.HealthCheck)
 	probe := app.ContainerAppProbeArgs{
 		Type: pulumi.String("Liveness"),
 		HttpGet: &app.ContainerAppProbeHttpGetArgs{
-			Port: pulumi.Int(svc.Ports[0].Target),
-			Path: pulumi.String("/"),
+			Port: pulumi.Int(port),
+			Path: pulumi.String(path),
 		},
 	}
 	if svc.HealthCheck.IntervalSeconds != 0 {
