@@ -382,11 +382,16 @@ func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
 		}
 	}
 
-	path, _ := compose.GetHealthCheckPathAndPort(svc.HealthCheck)
+	// Use the path AND port parsed from the test command — matches what the
+	// user literally wrote (e.g. `curl http://localhost:9000/healthz` probes
+	// :9000, not whatever svc.Ports[0].Target happens to be). When no port
+	// appears in the test URL, GetHealthCheckPathAndPort returns 80 — same
+	// semantics as TS (`cd/aws/healthcheck.ts`: `parsed.port || 80`).
+	path, port := compose.GetHealthCheckPathAndPort(svc.HealthCheck)
 	probe := app.ContainerAppProbeArgs{
 		Type: pulumi.String("Liveness"),
 		HttpGet: &app.ContainerAppProbeHttpGetArgs{
-			Port: targetPort,
+			Port: pulumi.Int(port),
 			Path: pulumi.String(path),
 		},
 	}
