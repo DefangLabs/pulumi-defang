@@ -238,151 +238,152 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 	})
 }
 
+// healthCheckPathPortCases mirrors the TS suite at
+// defang-mvp/pulumi/test/healthcheck.test.ts (#convertHealthcheck) so behavior
+// parity with the legacy pipeline is explicit. Additional cases beyond the TS
+// suite cover Bun-style health checks and other forms we've seen in the wild.
+var healthCheckPathPortCases = []struct {
+	name     string
+	hc       *HealthCheckConfig
+	wantPath string
+	wantPort int
+}{
+	// --- defaults / no parse ---
+	{
+		name:     "nil healthcheck → defaults",
+		hc:       nil,
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "empty test slice → defaults",
+		hc:       &HealthCheckConfig{Test: []string{}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "test with only CMD and no args → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"CMD"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "NONE → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"NONE"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "non-CMD/CMD-SHELL test (gRPC binary) → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"grpc_health_probe", "-addr=:5000"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "CMD with non-URL test (test -f) → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "test", "-f", "/tmp/ready"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+
+	// --- bare localhost / 127.0.0.1 (no scheme) ---
+	{
+		name:     "curl bare localhost → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "localhost"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "curl localhost:8080/foo (no scheme)",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "localhost:8080/foo"}},
+		wantPath: "/foo",
+		wantPort: 8080,
+	},
+	{
+		name:     "curl with -f flag before URL (no scheme)",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-f", "localhost:8080/foo"}},
+		wantPath: "/foo",
+		wantPort: 8080,
+	},
+
+	// --- http:// scheme variants ---
+	{
+		name:     "CMD curl http://localhost:8080/healthz",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8080/healthz"}},
+		wantPath: "/healthz",
+		wantPort: 8080,
+	},
+	{
+		name:     "wget pattern with trailing slash",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "wget", "-q", "--spider", "http://localhost:8080/"}},
+		wantPath: "/",
+		wantPort: 8080,
+	},
+	{
+		name: "URL embedded in Python urllib code → regex stops at '",
+		hc: &HealthCheckConfig{Test: []string{
+			"CMD", "python", "-c",
+			"import urllib; urllib.urlopen('http://localhost:8080/foo')",
+		}},
+		wantPath: "/foo",
+		wantPort: 8080,
+	},
+	{
+		name:     "CMD-SHELL with 127.0.0.1 (no port) and shell suffix",
+		hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "curl -f 127.0.0.1/healthz || exit 1"}},
+		wantPath: "/healthz",
+		wantPort: 80,
+	},
+	{
+		name:     "CMD-SHELL with 127.0.0.1 (no port) — Bun-style wget",
+		hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "wget -q -O- http://localhost:3000/health || exit 1"}},
+		wantPath: "/health",
+		wantPort: 3000,
+	},
+	{
+		name:     "URL with explicit 127.0.0.1:port/path",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-fsS", "http://127.0.0.1:5000/api/healthz"}},
+		wantPath: "/api/healthz",
+		wantPort: 5000,
+	},
+
+	// --- URL without explicit port or path ---
+	{
+		name:     "URL without explicit port → port default kept",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost/healthz"}},
+		wantPath: "/healthz",
+		wantPort: 80,
+	},
+	{
+		name:     "URL without path → path default kept",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:9000"}},
+		wantPath: "/",
+		wantPort: 9000,
+	},
+
+	// --- query strings and fragments ---
+	{
+		name:     "URL with path + query string",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000/?bar=baz"}},
+		wantPath: "/?bar=baz",
+		wantPort: 8000,
+	},
+	{
+		name:     "URL with query but no leading slash",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000?foo"}},
+		wantPath: "?foo",
+		wantPort: 8000,
+	},
+	{
+		name:     "URL fragment stripped (not part of HTTP path)",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000/foo/bar#ignore"}},
+		wantPath: "/foo/bar",
+		wantPort: 8000,
+	},
+}
+
 func TestGetHealthCheckPathAndPort(t *testing.T) {
-	// Test cases mirror the TS suite at defang-mvp/pulumi/test/healthcheck.test.ts
-	// (#convertHealthcheck) so behavior parity with the legacy pipeline is
-	// explicit. Additional cases beyond the TS suite cover Bun-style health
-	// checks and other forms we've seen in the wild.
-	tests := []struct {
-		name     string
-		hc       *HealthCheckConfig
-		wantPath string
-		wantPort int
-	}{
-		// --- defaults / no parse ---
-		{
-			name:     "nil healthcheck → defaults",
-			hc:       nil,
-			wantPath: "/",
-			wantPort: 80,
-		},
-		{
-			name:     "empty test slice → defaults",
-			hc:       &HealthCheckConfig{Test: []string{}},
-			wantPath: "/",
-			wantPort: 80,
-		},
-		{
-			name:     "test with only CMD and no args → defaults",
-			hc:       &HealthCheckConfig{Test: []string{"CMD"}},
-			wantPath: "/",
-			wantPort: 80,
-		},
-		{
-			name:     "NONE → defaults",
-			hc:       &HealthCheckConfig{Test: []string{"NONE"}},
-			wantPath: "/",
-			wantPort: 80,
-		},
-		{
-			name:     "non-CMD/CMD-SHELL test (gRPC binary) → defaults",
-			hc:       &HealthCheckConfig{Test: []string{"grpc_health_probe", "-addr=:5000"}},
-			wantPath: "/",
-			wantPort: 80,
-		},
-		{
-			name:     "CMD with non-URL test (test -f) → defaults",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "test", "-f", "/tmp/ready"}},
-			wantPath: "/",
-			wantPort: 80,
-		},
-
-		// --- bare localhost / 127.0.0.1 (no scheme) ---
-		{
-			name:     "curl bare localhost → defaults",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "localhost"}},
-			wantPath: "/",
-			wantPort: 80,
-		},
-		{
-			name:     "curl localhost:8080/foo (no scheme)",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "localhost:8080/foo"}},
-			wantPath: "/foo",
-			wantPort: 8080,
-		},
-		{
-			name:     "curl with -f flag before URL (no scheme)",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-f", "localhost:8080/foo"}},
-			wantPath: "/foo",
-			wantPort: 8080,
-		},
-
-		// --- http:// scheme variants ---
-		{
-			name:     "CMD curl http://localhost:8080/healthz",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8080/healthz"}},
-			wantPath: "/healthz",
-			wantPort: 8080,
-		},
-		{
-			name:     "wget pattern with trailing slash",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "wget", "-q", "--spider", "http://localhost:8080/"}},
-			wantPath: "/",
-			wantPort: 8080,
-		},
-		{
-			name:     "URL embedded in Python urllib code → regex stops at '",
-			hc: &HealthCheckConfig{Test: []string{
-				"CMD", "python", "-c",
-				"import urllib; urllib.urlopen('http://localhost:8080/foo')",
-			}},
-			wantPath: "/foo",
-			wantPort: 8080,
-		},
-		{
-			name:     "CMD-SHELL with 127.0.0.1 (no port) and shell suffix",
-			hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "curl -f 127.0.0.1/healthz || exit 1"}},
-			wantPath: "/healthz",
-			wantPort: 80,
-		},
-		{
-			name:     "CMD-SHELL with 127.0.0.1 (no port) — Bun-style wget",
-			hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "wget -q -O- http://localhost:3000/health || exit 1"}},
-			wantPath: "/health",
-			wantPort: 3000,
-		},
-		{
-			name:     "URL with explicit 127.0.0.1:port/path",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-fsS", "http://127.0.0.1:5000/api/healthz"}},
-			wantPath: "/api/healthz",
-			wantPort: 5000,
-		},
-
-		// --- URL without explicit port or path ---
-		{
-			name:     "URL without explicit port → port default kept",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost/healthz"}},
-			wantPath: "/healthz",
-			wantPort: 80,
-		},
-		{
-			name:     "URL without path → path default kept",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:9000"}},
-			wantPath: "/",
-			wantPort: 9000,
-		},
-
-		// --- query strings and fragments ---
-		{
-			name:     "URL with path + query string",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000/?bar=baz"}},
-			wantPath: "/?bar=baz",
-			wantPort: 8000,
-		},
-		{
-			name:     "URL with query but no leading slash",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000?foo"}},
-			wantPath: "?foo",
-			wantPort: 8000,
-		},
-		{
-			name:     "URL fragment stripped (not part of HTTP path)",
-			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000/foo/bar#ignore"}},
-			wantPath: "/foo/bar",
-			wantPort: 8000,
-		},
-	}
-	for _, tt := range tests {
+	for _, tt := range healthCheckPathPortCases {
 		t.Run(tt.name, func(t *testing.T) {
 			gotPath, gotPort := GetHealthCheckPathAndPort(tt.hc)
 			assert.Equal(t, tt.wantPath, gotPath)
