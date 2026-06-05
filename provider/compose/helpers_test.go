@@ -237,3 +237,74 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestGetHealthCheckPathAndPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *HealthCheckConfig
+		wantPath string
+		wantPort int
+	}{
+		{
+			name:     "nil healthcheck → defaults",
+			hc:       nil,
+			wantPath: "/",
+			wantPort: 80,
+		},
+		{
+			name:     "empty test → defaults",
+			hc:       &HealthCheckConfig{Test: []string{}},
+			wantPath: "/",
+			wantPort: 80,
+		},
+		{
+			name:     "test without CMD/CMD-SHELL → defaults",
+			hc:       &HealthCheckConfig{Test: []string{"NONE"}},
+			wantPath: "/",
+			wantPort: 80,
+		},
+		{
+			name:     "CMD with curl http://localhost:8080/healthz",
+			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8080/healthz"}},
+			wantPath: "/healthz",
+			wantPort: 8080,
+		},
+		{
+			name:     "CMD-SHELL with embedded URL",
+			hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "wget -q -O- http://localhost:3000/health || exit 1"}},
+			wantPath: "/health",
+			wantPort: 3000,
+		},
+		{
+			name:     "CMD with 127.0.0.1 host",
+			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-fsS", "http://127.0.0.1:5000/api/healthz"}},
+			wantPath: "/api/healthz",
+			wantPort: 5000,
+		},
+		{
+			name:     "URL without explicit port → port default kept",
+			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost/healthz"}},
+			wantPath: "/healthz",
+			wantPort: 80,
+		},
+		{
+			name:     "URL without path → path default kept",
+			hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:9000"}},
+			wantPath: "/",
+			wantPort: 9000,
+		},
+		{
+			name:     "non-matching test (no localhost URL) → defaults",
+			hc:       &HealthCheckConfig{Test: []string{"CMD", "test", "-f", "/tmp/ready"}},
+			wantPath: "/",
+			wantPort: 80,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPath, gotPort := GetHealthCheckPathAndPort(tt.hc)
+			assert.Equal(t, tt.wantPath, gotPath)
+			assert.Equal(t, tt.wantPort, gotPort)
+		})
+	}
+}
