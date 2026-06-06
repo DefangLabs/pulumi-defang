@@ -15,10 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_defaultStackConfig(t *testing.T) {
-	cfg := defaultStackConfig("TestPrefix")
+func Test_setDefaultStackConfig(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("TestPrefix", config)
 
-	autonaming, ok := cfg["pulumi:autonaming"]
+	autonaming, ok := config["pulumi:autonaming"]
 	if !ok {
 		t.Fatal("missing pulumi:autonaming config")
 	}
@@ -35,10 +36,11 @@ func Test_defaultStackConfig(t *testing.T) {
 	}
 }
 
-func Test_defaultStackConfigEmptyPrefix(t *testing.T) {
-	cfg := defaultStackConfig("")
+func Test_setDefaultStackConfigEmptyPrefix(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("", config)
 
-	autonaming := cfg["pulumi:autonaming"]
+	autonaming := config["pulumi:autonaming"]
 	autonamingMap := autonaming.Value.(map[string]any)
 	pattern := autonamingMap["pattern"].(string)
 	// With empty prefix, pattern should not have a leading prefix-
@@ -60,39 +62,40 @@ func TestStackConfigFromEnvAWS(t *testing.T) {
 	t.Setenv("CI_REGISTRY_CREDENTIALS_ARN", "arn:aws:secretsmanager:us-east-1:123456789:secret:creds")
 	t.Setenv("DEFANG_STATE_URL", "http://example.com/state")
 
-	cfg := defaultStackConfig("")
-	err := addStackConfigFromEnv(cfg)
+	config := configMap{}
+	setDefaultStackConfig("", config)
+	err := addStackConfigFromEnv(config)
 	if err != nil {
 		t.Fatalf("stackConfig() error: %v", err)
 	}
 
-	if cfg["defang:provider"].Value != "aws" {
-		t.Errorf("expected provider aws, got %q", cfg["defang:provider"].Value)
+	if config["defang:provider"].Value != "aws" {
+		t.Errorf("expected provider aws, got %q", config["defang:provider"].Value)
 	}
-	if cfg["defang:stateUrl"].Value != "http://example.com/state" {
-		t.Errorf("expected stateUrl http://example.com/state, got %q", cfg["defang:stateUrl"].Value)
+	if config["defang:stateUrl"].Value != "http://example.com/state" {
+		t.Errorf("expected stateUrl http://example.com/state, got %q", config["defang:stateUrl"].Value)
 	}
-	if cfg["aws:region"].Value != "us-east-1" {
-		t.Errorf("expected region us-east-1, got %q", cfg["aws:region"].Value)
+	if config["aws:region"].Value != "us-east-1" {
+		t.Errorf("expected region us-east-1, got %q", config["aws:region"].Value)
 	}
-	if cfg["aws:profile"].Value != "myprofile" {
-		t.Errorf("expected profile myprofile, got %q", cfg["aws:profile"].Value)
+	if config["aws:profile"].Value != "myprofile" {
+		t.Errorf("expected profile myprofile, got %q", config["aws:profile"].Value)
 	}
-	if cfg["defang:org"].Value != "testorg" {
-		t.Errorf("expected org testorg, got %q", cfg["defang:org"].Value)
+	if config["defang:org"].Value != "testorg" {
+		t.Errorf("expected org testorg, got %q", config["defang:org"].Value)
 	}
-	if cfg["defang:domain"].Value != "example.com" {
-		t.Errorf("expected domain example.com, got %q", cfg["defang:domain"].Value)
+	if config["defang:domain"].Value != "example.com" {
+		t.Errorf("expected domain example.com, got %q", config["defang:domain"].Value)
 	}
-	if cfg["defang-aws:privateDomain"].Value != "internal.example.com" {
-		t.Errorf("expected privateDomain, got %q", cfg["defang-aws:privateDomain"].Value)
+	if config["defang-aws:privateDomain"].Value != "internal.example.com" {
+		t.Errorf("expected privateDomain, got %q", config["defang-aws:privateDomain"].Value)
 	}
-	if cfg["defang-aws:delegationSetId"].Value != "DELEGSET123" {
-		t.Errorf("expected delegationSetId, got %q", cfg["defang-aws:delegationSetId"].Value)
+	if config["defang-aws:delegationSetId"].Value != "DELEGSET123" {
+		t.Errorf("expected delegationSetId, got %q", config["defang-aws:delegationSetId"].Value)
 	}
 	const wantArn = "arn:aws:secretsmanager:us-east-1:123456789:secret:creds"
-	if cfg["defang-aws:ciRegistryCredentialsArn"].Value != wantArn {
-		t.Errorf("expected ciRegistryCredentialsArn, got %q", cfg["defang-aws:ciRegistryCredentialsArn"].Value)
+	if config["defang-aws:ciRegistryCredentialsArn"].Value != wantArn {
+		t.Errorf("expected ciRegistryCredentialsArn, got %q", config["defang-aws:ciRegistryCredentialsArn"].Value)
 	}
 }
 
@@ -108,26 +111,27 @@ func TestStackConfigFromEnvGCP(t *testing.T) {
 	t.Setenv("DELEGATION_SET_ID", "")
 	t.Setenv("CI_REGISTRY_CREDENTIALS_ARN", "")
 
-	cfg := defaultStackConfig("")
-	err := addStackConfigFromEnv(cfg)
+	config := configMap{}
+	setDefaultStackConfig("", config)
+	err := addStackConfigFromEnv(config)
 	if err != nil {
 		t.Fatalf("stackConfig() error: %v", err)
 	}
 
-	if cfg["defang:provider"].Value != "gcp" {
-		t.Errorf("expected provider gcp, got %q", cfg["defang:provider"].Value)
+	if config["defang:provider"].Value != "gcp" {
+		t.Errorf("expected provider gcp, got %q", config["defang:provider"].Value)
 	}
-	if cfg["gcp:project"].Value != "my-gcp-project" {
-		t.Errorf("expected gcp:project, got %q", cfg["gcp:project"].Value)
+	if config["gcp:project"].Value != "my-gcp-project" {
+		t.Errorf("expected gcp:project, got %q", config["gcp:project"].Value)
 	}
-	if cfg["gcp:region"].Value != "us-central1" {
-		t.Errorf("expected gcp:region, got %q", cfg["gcp:region"].Value)
+	if config["gcp:region"].Value != "us-central1" {
+		t.Errorf("expected gcp:region, got %q", config["gcp:region"].Value)
 	}
 	// Optional fields should not be present when empty
-	if _, ok := cfg["defang:domain"]; ok {
+	if _, ok := config["defang:domain"]; ok {
 		t.Error("defang:domain should not be set when empty")
 	}
-	if _, ok := cfg["defang-aws:privateDomain"]; ok {
+	if _, ok := config["defang-aws:privateDomain"]; ok {
 		t.Error("defang-aws:privateDomain should not be set when empty")
 	}
 }
@@ -144,23 +148,24 @@ func TestStackConfigFromEnvAzure(t *testing.T) {
 	t.Setenv("DELEGATION_SET_ID", "")
 	t.Setenv("CI_REGISTRY_CREDENTIALS_ARN", "")
 
-	cfg := defaultStackConfig("")
-	err := addStackConfigFromEnv(cfg)
+	config := configMap{}
+	setDefaultStackConfig("", config)
+	err := addStackConfigFromEnv(config)
 	if err != nil {
 		t.Fatalf("stackConfig() error: %v", err)
 	}
 
-	if cfg["defang:provider"].Value != "azure" {
-		t.Errorf("expected provider azure, got %q", cfg["defang:provider"].Value)
+	if config["defang:provider"].Value != "azure" {
+		t.Errorf("expected provider azure, got %q", config["defang:provider"].Value)
 	}
-	if cfg["azure-native:location"].Value != "westus2" {
-		t.Errorf("expected location westus2, got %q", cfg["azure-native:location"].Value)
+	if config["azure-native:location"].Value != "westus2" {
+		t.Errorf("expected location westus2, got %q", config["azure-native:location"].Value)
 	}
-	if cfg["azure-native:useMsi"].Value != "true" {
-		t.Errorf("expected useMsi true, got %q", cfg["azure-native:useMsi"].Value)
+	if config["azure-native:useMsi"].Value != "true" {
+		t.Errorf("expected useMsi true, got %q", config["azure-native:useMsi"].Value)
 	}
-	if cfg["azure-native:subscriptionId"].Value != "sub-123" {
-		t.Errorf("expected subscriptionId, got %q", cfg["azure-native:subscriptionId"].Value)
+	if config["azure-native:subscriptionId"].Value != "sub-123" {
+		t.Errorf("expected subscriptionId, got %q", config["azure-native:subscriptionId"].Value)
 	}
 }
 
@@ -264,12 +269,13 @@ config:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			configMap, err := parseRecipePulumiConfig(tt.pulumiConfig)
+			config := configMap{}
+			err := unmarshalRecipe(tt.pulumiConfig, config)
 			if err != nil {
-				t.Fatalf("parseRecipePulumiConfig() error: %v", err)
+				t.Fatalf("unmarshalRecipe() error: %v", err)
 			}
 
-			require.Equal(t, tt.expected, configMap)
+			require.Equal(t, tt.expected, config)
 		})
 	}
 }
