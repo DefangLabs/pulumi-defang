@@ -309,7 +309,7 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// Log Analytics workspace names must be 4–63 chars. The workspace's
 							// logical ${name} is the project name, so the default pattern repeats
 							// the project twice and overflows on longer names; drop ${name}.
-							// https://learn.microsoft.com/en-us/azure/azure-monitor/logs/manage-logs-tables
+							// https://learn.microsoft.com/en-us/azure/templates/microsoft.operationalinsights/workspaces?pivots=deployment-language-bicep#microsoftoperationalinsightsworkspaces
 							"azure-native:operationalinsights:Workspace": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
 						},
 					},
