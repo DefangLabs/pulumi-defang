@@ -175,7 +175,10 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "IMAGE_TAG=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
           else
-            echo "IMAGE_TAG=$(make version)" >> "$GITHUB_ENV"
+            # `make version` emits SemVer, which may include a `+<commit>` build-metadata
+            # suffix (e.g. 2.1.2-alpha+a3aefa34). Docker tags disallow `+`, so swap it for `-`.
+            VERSION="$(make version)"
+            echo "IMAGE_TAG=${VERSION//+/-}" >> "$GITHUB_ENV"
           fi
 
       - name: Build and push image to GHCR
