@@ -306,6 +306,11 @@ func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
 							// Numbers and hyphens are also allowed.
 							// https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ContainerApp.EnvNaming
 							"azure-native:app:ManagedEnvironment": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
+							// Log Analytics workspace names must be 4–63 chars. The workspace's
+							// logical ${name} is the project name, so the default pattern repeats
+							// the project twice and overflows on longer names; drop ${name}.
+							// https://learn.microsoft.com/en-us/azure/templates/microsoft.operationalinsights/workspaces?pivots=deployment-language-bicep#microsoftoperationalinsightsworkspaces
+							"azure-native:operationalinsights:Workspace": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
 						},
 					},
 					// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
