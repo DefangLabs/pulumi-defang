@@ -235,3 +235,37 @@ func InterpolateEnvironmentVariable(
 		}, template.WithoutLogging)
 	}).(pulumi.StringOutput)
 }
+
+// healthcheckURLRegex matches `http://localhost:PORT/PATH` (or 127.0.0.1) inside
+// a Docker Compose `healthcheck.test` arg. Port and path are optional captures.
+var healthcheckURLRegex = regexp.MustCompile(
+	`(?i)(?:http:\/\/)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`)
+
+// GetHealthCheckPathAndPort extracts the URL path and port from a Compose
+// healthcheck command of the form `CMD curl http://localhost:PORT/PATH` (or
+// CMD-SHELL with the URL embedded in a shell string). Returns ("/", 80) when
+// no URL is present or the test isn't a CMD/CMD-SHELL form.
+//
+// Cloud providers that translate a Compose healthcheck into a cloud-native
+// HTTP probe (Azure Container Apps liveness probe, GCP MIG ALB health check)
+// use this to populate the probe's path/port instead of hardcoding "/".
+func GetHealthCheckPathAndPort(hc *HealthCheckConfig) (string, int) {
+	path := "/"
+	port := 80
+	if hc == nil || len(hc.Test) < 1 || (hc.Test[0] != "CMD" && hc.Test[0] != "CMD-SHELL") {
+		return path, port
+	}
+	for _, arg := range hc.Test[1:] {
+		if match := healthcheckURLRegex.FindStringSubmatch(arg); match != nil {
+			if match[1] != "" {
+				if n, err := strconv.Atoi(match[1]); err == nil {
+					port = n
+				}
+			}
+			if match[2] != "" {
+				path = match[2]
+			}
+		}
+	}
+	return path, port
+}
