@@ -27,7 +27,6 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0
 	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0
