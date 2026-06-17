@@ -16,7 +16,7 @@
   "homepage": "https://github.com/DefangLabs/pulumi-defang",
   "license": "Apache-2.0",
   "repository": "https://github.com/DefangLabs/pulumi-defang",
-  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.svg",
+  "logoUrl": "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
   "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang",
   "publisher": "Defang",
   "language": {
