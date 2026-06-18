@@ -421,6 +421,10 @@
         "endpoints"
       ],
       "inputProperties": {
+        "domain": {
+          "type": "string",
+          "plain": true
+        },
         "etag": {
           "type": "string",
           "plain": true

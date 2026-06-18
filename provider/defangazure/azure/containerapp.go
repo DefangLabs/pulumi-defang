@@ -85,6 +85,9 @@ func postgresURLEndpoint(
 
 type containerAppResult struct {
 	App *app.ContainerApp
+	// CustomDomain is nil unless the project sets a delegate Domain *and* the
+	// service exposes a public ingress; see CreateCustomDomain.
+	CustomDomain *CustomDomainResult
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -319,7 +322,16 @@ func CreateContainerApp(
 		return nil, fmt.Errorf("creating Container App: %w", err)
 	}
 
-	return &containerAppResult{App: containerApp}, nil
+	// Provision per-service DNS records + managed cert under the project
+	// delegate domain (no-op when infra.Domain is empty or the service is
+	// internal-only). Bound to the CA's parent option set so failures here
+	// propagate through the normal component graph.
+	customDomain, err := CreateCustomDomain(ctx, serviceName, svc, containerApp, infra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating custom domain for %s: %w", serviceName, err)
+	}
+
+	return &containerAppResult{App: containerApp, CustomDomain: customDomain}, nil
 }
 
 // resolveSubscriptionID resolves the Azure subscription for the out-of-band

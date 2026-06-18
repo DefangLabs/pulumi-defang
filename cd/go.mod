@@ -14,7 +14,7 @@ require (
 	cloud.google.com/go/storage v1.61.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
-	github.com/DefangLabs/defang/src v0.0.0-20260528224834-56389634ab5f
+	github.com/DefangLabs/defang/src v0.0.0-20260602151443-3dfee3663c47
 	github.com/DefangLabs/pulumi-defang v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
@@ -29,6 +29,7 @@ require (
 	github.com/pulumi/pulumi/sdk/v3 v3.231.0
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
+	golang.org/x/sync v0.20.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -44,6 +45,15 @@ require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers v1.1.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3 v3.1.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/operationalinsights/armoperationalinsights v1.2.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage/v2 v2.0.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
@@ -154,6 +164,19 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.23.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-random/sdk/v4 v4.19.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/ross96D/cancelreader v0.2.6 // indirect
@@ -193,7 +216,6 @@ require (
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/text v0.36.0 // indirect

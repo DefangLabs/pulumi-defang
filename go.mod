@@ -24,16 +24,17 @@ require (
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0
-	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.17.0
-	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.16.0
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.16.0
+	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.21.0
 	github.com/pulumi/pulumi-go-provider v1.3.1

@@ -28,6 +28,14 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Domain is the delegate domain for the project (e.g. "myproj-stack.tenant.defang.app").
+	// When non-empty and a public DNS zone of that name already exists in the project
+	// resource group (created by the CLI's PrepareDomainDelegation), every ingress
+	// service gets a `<service>.<domain>` CNAME pointing at its Container App, an
+	// `asuid.<service>` TXT record with the App's verification ID, and an ACA
+	// ManagedCertificate provisioned via CNAME validation. Empty disables this path
+	// — services keep only their auto-assigned `*.azurecontainerapps.io` hostname.
+	Domain string `pulumi:"domain,optional" yaml:"domain,omitempty"`
 	// Etag is the deployment identifier supplied by the CD program; the provider
 	// stamps it onto every resource (tags) and onto Container App revisions
 	// (RevisionSuffix) so that logs and Resource Graph queries can be filtered
@@ -375,6 +383,7 @@ func setupSharedInfra(
 		ResourceGroup: rg,
 		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
 		Etag:          inputs.Etag,
+		Domain:        inputs.Domain,
 	}
 	if ctx.DryRun() {
 		infra.ConfigProvider = &compose.DryRunConfigProvider{}

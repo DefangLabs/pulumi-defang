@@ -52,7 +52,7 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		case "gcp":
 			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectUpdate)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, project, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, projectUpdate)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}
