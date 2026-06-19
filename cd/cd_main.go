@@ -18,7 +18,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
-	"go.yaml.in/yaml/v4"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,7 +25,6 @@ func cdMain(ctx context.Context, args ...string) error {
 	etag := os.Getenv("DEFANG_ETAG")
 	eventsUploadUrl := os.Getenv("DEFANG_EVENTS_UPLOAD_URL")
 	jsonOutput := getenvBool("DEFANG_JSON")
-	prefix := getenv("DEFANG_PREFIX", "Defang")
 	projectName := os.Getenv("PROJECT") // required
 	pulumiDebug := getenvBool("DEFANG_PULUMI_DEBUG")
 	pulumiDiff := getenvBool("DEFANG_PULUMI_DIFF")
@@ -83,17 +81,11 @@ func cdMain(ctx context.Context, args ...string) error {
 			return pulumiErr(err)
 		}
 		// Set stack-level config (provider settings, defang config)
-		var cfg auto.ConfigMap
-		if pulumiConfig := projectUpdate.Recipe.GetPulumiConfig(); len(pulumiConfig) != 0 {
-			cfg, err = stackConfigFromRecipe(pulumiConfig)
-		} else {
-			// Legacy path: create stack config from env vars
-			cfg, err = stackConfigFromEnv()
-		}
+		configJson, err := stackConfigJson(projectUpdate.Recipe.GetPulumiConfig())
 		if err != nil {
 			return err
 		}
-		err = stack.SetAllConfig(ctx, cfg) // TODO: consider using SetAllConfigJson (but no clear advantage)
+		err = stack.SetAllConfigJson(ctx, configJson, nil)
 		if err != nil {
 			return pulumiErr(err)
 		}
@@ -115,12 +107,27 @@ func cdMain(ctx context.Context, args ...string) error {
 		stack.Workspace().SetEnvVar("USER", etag)
 	}
 
-	// Set project-level config (autonaming, disable-default-providers)
+	// Set project-level config (disable-default-providers)
 	ps, err := stack.Workspace().ProjectSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get project settings: %w", err)
 	}
-	ps.Config = projectConfig(prefix)
+	ps.Config = map[string]workspace.ProjectConfigType{
+		// Ensure we create one provider per cloud by disabling the automatic default providers
+		"pulumi:disable-default-providers": {
+			Value: []string{
+				"aws-native",
+				"aws",
+				"azure-native",
+				"azure",
+				"eks",
+				"gcp",
+				"google-beta",
+				"google-native",
+				"kubernetes",
+			},
+		},
+	}
 	if err := stack.Workspace().SaveProjectSettings(ctx, ps); err != nil {
 		return fmt.Errorf("failed to save project settings: %w", err)
 	}
@@ -264,237 +271,6 @@ func color() string {
 		return "never"
 	}
 	return "always"
-}
-
-// projectConfig returns config for Pulumi.yaml (project-level settings).
-func projectConfig(prefix string) map[string]workspace.ProjectConfigType {
-	if prefix != "" {
-		prefix += "-"
-	}
-	lowerPrefix := strings.ToLower(prefix)
-	// TODO: we'll need a lowercase version of the project name as well
-	return map[string]workspace.ProjectConfigType{
-		"pulumi:autonaming": {
-			Value: map[string]any{
-				"pattern": prefix + "${project}-${stack}-${name}-${hex(7)}",
-				"providers": map[string]any{
-					"aws": map[string]any{
-						"resources": map[string]any{
-							"aws:lb/loadBalancer:LoadBalancer": map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
-							"aws:lb/targetGroup:TargetGroup":   map[string]string{"pattern": "${name}-${hex(4)}"},
-							// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
-							// full prefix already disambiguates it; no need to repeat it here.
-							"aws:ecs/service:Service":                 map[string]string{"pattern": "${name}-${hex(7)}"},
-							"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
-							"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
-							"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
-						},
-					},
-					"azure-native": map[string]any{
-						"resources": map[string]any{
-							// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
-							// The default pattern includes hyphens from project/stack names, so override it.
-							// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
-							// ${stack} is safe to include: stacks are lowercase with no hyphens.
-							"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"}, // name = sanitized project name
-							// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
-							// 5-50	Alphanumerics, hyphens, and underscores
-							"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
-							// Requirements for Container App Environment resource names:
-							// Between 2 and 60 characters long.
-							// This resource name is not case-sensitive even though it is written as lowercase only in the docs.
-							// Numbers and hyphens are also allowed.
-							// https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ContainerApp.EnvNaming
-							"azure-native:app:ManagedEnvironment": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
-							// Log Analytics workspace names must be 4–63 chars. The workspace's
-							// logical ${name} is the project name, so the default pattern repeats
-							// the project twice and overflows on longer names; drop ${name}.
-							// https://learn.microsoft.com/en-us/azure/templates/microsoft.operationalinsights/workspaces?pivots=deployment-language-bicep#microsoftoperationalinsightsworkspaces
-							"azure-native:operationalinsights:Workspace": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
-						},
-					},
-					// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
-					// (lowercase only, max 63 chars). The default prefix may contain capitals
-					// (e.g. "Defang-"), so force the entire pattern to use the lowercased prefix.
-					"gcp": map[string]any{
-						"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}", // TODO: sanitize project name
-						"resources": map[string]any{
-							// Service account ID must be between 6 and 30 characters.
-							// Service account ID must start with a lower case letter, followed by one or more lower case alphanumerical characters that can be separated by hyphens.
-							"gcp:serviceaccount/account:Account": map[string]string{"pattern": "${name}-${hex(4)}"},
-							// Cloud Run service name max 49 chars (^[a-z][a-z0-9-]{0,47}[a-z0-9]$).
-							// Default prefix-project-stack pattern overflows on longer inputs;
-							// drop the prefix to mirror old cloudrunServiceName (49 char budget).
-							"gcp:cloudrunv2/service:Service": map[string]string{"pattern": "${project}-${stack}-${name}-${hex(7)}"}, // TODO: sanitize project name
-							// Memorystore Redis instance ID max 40 chars (^[a-z][a-z0-9-]{0,38}[a-z0-9]$).
-							// Drop the prefix to mirror old redisInstanceName (40 char budget).
-							"gcp:redis/instance:Instance": map[string]string{"pattern": "${project}-${name}-${hex(7)}"}, // TODO: sanitize project name
-						},
-					},
-				},
-			},
-		},
-		"pulumi:disable-default-providers": {
-			// Ensure we create one provider per cloud by disabling the automatic default providers
-			Value: []string{
-				"aws-native",
-				"aws",
-				"azure-native",
-				"azure",
-				"eks",
-				"gcp",
-				"google-beta",
-				"google-native",
-				"kubernetes",
-			},
-		},
-	}
-}
-
-// stackConfigFromRecipe returns stack config from the recipe's PulumiConfig.
-// It accepts either a Pulumi stack settings YAML (everything nested under a
-// top-level "config:" key) or the flat JSON emitted by `pulumi config --json`
-// (a map of "namespace:key" to a {value: "<string>"} wrapper). Objects and
-// arrays are serialized to their compact JSON string form, matching how Pulumi
-// stores structured config.
-func stackConfigFromRecipe(recipePulumiConfig string) (auto.ConfigMap, error) {
-	// JSON is a subset of YAML, so a single YAML decoder handles both formats.
-	var root map[string]any
-	if err := yaml.Unmarshal([]byte(recipePulumiConfig), &root); err != nil {
-		return nil, err
-	}
-
-	// Stack settings nest config under "config:"; `pulumi config --json` is flat
-	// and wraps each value in a {value: "<string>"} object. We only unwrap in the
-	// flat case so a genuine object literal named "value" in stack settings is
-	// preserved rather than mistaken for a wrapper.
-	section, flat := root, true
-	if cfg, ok := root["config"].(map[string]any); ok {
-		section, flat = cfg, false
-	}
-
-	cfg := auto.ConfigMap{}
-	for key, val := range section {
-		if flat {
-			if wrapper, ok := val.(map[string]any); ok {
-				if v, ok := wrapper["objectValue"]; ok { // pulumi checks objectValue first
-					val = v
-				} else if v, ok := wrapper["value"]; ok { // pulumi emits "value" for scalar config
-					val = v
-				}
-			}
-		}
-		s, err := configValueToString(val)
-		if err != nil {
-			return nil, fmt.Errorf("config %q: %w", key, err)
-		}
-		cfg[key] = auto.ConfigValue{Value: s}
-	}
-	return cfg, nil
-}
-
-// configValueToString renders a decoded config value the way Pulumi stores it:
-// scalars verbatim, objects and arrays as compact JSON.
-func configValueToString(val any) (string, error) {
-	switch v := val.(type) {
-	case string:
-		return v, nil
-	case nil:
-		return "", nil
-	case map[string]any, []any:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	default: // numbers, bools
-		return fmt.Sprintf("%v", v), nil
-	}
-}
-
-// stackConfigFromEnv returns stack config from legacy environment variables.
-func stackConfigFromEnv() (auto.ConfigMap, error) {
-	region := os.Getenv("REGION")
-	awsProfile := os.Getenv("AWS_PROFILE")                    // AWS only
-	awsRegion := getenv("AWS_REGION", region)                 // AWS only
-	azureLocation := getenv("AZURE_LOCATION", region)         // Azure only
-	azureSubscriptionId := os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only; the project RG and Key Vault names are derived from (project, stack, location) and (subscription, RG) respectively — see provider/defangazure/azure/azure.go
-	cdImage := os.Getenv("DEFANG_CD_IMAGE")                   // GCP only; for cleanup
-	delegationSetId := os.Getenv("DELEGATION_SET_ID")         // AWS only
-	domain := os.Getenv("DOMAIN")
-	org := getenv("DEFANG_ORG", "defang")
-	etag := getenv("DEFANG_ETAG", org)
-	gcpProject := getenv("GCLOUD_PROJECT", os.Getenv("GCP_PROJECT")) // GCP only; keep GCP_PROJECT for old CLI compat
-	gcpRegion := getenv("GCLOUD_REGION", region)                     // GCP only
-	privateDomain := os.Getenv("PRIVATE_DOMAIN")                     // AWS only
-	registryCredsArn := os.Getenv("CI_REGISTRY_CREDENTIALS_ARN")     // AWS only
-	stateUrl := getenv("DEFANG_STATE_URL", os.Getenv("PULUMI_BACKEND_URL"))
-
-	cfg := auto.ConfigMap{
-		// Defang program config
-		"defang:cdImage":  auto.ConfigValue{Value: cdImage},
-		"defang:etag":     auto.ConfigValue{Value: etag}, // deployment ID; recorded in state, surfaced in tags/env
-		"defang:org":      auto.ConfigValue{Value: org},
-		"defang:stateUrl": auto.ConfigValue{Value: stateUrl},
-		"defang:version":  auto.ConfigValue{Value: version},
-	}
-
-	// Cloud provider config read by the explicit providers in the program
-	var providers []string
-	if awsRegion != "" {
-		providers = append(providers, "aws")
-		cfg["aws:region"] = auto.ConfigValue{Value: awsRegion}
-		if awsProfile != "" {
-			cfg["aws:profile"] = auto.ConfigValue{Value: awsProfile}
-		}
-	}
-
-	if gcpProject != "" {
-		providers = append(providers, "gcp")
-		cfg["gcp:project"] = auto.ConfigValue{Value: gcpProject}
-		if gcpRegion != "" {
-			cfg["gcp:region"] = auto.ConfigValue{Value: gcpRegion}
-		}
-		// TODO: configure label-logger
-	}
-
-	if azureSubscriptionId != "" {
-		providers = append(providers, "azure")
-		cfg["azure-native:subscriptionId"] = auto.ConfigValue{Value: azureSubscriptionId}
-		if azureLocation != "" {
-			cfg["azure-native:location"] = auto.ConfigValue{Value: azureLocation}
-		}
-		cfg["azure-native:useMsi"] = auto.ConfigValue{Value: "true"}
-		// The project RG name and Key Vault name are derived deterministically
-		// from (project, stack, location) and (subscription, RG) respectively
-		// inside the provider — matching the CLI's conventions. No need to
-		// pass them through as stack config or env vars.
-	}
-
-	if len(providers) == 0 {
-		return nil, &usageError{msg: "no cloud provider configured: set AWS_REGION, GCLOUD_PROJECT, or AZURE_SUBSCRIPTION_ID environment variable"}
-	} else if len(providers) > 1 {
-		return nil, &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
-	} else {
-		cfg["defang:provider"] = auto.ConfigValue{Value: providers[0]}
-	}
-
-	// Defang recipe config
-	if domain != "" {
-		cfg["defang:domain"] = auto.ConfigValue{Value: domain}
-	}
-	if privateDomain != "" {
-		cfg["defang:privateDomain"] = auto.ConfigValue{Value: privateDomain}
-	}
-	if delegationSetId != "" {
-		// FIXME: should use defang-aws namespace
-		cfg["defang:delegationSetId"] = auto.ConfigValue{Value: delegationSetId}
-	}
-	if registryCredsArn != "" {
-		// FIXME: should use defang-aws namespace
-		cfg["defang:ciRegistryCredentialsArn"] = auto.ConfigValue{Value: registryCredsArn}
-	}
-	return cfg, nil
 }
 
 // collectEvents returns a channel to feed engine events into and a wait

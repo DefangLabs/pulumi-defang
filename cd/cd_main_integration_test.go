@@ -138,7 +138,7 @@ func testProviderPreview(t *testing.T, provider, accountId string, pulumiConfig 
 	t.Setenv("DEFANG_PULUMI_DIFF", "true")
 	t.Setenv("DEFANG_PULUMI_DEBUG", "false")
 	t.Setenv("NO_COLOR", "")
-	t.Setenv("PROJECT", "cd-test")
+	t.Setenv("PROJECT", TEST_PROJECT)
 	t.Setenv("STACK", provider)
 
 	projectUpdate := defangv1.ProjectUpdate{

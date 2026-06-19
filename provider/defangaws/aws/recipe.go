@@ -2,27 +2,30 @@ package aws
 
 import "github.com/DefangLabs/pulumi-defang/provider/common"
 
-// AWS recipe config accessors. Each reads from defang:<key> in stack config.
+// AWS recipe config accessors. Cloud-specific keys read from defang-aws:<key>.
+var recipe = common.NewRecipe("defang-aws")
+
 var (
-	AllowBurstable            = common.Bool("allow-burstable", true)
-	AllowOverwriteRecords     = common.Bool("allow-overwrite-records", false)
-	BackupRetentionDays       = common.Int("backup-retention-days", 0)
-	BackupWindow              = common.String("backup-window", "04:00-05:00")
-	BucketKeyEnabled          = common.Bool("bucket-key-enabled", true) // minimize KMS costs in non-prod environments
-	CreateApexRecord          = common.Bool("create-apex-record", true)
-	DeletionProtection        = common.DeletionProtection
-	DeregistrationDelay       = common.Int("deregistration-delay", 0)
-	FargateCapacityProvider   = common.String("fargate-capacity-provider", "FARGATE_SPOT")
-	ForceDestroyBucket        = common.Bool("force-destroy-bucket", true)
-	ForceDestroyHostedzone    = common.Bool("force-destroy-hostedzone", false)
-	HealthCheckInterval       = common.Int("health-check-interval", 5)
-	HealthCheckThreshold      = common.Int("health-check-threshold", 2)
-	HttpRedirectToHttps       = common.String("http-redirect-to-https", "HTTP_302")
-	MinHealthyPercent         = common.Int("min-healthy-percent", 0)
-	NatGatewayStrategy        = common.String("nat-gateway-strategy", "None") // None, Single, or OnePerAz
-	NumberOfAvailabilityZones = common.Int("number-of-availability-zones", 2)
-	RDSNodeType               = common.String("rds-node-type", "burstable")
-	RetainBucketOnDelete      = common.Bool("retain-bucket-on-delete", false)
-	Route53SidecarLogs        = common.Bool("route53-sidecar-logs", false)
-	RetainDnsOnDelete         = common.Bool("retain-dns-on-delete", false)
+	AllowBurstable            = recipe.Bool("allow-burstable", true)
+	AllowOverwriteRecords     = recipe.Bool("allow-overwrite-records", false)
+	BackupRetentionDays       = recipe.Int("backup-retention-days", 0)
+	BackupWindow              = recipe.String("backup-window", "04:00-05:00")
+	BucketKeyEnabled          = recipe.Bool("bucket-key-enabled", true) // minimize KMS costs in non-prod environments
+	CreateApexRecord          = recipe.Bool("create-apex-record", true)
+	DeletionProtection        = recipe.Bool("deletion-protection", false)
+	DeregistrationDelay       = recipe.Int("deregistration-delay", 0)
+	FargateCapacityProvider   = recipe.String("fargate-capacity-provider", "FARGATE_SPOT")
+	ForceDestroyBucket        = recipe.Bool("force-destroy-bucket", true)
+	ForceDestroyHostedzone    = recipe.Bool("force-destroy-hostedzone", false)
+	HealthCheckInterval       = recipe.Int("health-check-interval", 5)
+	HealthCheckThreshold      = recipe.Int("health-check-threshold", 2)
+	HttpRedirectToHttps       = recipe.String("http-redirect-to-https", "HTTP_302")
+	LogRetentionDays          = recipe.Int("log-retention-days", 1)
+	MinHealthyPercent         = recipe.Int("min-healthy-percent", 0)
+	NatGatewayStrategy        = recipe.String("nat-gateway-strategy", "None") // None, Single, or OnePerAz
+	NumberOfAvailabilityZones = recipe.Int("number-of-availability-zones", 2)
+	RDSNodeType               = recipe.String("rds-node-type", "burstable")
+	RetainBucketOnDelete      = recipe.Bool("retain-bucket-on-delete", false)
+	Route53SidecarLogs        = recipe.Bool("route53-sidecar-logs", false)
+	RetainDnsOnDelete         = recipe.Bool("retain-dns-on-delete", false)
 )

@@ -6,7 +6,6 @@ import (
 
 	"encoding/json"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
@@ -64,7 +63,7 @@ func createLbLogsBucket(
 				Id:     pulumi.String("expire-logs"),
 				Status: pulumi.String("Enabled"),
 				Expiration: &s3.BucketLifecycleConfigurationRuleExpirationArgs{
-					Days: pulumi.Int(common.LogRetentionDays.Get(ctx)),
+					Days: pulumi.Int(LogRetentionDays.Get(ctx)),
 				},
 			},
 		},
