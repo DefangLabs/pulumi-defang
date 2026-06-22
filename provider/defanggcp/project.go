@@ -220,7 +220,7 @@ func buildService(
 	// createX workers don't build the LBEntry themselves. createService sets
 	// PrivateFqdn internally for the Service case.
 	if lbEntry != nil && svc.HasHostPorts() && lbEntry.PrivateFqdn == "" {
-		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", svcName, "google.internal")
+		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", common.ServiceLabel(svcName), "google.internal")
 	}
 
 	return endpoint, svcComp, lbEntry, nil

@@ -336,8 +336,14 @@ func CreateECSService(
 	if infra != nil && infra.Etag != "" {
 		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_ETAG", Value: infra.Etag})
 	}
-	if svc.DomainName != "" {
-		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: svc.DomainName})
+	// DEFANG_FQDN: custom domain, else public FQDN (ingress), else private FQDN
+	// (host-port). See common.ServiceFQDN for the source-of-truth precedence.
+	var publicDomain, privateDomain string
+	if infra != nil {
+		publicDomain, privateDomain = infra.ProjectDomain, infra.PrivateDomain
+	}
+	if fqdn := common.ServiceFQDN(serviceName, svc, publicDomain, privateDomain); fqdn != "" {
+		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: fqdn})
 	}
 
 	// Resolve outputs (image URI, log group name, env vars) before building the container
@@ -422,7 +428,7 @@ func CreateECSService(
 
 		if svc.HasHostPorts() && hasPrivateZone {
 			privateZoneID := all[2].(string)                                         // FIXME: this is [1] if there's no loggroup
-			privateFqdn := common.SafeLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
+			privateFqdn := common.ServiceLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
 			sidecarDef := ContainerDefinition{
 				Name:      "route53-sidecar",
 				Image:     "public.ecr.aws/defang-io/route53-sidecar:65e431c",
@@ -497,7 +503,7 @@ func CreateECSService(
 	}
 
 	if svc.HasIngressPorts() && listener != nil {
-		serviceLabel := common.SafeLabel(serviceName)
+		serviceLabel := common.ServiceLabel(serviceName)
 
 		firstIngress := true
 		for _, port := range svc.Ports {
@@ -620,7 +626,7 @@ func CreateECSService(
 	}
 
 	hasIngress := svc.HasIngressPorts() && infra.HttpListener != nil
-	serviceLabel := common.SafeLabel(serviceName)
+	serviceLabel := common.ServiceLabel(serviceName)
 	switch {
 	case hasIngress && infra.ProjectDomain != "":
 		// HTTP listener redirects to HTTPS when a cert is bound, so advertise https://.
@@ -634,7 +640,8 @@ func CreateECSService(
 			func(dns string) string { return "http://" + dns },
 		)
 	case svc.HasHostPorts() && infra.PrivateDomain != "":
-		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
+		// serviceLabel (not raw serviceName) to match the private DNS record.
+		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceLabel, infra.PrivateDomain))
 	default:
 		endpointOutput = pulumix.Val(serviceName)
 	}

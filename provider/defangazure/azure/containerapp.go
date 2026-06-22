@@ -150,6 +150,15 @@ func buildEnvVars(
 			Value: pulumi.String(infra.Etag),
 		})
 	}
+	// DEFANG_FQDN: custom domain, else public FQDN (ingress) under the delegate
+	// domain — matches the CNAME from CreateCustomDomain. Azure has no
+	// private-FQDN fallback. See common.ServiceFQDN for the precedence.
+	if fqdn := common.ServiceFQDN(serviceName, svc, infra.Domain, ""); fqdn != "" {
+		envs = append(envs, app.EnvironmentVarArgs{
+			Name:  pulumi.String("DEFANG_FQDN"),
+			Value: pulumi.String(fqdn),
+		})
+	}
 
 	var appSecrets app.SecretArray
 	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we

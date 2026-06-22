@@ -88,7 +88,7 @@ func createRedis(
 
 	var dependency pulumi.Resource // stays nil when no CNAME and no explicit cluster handle
 	if infra.PrivateZoneID != nil {
-		privateFqdn := common.SafeLabel(serviceName) //+ "." + infra.PrivateDomain
+		privateFqdn := common.ServiceLabel(serviceName) //+ "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{redisResult.Address},

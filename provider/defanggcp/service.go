@@ -156,7 +156,7 @@ func createService(
 	}
 
 	if lbEntry != nil && svc.HasHostPorts() {
-		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", serviceName, "google.internal")
+		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", common.ServiceLabel(serviceName), "google.internal")
 	}
 
 	comp.Endpoint = endpoint
