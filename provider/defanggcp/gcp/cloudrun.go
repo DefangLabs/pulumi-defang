@@ -89,7 +89,7 @@ func CreateCloudRunService(
 func buildEnvVars(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
-	serviceName, etag string,
+	serviceName, etag, fqdn string,
 	svc compose.ServiceConfig,
 	opts ...pulumi.InvokeOption,
 ) (cloudrunv2.ServiceTemplateContainerEnvArray, []string) {
@@ -109,6 +109,12 @@ func buildEnvVars(
 		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 			Name:  pulumi.String("DEFANG_ETAG"),
 			Value: pulumi.String(etag),
+		})
+	}
+	if fqdn != "" {
+		envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
+			Name:  pulumi.String("DEFANG_FQDN"),
+			Value: pulumi.String(fqdn),
 		})
 	}
 	for k, v := range common.Sorted(svc.Environment) {
@@ -161,7 +167,14 @@ func buildTemplate(
 	if gcpConfig != nil {
 		etag = gcpConfig.Etag
 	}
-	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, etag, svc, opts...)
+	// DEFANG_FQDN: custom domain, else public FQDN (ingress). GCP has no
+	// private-FQDN fallback. See common.ServiceFQDN for the precedence.
+	var domain string
+	if gcpConfig != nil {
+		domain = gcpConfig.Domain
+	}
+	fqdn := common.ServiceFQDN(serviceName, svc, domain, "")
+	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, etag, fqdn, svc, opts...)
 
 	// Build port config
 	var ports *cloudrunv2.ServiceTemplateContainerPortsArgs

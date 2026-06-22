@@ -28,6 +28,7 @@ package azure
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/dns/v3"
@@ -80,7 +81,7 @@ func CreateCustomDomain(
 	cname, err := dns.NewRecordSet(ctx, serviceName+"-cname", &dns.RecordSetArgs{
 		ResourceGroupName:     rgName,
 		ZoneName:              zoneName,
-		RelativeRecordSetName: pulumi.String(serviceName),
+		RelativeRecordSetName: pulumi.String(common.ServiceLabel(serviceName)),
 		RecordType:            pulumi.String("CNAME"),
 		Ttl:                   pulumi.Float64(60),
 		CnameRecord: &dns.CnameRecordArgs{
@@ -98,7 +99,7 @@ func CreateCustomDomain(
 	asuid, err := dns.NewRecordSet(ctx, serviceName+"-asuid", &dns.RecordSetArgs{
 		ResourceGroupName:     rgName,
 		ZoneName:              zoneName,
-		RelativeRecordSetName: pulumi.String("asuid." + serviceName),
+		RelativeRecordSetName: pulumi.String("asuid." + common.ServiceLabel(serviceName)),
 		RecordType:            pulumi.String("TXT"),
 		Ttl:                   pulumi.Float64(60),
 		TxtRecords: dns.TxtRecordArray{

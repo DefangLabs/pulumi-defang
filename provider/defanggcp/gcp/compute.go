@@ -58,7 +58,11 @@ func CreateComputeEngine(
 		healthCheckPort = &p
 	}
 
-	cloudInit := getCloudInitConfig(serviceName, image, svc, gcpConfig.Region, addHealthCheckSidecar)
+	// DEFANG_FQDN: custom domain, else public FQDN (ingress), else the private
+	// FQDN (<label>.google.internal) for internal services — the private zone is
+	// provisioned in alb.go and resolves within the VPC. See common.ServiceFQDN.
+	fqdn := common.ServiceFQDN(serviceName, svc, gcpConfig.Domain, "google.internal")
+	cloudInit := getCloudInitConfig(serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, fqdn, addHealthCheckSidecar)
 
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, cloudInit, sa, gcpConfig, iamDeps, parentOpt)
@@ -316,11 +320,13 @@ func getComputeMachineType(svc compose.ServiceConfig) string {
 // getCloudInitConfig generates a cloud-init YAML string for running a container on
 // Container-Optimized OS using systemd. For portless services it adds an HTTP health
 // check sidecar so the MIG auto-healer can probe container liveness.
+//
+//nolint:funlen
 func getCloudInitConfig(
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
-	region string,
+	region, etag, fqdn string,
 	addHealthCheckSidecar bool,
 ) pulumi.StringOutput {
 	var buf strings.Builder
@@ -346,6 +352,17 @@ func getCloudInitConfig(
 	}
 
 	var envFlags strings.Builder
+	// Defang-injected runtime vars, mirroring the Cloud Run path (buildEnvVars).
+	staticEnv := [][2]string{{"DEFANG_SERVICE", serviceName}}
+	if etag != "" {
+		staticEnv = append(staticEnv, [2]string{"DEFANG_ETAG", etag})
+	}
+	if fqdn != "" {
+		staticEnv = append(staticEnv, [2]string{"DEFANG_FQDN", fqdn})
+	}
+	for _, kv := range staticEnv {
+		fmt.Fprintf(&envFlags, "-e %q ", fmt.Sprintf("%s=%s", kv[0], kv[1]))
+	}
 	for k, v := range common.Sorted(svc.Environment) {
 		// Compute/VM deploys embed concrete values into the `docker run -e` cmd
 		// string — no runtime config-provider resolution is available here, so

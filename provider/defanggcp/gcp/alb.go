@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
@@ -85,7 +86,7 @@ func createExternalLoadBalancers(
 	if config.Domain != "" {
 		ip := pulumi.StringArray{config.PublicIP.Address}
 		for _, entry := range ingressEntries {
-			svcDomain := entry.Name + "." + config.Domain
+			svcDomain := common.ServiceLabel(entry.Name) + "." + config.Domain
 			if err := CreatePublicDNSRecord(ctx, config.PublicZoneId, svcDomain, "A", pulumi.Int(60), ip, opts...); err != nil {
 				return err
 			}
@@ -93,7 +94,7 @@ func createExternalLoadBalancers(
 				if !port.IsIngress() {
 					continue
 				}
-				portDomain := fmt.Sprintf("%s--%d.%s", entry.Name, port.Target, config.Domain)
+				portDomain := fmt.Sprintf("%s--%d.%s", common.ServiceLabel(entry.Name), port.Target, config.Domain)
 				if err := CreatePublicDNSRecord(
 					ctx, config.PublicZoneId, portDomain, "A", pulumi.Int(60), ip, opts...,
 				); err != nil {
@@ -557,7 +558,9 @@ func createInternalLoadBalancer(
 }
 
 func internalServiceDns(name string) string {
-	return name + `.google.internal.`
+	// ServiceLabel so the record name matches the PrivateFqdn handle
+	// (project.go/service.go) and the DEFANG_FQDN injected on the CE path.
+	return common.ServiceLabel(name) + `.google.internal.`
 }
 
 func newCertMap(
