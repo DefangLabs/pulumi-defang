@@ -640,7 +640,8 @@ func CreateECSService(
 			func(dns string) string { return "http://" + dns },
 		)
 	case svc.HasHostPorts() && infra.PrivateDomain != "":
-		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
+		// serviceLabel (not raw serviceName) to match the private DNS record.
+		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceLabel, infra.PrivateDomain))
 	default:
 		endpointOutput = pulumix.Val(serviceName)
 	}

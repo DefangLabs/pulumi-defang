@@ -212,7 +212,7 @@ func createInternalLoadBalancer(
 				firstPrivateBackendID = serviceBackend.ID()
 			}
 
-			internalServiceName := service.Name
+			internalServiceName := common.ServiceLabel(service.Name)
 			privateHostRules = append(privateHostRules, &compute.RegionUrlMapHostRuleArgs{
 				Hosts:       pulumi.StringArray{pulumi.String(internalServiceName)},
 				PathMatcher: pulumi.String(pathMatcherName(internalServiceName)),
@@ -298,7 +298,7 @@ func createInternalLoadBalancer(
 					firstPrivateBackendID = serviceBackend.ID()
 				}
 
-				internalServiceName := service.Name
+				internalServiceName := common.ServiceLabel(service.Name)
 				privateHostRules = append(privateHostRules, &compute.RegionUrlMapHostRuleArgs{
 					Hosts:       pulumi.StringArray{pulumi.String(internalServiceName)},
 					PathMatcher: pulumi.String(pathMatcherName(internalServiceName)),
