@@ -280,6 +280,58 @@ config:
 	}
 }
 
+// TestStackConfigJsonAutonaming guards against the
+// "getting autonaming config: ... cannot unmarshal string into Go value of type
+// autonaming.autonamingSectionJSON" error. The autonaming engine runs
+// ParseAutonamingConfig at the start of every preview/up and requires
+// pulumi:autonaming to be stored as a structured object (so v.ToObject()
+// returns a map). `pulumi config set-all --json` only stores an object when the
+// JSON carries a non-nil "objectValue"; a scalar "value" string fails to parse.
+// We deliberately let Pulumi's engine do the unmarshalling so a regression in
+// configValue marshaling reproduces that exact error here.
+func TestStackConfigJsonAutonaming(t *testing.T) {
+	// Clear ambient env that could pick a second provider or override fallbacks.
+	unsetenv(t, "REGION", "GCP_PROJECT", "GCLOUD_PROJECT", "AZURE_SUBSCRIPTION_ID", "PULUMI_BACKEND_URL")
+	t.Setenv("AWS_REGION", "us-west-2")
+
+	ctx := t.Context()
+	workDir := t.TempDir()
+	env := map[string]string{
+		"PULUMI_BACKEND_URL":       "file://" + workDir, // local backend, no cloud login
+		"PULUMI_CONFIG_PASSPHRASE": "test-passphrase",   // for the local secrets provider
+	}
+
+	// No-op program: ParseAutonamingConfig runs before any resource, so we don't
+	// need to create one to exercise the engine's autonaming parse path.
+	program := func(pctx *pulumi.Context) error { return nil }
+
+	ws, err := auto.NewLocalWorkspace(ctx,
+		auto.WorkDir(workDir),
+		auto.Program(program),
+		auto.EnvVars(env),
+		auto.Project(workspace.Project{
+			Name:    tokens.PackageName(TEST_PROJECT),
+			Runtime: workspace.NewProjectRuntimeInfo("go", nil),
+		}),
+	)
+	require.NoError(t, err)
+
+	stack, err := auto.UpsertStack(ctx, "dev", ws)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = stack.Destroy(ctx, optdestroy.Remove()) })
+
+	// Marshal the recipe config exactly as cd does in production...
+	recipe := "config:\n  pulumi:autonaming:\n    pattern: \"lio-${name}-${hex(7)}\""
+	configJson, err := stackConfigJson(recipe)
+	require.NoError(t, err)
+	require.NoError(t, stack.SetAllConfigJson(ctx, configJson, nil))
+
+	// ...then let Pulumi's engine parse it. Preview triggers ParseAutonamingConfig;
+	// a scalar (string) autonaming value would fail here with the production error.
+	_, err = stack.Preview(ctx)
+	require.NoError(t, err)
+}
+
 func Test_configMap(t *testing.T) {
 	config := configMap{
 		"defang:array":   configValue{Value: []string{"a", "b", "c"}},
