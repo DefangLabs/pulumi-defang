@@ -34,6 +34,12 @@ func Test_setDefaultStackConfig(t *testing.T) {
 	if pattern != "TestPrefix-${project}-${stack}-${name}-${hex(7)}" {
 		t.Errorf("unexpected pattern: %s", pattern)
 	}
+
+	// defang:prefix must be the bare prefix (no trailing "-"); consumers append
+	// their own separator. A trailing hyphen here doubles it (e.g. "TestPrefix--proj").
+	if got := config["defang:prefix"].Value; got != "TestPrefix" {
+		t.Errorf("unexpected defang:prefix: %q, want %q", got, "TestPrefix")
+	}
 }
 
 func Test_setDefaultStackConfigEmptyPrefix(t *testing.T) {
@@ -46,6 +52,9 @@ func Test_setDefaultStackConfigEmptyPrefix(t *testing.T) {
 	// With empty prefix, pattern should not have a leading prefix-
 	if pattern != "${project}-${stack}-${name}-${hex(7)}" {
 		t.Errorf("unexpected pattern with empty prefix: %s", pattern)
+	}
+	if got := config["defang:prefix"].Value; got != "" {
+		t.Errorf("unexpected defang:prefix with empty prefix: %q", got)
 	}
 }
 

@@ -72,11 +72,15 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 }
 
 func setDefaultStackConfig(prefix string, config configMap) {
+	// defang:prefix holds the bare prefix (e.g. "Defang"); its consumers
+	// (common.Prefix, e.g. ProjectResourceGroupName) append their own "-"
+	// separator. Store it before we append the hyphen used for the autonaming
+	// patterns below, otherwise the separator is doubled (e.g. "Defang--proj").
+	config["defang:prefix"] = configValue{Value: prefix}
 	if prefix != "" {
 		prefix += "-"
 	}
 	lowerPrefix := strings.ToLower(prefix)
-	config["defang:prefix"] = configValue{Value: prefix}
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
 		"pattern": prefix + "${project}-${stack}-${name}-${hex(7)}",
 		"providers": map[string]any{
