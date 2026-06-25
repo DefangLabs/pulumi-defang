@@ -390,6 +390,15 @@ func setupSharedInfra(
 		infra.ConfigProvider = providerazure.NewConfigProvider(keyVaultURL)
 	}
 
+	// Adopt the CLI-created delegate-domain DNS zone into Pulumi state (no-op when
+	// the project has no domain) so `defang compose down` cleans it up along with
+	// the per-service records CreateCustomDomain writes into it.
+	domainZone, err := providerazure.EnsureDomainZone(ctx, projectName, infra, parentOpt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("importing domain DNS zone: %w", err)
+	}
+	infra.DomainZone = domainZone
+
 	if types.pgServiceName != "" || types.redisServiceName != "" {
 		networking, err := providerazure.CreateNetworking(ctx, projectName, infra, parentOpt)
 		if err != nil {
