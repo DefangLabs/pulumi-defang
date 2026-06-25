@@ -183,7 +183,7 @@ func createRedisVNetEndpoint(
 	cluster *redis.RedisEnterprise,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
-) (pulumi.Resource, error) {
+) (*network.PrivateDnsZoneGroup, error) {
 	pe, err := network.NewPrivateEndpoint(ctx, serviceName, &network.PrivateEndpointArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.StringPtr(location),
