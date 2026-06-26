@@ -47,6 +47,19 @@ type ProjectOutputs struct {
 func (*Project) Construct(
 	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
 ) (*ProjectOutputs, error) {
+	// Merge the default network's Compose labels into the Tags of all shared
+	// project infrastructure. Attaching the transformation to the Project
+	// component cascades it to every child (see provider/compose/labels.go),
+	// including the awsx VPC component — awsx propagates its Tags to the subnets,
+	// NAT gateways and route tables it creates internally, which an in-process
+	// transformation cannot reach across the multi-language-component boundary.
+	// The default network spans all services, so these labels also reach service
+	// resources; per-service labels (in newService) win on key collision.
+	netLabels := inputs.Networks[compose.DefaultNetwork].Labels
+	if t := compose.LabelTagsTransformation(netLabels, "aws", "Tags", nil); t != nil {
+		opts = pulumi.Composite(opts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+	}
+
 	comp := &ProjectOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -160,11 +173,22 @@ func newService(
 	var endpoint pulumi.StringOutput
 	var dependency pulumi.Resource
 	var err error
+
+	// Merge this service's Compose labels into the Tags of every AWS resource it
+	// creates. Attaching the transformation to the service component cascades it
+	// to all children (see provider/compose/labels.go). AWS tags accept the full
+	// Compose label character set, so labels are applied verbatim (nil normalize).
+	// Prefix "aws" matches both aws: and awsx: type tokens.
+	svcOpts := []pulumi.ResourceOption{parentOpt}
+	if t := compose.LabelTagsTransformation(svc.Labels, "aws", "Tags", nil); t != nil {
+		svcOpts = append(svcOpts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+	}
+
 	switch {
 	case svc.Postgres != nil:
 		// Managed Postgres → RDS
 		pgComp := &PostgresOutputs{}
-		if regErr := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, parentOpt); regErr != nil {
+		if regErr := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, svcOpts...); regErr != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
 		}
 		if err = createPostgres(ctx, pgComp, configProvider, svcName, svc, infra, deps); err == nil {
@@ -174,7 +198,7 @@ func newService(
 	case svc.Redis != nil:
 		// Managed Redis → ElastiCache
 		redisComp := &RedisOutputs{}
-		if regErr := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, parentOpt); regErr != nil {
+		if regErr := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, svcOpts...); regErr != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
 		}
 		if err = createRedis(ctx, redisComp, svcName, svc, infra, deps); err == nil {
@@ -188,7 +212,7 @@ func newService(
 
 		// Container service → ECS
 		svcComp := &ServiceOutputs{}
-		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, parentOpt); regErr != nil {
+		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, svcOpts...); regErr != nil {
 			return pulumi.StringOutput{}, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
 		}
 		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pulumi.Parent(svcComp))

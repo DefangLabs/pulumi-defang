@@ -128,6 +128,12 @@
       "properties": {
         "internal": {
           "type": "boolean"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
       "type": "object"
@@ -213,6 +219,12 @@
         },
         "image": {
           "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "llm": {
           "$ref": "#/types/defang-aws:compose:LlmConfig"

@@ -24,7 +24,7 @@ target: builder
 	// Context should be a pulumi.String, not a raw Go string
 	assert.Implements(t, (*pulumi.StringInput)(nil), bc.Context)
 	assert.Equal(t, "Dockerfile.prod", *bc.Dockerfile)
-	assert.Equal(t, map[string]string{"GO_VERSION": "1.22"}, bc.Args)
+	assert.Equal(t, MapOrList[string]{"GO_VERSION": "1.22"}, bc.Args)
 	assert.Equal(t, "256m", *bc.ShmSize)
 	assert.Equal(t, "builder", *bc.Target)
 }
@@ -87,7 +87,7 @@ networks:
 	assert.Implements(t, (*pulumi.StringInput)(nil), web.Build.Context)
 	assert.Equal(t, "Dockerfile", *web.Build.Dockerfile)
 	port := "8080"
-	assert.Equal(t, map[string]*string{"PORT": &port, "CONFIG": nil}, web.Environment)
+	assert.Equal(t, MapOrList[*string]{"PORT": &port, "CONFIG": nil}, web.Environment)
 	require.NotNil(t, web.Deploy)
 	assert.Equal(t, int32(2), *web.Deploy.Replicas)
 	require.NotNil(t, web.Deploy.Resources)
