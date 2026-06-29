@@ -36,10 +36,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// CustomDomainResult bundles the records created for a service's custom
-// domain. Both fields are nil when CreateCustomDomain returns nothing to do.
+// CustomDomainResult bundles the records created for a service's custom domain.
+// All fields are nil when the creator returns nothing to do. Cname and A are
+// mutually exclusive: subdomains route via Cname, apex domains via A (a CNAME is
+// illegal at the zone apex).
 type CustomDomainResult struct {
 	Cname *dns.RecordSet
+	A     *dns.RecordSet
 	Asuid *dns.RecordSet
 }
 
@@ -151,15 +154,48 @@ func CreateByodDomain(
 	if !ok {
 		return nil, fmt.Errorf("service %s: unparseable DNS zone id %q", serviceName, dnsZoneID)
 	}
+
+	tags := ServiceTags(serviceName)
+
+	// Apex (domain == zone): a CNAME is illegal at the zone apex (RFC 1034), so
+	// route with an A record at "@" pointing to the Container App environment's
+	// static inbound IP, and put the asuid TXT at "asuid". Azure validates apex
+	// managed certs via HTTP (see aca.IssueCert), which needs no extra record.
+	//
+	// CAVEAT: Environment.StaticIp is stable only for the life of the
+	// environment — replacing it (e.g. a vnetConfiguration change, which forces
+	// ManagedEnvironment replacement) changes the IP and breaks this record. An
+	// apex custom domain accepts that trade-off; subdomains (CNAME) don't have it.
+	if isApexDomain(svc.DomainName, zoneName) {
+		a, err := dns.NewRecordSet(ctx, serviceName+"-byod-a", &dns.RecordSetArgs{
+			ResourceGroupName:     pulumi.String(rgName),
+			ZoneName:              pulumi.String(zoneName),
+			RelativeRecordSetName: pulumi.String("@"),
+			RecordType:            pulumi.String("A"),
+			Ttl:                   pulumi.Float64(60),
+			ARecords: dns.ARecordArray{
+				&dns.ARecordArgs{Ipv4Address: infra.Environment.StaticIp.ToStringPtrOutput()},
+			},
+			Metadata: tags,
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating BYOD A record for %s: %w", serviceName, err)
+		}
+		asuid, err := createAsuidTXT(ctx, serviceName+"-byod-asuid", rgName, zoneName, "asuid", containerApp, tags, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", serviceName, err)
+		}
+		return &CustomDomainResult{A: a, Asuid: asuid}, nil
+	}
+
 	relative, ok := relativeRecordName(svc.DomainName, zoneName)
 	if !ok {
-		// Either an apex record (unsupported) or the domain isn't under the zone.
+		// The domain is not within the zone. The CLI only ever resolves a parent
+		// zone, so this is defensive — nothing to provision.
 		return nil, nil //nolint:nilnil // nothing to provision; caller treats nil as "skipped"
 	}
 
-	tags := ServiceTags(serviceName)
 	target := pulumi.Sprintf("%s.%s", containerApp.Name, infra.Environment.DefaultDomain)
-
 	cname, err := dns.NewRecordSet(ctx, serviceName+"-byod-cname", &dns.RecordSetArgs{
 		ResourceGroupName:     pulumi.String(rgName),
 		ZoneName:              pulumi.String(zoneName),
@@ -175,10 +211,28 @@ func CreateByodDomain(
 		return nil, fmt.Errorf("creating BYOD CNAME for %s: %w", serviceName, err)
 	}
 
-	asuid, err := dns.NewRecordSet(ctx, serviceName+"-byod-asuid", &dns.RecordSetArgs{
+	asuid, err := createAsuidTXT(ctx, serviceName+"-byod-asuid", rgName, zoneName, "asuid."+relative, containerApp, tags, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", serviceName, err)
+	}
+
+	return &CustomDomainResult{Cname: cname, Asuid: asuid}, nil
+}
+
+// createAsuidTXT creates the `asuid[.<sub>]` TXT record that carries the
+// Container App's CustomDomainVerificationId — the value Azure reads to prove
+// the operator controls the hostname before binding it / issuing a cert.
+func createAsuidTXT(
+	ctx *pulumi.Context,
+	logicalName, rgName, zoneName, relativeName string,
+	containerApp *app.ContainerApp,
+	tags pulumi.StringMapInput,
+	opts ...pulumi.ResourceOption,
+) (*dns.RecordSet, error) {
+	return dns.NewRecordSet(ctx, logicalName, &dns.RecordSetArgs{
 		ResourceGroupName:     pulumi.String(rgName),
 		ZoneName:              pulumi.String(zoneName),
-		RelativeRecordSetName: pulumi.String("asuid." + relative),
+		RelativeRecordSetName: pulumi.String(relativeName),
 		RecordType:            pulumi.String("TXT"),
 		Ttl:                   pulumi.Float64(60),
 		TxtRecords: dns.TxtRecordArray{
@@ -188,11 +242,35 @@ func CreateByodDomain(
 		},
 		Metadata: tags,
 	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", serviceName, err)
-	}
+}
 
-	return &CustomDomainResult{Cname: cname, Asuid: asuid}, nil
+// ByodRecordEligible reports whether CreateByodDomain would create DNS records
+// for the given custom domain + zone id: the zone id must parse and the domain
+// must be the zone apex or a subdomain of it. Exported so the CD program's cert
+// scheduler enqueues a managed-cert job only for hostnames whose records will
+// actually exist (otherwise aca.IssueCert waits out its DNS timeout for nothing).
+// Callers must also confirm the service has public ingress.
+func ByodRecordEligible(domain, dnsZoneID string) bool {
+	if domain == "" || dnsZoneID == "" {
+		return false
+	}
+	_, zoneName, ok := parseDNSZoneID(dnsZoneID)
+	if !ok {
+		return false
+	}
+	if isApexDomain(domain, zoneName) {
+		return true
+	}
+	_, ok = relativeRecordName(domain, zoneName)
+	return ok
+}
+
+// isApexDomain reports whether domain is the apex of zoneName (case- and
+// trailing-dot-insensitive), e.g. "example.com" in zone "example.com".
+func isApexDomain(domain, zoneName string) bool {
+	d := strings.ToLower(strings.TrimSuffix(domain, "."))
+	z := strings.ToLower(strings.TrimSuffix(zoneName, "."))
+	return d == z
 }
 
 // parseDNSZoneID extracts the resource group and zone name from an Azure DNS
