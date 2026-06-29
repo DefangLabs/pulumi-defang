@@ -76,7 +76,8 @@ func TestEnsureDomainZoneImports(t *testing.T) {
 
 	assert.Equal(t, wantID, mocks.importID, "zone must be imported by the constructed ARM resource ID")
 	require.NotNil(t, mocks.zoneInputs, "zone resource must have been registered")
-	assert.Equal(t, "proj.example.com", mocks.zoneInputs["zoneName"].StringValue(), "imported zone must target the delegate domain")
+	assert.Equal(t, "proj.example.com", mocks.zoneInputs["zoneName"].StringValue(),
+		"imported zone must target the delegate domain")
 	assert.Equal(t, "global", mocks.zoneInputs["location"].StringValue(), "public DNS zones live at location global")
 }
 
