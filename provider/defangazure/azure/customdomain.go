@@ -55,6 +55,12 @@ type CustomDomainResult struct {
 // EnsureKeyVault, which retains the vault to preserve user secrets). The args
 // mirror a public zone exactly so the import doesn't propose a replacement.
 //
+// The import ID is constructed (see domainZoneID) rather than fetched via
+// dns.LookupZone: every component is already known, so a lookup invoke would
+// only add an ARM round-trip without buying safety — a missing zone fails the
+// import just the same. It also keeps `pulumi preview` from failing before the
+// CLI has created the zone (an invoke runs in preview; an import is a no-op).
+//
 // Returns (nil, nil) when the project has no delegate domain. The returned zone
 // is stored on infra.DomainZone and referenced by CreateCustomDomain so the
 // per-service records depend on it (created after / deleted before the zone).
@@ -68,13 +74,7 @@ func EnsureDomainZone(
 		return nil, nil //nolint:nilnil // no delegate domain; nothing to import
 	}
 
-	existing, err := dns.LookupZone(ctx, &dns.LookupZoneArgs{
-		ResourceGroupName: ProjectResourceGroupName(ctx, projectName),
-		ZoneName:          infra.Domain,
-	}, parentOpt)
-	if err != nil {
-		return nil, fmt.Errorf("looking up DNS zone %q for import: %w", infra.Domain, err)
-	}
+	importID := domainZoneID(resolveSubscriptionID(ctx), ProjectResourceGroupName(ctx, projectName), infra.Domain)
 
 	// Public DNS zones always live at location "global". ResourceGroupName uses
 	// the live RG resource handle (not the computed name) so the import is
@@ -84,11 +84,22 @@ func EnsureDomainZone(
 		ZoneName:          pulumi.String(infra.Domain),
 		Location:          pulumi.String("global"),
 		ZoneType:          dns.ZoneTypePublic,
-	}, parentOpt, pulumi.Import(pulumi.ID(existing.Id)))
+	}, parentOpt, pulumi.Import(pulumi.ID(importID)))
 	if err != nil {
 		return nil, fmt.Errorf("importing DNS zone %q: %w", infra.Domain, err)
 	}
 	return zone, nil
+}
+
+// domainZoneID builds the ARM resource ID of a public DNS zone from its parts.
+// Azure's canonical ID lowercases the provider path segment ("dnszones"), so we
+// match that exactly — a casing mismatch can make the import propose a
+// replacement. This is the same value dns.LookupZone would return.
+func domainZoneID(subscriptionID, resourceGroup, zoneName string) string {
+	return fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/dnszones/%s",
+		subscriptionID, resourceGroup, zoneName,
+	)
 }
 
 // CreateCustomDomain provisions per-service DNS records under infra.Domain.
