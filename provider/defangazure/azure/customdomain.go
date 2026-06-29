@@ -152,7 +152,13 @@ func CreateByodDomain(
 
 	rgName, zoneName, ok := parseDNSZoneID(dnsZoneID)
 	if !ok {
-		return nil, fmt.Errorf("service %s: unparseable DNS zone id %q", serviceName, dnsZoneID)
+		// A malformed zone id shouldn't happen (the CLI resolves a real ARM id),
+		// but warn-and-skip rather than fail: the Container App still serves on its
+		// default FQDN, and a hard error would block an otherwise-healthy deploy.
+		_ = ctx.Log.Warn(fmt.Sprintf(
+			"service %s: unparseable DNS zone id %q; skipping BYOD DNS records (no managed cert for %q)",
+			serviceName, dnsZoneID, svc.DomainName), nil)
+		return nil, nil //nolint:nilnil // best-effort: skip BYOD records, deploy continues
 	}
 
 	tags := ServiceTags(serviceName)
@@ -190,9 +196,15 @@ func CreateByodDomain(
 
 	relative, ok := relativeRecordName(svc.DomainName, zoneName)
 	if !ok {
-		// The domain is not within the zone. The CLI only ever resolves a parent
-		// zone, so this is defensive — nothing to provision.
-		return nil, nil //nolint:nilnil // nothing to provision; caller treats nil as "skipped"
+		// The domain is not within the zone (apex is handled above). The CLI only
+		// ever resolves a parent zone, so this shouldn't happen — warn rather than
+		// fail (CodeRabbit flagged the prior silent skip as undiagnosable; a hard
+		// error would block an otherwise-healthy deploy). The service still serves
+		// on its default FQDN; no managed cert is issued for the custom domain.
+		_ = ctx.Log.Warn(fmt.Sprintf(
+			"service %s: custom domain %q is not within DNS zone %q; skipping BYOD DNS records (no managed cert for it)",
+			serviceName, svc.DomainName, zoneName), nil)
+		return nil, nil //nolint:nilnil // best-effort: skip BYOD records, deploy continues
 	}
 
 	target := pulumi.Sprintf("%s.%s", containerApp.Name, infra.Environment.DefaultDomain)

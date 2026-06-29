@@ -109,9 +109,10 @@ func TestByodRecordEligible(t *testing.T) {
 	}
 }
 
-// TestCreateByodDomainShortCircuits checks the no-op branches that return before
-// touching Pulumi or the (nil) infra/app: no custom domain, no zone id, and no
-// public ingress.
+// TestCreateByodDomainShortCircuits checks the branches that return (nil, nil)
+// without creating records or touching the (nil) infra/app: no custom domain,
+// no zone id, no public ingress, an unparseable zone id, and a domain that isn't
+// within the zone. The last two warn-and-skip (rather than failing the deploy).
 func TestCreateByodDomainShortCircuits(t *testing.T) {
 	ingress := []compose.ServicePortConfig{{Target: 80, Mode: "ingress"}}
 	const zoneID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/dnszones/example.com"
@@ -124,6 +125,8 @@ func TestCreateByodDomainShortCircuits(t *testing.T) {
 		{name: "no domain", svc: compose.ServiceConfig{Ports: ingress}, zoneID: zoneID},
 		{name: "no zone id", svc: compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: ""},
 		{name: "no ingress", svc: compose.ServiceConfig{DomainName: "api.example.com"}, zoneID: zoneID},
+		{name: "unparseable zone", svc: compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: "garbage"},
+		{name: "domain not in zone", svc: compose.ServiceConfig{DomainName: "api.other.com", Ports: ingress}, zoneID: zoneID},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
