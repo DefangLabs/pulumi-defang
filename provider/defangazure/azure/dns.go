@@ -21,6 +21,12 @@ type DNSResult struct {
 	// ("privatelink.redis.azure.net"). The PrivateDnsZoneGroup on the private endpoint
 	// auto-registers A records here so cluster FQDNs resolve to private IPs within the VNet.
 	RedisPrivateZone *privatedns.PrivateZone
+
+	// RedisVNetLink links the Redis private zone to the project VNet. A registered
+	// A record only resolves from inside the VNet once this link is effective, so
+	// it's threaded into Redis readiness deps to keep apps from starting before
+	// the hostname resolves (see issue #287).
+	RedisVNetLink *privatedns.VirtualNetworkLink
 }
 
 // CreateDNSZones creates the private DNS zones linked to the project VNet:
@@ -80,7 +86,7 @@ func CreateDNSZones(
 			return nil, fmt.Errorf("creating Redis private DNS zone: %w", err)
 		}
 
-		_, err = privatedns.NewVirtualNetworkLink(ctx, redisServiceName, &privatedns.VirtualNetworkLinkArgs{
+		redisLink, err := privatedns.NewVirtualNetworkLink(ctx, redisServiceName, &privatedns.VirtualNetworkLinkArgs{
 			ResourceGroupName:   infra.ResourceGroup.Name,
 			PrivateZoneName:     redisZone.Name,
 			Location:            pulumi.String("global"),
@@ -92,6 +98,7 @@ func CreateDNSZones(
 		}
 
 		result.RedisPrivateZone = redisZone
+		result.RedisVNetLink = redisLink
 	}
 
 	return result, nil
