@@ -2,7 +2,9 @@
 //
 // The defang CLI creates the public DNS zone (PrepareDomainDelegation) in the
 // project resource group before this provider runs, and tells Fabric to point
-// NS records at it. Inside the zone, Pulumi owns:
+// NS records at it. EnsureDomainZone then imports that zone into Pulumi state so
+// teardown (`defang compose down`) deletes it instead of orphaning it. Inside
+// the zone, Pulumi owns:
 //
 //  1. A CNAME `<service>.<delegate-domain>` → the Container App's stable FQDN
 //     (`<appName>.<env.DefaultDomain>`), so the host header reaches ACA.
@@ -42,6 +44,64 @@ type CustomDomainResult struct {
 	Asuid *dns.RecordSet
 }
 
+// EnsureDomainZone adopts the project's public DNS zone (infra.Domain) into
+// Pulumi state by importing it. The zone is provisioned out-of-band by the
+// defang CLI (PrepareDomainDelegation) before the CD task runs; until now Pulumi
+// only managed the records inside it, so the zone itself was orphaned on
+// teardown. Importing it makes `defang compose down` delete the zone — and
+// every record set within it — as part of the normal destroy.
+//
+// Deliberately NO RetainOnDelete: cleanup on teardown is the whole point (unlike
+// EnsureKeyVault, which retains the vault to preserve user secrets). The args
+// mirror a public zone exactly so the import doesn't propose a replacement.
+//
+// The import ID is constructed (see domainZoneID) rather than fetched via
+// dns.LookupZone: every component is already known, so a lookup invoke would
+// only add an ARM round-trip without buying safety — a missing zone fails the
+// import just the same. It also keeps `pulumi preview` from failing before the
+// CLI has created the zone (an invoke runs in preview; an import is a no-op).
+//
+// Returns (nil, nil) when the project has no delegate domain. The returned zone
+// is stored on infra.DomainZone and referenced by CreateCustomDomain so the
+// per-service records depend on it (created after / deleted before the zone).
+func EnsureDomainZone(
+	ctx *pulumi.Context,
+	projectName string,
+	infra *SharedInfra,
+	parentOpt pulumi.ResourceOrInvokeOption,
+) (*dns.Zone, error) {
+	if infra == nil || infra.Domain == "" {
+		return nil, nil //nolint:nilnil // no delegate domain; nothing to import
+	}
+
+	importID := domainZoneID(resolveSubscriptionID(ctx), ProjectResourceGroupName(ctx, projectName), infra.Domain)
+
+	// Public DNS zones always live at location "global". ResourceGroupName uses
+	// the live RG resource handle (not the computed name) so the import is
+	// ordered after the RG is adopted into state.
+	zone, err := dns.NewZone(ctx, "domain-zone", &dns.ZoneArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		ZoneName:          pulumi.String(infra.Domain),
+		Location:          pulumi.String("global"),
+		ZoneType:          dns.ZoneTypePublic,
+	}, parentOpt, pulumi.Import(pulumi.ID(importID)))
+	if err != nil {
+		return nil, fmt.Errorf("importing DNS zone %q: %w", infra.Domain, err)
+	}
+	return zone, nil
+}
+
+// domainZoneID builds the ARM resource ID of a public DNS zone from its parts.
+// Azure's canonical ID lowercases the provider path segment ("dnszones"), so we
+// match that exactly — a casing mismatch can make the import propose a
+// replacement. This is the same value dns.LookupZone would return.
+func domainZoneID(subscriptionID, resourceGroup, zoneName string) string {
+	return fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/dnszones/%s",
+		subscriptionID, resourceGroup, zoneName,
+	)
+}
+
 // CreateCustomDomain provisions per-service DNS records under infra.Domain.
 // Returns (nil, nil) — and creates nothing — when the project has no delegate
 // domain or when the service does not expose a public ingress.
@@ -71,7 +131,14 @@ func CreateCustomDomain(
 	}
 
 	rgName := infra.ResourceGroup.Name
-	zoneName := pulumi.String(infra.Domain)
+	// Reference the imported zone's Name (same value as infra.Domain) so each
+	// record set depends on the zone resource: created after the zone is adopted,
+	// and deleted before it on teardown. Fall back to the literal domain when the
+	// zone wasn't imported (e.g. standalone callers that set Domain directly).
+	var zoneName pulumi.StringInput = pulumi.String(infra.Domain)
+	if infra.DomainZone != nil {
+		zoneName = infra.DomainZone.Name
+	}
 	tags := ServiceTags(serviceName)
 
 	// CNAME — `<service>.<domain>` points at the app's stable FQDN. Using the

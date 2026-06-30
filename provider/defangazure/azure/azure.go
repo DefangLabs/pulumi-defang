@@ -9,6 +9,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/dns/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	azureconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -34,6 +35,10 @@ type SharedInfra struct {
 	// ResourceGroup. The zone itself is created out-of-band by the defang CLI
 	// (PrepareDomainDelegation), so Pulumi only manages the records and the cert.
 	Domain string
+	// DomainZone is the public DNS zone named Domain, adopted into Pulumi state by
+	// EnsureDomainZone so that `defang compose down` deletes it (and its records)
+	// instead of orphaning it in the resource group. Nil when Domain is empty.
+	DomainZone *dns.Zone
 }
 
 // BaseTags returns the project-wide tag map: defang-project (Pulumi project),
