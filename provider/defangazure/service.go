@@ -28,6 +28,12 @@ type ServiceInputs struct {
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
 	DomainName  string                      `pulumi:"domainName,optional"`
+	// DnsZoneId is the ARM resource ID of a public Azure DNS zone (in the current
+	// subscription) that is a parent of DomainName, as resolved CLI-side by
+	// DNS.FindZone. When set, the service's CNAME + asuid TXT records are written
+	// into that customer-owned zone (BYOD), enabling a managed cert. Empty means
+	// no zone was found — the ACME / delegate-domain path applies instead.
+	DnsZoneId string `pulumi:"dnsZoneId,optional"`
 
 	// Infra is an optional shared Azure project infrastructure. When non-nil, the
 	// Service reuses it (resource group, managed environment, networking, DNS,
@@ -85,7 +91,7 @@ func (*Service) Construct(
 	}
 
 	imageURI := pulumi.String(inputs.Image).ToStringOutput()
-	if err := createContainerApp(ctx, comp, name, svc, infra, imageURI, nil, nil); err != nil {
+	if err := createContainerApp(ctx, comp, name, svc, infra, imageURI, nil, nil, inputs.DnsZoneId); err != nil {
 		return nil, err
 	}
 	return comp, nil
@@ -124,9 +130,10 @@ func createContainerApp(
 	imageURI pulumi.StringInput,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	dnsZoneID string,
 ) error {
 	caResult, err := azure.CreateContainerApp(
-		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, pulumi.Parent(comp),
+		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZoneID, pulumi.Parent(comp),
 	)
 	if err != nil {
 		return fmt.Errorf("creating Container App %s: %w", serviceName, err)
