@@ -43,6 +43,17 @@ type ProjectOutputs struct {
 func (*Project) Construct(
 	ctx *pulumi.Context, name, typ string, inputs ProjectInputs, opts pulumi.ResourceOption,
 ) (*ProjectOutputs, error) {
+	// Merge the default network's Compose labels into the Labels of shared project
+	// infrastructure that supports them (e.g. the reserved public IP, DNS zone,
+	// Artifact Registry). GCP networks/subnets/firewalls have no Labels field, so
+	// those are skipped by the reflection-based transformation. Sanitized like
+	// per-service labels. The default network spans all services, so these also
+	// reach service resources; per-service labels win on key collision.
+	netLabels := inputs.Networks[compose.DefaultNetwork].Labels
+	if t := compose.LabelTagsTransformation(netLabels, "gcp:", "Labels", providergcp.SanitizeLabel); t != nil {
+		opts = pulumi.Composite(opts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+	}
+
 	comp := &ProjectOutputs{}
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
@@ -170,9 +181,16 @@ func buildService(
 	var lbEntry *providergcp.LBServiceEntry
 	var svcComp pulumi.Resource
 
-	svcChildOpts := childOpts
+	// Start from a fresh slice so appends never mutate the shared childOpts backing array.
+	svcChildOpts := append([]pulumi.ResourceOption{}, childOpts...)
 	if len(deps) > 0 {
 		svcChildOpts = append(svcChildOpts, pulumi.DependsOn(deps))
+	}
+	// Merge this service's Compose labels into the Labels of every GCP resource it
+	// creates (Cloud Run service, Compute Engine instance template). GCP labels are
+	// validated strictly, so keys/values are sanitized (see gcp.SanitizeLabel).
+	if t := compose.LabelTagsTransformation(svc.Labels, "gcp:", "Labels", providergcp.SanitizeLabel); t != nil {
+		svcChildOpts = append(svcChildOpts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
 	}
 
 	switch {

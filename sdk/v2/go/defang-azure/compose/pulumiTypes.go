@@ -666,7 +666,8 @@ func (o LlmConfigPtrOutput) Elem() LlmConfigOutput {
 }
 
 type NetworkConfig struct {
-	Internal *bool `pulumi:"internal"`
+	Internal *bool             `pulumi:"internal"`
+	Labels   map[string]string `pulumi:"labels"`
 }
 
 // NetworkConfigInput is an input type that accepts NetworkConfigArgs and NetworkConfigOutput values.
@@ -681,7 +682,8 @@ type NetworkConfigInput interface {
 }
 
 type NetworkConfigArgs struct {
-	Internal pulumi.BoolPtrInput `pulumi:"internal"`
+	Internal pulumi.BoolPtrInput   `pulumi:"internal"`
+	Labels   pulumi.StringMapInput `pulumi:"labels"`
 }
 
 func (NetworkConfigArgs) ElementType() reflect.Type {
@@ -737,6 +739,10 @@ func (o NetworkConfigOutput) ToNetworkConfigOutputWithContext(ctx context.Contex
 
 func (o NetworkConfigOutput) Internal() pulumi.BoolPtrOutput {
 	return o.ApplyT(func(v NetworkConfig) *bool { return v.Internal }).(pulumi.BoolPtrOutput)
+}
+
+func (o NetworkConfigOutput) Labels() pulumi.StringMapOutput {
+	return o.ApplyT(func(v NetworkConfig) map[string]string { return v.Labels }).(pulumi.StringMapOutput)
 }
 
 type NetworkConfigMapOutput struct{ *pulumi.OutputState }
@@ -1346,6 +1352,7 @@ type ServiceConfig struct {
 	Environment map[string]string               `pulumi:"environment"`
 	HealthCheck *HealthCheckConfig              `pulumi:"healthCheck"`
 	Image       *string                         `pulumi:"image"`
+	Labels      map[string]string               `pulumi:"labels"`
 	Llm         *LlmConfig                      `pulumi:"llm"`
 	Networks    map[string]ServiceNetworkConfig `pulumi:"networks"`
 	Platform    *string                         `pulumi:"platform"`
@@ -1376,6 +1383,7 @@ type ServiceConfigArgs struct {
 	Environment pulumi.StringMapInput        `pulumi:"environment"`
 	HealthCheck HealthCheckConfigPtrInput    `pulumi:"healthCheck"`
 	Image       pulumi.StringPtrInput        `pulumi:"image"`
+	Labels      pulumi.StringMapInput        `pulumi:"labels"`
 	Llm         LlmConfigPtrInput            `pulumi:"llm"`
 	Networks    ServiceNetworkConfigMapInput `pulumi:"networks"`
 	Platform    pulumi.StringPtrInput        `pulumi:"platform"`
@@ -1470,6 +1478,10 @@ func (o ServiceConfigOutput) HealthCheck() HealthCheckConfigPtrOutput {
 
 func (o ServiceConfigOutput) Image() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v ServiceConfig) *string { return v.Image }).(pulumi.StringPtrOutput)
+}
+
+func (o ServiceConfigOutput) Labels() pulumi.StringMapOutput {
+	return o.ApplyT(func(v ServiceConfig) map[string]string { return v.Labels }).(pulumi.StringMapOutput)
 }
 
 func (o ServiceConfigOutput) Llm() LlmConfigPtrOutput {

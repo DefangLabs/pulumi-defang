@@ -19,7 +19,9 @@ type NetworkID string
 
 type Services = map[string]ServiceConfig
 
-type Networks map[NetworkID]NetworkConfig
+type Networks = map[NetworkID]NetworkConfig
+
+type MapOrList[T any] map[string]T // TODO: these can be string[] but normalized to map by compose-go
 
 const DefaultNetwork NetworkID = "default"
 
@@ -55,7 +57,7 @@ type ServiceConfig struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment MapOrList[*string] `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`
@@ -84,6 +86,8 @@ type ServiceConfig struct {
 
 	LLM *LlmConfig `pulumi:"llm,optional" yaml:"x-defang-llm,omitempty"`
 
+	Labels MapOrList[string] `pulumi:"labels,optional" yaml:"labels,omitempty"`
+
 	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
 }
 
@@ -100,11 +104,12 @@ func (c *LlmConfig) UnmarshalYAML(value *yaml.Node) error {
 
 // type ServiceModelConfig struct {}
 
-type DependsOnConfig map[string]ServiceDependency
+type DependsOnConfig MapOrList[ServiceDependency]
 
 type NetworkConfig struct {
 	Internal bool `pulumi:"internal,optional" yaml:"internal,omitempty"`
-	//   IPAM *IPAMConfigInput `pulumi:"ipam,optional" yaml:"ipam,omitempty"`
+	// IPAM     *IPAMConfigInput `pulumi:"ipam,optional" yaml:"ipam,omitempty"`
+	Labels MapOrList[string] `pulumi:"labels,optional" yaml:"labels,omitempty"`
 }
 
 type ServiceDependency struct {
@@ -165,6 +170,8 @@ type DeployConfig struct {
 
 	// Resource reservations and limits
 	Resources *Resources `pulumi:"resources,optional" yaml:"resources,omitempty"`
+
+	// Labels MapOrList[string] `pulumi:"labels,optional" yaml:"labels,omitempty"`
 }
 
 // Resources defines resource reservations and limits.
@@ -197,7 +204,9 @@ type BuildConfig struct {
 	Dockerfile *string `pulumi:"dockerfile,optional" yaml:"dockerfile,omitempty"`
 
 	// Build arguments
-	Args map[string]string `pulumi:"args,optional" yaml:"args,omitempty"`
+	Args MapOrList[string] `pulumi:"args,optional" yaml:"args,omitempty"`
+
+	// Labels MapOrList[string] `pulumi:"labels,optional" yaml:"labels,omitempty"`
 
 	// Shared memory size (used for build task memory sizing)
 	ShmSize *string `pulumi:"shmSize,optional" yaml:"shm_size,omitempty"`
@@ -213,9 +222,10 @@ func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
 	var raw struct {
 		Context    string            `yaml:"context"`
 		Dockerfile *string           `yaml:"dockerfile,omitempty"`
-		Args       map[string]string `yaml:"args,omitempty"`
+		Args       MapOrList[string] `yaml:"args,omitempty"`
 		ShmSize    *string           `yaml:"shm_size,omitempty"`
 		Target     *string           `yaml:"target,omitempty"`
+		// Labels     MapOrList[string] `yaml:"labels,omitempty"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -223,6 +233,7 @@ func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
 	b.Context = pulumi.String(raw.Context)
 	b.Dockerfile = raw.Dockerfile
 	b.Args = raw.Args
+	// b.Labels = raw.Labels
 	b.ShmSize = raw.ShmSize
 	b.Target = raw.Target
 	return nil
