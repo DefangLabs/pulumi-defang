@@ -195,6 +195,16 @@ func createServiceResources(
 	comp := &serviceComponent{}
 	var endpoint pulumi.StringOutput
 
+	// Merge this service's Compose labels into the Tags of every Azure resource it
+	// creates, on top of the project-wide BaseTags transformation. Attaching to the
+	// service component cascades to all children. Azure tags accept the full Compose
+	// label set, so labels are applied verbatim. A fresh slice avoids mutating the
+	// caller's childOpts backing array.
+	if t := compose.LabelTagsTransformation(svc.Labels, "azure-native:", "Tags", nil); t != nil {
+		childOpts = append(append([]pulumi.ResourceOption{}, childOpts...),
+			pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+	}
+
 	switch {
 	case svc.Postgres != nil:
 		var err error
@@ -463,9 +473,23 @@ func (*Project) Construct(
 	// resource's Tags. azure-native has no DefaultTags, and pulumi-go-provider's
 	// Construct ctx lacks a stack so RegisterStackTransformation panics — the
 	// resource-level Transformations option is the supported cascade.
-	tagOpts := opts
+	transforms := []pulumi.ResourceTransformation{}
 	if t := providerazure.DefaultTagsTransformation(baseTags); t != nil {
-		tagOpts = pulumi.Composite(opts, pulumi.Transformations([]pulumi.ResourceTransformation{t}))
+		transforms = append(transforms, t)
+	}
+	// Merge the default network's Compose labels into the Tags of shared project
+	// infrastructure (VNet, subnets, DNS zones, managed environment). The default
+	// network spans all services, so these also reach service resources;
+	// per-service labels (in createServiceResources) and base tags win on
+	// collision. Azure tags accept the full Compose label set (verbatim).
+	netLabels := inputs.Networks[compose.DefaultNetwork].Labels
+	if t := compose.LabelTagsTransformation(netLabels, "azure-native:", "Tags", nil); t != nil {
+		transforms = append(transforms, t)
+	}
+
+	tagOpts := opts
+	if len(transforms) > 0 {
+		tagOpts = pulumi.Composite(opts, pulumi.Transformations(transforms))
 	}
 
 	comp := &ProjectOutputs{}
