@@ -88,6 +88,9 @@ type containerAppResult struct {
 	// CustomDomain is nil unless the project sets a delegate Domain *and* the
 	// service exposes a public ingress; see CreateCustomDomain.
 	CustomDomain *CustomDomainResult
+	// ByodDomain is nil unless the service sets its own domainname *and* a public
+	// DNS zone for it was found in the subscription; see CreateByodDomain.
+	ByodDomain *CustomDomainResult
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -235,6 +238,7 @@ func CreateContainerApp(
 	imageURI pulumi.StringInput,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	dnsZoneID string,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
 	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts)
@@ -340,7 +344,17 @@ func CreateContainerApp(
 		return nil, fmt.Errorf("creating custom domain for %s: %w", serviceName, err)
 	}
 
-	return &containerAppResult{App: containerApp, CustomDomain: customDomain}, nil
+	// BYOD: when the CLI found a public DNS zone for the service's own
+	// domainname (dnsZoneID set), also write the CNAME + asuid TXT into that
+	// customer zone. The CD program issues a managed cert for the hostname. This
+	// is additive to the delegate-domain records above, so the service stays
+	// reachable on both names.
+	byodDomain, err := CreateByodDomain(ctx, serviceName, svc, containerApp, infra, dnsZoneID, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating BYOD domain for %s: %w", serviceName, err)
+	}
+
+	return &containerAppResult{App: containerApp, CustomDomain: customDomain, ByodDomain: byodDomain}, nil
 }
 
 // resolveSubscriptionID resolves the Azure subscription for the out-of-band
