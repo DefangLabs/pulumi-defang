@@ -16,8 +16,13 @@ import (
 type Project struct {
 	pulumi.ResourceState
 
+	ClusterName     pulumi.StringOutput    `pulumi:"clusterName"`
 	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
+	LoadBalancerArn pulumi.StringPtrOutput `pulumi:"loadBalancerArn"`
 	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
+	LogGroupName    pulumi.StringOutput    `pulumi:"logGroupName"`
+	ServiceNames    pulumi.StringMapOutput `pulumi:"serviceNames"`
+	TaskRoleArns    pulumi.StringMapOutput `pulumi:"taskRoleArns"`
 }
 
 // NewProject registers a new resource with the given unique name, arguments, and options.
@@ -91,12 +96,32 @@ func (o ProjectOutput) ToProjectOutputWithContext(ctx context.Context) ProjectOu
 	return o
 }
 
+func (o ProjectOutput) ClusterName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.ClusterName }).(pulumi.StringOutput)
+}
+
 func (o ProjectOutput) Endpoints() pulumi.StringMapOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.Endpoints }).(pulumi.StringMapOutput)
 }
 
+func (o ProjectOutput) LoadBalancerArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringPtrOutput { return v.LoadBalancerArn }).(pulumi.StringPtrOutput)
+}
+
 func (o ProjectOutput) LoadBalancerDns() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringPtrOutput { return v.LoadBalancerDns }).(pulumi.StringPtrOutput)
+}
+
+func (o ProjectOutput) LogGroupName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.LogGroupName }).(pulumi.StringOutput)
+}
+
+func (o ProjectOutput) ServiceNames() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.ServiceNames }).(pulumi.StringMapOutput)
+}
+
+func (o ProjectOutput) TaskRoleArns() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.TaskRoleArns }).(pulumi.StringMapOutput)
 }
 
 func init() {

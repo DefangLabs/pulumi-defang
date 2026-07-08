@@ -211,6 +211,9 @@
         "llm": {
           "$ref": "#/types/defang-gcp:compose:LlmConfig"
         },
+        "networkMode": {
+          "type": "string"
+        },
         "networks": {
           "type": "object",
           "additionalProperties": {

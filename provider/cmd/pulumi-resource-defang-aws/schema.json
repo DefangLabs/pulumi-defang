@@ -250,6 +250,9 @@
         "llm": {
           "$ref": "#/types/defang-aws:compose:LlmConfig"
         },
+        "networkMode": {
+          "type": "string"
+        },
         "networks": {
           "type": "object",
           "additionalProperties": {
@@ -480,6 +483,9 @@
     },
     "defang-aws:index:Project": {
       "properties": {
+        "clusterName": {
+          "type": "string"
+        },
         "endpoints": {
           "type": "object",
           "additionalProperties": {
@@ -487,12 +493,36 @@
             "plain": true
           }
         },
+        "loadBalancerArn": {
+          "type": "string"
+        },
         "loadBalancerDns": {
           "type": "string"
+        },
+        "logGroupName": {
+          "type": "string"
+        },
+        "serviceNames": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "taskRoleArns": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
         }
       },
       "required": [
-        "endpoints"
+        "endpoints",
+        "clusterName",
+        "logGroupName",
+        "serviceNames",
+        "taskRoleArns"
       ],
       "inputProperties": {
         "aws": {

@@ -211,6 +211,9 @@
         "llm": {
           "$ref": "#/types/defang-azure:compose:LlmConfig"
         },
+        "networkMode": {
+          "type": "string"
+        },
         "networks": {
           "type": "object",
           "additionalProperties": {

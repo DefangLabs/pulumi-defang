@@ -103,6 +103,11 @@ type ServiceConfig struct {
 	// Working directory inside the container
 	WorkingDir *string `pulumi:"workingDir,optional" yaml:"working_dir,omitempty"`
 
+	// Network mode; "service:<name>" folds this service into <name>'s task as
+	// a sidecar container instead of deploying it standalone. Other values are
+	// ignored.
+	NetworkMode string `pulumi:"networkMode,optional" yaml:"network_mode,omitempty"`
+
 	// Enable autoscaling. Matches the x-defang-autoscaling extension.
 	Autoscaling bool `pulumi:"autoscaling,optional" yaml:"x-defang-autoscaling,omitempty"`
 
@@ -139,6 +144,15 @@ func ImageFromPtr(p *string) pulumi.StringInput {
 		return nil
 	}
 	return pulumi.String(*p)
+}
+
+// SidecarParent returns the service name this config attaches to as a sidecar
+// (network_mode: "service:<name>"), or "" for a standalone service.
+func (s ServiceConfig) SidecarParent() string {
+	if parent, ok := strings.CutPrefix(s.NetworkMode, "service:"); ok {
+		return parent
+	}
+	return ""
 }
 
 // StaticImage returns the image as a literal string when it was set from a

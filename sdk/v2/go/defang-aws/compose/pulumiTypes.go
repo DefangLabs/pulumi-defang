@@ -1394,6 +1394,7 @@ type ServiceConfig struct {
 	HealthCheck     *HealthCheckConfig              `pulumi:"healthCheck"`
 	Image           *string                         `pulumi:"image"`
 	Llm             *LlmConfig                      `pulumi:"llm"`
+	NetworkMode     *string                         `pulumi:"networkMode"`
 	Networks        map[string]ServiceNetworkConfig `pulumi:"networks"`
 	Platform        *string                         `pulumi:"platform"`
 	Policies        []string                        `pulumi:"policies"`
@@ -1431,6 +1432,7 @@ type ServiceConfigArgs struct {
 	HealthCheck     HealthCheckConfigPtrInput     `pulumi:"healthCheck"`
 	Image           pulumi.StringPtrInput         `pulumi:"image"`
 	Llm             LlmConfigPtrInput             `pulumi:"llm"`
+	NetworkMode     pulumi.StringPtrInput         `pulumi:"networkMode"`
 	Networks        ServiceNetworkConfigMapInput  `pulumi:"networks"`
 	Platform        pulumi.StringPtrInput         `pulumi:"platform"`
 	Policies        pulumi.StringArrayInput       `pulumi:"policies"`
@@ -1541,6 +1543,10 @@ func (o ServiceConfigOutput) Image() pulumi.StringPtrOutput {
 
 func (o ServiceConfigOutput) Llm() LlmConfigPtrOutput {
 	return o.ApplyT(func(v ServiceConfig) *LlmConfig { return v.Llm }).(LlmConfigPtrOutput)
+}
+
+func (o ServiceConfigOutput) NetworkMode() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServiceConfig) *string { return v.NetworkMode }).(pulumi.StringPtrOutput)
 }
 
 func (o ServiceConfigOutput) Networks() ServiceNetworkConfigMapOutput {

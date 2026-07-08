@@ -11,7 +11,44 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-var errDependencyNotFound = errors.New("service not found in dependencies map")
+var (
+	errDependencyNotFound     = errors.New("service not found in dependencies map")
+	errSidecarParentNotFound  = errors.New("sidecar parent service not found")
+	errSidecarParentIsSidecar = errors.New("sidecar parent is itself a sidecar")
+	errSidecarParentManaged   = errors.New("sidecar parent must be a container service, not managed Postgres/Redis")
+)
+
+// partitionSidecars splits services into standalone services and sidecar
+// groups. A service with network_mode "service:<name>" is folded into
+// <name>'s task definition as an additional container instead of being
+// deployed as its own ECS service.
+func partitionSidecars(
+	services compose.Services,
+) (compose.Services, map[string]map[string]compose.ServiceConfig, error) {
+	standalone := compose.Services{}
+	sidecars := map[string]map[string]compose.ServiceConfig{}
+	for name, svc := range services {
+		parent := svc.SidecarParent()
+		if parent == "" {
+			standalone[name] = svc
+			continue
+		}
+		parentSvc, ok := services[parent]
+		switch {
+		case !ok:
+			return nil, nil, fmt.Errorf("service %s: %w: %q", name, errSidecarParentNotFound, parent)
+		case parentSvc.SidecarParent() != "":
+			return nil, nil, fmt.Errorf("service %s: parent %q: %w", name, parent, errSidecarParentIsSidecar)
+		case parentSvc.Postgres != nil || parentSvc.Redis != nil:
+			return nil, nil, fmt.Errorf("service %s: parent %q: %w", name, parent, errSidecarParentManaged)
+		}
+		if sidecars[parent] == nil {
+			sidecars[parent] = map[string]compose.ServiceConfig{}
+		}
+		sidecars[parent][name] = svc
+	}
+	return standalone, sidecars, nil
+}
 
 // Project is the controller struct for the defang-aws:index:Project component.
 type Project struct{}
@@ -41,6 +78,23 @@ type ProjectOutputs struct {
 
 	// Load balancer DNS name (AWS ALB)
 	LoadBalancerDNS pulumix.Output[*string] `pulumi:"loadBalancerDns,optional"`
+
+	// Load balancer ARN, for attaching externally managed resources (e.g. a
+	// WAF web ACL). Unset when no service has ingress.
+	LoadBalancerArn pulumix.Output[*string] `pulumi:"loadBalancerArn,optional"`
+
+	// ECS cluster name, for externally managed alarms and dashboards.
+	ClusterName pulumix.Output[string] `pulumi:"clusterName"`
+
+	// CloudWatch log group name shared by all services.
+	LogGroupName pulumix.Output[string] `pulumi:"logGroupName"`
+
+	// ECS service names by compose service name (container services only).
+	ServiceNames pulumix.Output[map[string]string] `pulumi:"serviceNames"`
+
+	// Task role ARNs by compose service name (container services only), for
+	// resource-based policies (e.g. KMS key policies) that must name the role.
+	TaskRoleArns pulumix.Output[map[string]string] `pulumi:"taskRoleArns"`
 }
 
 // Construct implements the ComponentResource interface for Project.
@@ -60,15 +114,36 @@ func (*Project) Construct(
 
 	comp.Endpoints = pulumix.Output[map[string]string](result.Endpoints)
 	comp.LoadBalancerDNS = pulumix.Output[*string](result.LoadBalancerDNS)
+	comp.LoadBalancerArn = pulumix.Output[*string](result.LoadBalancerArn)
+	comp.ClusterName = pulumix.Output[string](result.ClusterName)
+	comp.LogGroupName = pulumix.Output[string](result.LogGroupName)
+	comp.ServiceNames = pulumix.Output[map[string]string](result.ServiceNames)
+	comp.TaskRoleArns = pulumix.Output[map[string]string](result.TaskRoleArns)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       result.Endpoints,
 		"loadBalancerDns": result.LoadBalancerDNS,
+		"loadBalancerArn": result.LoadBalancerArn,
+		"clusterName":     result.ClusterName,
+		"logGroupName":    result.LogGroupName,
+		"serviceNames":    result.ServiceNames,
+		"taskRoleArns":    result.TaskRoleArns,
 	}); err != nil {
 		return nil, err
 	}
 
 	return comp, nil
+}
+
+// projectResult extends the cross-provider BuildResult with AWS-specific
+// infrastructure handles surfaced as Project outputs.
+type projectResult struct {
+	common.BuildResult
+	LoadBalancerArn pulumi.StringPtrOutput
+	ClusterName     pulumi.StringOutput
+	LogGroupName    pulumi.StringOutput
+	ServiceNames    pulumi.StringMapOutput
+	TaskRoleArns    pulumi.StringMapOutput
 }
 
 // buildProject creates all AWS resources for the project.
@@ -78,7 +153,7 @@ func buildProject(
 	projectName string,
 	args ProjectInputs,
 	parentOpt pulumi.ResourceOrInvokeOption,
-) (*common.BuildResult, error) {
+) (*projectResult, error) {
 	awsConfig := (*provideraws.AWSConfig)(args.AWS)
 	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Services, parentOpt)
 	if err != nil {
@@ -87,12 +162,16 @@ func buildProject(
 	infra.Etag = args.Etag
 
 	albDNS := pulumix.Val[*string](nil).Untyped().(pulumi.StringPtrOutput)
+	albArn := pulumix.Val[*string](nil).Untyped().(pulumi.StringPtrOutput)
 	if infra.Alb != nil {
 		albDNS = infra.Alb.DnsName.ToStringPtrOutput()
+		albArn = infra.Alb.Arn.ToStringPtrOutput()
 	}
 
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
+	serviceNames := pulumi.StringMap{}
+	taskRoleArns := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
 	var configProvider compose.ConfigProvider
@@ -102,10 +181,15 @@ func buildProject(
 		configProvider = provideraws.NewConfigProvider(projectName)
 	}
 
+	standalone, sidecars, err := partitionSidecars(args.Services)
+	if err != nil {
+		return nil, err
+	}
+
 	// Pre-compute which services need waitForSteadyState: true if any other
 	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)
 	waitForSteady := map[string]bool{}
-	for _, other := range args.Services {
+	for _, other := range standalone {
 		for dep, val := range other.DependsOn {
 			if val.Condition == "service_healthy" {
 				waitForSteady[dep] = true
@@ -113,13 +197,18 @@ func buildProject(
 		}
 	}
 
-	serviceNames := common.TopologicalSort(args.Services)
-	for _, svcName := range serviceNames {
-		svc := args.Services[svcName]
+	sortedNames := common.TopologicalSort(standalone)
+	for _, svcName := range sortedNames {
+		svc := standalone[svcName]
 
-		// Collect dependency resources from services this one depends on
+		// Collect dependency resources from services this one depends on;
+		// depends_on entries naming this service's own sidecars are handled
+		// as container dependencies inside the task definition.
 		var deps []pulumi.Resource
 		for dep, val := range svc.DependsOn {
+			if _, isOwnSidecar := sidecars[svcName][dep]; isOwnSidecar {
+				continue
+			}
 			if r, ok := dependencies[dep]; ok {
 				deps = append(deps, r)
 			} else if val.Required {
@@ -128,21 +217,32 @@ func buildProject(
 		}
 
 		waitForHealthy := waitForSteady[svcName]
-		endpoint, dependency, err := newService(
-			ctx, configProvider, svcName, svc, args.Networks, infra, waitForHealthy, deps, parentOpt)
+		endpoint, dependency, svcComp, err := newService(
+			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
 
 		endpoints[svcName] = endpoint
+		if svcComp != nil {
+			serviceNames[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
+			taskRoleArns[svcName] = svcComp.TaskRoleArn.Untyped().(pulumi.StringOutput)
+		}
 		if dependency != nil {
 			dependencies[svcName] = dependency
 		}
 	}
 
-	return &common.BuildResult{
-		Endpoints:       endpoints.ToStringMapOutput(),
-		LoadBalancerDNS: albDNS,
+	return &projectResult{
+		BuildResult: common.BuildResult{
+			Endpoints:       endpoints.ToStringMapOutput(),
+			LoadBalancerDNS: albDNS,
+		},
+		LoadBalancerArn: albArn,
+		ClusterName:     infra.Cluster.Name,
+		LogGroupName:    infra.LogGroup.Name,
+		ServiceNames:    serviceNames.ToStringMapOutput(),
+		TaskRoleArns:    taskRoleArns.ToStringMapOutput(),
 	}, nil
 }
 
@@ -153,19 +253,21 @@ func newService(
 	svc compose.ServiceConfig,
 	networks compose.Networks,
 	infra *provideraws.SharedInfra,
+	sidecars map[string]compose.ServiceConfig,
 	waitForSteadyState bool,
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOrInvokeOption,
-) (pulumi.StringOutput, pulumi.Resource, error) {
+) (pulumi.StringOutput, pulumi.Resource, *ServiceOutputs, error) {
 	var endpoint pulumi.StringOutput
 	var dependency pulumi.Resource
+	var svcComp *ServiceOutputs
 	var err error
 	switch {
 	case svc.Postgres != nil:
 		// Managed Postgres → RDS
 		pgComp := &PostgresOutputs{}
 		if regErr := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
 		}
 		if err = createPostgres(ctx, pgComp, configProvider, svcName, svc, infra, deps); err == nil {
 			endpoint = pgComp.Endpoint
@@ -175,31 +277,28 @@ func newService(
 		// Managed Redis → ElastiCache
 		redisComp := &RedisOutputs{}
 		if regErr := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
 		}
 		if err = createRedis(ctx, redisComp, svcName, svc, infra, deps); err == nil {
 			endpoint = redisComp.Endpoint
 			dependency = redisComp.Dependency
 		}
 	default:
-		// TODO: detect sidecar services (network_mode: "service:<name>", volumes_from)
-		// and add them as additional containers in the parent's task definition
-		// instead of creating a separate ECS service.
-
 		// Container service → ECS
-		svcComp := &ServiceOutputs{}
+		svcComp = &ServiceOutputs{}
 		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
 		}
 		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pulumi.Parent(svcComp))
 		if imgErr != nil {
-			return pulumi.StringOutput{}, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
+			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}
 		args := &provideraws.ECSServiceArgs{
 			Infra:              infra,
 			ImageURI:           imageURI,
 			Networks:           networks,
 			WaitForSteadyState: waitForSteadyState,
+			Sidecars:           sidecars,
 		}
 		if err = createECSService(ctx, svcComp, configProvider, svcName, svc, args, deps); err == nil {
 			endpoint = pulumi.StringOutput(svcComp.Endpoint)
@@ -207,7 +306,7 @@ func newService(
 		}
 	}
 	if err != nil {
-		return pulumi.StringOutput{}, nil, err
+		return pulumi.StringOutput{}, nil, nil, err
 	}
-	return endpoint, dependency, nil
+	return endpoint, dependency, svcComp, nil
 }
