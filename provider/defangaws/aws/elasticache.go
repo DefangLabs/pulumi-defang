@@ -195,21 +195,15 @@ func CreateElasticache(
 		return nil, ErrRedisConfigNil
 	}
 
-	// Detect engine (redis vs valkey) from image name.
-	var engine string
+	// Detect engine (redis vs valkey) and version from the image name;
+	// default to "redis" when the image is unset or a dynamic Output.
+	engine := "redis"
+	var engineVersion string
 	if img := svc.StaticImage(); img != nil {
 		if strings.Contains(strings.ToLower(*img), "valkey") {
 			engine = "valkey"
-		} else {
-			engine = "redis"
 		}
-	}
-
-	// Parse version from image tag (e.g. "7.2" from "redis:7.2").
-	var engineVersion string
-	if img := svc.StaticImage(); img != nil {
-		parts := strings.Split(*img, ":")
-		if len(parts) == 2 {
+		if parts := strings.Split(*img, ":"); len(parts) == 2 {
 			engineVersion = parts[1]
 		}
 	}
@@ -298,7 +292,6 @@ func CreateElasticache(
 		AutoMinorVersionUpgrade:  pulumi.Bool(true),
 		Description:              pulumi.String(common.DefangComment),
 		Engine:                   pulumi.String(engine),
-		EngineVersion:            pulumi.String(engineVersion),
 		FinalSnapshotIdentifier:  finalSnapshotIdentifier,
 		MultiAzEnabled:           pulumi.Bool(replicas > 1),
 		NodeType:                 pulumi.String(nodeType),
@@ -308,6 +301,9 @@ func CreateElasticache(
 		SubnetGroupName:          subnetGroupName,
 		Tags:                     tags,
 		TransitEncryptionEnabled: pulumi.Bool(transitEncryption),
+	}
+	if engineVersion != "" {
+		rgArgs.EngineVersion = pulumi.String(engineVersion)
 	}
 	if replicas > 1 && deletionProtection {
 		rgArgs.ClusterMode = pulumi.String("compatible")
