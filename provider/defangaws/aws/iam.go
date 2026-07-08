@@ -149,11 +149,11 @@ func attachPullThroughCachePolicy(
 // resolvePolicyArn turns an x-defang-policies entry into a policy ARN. Full
 // ARNs pass through; bare names resolve to a customer-managed policy in the
 // caller's account (matches makeArn in defang-mvp: partition "aws", no region).
-func resolvePolicyArn(ctx *pulumi.Context, policy string) (pulumi.StringInput, error) {
+func resolvePolicyArn(ctx *pulumi.Context, policy string, opts ...pulumi.InvokeOption) (pulumi.StringInput, error) {
 	if strings.HasPrefix(policy, "arn:") {
 		return pulumi.String(policy), nil
 	}
-	accountID, err := getCallerAccountId(ctx)
+	accountID, err := getCallerAccountId(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("getting caller account ID: %w", err)
 	}

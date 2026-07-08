@@ -505,7 +505,7 @@ func CreateECSService(
 
 		// Attach caller-specified policies (x-defang-policies)
 		for _, policy := range svc.Policies {
-			policyArn, err := resolvePolicyArn(ctx, policy)
+			policyArn, err := resolvePolicyArn(ctx, policy, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)
 			}
