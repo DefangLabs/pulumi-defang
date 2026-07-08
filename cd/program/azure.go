@@ -196,7 +196,7 @@ func toAzureServices(services compose.Services) azurecompose.ServiceConfigMap {
 
 func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArgs {
 	args := azurecompose.ServiceConfigArgs{
-		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Image:       pulumi.StringPtrFromPtr(svc.StaticImage()),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),

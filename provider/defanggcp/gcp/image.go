@@ -133,7 +133,14 @@ func GetServiceImage(
 		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
 	}
 
-	info := common.ParseImage(*svc.Image)
+	img := svc.StaticImage()
+	if img == nil {
+		// Dynamic (Output) image: registry can't be inspected synchronously, so
+		// skip the unsupported-registry rewrite and pass it through as-is.
+		return svc.Image.ToStringOutput(), nil
+	}
+
+	info := common.ParseImage(*img)
 	if !isCloudRunSupportedRegistry(info.Registry) {
 		gcpProject := config.GetProject(ctx)
 		region := GcpRegion(ctx)
@@ -156,7 +163,7 @@ func GetServiceImage(
 		image := repo.RepositoryId.ApplyT(func(repoId string) string {
 			info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, repoId, info.Repo)
 			msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
-				serviceName, *svc.Image, info.FullImage())
+				serviceName, *img, info.FullImage())
 			_ = ctx.Log.Info(msg, nil)
 			return info.FullImage()
 		}).(pulumi.StringOutput)

@@ -197,8 +197,8 @@ func CreateElasticache(
 
 	// Detect engine (redis vs valkey) from image name.
 	var engine string
-	if svc.Image != nil {
-		if strings.Contains(strings.ToLower(*svc.Image), "valkey") {
+	if img := svc.StaticImage(); img != nil {
+		if strings.Contains(strings.ToLower(*img), "valkey") {
 			engine = "valkey"
 		} else {
 			engine = "redis"
@@ -207,8 +207,8 @@ func CreateElasticache(
 
 	// Parse version from image tag (e.g. "7.2" from "redis:7.2").
 	var engineVersion string
-	if svc.Image != nil {
-		parts := strings.Split(*svc.Image, ":")
+	if img := svc.StaticImage(); img != nil {
+		parts := strings.Split(*img, ":")
 		if len(parts) == 2 {
 			engineVersion = parts[1]
 		}

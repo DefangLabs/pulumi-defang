@@ -233,5 +233,5 @@ func GetServiceImage(
 		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, ErrNoImageOrBuildConfig)
 	}
 
-	return pulumi.String(*svc.Image).ToStringOutput(), nil
+	return svc.Image.ToStringOutput(), nil
 }

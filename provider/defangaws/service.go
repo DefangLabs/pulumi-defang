@@ -23,7 +23,9 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"projectName"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]*string          `pulumi:"environment,optional"`
+	// Environment holds env vars; values may be Outputs. Bare ${VAR} values
+	// become ECS secret refs to defang config (SSM); others stay plaintext.
+	Environment pulumi.StringMapInput `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -98,7 +100,6 @@ func (*Service) Construct(
 		Platform:        inputs.Platform,
 		Ports:           inputs.Ports,
 		Deploy:          inputs.Deploy,
-		Environment:     inputs.Environment,
 		Command:         inputs.Command,
 		Entrypoint:      inputs.Entrypoint,
 		HealthCheck:     inputs.HealthCheck,
@@ -128,6 +129,7 @@ func (*Service) Construct(
 		TaskRoleArn:        inputs.TaskRoleArn,
 		SecurityGroupIds:   inputs.SecurityGroupIds,
 		Secrets:            inputs.Secrets,
+		Environment:        inputs.Environment,
 		Sidecars:           inputs.Sidecars,
 		Triggers:           inputs.Triggers,
 	}

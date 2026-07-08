@@ -85,7 +85,7 @@ networks:
 	require.Contains(t, p.Services, "worker")
 
 	web := p.Services["web"]
-	assert.Equal(t, "nginx:latest", *web.Image)
+	assert.Equal(t, pulumi.String("nginx:latest"), web.Image)
 	require.Len(t, web.Ports, 1)
 	assert.Equal(t, int32(80), web.Ports[0].Target)
 	assert.EqualValues(t, "ingress", web.Ports[0].Mode)
@@ -102,7 +102,7 @@ networks:
 	assert.Equal(t, "512Mi", *web.Deploy.Resources.Reservations.Memory)
 
 	db := p.Services["db"]
-	assert.Equal(t, "postgres:16", *db.Image)
+	assert.Equal(t, pulumi.String("postgres:16"), db.Image)
 	require.NotNil(t, db.Postgres)
 	assert.True(t, *db.Postgres.AllowDowntime)
 

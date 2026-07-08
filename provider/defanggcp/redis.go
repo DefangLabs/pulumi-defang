@@ -44,7 +44,7 @@ func (*Redis) Construct(
 
 	svc := compose.ServiceConfig{
 		Redis:  inputs.Redis,
-		Image:  inputs.Image,
+		Image:  compose.ImageFromPtr(inputs.Image),
 		Deploy: inputs.Deploy,
 		Ports:  inputs.Ports,
 	}

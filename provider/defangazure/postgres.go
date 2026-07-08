@@ -38,7 +38,7 @@ func (*Postgres) Construct(
 
 	childOpt := pulumi.Parent(comp)
 	svc := compose.ServiceConfig{
-		Image:       inputs.Image,
+		Image:       compose.ImageFromPtr(inputs.Image),
 		Postgres:    inputs.Postgres,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,

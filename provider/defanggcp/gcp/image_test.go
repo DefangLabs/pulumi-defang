@@ -159,31 +159,31 @@ func TestGetServiceImage(t *testing.T) {
 		},
 		{
 			name:      "docker.io image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("nginx:latest")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("nginx:latest")},
 			infra:     fakeInfra,
 			wantImage: "nginx:latest",
 		},
 		{
 			name:      "explicit docker.io image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("docker.io/library/nginx:1.25")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("docker.io/library/nginx:1.25")},
 			infra:     fakeInfra,
 			wantImage: "docker.io/library/nginx:1.25",
 		},
 		{
 			name:      "gcr.io image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("gcr.io/my-project/app:v1")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("gcr.io/my-project/app:v1")},
 			infra:     fakeInfra,
 			wantImage: "gcr.io/my-project/app:v1",
 		},
 		{
 			name:      "artifact registry image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("us-central1-docker.pkg.dev/proj/repo/app:v1")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("us-central1-docker.pkg.dev/proj/repo/app:v1")},
 			infra:     fakeInfra,
 			wantImage: "us-central1-docker.pkg.dev/proj/repo/app:v1",
 		},
 		{
 			name:  "quay.io image rewritten to artifact registry",
-			svc:   compose.ServiceConfig{Image: strPtr("quay.io/prometheus/node-exporter:v1.8.0")},
+			svc:   compose.ServiceConfig{Image: pulumi.String("quay.io/prometheus/node-exporter:v1.8.0")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
 				"quay.io": {RepositoryId: pulumi.String("quay-io").ToStringOutput()},
@@ -192,7 +192,7 @@ func TestGetServiceImage(t *testing.T) {
 		},
 		{
 			name:  "ghcr.io image rewritten to artifact registry",
-			svc:   compose.ServiceConfig{Image: strPtr("ghcr.io/owner/image:sha-abc123")},
+			svc:   compose.ServiceConfig{Image: pulumi.String("ghcr.io/owner/image:sha-abc123")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
 				"ghcr.io": {RepositoryId: pulumi.String("ghcr-io").ToStringOutput()},

@@ -42,8 +42,11 @@ type ServiceConfig struct {
 	// Build configuration
 	Build *BuildConfig `pulumi:"build,optional" yaml:"build,omitempty"`
 
-	// Container image to deploy (required if no build config)
-	Image *string `pulumi:"image,optional" yaml:"image,omitempty"`
+	// Container image to deploy (required if no build config). An Input so
+	// callers can pass the Output of an image build; compose files always
+	// yield a literal pulumi.String (see StaticImage). yaml:"-" because the
+	// yaml decoder cannot populate an interface field — see UnmarshalYAML.
+	Image pulumi.StringInput `pulumi:"image,optional" yaml:"-"`
 
 	// Target platform: "linux/amd64" or "linux/arm64"
 	Platform *string `pulumi:"platform,optional" yaml:"platform,omitempty"`
@@ -110,6 +113,42 @@ type ServiceConfig struct {
 	Policies []string `pulumi:"policies,optional" yaml:"x-defang-policies,omitempty"`
 
 	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
+}
+
+// UnmarshalYAML decodes a service, converting the literal "image" field into a
+// pulumi.String (the Image field is a pulumi.StringInput, which the yaml
+// decoder cannot populate directly).
+func (s *ServiceConfig) UnmarshalYAML(value *yaml.Node) error {
+	type raw ServiceConfig // methodless alias to avoid recursion
+	if err := value.Decode((*raw)(s)); err != nil {
+		return err
+	}
+	var img struct {
+		Image *string `yaml:"image"`
+	}
+	if err := value.Decode(&img); err != nil {
+		return err
+	}
+	s.Image = ImageFromPtr(img.Image)
+	return nil
+}
+
+// ImageFromPtr converts an optional literal image string to the Image input type.
+func ImageFromPtr(p *string) pulumi.StringInput {
+	if p == nil {
+		return nil
+	}
+	return pulumi.String(*p)
+}
+
+// StaticImage returns the image as a literal string when it was set from a
+// compose file or plain string (pulumi.String), or nil when unset or dynamic.
+func (s ServiceConfig) StaticImage() *string {
+	if img, ok := s.Image.(pulumi.String); ok {
+		v := string(img)
+		return &v
+	}
+	return nil
 }
 
 // ServiceVolumeConfig defines a named-volume mount (long syntax). Bind mounts
@@ -419,8 +458,8 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	}
 
 	var version pulumi.StringPtrInput
-	if s.Image != nil {
-		version = pulumi.StringPtr(getPostgresVersion(*s.Image))
+	if img := s.StaticImage(); img != nil {
+		version = pulumi.StringPtr(getPostgresVersion(*img))
 	}
 
 	dbNameStr, ok := s.Environment["POSTGRES_DB"]

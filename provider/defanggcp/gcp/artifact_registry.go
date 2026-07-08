@@ -42,10 +42,11 @@ func collectExternalRegistries(services map[string]compose.ServiceConfig) []stri
 	seen := map[string]bool{}
 	var result []string
 	for _, svc := range services {
-		if svc.Image == nil || svc.Build != nil {
+		img := svc.StaticImage()
+		if img == nil || svc.Build != nil {
 			continue
 		}
-		info := common.ParseImage(*svc.Image)
+		info := common.ParseImage(*img)
 		if info.Registry != "" && !isCloudRunSupportedRegistry(info.Registry) && !seen[info.Registry] {
 			seen[info.Registry] = true
 			result = append(result, info.Registry)

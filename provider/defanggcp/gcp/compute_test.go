@@ -69,7 +69,7 @@ func TestGetCloudInitConfigDefangEnv(t *testing.T) {
 // the main service, with the main container mounting its volumes via
 // --volumes-from; '%' in env values must survive the pulumi.Sprintf pass.
 func TestGetCloudInitConfigSidecars(t *testing.T) {
-	handlerImage := "region-docker.pkg.dev/proj/repo/handler:1"
+	handlerImage := pulumi.String("region-docker.pkg.dev/proj/repo/handler:1")
 	percentVal := "100%"
 	svc := compose.ServiceConfig{
 		Entrypoint:  []string{"/handler/handler"},
@@ -79,7 +79,7 @@ func TestGetCloudInitConfigSidecars(t *testing.T) {
 	}
 	sidecars := map[string]compose.ServiceConfig{
 		"handler": {
-			Image:      &handlerImage,
+			Image:      handlerImage,
 			Entrypoint: []string{"true"},
 			Restart:    "no",
 			Volumes: []compose.ServiceVolumeConfig{

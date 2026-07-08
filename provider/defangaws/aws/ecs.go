@@ -150,6 +150,10 @@ type ECSServiceArgs struct {
 	// Secrets maps container environment variable names to SSM parameter or
 	// Secrets Manager ARNs, injected via the ECS-native secrets mechanism.
 	Secrets pulumi.StringMapInput
+	// Environment holds extra env vars for the main container; values may be
+	// Outputs. Bare ${VAR} values become ECS secret refs (like the
+	// compose-shaped ServiceConfig.Environment); other values stay plaintext.
+	Environment pulumi.StringMapInput
 	// Sidecars are additional containers deployed in the same task definition.
 	// Keyed by service name; volumesFrom/dependsOn on the main service may
 	// reference these names.
@@ -587,6 +591,11 @@ func CreateECSService(
 		secretsIdx = len(allInputs)
 		allInputs = append(allInputs, args.Secrets)
 	}
+	envInputIdx := -1
+	if args.Environment != nil {
+		envInputIdx = len(allInputs)
+		allInputs = append(allInputs, args.Environment)
+	}
 
 	// Split env vars: bare ${VAR} references go to ECS Secrets (SSM ARN),
 	// all others go to Environment (resolved plaintext).
@@ -620,29 +629,59 @@ func CreateECSService(
 		cfg        compose.ServiceConfig
 		envEntries []envEntry
 		secrets    []Secret
+		imageIdx   int // index into allInputs where the resolved image URI will be
 	}
 	var sidecarDatas []sidecarData
 	for scName, sc := range common.Sorted(args.Sidecars) {
-		if sc.Image == nil || *sc.Image == "" {
+		if sc.Image == nil {
+			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
+		}
+		if img := sc.StaticImage(); img != nil && *img == "" {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
 		}
 		scEnvEntries, scSecrets, err := resolveEnv(sc)
 		if err != nil {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, err)
 		}
+		imageIdx := len(allInputs)
+		allInputs = append(allInputs, sc.Image)
 		sidecarDatas = append(sidecarDatas, sidecarData{
-			name: scName, cfg: sc, envEntries: scEnvEntries, secrets: scSecrets,
+			name: scName, cfg: sc, envEntries: scEnvEntries, secrets: scSecrets, imageIdx: imageIdx,
 		})
 	}
 
 	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []any) (string, error) {
 		imageUri := all[0].(string)
 
+		// Merge ECS-native secrets from the Secrets input with the ones derived
+		// from bare ${VAR} environment references.
+		mainSecrets := append([]Secret{}, secretEntries...)
+		if secretsIdx >= 0 {
+			for name, valueFrom := range common.Sorted(all[secretsIdx].(map[string]string)) {
+				mainSecrets = append(mainSecrets, Secret{Name: name, ValueFrom: valueFrom})
+			}
+		}
+
 		// Build env vars from resolved outputs
 		envVars := append([]KeyValuePair{}, staticEnvVars...)
 		for _, e := range envEntries {
 			val := all[e.idx].(string)
 			envVars = append(envVars, KeyValuePair{Name: e.name, Value: val})
+		}
+		if envInputIdx >= 0 {
+			// Same bare-${VAR} split as resolveEnv, but on already-resolved
+			// values (GetSecretRef only does invokes, safe inside ApplyT).
+			for k, v := range common.Sorted(all[envInputIdx].(map[string]string)) {
+				if secretVar := compose.GetConfigName2(k, &v); secretVar != "" && configProvider != nil {
+					ref, err := configProvider.GetSecretRef(ctx, secretVar, parentOpt)
+					if err != nil {
+						return "", fmt.Errorf("getting secret ref for %q: %w", k, err)
+					}
+					mainSecrets = append(mainSecrets, Secret{Name: k, ValueFrom: ref})
+					continue
+				}
+				envVars = append(envVars, KeyValuePair{Name: k, Value: v})
+			}
 		}
 		slices.SortFunc(envVars, func(a, b KeyValuePair) int {
 			return cmp.Compare(a.Name, b.Name)
@@ -662,15 +701,6 @@ func CreateECSService(
 			}
 		}
 		logConfiguration := logConfigurationFor(containerName)
-
-		// Merge ECS-native secrets from the Secrets input with the ones derived
-		// from bare ${VAR} environment references.
-		mainSecrets := append([]Secret{}, secretEntries...)
-		if secretsIdx >= 0 {
-			for name, valueFrom := range common.Sorted(all[secretsIdx].(map[string]string)) {
-				mainSecrets = append(mainSecrets, Secret{Name: name, ValueFrom: valueFrom})
-			}
-		}
 
 		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
@@ -714,7 +744,7 @@ func CreateECSService(
 				EntryPoint:       sd.cfg.Entrypoint,
 				DependsOn:        buildDependsOn(sd.cfg.DependsOn, args.Sidecars),
 				HealthCheck:      buildHealthCheck(sd.cfg.HealthCheck),
-				Image:            *sd.cfg.Image,
+				Image:            all[sd.imageIdx].(string),
 				LogConfiguration: logConfigurationFor(scContainerName),
 				StopTimeout:      buildStopTimeout(sd.cfg),
 				WorkingDirectory: sd.cfg.WorkingDir,

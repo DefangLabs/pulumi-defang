@@ -46,7 +46,7 @@ func (*Postgres) Construct(
 
 	svc := compose.ServiceConfig{
 		Postgres:    inputs.Postgres,
-		Image:       inputs.Image,
+		Image:       compose.ImageFromPtr(inputs.Image),
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 		Ports:       inputs.Ports,
