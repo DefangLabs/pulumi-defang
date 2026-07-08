@@ -220,6 +220,12 @@
         "platform": {
           "type": "string"
         },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "ports": {
           "type": "array",
           "items": {
@@ -589,8 +595,7 @@
           "$ref": "#/types/defang-azure:compose:HealthCheckConfig"
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "platform": {
           "type": "string",

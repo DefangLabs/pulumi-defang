@@ -30,6 +30,9 @@ func NewService(ctx *pulumi.Context,
 		return nil, errors.New("missing one or more required arguments")
 	}
 
+	if args.Image == nil {
+		return nil, errors.New("invalid value for required argument 'Image'")
+	}
 	opts = internal.PkgResourceDefaultOpts(opts)
 	var resource Service
 	err := ctx.RegisterRemoteComponentResource("defang-aws:index:Service", name, args, &resource, opts...)
@@ -52,6 +55,7 @@ type serviceArgs struct {
 	HealthCheck        *compose.HealthCheckConfig           `pulumi:"healthCheck"`
 	Image              string                               `pulumi:"image"`
 	Platform           *string                              `pulumi:"platform"`
+	Policies           []string                             `pulumi:"policies"`
 	Ports              []compose.ServicePortConfig          `pulumi:"ports"`
 	ProjectName        string                               `pulumi:"projectName"`
 	Secrets            map[string]string                    `pulumi:"secrets"`
@@ -78,8 +82,9 @@ type ServiceArgs struct {
 	Entrypoint         pulumi.StringArrayInput
 	Environment        pulumi.StringMapInput
 	HealthCheck        compose.HealthCheckConfigPtrInput
-	Image              string
+	Image              pulumi.StringInput
 	Platform           *string
+	Policies           pulumi.StringArrayInput
 	Ports              compose.ServicePortConfigArrayInput
 	ProjectName        string
 	Secrets            pulumi.StringMapInput

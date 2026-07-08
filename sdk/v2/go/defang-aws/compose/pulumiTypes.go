@@ -1396,6 +1396,7 @@ type ServiceConfig struct {
 	Llm             *LlmConfig                      `pulumi:"llm"`
 	Networks        map[string]ServiceNetworkConfig `pulumi:"networks"`
 	Platform        *string                         `pulumi:"platform"`
+	Policies        []string                        `pulumi:"policies"`
 	Ports           []ServicePortConfig             `pulumi:"ports"`
 	Postgres        *PostgresConfig                 `pulumi:"postgres"`
 	Redis           *RedisConfig                    `pulumi:"redis"`
@@ -1432,6 +1433,7 @@ type ServiceConfigArgs struct {
 	Llm             LlmConfigPtrInput             `pulumi:"llm"`
 	Networks        ServiceNetworkConfigMapInput  `pulumi:"networks"`
 	Platform        pulumi.StringPtrInput         `pulumi:"platform"`
+	Policies        pulumi.StringArrayInput       `pulumi:"policies"`
 	Ports           ServicePortConfigArrayInput   `pulumi:"ports"`
 	Postgres        PostgresConfigPtrInput        `pulumi:"postgres"`
 	Redis           RedisConfigPtrInput           `pulumi:"redis"`
@@ -1547,6 +1549,10 @@ func (o ServiceConfigOutput) Networks() ServiceNetworkConfigMapOutput {
 
 func (o ServiceConfigOutput) Platform() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v ServiceConfig) *string { return v.Platform }).(pulumi.StringPtrOutput)
+}
+
+func (o ServiceConfigOutput) Policies() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v ServiceConfig) []string { return v.Policies }).(pulumi.StringArrayOutput)
 }
 
 func (o ServiceConfigOutput) Ports() ServicePortConfigArrayOutput {

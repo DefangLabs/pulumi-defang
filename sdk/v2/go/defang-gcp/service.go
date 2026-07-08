@@ -27,6 +27,9 @@ func NewService(ctx *pulumi.Context,
 		return nil, errors.New("missing one or more required arguments")
 	}
 
+	if args.Image == nil {
+		return nil, errors.New("invalid value for required argument 'Image'")
+	}
 	opts = internal.PkgResourceDefaultOpts(opts)
 	var resource Service
 	err := ctx.RegisterRemoteComponentResource("defang-gcp:index:Service", name, args, &resource, opts...)
@@ -69,7 +72,7 @@ type ServiceArgs struct {
 	Entrypoint          pulumi.StringArrayInput
 	Environment         pulumi.StringMapInput
 	HealthCheck         compose.HealthCheckConfigPtrInput
-	Image               string
+	Image               pulumi.StringInput
 	Llm                 compose.LlmConfigPtrInput
 	Platform            *string
 	Ports               compose.ServicePortConfigArrayInput

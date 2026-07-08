@@ -271,6 +271,12 @@
         "platform": {
           "type": "string"
         },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "ports": {
           "type": "array",
           "items": {
@@ -643,12 +649,18 @@
           "$ref": "#/types/defang-aws:compose:HealthCheckConfig"
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "platform": {
           "type": "string",
           "plain": true
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
         },
         "ports": {
           "type": "array",

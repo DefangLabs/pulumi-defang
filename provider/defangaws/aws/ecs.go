@@ -24,7 +24,10 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
 
-var errSidecarImageRequired = errors.New("image is required")
+var (
+	errSidecarImageRequired = errors.New("image is required")
+	errPoliciesWithTaskRole = errors.New("policies cannot be combined with taskRoleArn")
+)
 
 type Policies struct {
 	bedrockPolicy *iam.Policy
@@ -494,6 +497,26 @@ func CreateECSService(
 			}
 			lbDependsOn = append(lbDependsOn, dep)
 		}
+
+		// Attach caller-specified policies (x-defang-policies)
+		for _, policy := range svc.Policies {
+			policyArn, err := resolvePolicyArn(ctx, policy)
+			if err != nil {
+				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)
+			}
+			attachmentName := serviceName + "-task-role-" + policyName(policy)
+			dep, err := iam.NewRolePolicyAttachment(ctx, attachmentName, &iam.RolePolicyAttachmentArgs{
+				Role:      taskRole.Name,
+				PolicyArn: policyArn,
+			}, parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("attaching policy %q: %w", policy, err)
+			}
+			lbDependsOn = append(lbDependsOn, dep)
+		}
+	} else if len(svc.Policies) > 0 {
+		// A caller-supplied task role's policies are owned by the caller.
+		return nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithTaskRole)
 	}
 
 	// Build container definition

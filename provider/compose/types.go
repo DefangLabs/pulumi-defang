@@ -103,6 +103,12 @@ type ServiceConfig struct {
 	// Enable autoscaling. Matches the x-defang-autoscaling extension.
 	Autoscaling bool `pulumi:"autoscaling,optional" yaml:"x-defang-autoscaling,omitempty"`
 
+	// Extra IAM policies to attach to the task role created for this service;
+	// each entry is a full policy ARN or a customer-managed policy name.
+	// Matches the x-defang-policies extension. AWS-only: other providers
+	// reject it, and it cannot be combined with a caller-supplied task role.
+	Policies []string `pulumi:"policies,optional" yaml:"x-defang-policies,omitempty"`
+
 	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
 }
 

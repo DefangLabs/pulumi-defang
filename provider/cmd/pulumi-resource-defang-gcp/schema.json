@@ -220,6 +220,12 @@
         "platform": {
           "type": "string"
         },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "ports": {
           "type": "array",
           "items": {
@@ -623,8 +629,7 @@
           "$ref": "#/types/defang-gcp:compose:HealthCheckConfig"
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "llm": {
           "$ref": "#/types/defang-gcp:compose:LlmConfig"

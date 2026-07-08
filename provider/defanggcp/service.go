@@ -10,8 +10,11 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var errSidecarsRequireComputeEngine = errors.New(
-	"sidecars and volumes are only supported on Compute Engine services (no single ingress port)")
+var (
+	errSidecarsRequireComputeEngine = errors.New(
+		"sidecars and volumes are only supported on Compute Engine services (no single ingress port)")
+	errPoliciesUnsupported = errors.New("x-defang-policies is not supported on GCP")
+)
 
 // Service is the controller struct for the defang-gcp:index:Service component.
 type Service struct{}
@@ -21,7 +24,9 @@ type Service struct{}
 // via Image. Build orchestration belongs to the Project component, which provisions the
 // shared BuildInfra (Artifact Registry + Cloud Build) needed to produce the image.
 type ServiceInputs struct {
-	Image       string                      `pulumi:"image"`
+	// Image is the pre-built container image URI; it may be an Output of an
+	// image build (e.g. a Build resource or a caller-side pipeline).
+	Image       pulumi.StringInput          `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"projectName"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
@@ -86,11 +91,10 @@ func (*Service) Construct(
 		return nil, err
 	}
 
-	if inputs.Image == "" {
+	if inputs.Image == nil {
 		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
 	}
 	svc := compose.ServiceConfig{
-		Image:           &inputs.Image,
 		Platform:        inputs.Platform,
 		Ports:           inputs.Ports,
 		Deploy:          inputs.Deploy,
@@ -124,7 +128,7 @@ func (*Service) Construct(
 		infra = providergcp.NewStandaloneGlobalConfig(ctx)
 	}
 
-	image := pulumi.String(inputs.Image)
+	image := inputs.Image
 
 	extras := &serviceExtras{
 		ServiceAccountEmail: inputs.ServiceAccountEmail,
@@ -164,6 +168,9 @@ func createService(
 	childOpts := []pulumi.ResourceOption{parentOpt}
 	if extras == nil {
 		extras = &serviceExtras{}
+	}
+	if len(svc.Policies) > 0 {
+		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)
 	}
 	for name, sc := range extras.Sidecars {
 		if sc.Image == nil || *sc.Image == "" {

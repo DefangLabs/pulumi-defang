@@ -67,6 +67,11 @@ services:
     image: postgres:16
     x-defang-postgres:
       allow-downtime: true
+  worker:
+    image: worker:latest
+    x-defang-policies:
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      - MyCustomPolicy
 networks:
   backend:
     internal: true
@@ -74,9 +79,10 @@ networks:
 	var p Project
 	require.NoError(t, yaml.Unmarshal([]byte(input), &p))
 
-	require.Len(t, p.Services, 2)
+	require.Len(t, p.Services, 3)
 	require.Contains(t, p.Services, "web")
 	require.Contains(t, p.Services, "db")
+	require.Contains(t, p.Services, "worker")
 
 	web := p.Services["web"]
 	assert.Equal(t, "nginx:latest", *web.Image)
@@ -99,6 +105,12 @@ networks:
 	assert.Equal(t, "postgres:16", *db.Image)
 	require.NotNil(t, db.Postgres)
 	assert.True(t, *db.Postgres.AllowDowntime)
+
+	worker := p.Services["worker"]
+	assert.Equal(t, []string{
+		"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+		"MyCustomPolicy",
+	}, worker.Policies)
 
 	require.Contains(t, p.Networks, NetworkID("backend"))
 	assert.True(t, p.Networks[NetworkID("backend")].Internal)

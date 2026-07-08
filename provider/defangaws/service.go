@@ -15,10 +15,10 @@ import (
 type Service struct{}
 
 // ServiceInputs defines the inputs for a standalone AWS ECS service.
-// Scalar fields use pulumi.String / *pulumi.String so the generated SDK
-// wraps them in pulumi.Input (matching the Node.js SDK behaviour).
 type ServiceInputs struct {
-	Image       string                      `pulumi:"image"`
+	// Image is the pre-built container image URI; it may be an Output of an
+	// image build (e.g. a Build resource or a caller-side pipeline).
+	Image       pulumi.StringInput          `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"projectName"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
@@ -37,6 +37,10 @@ type ServiceInputs struct {
 	VolumesFrom     []string                      `pulumi:"volumesFrom,optional"`
 	DependsOn       compose.DependsOnConfig       `pulumi:"dependsOn,optional"`
 	Autoscaling     bool                          `pulumi:"autoscaling,optional"`
+	// Policies are extra IAM policies (full ARN or customer-managed policy
+	// name) attached to the task role created for this service. Cannot be
+	// combined with TaskRoleArn — the caller owns that role's policies.
+	Policies []string `pulumi:"policies,optional"`
 
 	// Sidecars are additional containers deployed in the same ECS task.
 	// volumesFrom / dependsOn may reference sidecar names.
@@ -87,11 +91,10 @@ func (*Service) Construct(
 	}
 
 	// Standalone Service is image-only — build belongs to Project.
-	if inputs.Image == "" {
+	if inputs.Image == nil {
 		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
 	}
 	svc := compose.ServiceConfig{
-		Image:           &inputs.Image,
 		Platform:        inputs.Platform,
 		Ports:           inputs.Ports,
 		Deploy:          inputs.Deploy,
@@ -107,6 +110,7 @@ func (*Service) Construct(
 		VolumesFrom:     inputs.VolumesFrom,
 		DependsOn:       inputs.DependsOn,
 		Autoscaling:     inputs.Autoscaling,
+		Policies:        inputs.Policies,
 	}
 
 	var configProvider compose.ConfigProvider
@@ -116,11 +120,10 @@ func (*Service) Construct(
 		configProvider = provideraws.NewConfigProvider(inputs.ProjectName)
 	}
 	infra := inputs.AWS
-	imageURI := pulumi.String(inputs.Image).ToStringOutput()
 
 	args := &provideraws.ECSServiceArgs{
 		Infra:              infra,
-		ImageURI:           imageURI,
+		ImageURI:           inputs.Image,
 		WaitForSteadyState: inputs.WaitForSteadyState,
 		TaskRoleArn:        inputs.TaskRoleArn,
 		SecurityGroupIds:   inputs.SecurityGroupIds,

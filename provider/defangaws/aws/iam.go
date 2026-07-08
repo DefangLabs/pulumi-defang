@@ -3,6 +3,7 @@ package aws
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -143,6 +144,29 @@ func attachPullThroughCachePolicy(
 		Policy: policyJson,
 	}, opts...)
 	return err
+}
+
+// resolvePolicyArn turns an x-defang-policies entry into a policy ARN. Full
+// ARNs pass through; bare names resolve to a customer-managed policy in the
+// caller's account (matches makeArn in defang-mvp: partition "aws", no region).
+func resolvePolicyArn(ctx *pulumi.Context, policy string) (pulumi.StringInput, error) {
+	if strings.HasPrefix(policy, "arn:") {
+		return pulumi.String(policy), nil
+	}
+	accountID, err := getCallerAccountId(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting caller account ID: %w", err)
+	}
+	return pulumi.String("arn:aws:iam::" + accountID + ":policy/" + policy), nil
+}
+
+// policyName returns the name segment of a policy ARN, or the input unchanged
+// if it's already a bare name. Used for stable child-resource names.
+func policyName(policy string) string {
+	if i := strings.LastIndexByte(policy, '/'); i >= 0 {
+		return policy[i+1:]
+	}
+	return policy
 }
 
 // createTaskRole creates a per-service ECS task role.
