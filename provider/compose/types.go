@@ -58,7 +58,7 @@ type ServiceConfig struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment Environment `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`
@@ -144,6 +144,47 @@ func ImageFromPtr(p *string) pulumi.StringInput {
 		return nil
 	}
 	return pulumi.String(*p)
+}
+
+// Environment maps env var names to values. Values are Inputs so callers can
+// pass Outputs of other resources; compose files always yield literal
+// pulumi.String values, or nil for "KEY:" with no value (resolve from config
+// at deploy time). See StaticEnvValue.
+type Environment map[string]pulumi.StringInput
+
+// UnmarshalYAML decodes the compose map form, converting literal values into
+// pulumi.String (the yaml decoder cannot populate an interface value).
+func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
+	var m map[string]*string
+	if err := value.Decode(&m); err != nil {
+		return err
+	}
+	if m == nil {
+		*e = nil
+		return nil
+	}
+	env := make(Environment, len(m))
+	for k, v := range m {
+		env[k] = ImageFromPtr(v)
+	}
+	*e = env
+	return nil
+}
+
+// StaticEnvValue returns the literal value of an environment entry and whether
+// it is static. A nil input (compose "KEY:" with no value, i.e. resolve from
+// config) is static with a nil pointer; Outputs of other resources are not
+// static and return (nil, false).
+func StaticEnvValue(v pulumi.StringInput) (*string, bool) {
+	switch t := v.(type) {
+	case nil:
+		return nil, true
+	case pulumi.String:
+		s := string(t)
+		return &s, true
+	default:
+		return nil, false
+	}
 }
 
 // SidecarParent returns the service name this config attaches to as a sidecar
@@ -476,8 +517,10 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 		version = pulumi.StringPtr(getPostgresVersion(*img))
 	}
 
-	dbNameStr, ok := s.Environment["POSTGRES_DB"]
-	if !ok || dbNameStr == nil || *dbNameStr == "" {
+	// POSTGRES_DB drives resource creation decisions, so it must be a static
+	// string; a dynamic (Output) value falls back to the default name.
+	dbNameStr, _ := StaticEnvValue(s.Environment["POSTGRES_DB"])
+	if dbNameStr == nil || *dbNameStr == "" {
 		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
@@ -577,9 +620,13 @@ func (s ServiceConfig) DefaultNetwork() ServiceNetworkConfig {
 func (s ServiceConfig) ResolvedEnvironment() map[string]string {
 	env := make(map[string]string, len(s.Environment))
 	for k, v := range s.Environment {
-		if v != nil {
-			env[k] = *v
-		} else {
+		sv, static := StaticEnvValue(v)
+		switch {
+		case !static:
+			// dynamic values never occur on this YAML-driven path
+		case sv != nil:
+			env[k] = *sv
+		default:
 			env[k] = "${" + k + "}" // preserve undefined env vars as placeholders
 		}
 	}

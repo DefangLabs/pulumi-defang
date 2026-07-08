@@ -190,14 +190,14 @@ func buildEnvVars(
 				Name:      pulumi.String(k),
 				SecretRef: pulumi.String(appSecretName),
 			})
-		} else {
-			// v is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
+		} else if sv, static := compose.StaticEnvValue(v); static {
+			// sv is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
 			// which took the secret-ref branch above when a ConfigProvider is
-			// available. The only way to land here with nil v is
+			// available. The only way to land here with nil sv is
 			// ConfigProvider == nil — treat as empty literal.
 			var raw string
-			if v != nil {
-				raw = *v
+			if sv != nil {
+				raw = *sv
 			}
 			var value pulumi.StringInput
 			if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
@@ -214,6 +214,13 @@ func buildEnvVars(
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:  pulumi.String(k),
 				Value: value,
+			})
+		} else {
+			// Dynamic (Output) values pass through as-is; endpoint substitution
+			// and interpolation only apply to static text.
+			envs = append(envs, app.EnvironmentVarArgs{
+				Name:  pulumi.String(k),
+				Value: v,
 			})
 		}
 	}

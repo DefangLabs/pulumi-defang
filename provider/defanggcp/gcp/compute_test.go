@@ -75,7 +75,7 @@ func TestGetCloudInitConfigSidecars(t *testing.T) {
 		Entrypoint:  []string{"/handler/handler"},
 		VolumesFrom: []string{"handler"},
 		DependsOn:   compose.DependsOnConfig{"handler": {}},
-		Environment: map[string]*string{"RATIO": &percentVal},
+		Environment: compose.Environment{"RATIO": pulumi.String(percentVal)},
 	}
 	sidecars := map[string]compose.ServiceConfig{
 		"handler": {

@@ -281,19 +281,19 @@ func enableLLM(
 	}
 
 	if svc.Environment == nil {
-		svc.Environment = make(map[string]*string)
+		svc.Environment = compose.Environment{}
 	}
 
 	// setDefault fills an env var with a default only when absent or empty-literal.
-	// A nil *string value (YAML "KEY:" with no value) means "resolve at runtime from
-	// config" — leave it alone.
+	// A nil value (YAML "KEY:" with no value) means "resolve at runtime from
+	// config" and a dynamic (Output) value is opaque — leave both alone.
 	setDefault := func(key, defaultVal string) {
-		val, ok := svc.Environment[key]
-		if ok && (val == nil || *val != "") {
-			return
+		if val, ok := svc.Environment[key]; ok {
+			if sv, static := compose.StaticEnvValue(val); !static || sv == nil || *sv != "" {
+				return
+			}
 		}
-		v := defaultVal
-		svc.Environment[key] = &v
+		svc.Environment[key] = pulumi.String(defaultVal)
 	}
 
 	// Inject environment variables for Vercel routing for GCP Vertex AI access

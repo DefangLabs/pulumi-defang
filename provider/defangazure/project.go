@@ -534,8 +534,8 @@ func (*Project) Construct(
 func llmModelAlias(svcName string, services compose.Services) string {
 	envKey := strings.ToUpper(svcName) + "_MODEL"
 	for _, svc := range services {
-		if v, ok := svc.Environment[envKey]; ok && v != nil && *v != "" {
-			return *v
+		if sv, _ := compose.StaticEnvValue(svc.Environment[envKey]); sv != nil && *sv != "" {
+			return *sv
 		}
 	}
 	return svcName // fallback: use service name as deployment name

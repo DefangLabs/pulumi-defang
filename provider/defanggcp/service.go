@@ -33,7 +33,7 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"projectName"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]*string          `pulumi:"environment,optional"`
+	Environment compose.Environment             `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`

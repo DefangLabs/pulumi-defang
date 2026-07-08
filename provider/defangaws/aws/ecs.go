@@ -611,7 +611,7 @@ func CreateECSService(
 				}
 				secrets = append(secrets, Secret{Name: k, ValueFrom: ref})
 			} else {
-				resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, *v, parentOpt)
+				resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
 				entries = append(entries, envEntry{name: k, idx: len(allInputs)})
 				allInputs = append(allInputs, resolved)
 			}
@@ -673,7 +673,7 @@ func CreateECSService(
 			// Same bare-${VAR} split as resolveEnv, but on already-resolved
 			// values (GetSecretRef only does invokes, safe inside ApplyT).
 			for k, v := range common.Sorted(all[envInputIdx].(map[string]string)) {
-				if secretVar := compose.GetConfigName2(k, &v); secretVar != "" && configProvider != nil {
+				if secretVar := compose.GetConfigName2(k, pulumi.String(v)); secretVar != "" && configProvider != nil {
 					ref, err := configProvider.GetSecretRef(ctx, secretVar, parentOpt)
 					if err != nil {
 						return "", fmt.Errorf("getting secret ref for %q: %w", k, err)

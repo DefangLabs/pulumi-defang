@@ -92,8 +92,7 @@ networks:
 	require.NotNil(t, web.Build)
 	assert.Implements(t, (*pulumi.StringInput)(nil), web.Build.Context)
 	assert.Equal(t, "Dockerfile", *web.Build.Dockerfile)
-	port := "8080"
-	assert.Equal(t, map[string]*string{"PORT": &port, "CONFIG": nil}, web.Environment)
+	assert.Equal(t, Environment{"PORT": pulumi.String("8080"), "CONFIG": nil}, web.Environment)
 	require.NotNil(t, web.Deploy)
 	assert.Equal(t, int32(2), *web.Deploy.Replicas)
 	require.NotNil(t, web.Deploy.Resources)

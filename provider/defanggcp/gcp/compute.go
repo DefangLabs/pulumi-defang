@@ -472,24 +472,33 @@ func dockerRunFlags(
 }
 
 // flattenEnvFlags renders `-e "K=V"` docker flags for the given static env
-// pairs followed by the service's compose environment.
-func flattenEnvFlags(staticEnv [][2]string, env map[string]*string) string {
-	var envFlags strings.Builder
+// pairs followed by the service's compose environment. Dynamic (Output)
+// values are threaded through a Sprintf so they resolve at apply time.
+func flattenEnvFlags(staticEnv [][2]string, env compose.Environment) pulumi.StringInput {
+	var format strings.Builder
+	var args []any
 	for _, kv := range staticEnv {
-		fmt.Fprintf(&envFlags, "-e %q ", fmt.Sprintf("%s=%s", kv[0], kv[1]))
+		format.WriteString(escapePercent(fmt.Sprintf("-e %q ", kv[0]+"="+kv[1])))
 	}
 	for k, v := range common.Sorted(env) {
-		// Compute/VM deploys embed concrete values into the `docker run -e` cmd
-		// string — no runtime config-provider resolution is available here, so
-		// a nil *string (YAML "KEY:" with no value) flattens to an empty value.
-		var val string
-		if v != nil {
-			val = *v
+		if sv, static := compose.StaticEnvValue(v); static {
+			// Compute/VM deploys embed concrete values into the `docker run -e`
+			// cmd string — no runtime config-provider resolution is available
+			// here, so a nil value (YAML "KEY:" with no value) flattens to an
+			// empty value.
+			var val string
+			if sv != nil {
+				val = *sv
+			}
+			// FIXME: provide all environment (and secrets) as env instead of flattening into the command line.
+			format.WriteString(escapePercent(fmt.Sprintf("-e %q ", k+"="+val)))
+		} else {
+			fmt.Fprintf(&format, "-e \"%s=%%s\" ", escapePercent(k))
+			args = append(args, v)
 		}
-		// FIXME: provide all environment (and secrets) as env instead of flattening into the command line.
-		fmt.Fprintf(&envFlags, "-e %q ", fmt.Sprintf("%s=%s", k, val))
 	}
-	return envFlags.String()
+	// Always go through Sprintf: the static text above was %%-escaped for it.
+	return pulumi.Sprintf(format.String(), args...)
 }
 
 // stopGraceSeconds returns the docker stop timeout for a service, defaulting
@@ -547,17 +556,21 @@ func getCloudInitConfig(
 		"systemctl restart docker",
 	)
 
-	var extraUnits strings.Builder
+	var extraUnitsFmt strings.Builder
+	var extraUnitsArgs []any
 	if addHealthCheckSidecar {
 		var hcUnits string
 		hcUnits, runcmds = buildHealthCheckUnits(serviceName, containerName, runcmds)
-		extraUnits.WriteString(hcUnits)
+		extraUnitsFmt.WriteString("%s")
+		extraUnitsArgs = append(extraUnitsArgs, hcUnits)
 	}
 	for name, sc := range common.Sorted(sidecars) {
-		var unitText string
+		var unitText pulumi.StringInput
 		unitText, runcmds = buildSidecarUnit(serviceName, name, region, sc, sidecars, runcmds)
-		extraUnits.WriteString(unitText)
+		extraUnitsFmt.WriteString("%s")
+		extraUnitsArgs = append(extraUnitsArgs, unitText)
 	}
+	extraUnits := pulumi.Sprintf(extraUnitsFmt.String(), extraUnitsArgs...)
 
 	runcmds = append(runcmds,
 		fmt.Sprintf("systemctl enable %s.service", serviceName),
@@ -578,35 +591,34 @@ func getCloudInitConfig(
       RestartSec=30
       Environment="HOME=/home/container-user"
       ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries %[5]s-docker.pkg.dev
-      ExecStart=/usr/bin/docker run --pull=always --rm --name=%[9]s %[3]s %[6]s%%s %[4]s
-      ExecStop=/usr/bin/docker stop -t %[8]d %[9]s
+      ExecStart=/usr/bin/docker run --pull=always --rm --name=%[7]s %[3]s %%s%%s %[4]s
+      ExecStop=/usr/bin/docker stop -t %[6]d %[7]s
       StandardOutput=journal+console
       StandardError=journal+console
 
       [Install]
       WantedBy=multi-user.target
-%[7]s
+%%s
 runcmd:
-  - %[10]s
+  - %[8]s
 `,
 		serviceName,
 		escapePercent(dependencies.String()),
 		escapePercent(strings.Join(params, " ")),
 		escapePercent(strings.Join(command, " ")),
 		region,
-		escapePercent(envFlags),
-		escapePercent(extraUnits.String()),
 		stopGraceSeconds(svc),
 		containerName,
 		escapePercent(strings.Join(runcmds, "\n  - ")))
 
-	// buf now contains exactly one %s (the escaped image placeholder from the
-	// format string above); all other dynamic text had its '%' doubled.
-	return pulumi.Sprintf(buf.String(), image)
+	// buf now contains exactly three %s placeholders (env flags, image, and
+	// extra units — the Inputs that may resolve at apply time); all other
+	// dynamic text had its '%' doubled.
+	return pulumi.Sprintf(buf.String(), envFlags, image, extraUnits)
 }
 
 // escapePercent doubles '%' so text survives the final pulumi.Sprintf pass
-// (which only substitutes the main image via %s).
+// (which only substitutes the env flags, main image, and extra units via %s).
 func escapePercent(s string) string {
 	return strings.ReplaceAll(s, "%", "%%")
 }
@@ -624,7 +636,7 @@ func buildSidecarUnit(
 	sc compose.ServiceConfig,
 	sidecars map[string]compose.ServiceConfig,
 	runcmds []string,
-) (string, []string) {
+) (pulumi.StringInput, []string) {
 	unit := sidecarUnitName(serviceName, sidecarName)
 	containerName := sc.GetContainerName(sidecarName)
 	params, command := dockerRunFlags(sc, sidecars)
@@ -642,7 +654,7 @@ func buildSidecarUnit(
 			stopGraceSeconds(sc), containerName)
 	}
 
-	units := fmt.Sprintf(`
+	units := pulumi.Sprintf(`
   - path: /etc/systemd/system/%[1]s.service
     permissions: "0644"
     owner: root

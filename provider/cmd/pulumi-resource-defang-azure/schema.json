@@ -455,8 +455,7 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "image": {
@@ -535,8 +534,7 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "image": {
@@ -590,8 +588,7 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "healthCheck": {

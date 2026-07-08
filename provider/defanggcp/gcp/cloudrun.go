@@ -130,18 +130,25 @@ func buildEnvVars(
 				seenSecretIds[secretId] = struct{}{}
 				secretIds = append(secretIds, secretId)
 			}
-		} else {
-			// v is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
+		} else if sv, static := compose.StaticEnvValue(v); static {
+			// sv is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
 			// which would have taken the secret-ref branch above when a
 			// configProvider is available.
 			var raw string
-			if v != nil {
-				raw = *v
+			if sv != nil {
+				raw = *sv
 			}
 			value := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name:  pulumi.String(k),
 				Value: value,
+			})
+		} else {
+			// Dynamic (Output) values pass through as-is; interpolation and
+			// secret detection only apply to static text.
+			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
+				Name:  pulumi.String(k),
+				Value: v.ToStringOutput(),
 			})
 		}
 	}
