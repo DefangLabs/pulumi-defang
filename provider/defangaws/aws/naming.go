@@ -12,10 +12,17 @@ const tgMaxNameLen = 32
 // targetGroupName builds a logical Pulumi resource name for a TargetGroup.
 // The physical name (with its 32-char AWS limit) is handled by autonaming config.
 // We keep the logical name short enough that autonaming stays within budget.
-func targetGroupName(service string, port int, appProtocol compose.PortAppProtocol) string {
+func targetGroupName(
+	service string, port int, appProtocol compose.PortAppProtocol, listener compose.PortListenerProtocol,
+) string {
 	suffix := fmt.Sprintf("-%d", port)
 	if appProtocol != "" && appProtocol != "http" {
 		suffix += string(appProtocol)
+	}
+	// HTTPS is the default listener, so only non-default listeners get a suffix
+	// (matches TS targetGroupName's listenerProtocol handling).
+	if listener != compose.PortListenerDefault && listener != compose.PortListenerHTTPS {
+		suffix += "-" + string(listener)
 	}
 
 	maxService := tgMaxNameLen - autonamingSuffixLen - len(suffix)

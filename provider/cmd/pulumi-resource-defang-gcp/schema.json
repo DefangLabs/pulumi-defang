@@ -39,11 +39,29 @@
             "type": "string"
           }
         },
+        "cacheFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cacheTo": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "context": {
           "type": "string"
         },
         "dockerfile": {
           "type": "string"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "shmSize": {
           "type": "string"
@@ -145,6 +163,9 @@
     },
     "defang-gcp:compose:ServiceConfig": {
       "properties": {
+        "autoscaling": {
+          "type": "boolean"
+        },
         "build": {
           "$ref": "#/types/defang-gcp:compose:BuildConfig"
         },
@@ -153,6 +174,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "containerName": {
+          "type": "string"
         },
         "dependsOn": {
           "type": "object",
@@ -210,6 +234,24 @@
         },
         "restart": {
           "type": "string"
+        },
+        "stopGracePeriod": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-gcp:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workingDir": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -241,6 +283,9 @@
         "appProtocol": {
           "type": "string"
         },
+        "listener": {
+          "type": "string"
+        },
         "mode": {
           "type": "string"
         },
@@ -253,6 +298,24 @@
       },
       "type": "object",
       "required": [
+        "target"
+      ]
+    },
+    "defang-gcp:compose:ServiceVolumeConfig": {
+      "properties": {
+        "readOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
         "target"
       ]
     }
@@ -508,10 +571,14 @@
       "properties": {
         "endpoint": {
           "type": "string"
+        },
+        "serviceAccountEmail": {
+          "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "serviceAccountEmail"
       ],
       "inputProperties": {
         "command": {
@@ -519,6 +586,16 @@
           "items": {
             "type": "string",
             "plain": true
+          }
+        },
+        "containerName": {
+          "type": "string",
+          "plain": true
+        },
+        "dependsOn": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-gcp:compose:ServiceDependency"
           }
         },
         "deploy": {
@@ -563,6 +640,43 @@
           }
         },
         "projectName": {
+          "type": "string",
+          "plain": true
+        },
+        "serviceAccountEmail": {
+          "type": "string"
+        },
+        "sidecars": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-gcp:compose:ServiceConfig"
+          }
+        },
+        "stopGracePeriod": {
+          "type": "string",
+          "plain": true
+        },
+        "triggers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-gcp:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "workingDir": {
           "type": "string",
           "plain": true
         }

@@ -19,6 +19,7 @@ import (
 )
 
 var errNoRemoteRepoConfigured = errors.New("no remote repository configured for registry")
+var errMultiPlatformUnsupported = errors.New("multi-platform builds are unsupported on GCP Cloud Build")
 
 // Based on Cloud Run error:
 // "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
@@ -65,8 +66,26 @@ type buildStep struct {
 // a Docker image and loads it into the local Docker daemon. Cloud Build then
 // pushes the image to the registry via the images: field so that build results
 // contain the image digest.
-func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
+//
+// Multi-platform builds are rejected: the --load step and the images: push
+// only handle a single-platform image (Cloud Build's daemon cannot load a
+// multi-arch manifest list).
+func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pulumi.StringOutput {
+	platform := "linux/amd64"
+	if len(build.Platforms) == 1 {
+		platform = build.Platforms[0]
+	}
+	buildArgs := []string{"buildx", "build", "--platform", platform}
+	for _, c := range build.CacheFrom {
+		buildArgs = append(buildArgs, "--cache-from="+c)
+	}
+	for _, c := range build.CacheTo {
+		buildArgs = append(buildArgs, "--cache-to="+c)
+	}
 	return dest.ApplyT(func(d string) (string, error) {
+		if len(build.Platforms) > 1 {
+			return "", fmt.Errorf("%w (got %v)", errMultiPlatformUnsupported, build.Platforms)
+		}
 		steps := []buildStep{
 			{
 				Name: "gcr.io/cloud-builders/docker",
@@ -77,10 +96,7 @@ func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
 			},
 			{
 				Name: "gcr.io/cloud-builders/docker",
-				Args: []string{
-					"buildx", "build", "--platform", "linux/amd64",
-					"-t", d, "--load", ".",
-				},
+				Args: append(buildArgs, "-t", d, "--load", "."),
 			},
 		}
 		b, err := yaml.Marshal(steps)
@@ -190,6 +206,7 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 		h.Write([]byte(ctx))
 		h.Write([]byte(build.GetDockerfile()))
 		h.Write([]byte(build.GetTarget()))
+		h.Write([]byte(strings.Join(build.Platforms, ",")))
 		argBytes, err := json.Marshal(build.Args)
 		if err != nil {
 			return "", fmt.Errorf("marshaling build args: %w", err)
@@ -236,7 +253,7 @@ func buildServiceImage(
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	dest := pulumi.Sprintf("%s/%s:latest", infra.RepositoryURL, serviceName)
-	steps := generateBuildSteps(dest)
+	steps := generateBuildSteps(svc.Build, dest)
 	shmBytes := svc.Build.GetShmSizeBytes()
 
 	sourceURI, err := resolveSourceURI(ctx, serviceName, svc.Build, infra, opts...)

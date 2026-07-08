@@ -34,6 +34,27 @@
   "types": {
     "defang-aws:aws:SharedInfra": {
       "properties": {
+        "albDnsName": {
+          "type": "string"
+        },
+        "albSecurityGroupId": {
+          "type": "string"
+        },
+        "clusterArn": {
+          "type": "string"
+        },
+        "executionRoleArn": {
+          "type": "string"
+        },
+        "httpListenerArn": {
+          "type": "string"
+        },
+        "httpsListenerArn": {
+          "type": "string"
+        },
+        "logGroupName": {
+          "type": "string"
+        },
         "privateSgID": {
           "type": "string"
         },
@@ -69,11 +90,29 @@
             "type": "string"
           }
         },
+        "cacheFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cacheTo": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "context": {
           "type": "string"
         },
         "dockerfile": {
           "type": "string"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "shmSize": {
           "type": "string"
@@ -175,6 +214,9 @@
     },
     "defang-aws:compose:ServiceConfig": {
       "properties": {
+        "autoscaling": {
+          "type": "boolean"
+        },
         "build": {
           "$ref": "#/types/defang-aws:compose:BuildConfig"
         },
@@ -183,6 +225,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "containerName": {
+          "type": "string"
         },
         "dependsOn": {
           "type": "object",
@@ -240,6 +285,24 @@
         },
         "restart": {
           "type": "string"
+        },
+        "stopGracePeriod": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-aws:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workingDir": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -271,6 +334,9 @@
         "appProtocol": {
           "type": "string"
         },
+        "listener": {
+          "type": "string"
+        },
         "mode": {
           "type": "string"
         },
@@ -283,6 +349,24 @@
       },
       "type": "object",
       "required": [
+        "target"
+      ]
+    },
+    "defang-aws:compose:ServiceVolumeConfig": {
+      "properties": {
+        "readOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
         "target"
       ]
     },
@@ -490,14 +574,30 @@
     },
     "defang-aws:index:Service": {
       "properties": {
+        "clusterName": {
+          "type": "string"
+        },
         "endpoint": {
+          "type": "string"
+        },
+        "serviceName": {
+          "type": "string"
+        },
+        "taskRoleArn": {
           "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "serviceName",
+        "clusterName",
+        "taskRoleArn"
       ],
       "inputProperties": {
+        "autoscaling": {
+          "type": "boolean",
+          "plain": true
+        },
         "aws": {
           "$ref": "#/types/defang-aws:aws:SharedInfra"
         },
@@ -506,6 +606,16 @@
           "items": {
             "type": "string",
             "plain": true
+          }
+        },
+        "containerName": {
+          "type": "string",
+          "plain": true
+        },
+        "dependsOn": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-aws:compose:ServiceDependency"
           }
         },
         "deploy": {
@@ -547,6 +657,61 @@
           }
         },
         "projectName": {
+          "type": "string",
+          "plain": true
+        },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "securityGroupIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "sidecars": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-aws:compose:ServiceConfig"
+          }
+        },
+        "stopGracePeriod": {
+          "type": "string",
+          "plain": true
+        },
+        "taskRoleArn": {
+          "type": "string"
+        },
+        "triggers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-aws:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "waitForSteadyState": {
+          "type": "boolean",
+          "plain": true
+        },
+        "workingDir": {
           "type": "string",
           "plain": true
         }

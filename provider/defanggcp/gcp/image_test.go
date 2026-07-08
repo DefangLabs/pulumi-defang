@@ -237,7 +237,7 @@ func TestGenerateBuildSteps(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		out := generateBuildSteps(pulumi.String(dest).ToStringOutput())
+		out := generateBuildSteps(&compose.BuildConfig{Context: pulumi.String("./app")}, pulumi.String(dest).ToStringOutput())
 		out.ApplyT(func(stepsYAML string) string {
 			defer wg.Done()
 			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
@@ -261,6 +261,40 @@ func TestGenerateBuildSteps(t *testing.T) {
 	assert.Contains(t, steps[1].Args, "--load")
 	assert.NotContains(t, steps[1].Args, "--push")
 	assert.Contains(t, steps[1].Args, dest)
+	assert.Contains(t, steps[1].Args, "linux/amd64") // default platform
+}
+
+func TestGenerateBuildStepsPlatformAndCache(t *testing.T) {
+	const dest = "us-central1-docker.pkg.dev/my-project/my-repo/app:latest"
+	build := &compose.BuildConfig{
+		Context:   pulumi.String("./app"),
+		Platforms: []string{"linux/arm64"},
+		CacheFrom: []string{"type=registry,ref=my/app:cache"},
+		CacheTo:   []string{"type=registry,mode=max,ref=my/app:cache"},
+	}
+
+	var steps []buildStep
+	var unmarshalErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		out := generateBuildSteps(build, pulumi.String(dest).ToStringOutput())
+		out.ApplyT(func(stepsYAML string) string {
+			defer wg.Done()
+			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
+			return stepsYAML
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", testMocks{}))
+	require.NoError(t, err)
+	wg.Wait()
+	require.NoError(t, unmarshalErr)
+	require.Len(t, steps, 2)
+
+	assert.Contains(t, steps[1].Args, "linux/arm64")
+	assert.NotContains(t, steps[1].Args, "linux/amd64")
+	assert.Contains(t, steps[1].Args, "--cache-from=type=registry,ref=my/app:cache")
+	assert.Contains(t, steps[1].Args, "--cache-to=type=registry,mode=max,ref=my/app:cache")
 }
 
 func TestBuildSourceDigest(t *testing.T) {

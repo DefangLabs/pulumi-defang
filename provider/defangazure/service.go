@@ -17,6 +17,11 @@ type Service struct{}
 // ServiceInputs defines the inputs for a standalone Azure Container App.
 // Build-from-source is deliberately unsupported — images must be pre-built and supplied
 // via Image. Build orchestration belongs to the Project component.
+//
+// TODO(azure-parity): mirror the AWS/GCP compose-shape / sidecars / triggers /
+// taskRoleArn / secrets / securityGroupIds / waitForSteadyState / autoscaling
+// inputs added in feat/defang-on-defang-inputs. Deferred until there is a
+// concrete consumer — see CLAUDE.md § Compose-shape parity across providers.
 type ServiceInputs struct {
 	Image       string                      `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`

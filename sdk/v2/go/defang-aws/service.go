@@ -17,7 +17,10 @@ import (
 type Service struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	ClusterName pulumi.StringOutput `pulumi:"clusterName"`
+	Endpoint    pulumi.StringOutput `pulumi:"endpoint"`
+	ServiceName pulumi.StringOutput `pulumi:"serviceName"`
+	TaskRoleArn pulumi.StringOutput `pulumi:"taskRoleArn"`
 }
 
 // NewService registers a new resource with the given unique name, arguments, and options.
@@ -37,32 +40,58 @@ func NewService(ctx *pulumi.Context,
 }
 
 type serviceArgs struct {
-	Aws         *aws.SharedInfra            `pulumi:"aws"`
-	Command     []string                    `pulumi:"command"`
-	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
-	DomainName  *string                     `pulumi:"domainName"`
-	Entrypoint  []string                    `pulumi:"entrypoint"`
-	Environment map[string]string           `pulumi:"environment"`
-	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck"`
-	Image       string                      `pulumi:"image"`
-	Platform    *string                     `pulumi:"platform"`
-	Ports       []compose.ServicePortConfig `pulumi:"ports"`
-	ProjectName string                      `pulumi:"projectName"`
+	Autoscaling        *bool                                `pulumi:"autoscaling"`
+	Aws                *aws.SharedInfra                     `pulumi:"aws"`
+	Command            []string                             `pulumi:"command"`
+	ContainerName      *string                              `pulumi:"containerName"`
+	DependsOn          map[string]compose.ServiceDependency `pulumi:"dependsOn"`
+	Deploy             *compose.DeployConfig                `pulumi:"deploy"`
+	DomainName         *string                              `pulumi:"domainName"`
+	Entrypoint         []string                             `pulumi:"entrypoint"`
+	Environment        map[string]string                    `pulumi:"environment"`
+	HealthCheck        *compose.HealthCheckConfig           `pulumi:"healthCheck"`
+	Image              string                               `pulumi:"image"`
+	Platform           *string                              `pulumi:"platform"`
+	Ports              []compose.ServicePortConfig          `pulumi:"ports"`
+	ProjectName        string                               `pulumi:"projectName"`
+	Secrets            map[string]string                    `pulumi:"secrets"`
+	SecurityGroupIds   []string                             `pulumi:"securityGroupIds"`
+	Sidecars           map[string]compose.ServiceConfig     `pulumi:"sidecars"`
+	StopGracePeriod    *string                              `pulumi:"stopGracePeriod"`
+	TaskRoleArn        *string                              `pulumi:"taskRoleArn"`
+	Triggers           map[string]string                    `pulumi:"triggers"`
+	Volumes            []compose.ServiceVolumeConfig        `pulumi:"volumes"`
+	VolumesFrom        []string                             `pulumi:"volumesFrom"`
+	WaitForSteadyState *bool                                `pulumi:"waitForSteadyState"`
+	WorkingDir         *string                              `pulumi:"workingDir"`
 }
 
 // The set of arguments for constructing a Service resource.
 type ServiceArgs struct {
-	Aws         aws.SharedInfraPtrInput
-	Command     pulumi.StringArrayInput
-	Deploy      compose.DeployConfigPtrInput
-	DomainName  *string
-	Entrypoint  pulumi.StringArrayInput
-	Environment pulumi.StringMapInput
-	HealthCheck compose.HealthCheckConfigPtrInput
-	Image       string
-	Platform    *string
-	Ports       compose.ServicePortConfigArrayInput
-	ProjectName string
+	Autoscaling        *bool
+	Aws                aws.SharedInfraPtrInput
+	Command            pulumi.StringArrayInput
+	ContainerName      *string
+	DependsOn          compose.ServiceDependencyMapInput
+	Deploy             compose.DeployConfigPtrInput
+	DomainName         *string
+	Entrypoint         pulumi.StringArrayInput
+	Environment        pulumi.StringMapInput
+	HealthCheck        compose.HealthCheckConfigPtrInput
+	Image              string
+	Platform           *string
+	Ports              compose.ServicePortConfigArrayInput
+	ProjectName        string
+	Secrets            pulumi.StringMapInput
+	SecurityGroupIds   pulumi.StringArrayInput
+	Sidecars           compose.ServiceConfigMapInput
+	StopGracePeriod    *string
+	TaskRoleArn        pulumi.StringPtrInput
+	Triggers           pulumi.StringMapInput
+	Volumes            compose.ServiceVolumeConfigArrayInput
+	VolumesFrom        pulumi.StringArrayInput
+	WaitForSteadyState *bool
+	WorkingDir         *string
 }
 
 func (ServiceArgs) ElementType() reflect.Type {
@@ -102,8 +131,20 @@ func (o ServiceOutput) ToServiceOutputWithContext(ctx context.Context) ServiceOu
 	return o
 }
 
+func (o ServiceOutput) ClusterName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.ClusterName }).(pulumi.StringOutput)
+}
+
 func (o ServiceOutput) Endpoint() pulumi.StringOutput {
 	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.Endpoint }).(pulumi.StringOutput)
+}
+
+func (o ServiceOutput) ServiceName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.ServiceName }).(pulumi.StringOutput)
+}
+
+func (o ServiceOutput) TaskRoleArn() pulumi.StringOutput {
+	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.TaskRoleArn }).(pulumi.StringOutput)
 }
 
 func init() {

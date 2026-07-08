@@ -84,7 +84,38 @@ type ServiceConfig struct {
 
 	LLM *LlmConfig `pulumi:"llm,optional" yaml:"x-defang-llm,omitempty"`
 
+	// Container name override (default: the service name)
+	ContainerName *string `pulumi:"containerName,optional" yaml:"container_name,omitempty"`
+
+	// Time to wait for the container to stop before killing it (Go duration, e.g. "120s")
+	StopGracePeriod *string `pulumi:"stopGracePeriod,optional" yaml:"stop_grace_period,omitempty"`
+
+	// Named volumes mounted into the container
+	Volumes []ServiceVolumeConfig `pulumi:"volumes,optional" yaml:"volumes,omitempty"`
+
+	// Mount all volumes from another service/container; entries are container
+	// names with an optional ":ro" or ":rw" suffix
+	VolumesFrom []string `pulumi:"volumesFrom,optional" yaml:"volumes_from,omitempty"`
+
+	// Working directory inside the container
+	WorkingDir *string `pulumi:"workingDir,optional" yaml:"working_dir,omitempty"`
+
+	// Enable autoscaling. Matches the x-defang-autoscaling extension.
+	Autoscaling bool `pulumi:"autoscaling,optional" yaml:"x-defang-autoscaling,omitempty"`
+
 	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
+}
+
+// ServiceVolumeConfig defines a named-volume mount (long syntax). Bind mounts
+// are not supported.
+type ServiceVolumeConfig struct {
+	// Volume name
+	Source string `pulumi:"source" yaml:"source"`
+
+	// Mount path inside the container
+	Target string `pulumi:"target" yaml:"target"`
+
+	ReadOnly bool `pulumi:"readOnly,optional" yaml:"read_only,omitempty"`
 }
 
 type LlmConfig struct{}
@@ -155,7 +186,19 @@ type ServicePortConfig struct {
 
 	// Application protocol: "http", "http2", "grpc" (default: "http")
 	AppProtocol PortAppProtocol `pulumi:"appProtocol,optional" yaml:"app_protocol,omitempty"`
+
+	// Force the load-balancer listener protocol: "http" or "https" (default:
+	// derived from the port). Matches the x-defang-listener extension.
+	Listener PortListenerProtocol `pulumi:"listener,optional" yaml:"x-defang-listener,omitempty"`
 }
+
+type PortListenerProtocol string
+
+const (
+	PortListenerDefault PortListenerProtocol = ""
+	PortListenerHTTP    PortListenerProtocol = "http"
+	PortListenerHTTPS   PortListenerProtocol = "https"
+)
 
 // DeployConfig defines deployment parameters.
 // YAML tags match Docker Compose deploy spec.
@@ -204,6 +247,17 @@ type BuildConfig struct {
 
 	// Multi-stage build target
 	Target *string `pulumi:"target,optional" yaml:"target,omitempty"`
+
+	// Target platforms for multi-platform builds, e.g. ["linux/amd64", "linux/arm64"]
+	Platforms []string `pulumi:"platforms,optional" yaml:"platforms,omitempty"`
+
+	// External cache sources, passed through to `docker buildx build --cache-from`
+	// (e.g. "type=registry,ref=user/app:cache")
+	CacheFrom []string `pulumi:"cacheFrom,optional" yaml:"cache_from,omitempty"`
+
+	// External cache destinations, passed through to `docker buildx build --cache-to`
+	// (e.g. "type=registry,mode=max,ref=user/app:cache")
+	CacheTo []string `pulumi:"cacheTo,optional" yaml:"cache_to,omitempty"`
 }
 
 // UnmarshalYAML allows BuildConfig to be parsed from YAML, converting the
@@ -216,6 +270,9 @@ func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
 		Args       map[string]string `yaml:"args,omitempty"`
 		ShmSize    *string           `yaml:"shm_size,omitempty"`
 		Target     *string           `yaml:"target,omitempty"`
+		Platforms  []string          `yaml:"platforms,omitempty"`
+		CacheFrom  []string          `yaml:"cache_from,omitempty"`
+		CacheTo    []string          `yaml:"cache_to,omitempty"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -225,6 +282,9 @@ func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
 	b.Args = raw.Args
 	b.ShmSize = raw.ShmSize
 	b.Target = raw.Target
+	b.Platforms = raw.Platforms
+	b.CacheFrom = raw.CacheFrom
+	b.CacheTo = raw.CacheTo
 	return nil
 }
 
@@ -419,6 +479,22 @@ func (s ServiceConfig) GetMemoryMiB() int {
 		return ParseMemoryMiB(*s.Deploy.Resources.Reservations.Memory)
 	}
 	return 512
+}
+
+// GetContainerName returns the container name, defaulting to fallback (the service name).
+func (s ServiceConfig) GetContainerName(fallback string) string {
+	if s.ContainerName != nil && *s.ContainerName != "" {
+		return *s.ContainerName
+	}
+	return fallback
+}
+
+// GetStopGracePeriodSeconds returns the stop grace period in seconds, or 0 if unset.
+func (s ServiceConfig) GetStopGracePeriodSeconds() int {
+	if s.StopGracePeriod == nil {
+		return 0
+	}
+	return int(parseDurationSeconds(*s.StopGracePeriod))
 }
 
 // NeedsBuild returns true if the service has a build config.

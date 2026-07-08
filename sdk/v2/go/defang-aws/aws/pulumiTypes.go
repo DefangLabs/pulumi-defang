@@ -14,11 +14,18 @@ import (
 var _ = internal.GetEnvOrDefault
 
 type SharedInfra struct {
-	PrivateSgID      *string  `pulumi:"privateSgID"`
-	PrivateSubnetIDs []string `pulumi:"privateSubnetIDs"`
-	PrivateZoneID    *string  `pulumi:"privateZoneID"`
-	PublicSubnetIDs  []string `pulumi:"publicSubnetIDs"`
-	VpcID            string   `pulumi:"vpcID"`
+	AlbDnsName         *string  `pulumi:"albDnsName"`
+	AlbSecurityGroupId *string  `pulumi:"albSecurityGroupId"`
+	ClusterArn         *string  `pulumi:"clusterArn"`
+	ExecutionRoleArn   *string  `pulumi:"executionRoleArn"`
+	HttpListenerArn    *string  `pulumi:"httpListenerArn"`
+	HttpsListenerArn   *string  `pulumi:"httpsListenerArn"`
+	LogGroupName       *string  `pulumi:"logGroupName"`
+	PrivateSgID        *string  `pulumi:"privateSgID"`
+	PrivateSubnetIDs   []string `pulumi:"privateSubnetIDs"`
+	PrivateZoneID      *string  `pulumi:"privateZoneID"`
+	PublicSubnetIDs    []string `pulumi:"publicSubnetIDs"`
+	VpcID              string   `pulumi:"vpcID"`
 }
 
 // SharedInfraInput is an input type that accepts SharedInfraArgs and SharedInfraOutput values.
@@ -33,11 +40,18 @@ type SharedInfraInput interface {
 }
 
 type SharedInfraArgs struct {
-	PrivateSgID      pulumi.StringPtrInput   `pulumi:"privateSgID"`
-	PrivateSubnetIDs pulumi.StringArrayInput `pulumi:"privateSubnetIDs"`
-	PrivateZoneID    pulumi.StringPtrInput   `pulumi:"privateZoneID"`
-	PublicSubnetIDs  pulumi.StringArrayInput `pulumi:"publicSubnetIDs"`
-	VpcID            pulumi.StringInput      `pulumi:"vpcID"`
+	AlbDnsName         pulumi.StringPtrInput   `pulumi:"albDnsName"`
+	AlbSecurityGroupId pulumi.StringPtrInput   `pulumi:"albSecurityGroupId"`
+	ClusterArn         pulumi.StringPtrInput   `pulumi:"clusterArn"`
+	ExecutionRoleArn   pulumi.StringPtrInput   `pulumi:"executionRoleArn"`
+	HttpListenerArn    pulumi.StringPtrInput   `pulumi:"httpListenerArn"`
+	HttpsListenerArn   pulumi.StringPtrInput   `pulumi:"httpsListenerArn"`
+	LogGroupName       pulumi.StringPtrInput   `pulumi:"logGroupName"`
+	PrivateSgID        pulumi.StringPtrInput   `pulumi:"privateSgID"`
+	PrivateSubnetIDs   pulumi.StringArrayInput `pulumi:"privateSubnetIDs"`
+	PrivateZoneID      pulumi.StringPtrInput   `pulumi:"privateZoneID"`
+	PublicSubnetIDs    pulumi.StringArrayInput `pulumi:"publicSubnetIDs"`
+	VpcID              pulumi.StringInput      `pulumi:"vpcID"`
 }
 
 func (SharedInfraArgs) ElementType() reflect.Type {
@@ -117,6 +131,34 @@ func (o SharedInfraOutput) ToSharedInfraPtrOutputWithContext(ctx context.Context
 	}).(SharedInfraPtrOutput)
 }
 
+func (o SharedInfraOutput) AlbDnsName() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.AlbDnsName }).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraOutput) AlbSecurityGroupId() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.AlbSecurityGroupId }).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraOutput) ClusterArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.ClusterArn }).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraOutput) ExecutionRoleArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.ExecutionRoleArn }).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraOutput) HttpListenerArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.HttpListenerArn }).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraOutput) HttpsListenerArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.HttpsListenerArn }).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraOutput) LogGroupName() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.LogGroupName }).(pulumi.StringPtrOutput)
+}
+
 func (o SharedInfraOutput) PrivateSgID() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v SharedInfra) *string { return v.PrivateSgID }).(pulumi.StringPtrOutput)
 }
@@ -159,6 +201,69 @@ func (o SharedInfraPtrOutput) Elem() SharedInfraOutput {
 		var ret SharedInfra
 		return ret
 	}).(SharedInfraOutput)
+}
+
+func (o SharedInfraPtrOutput) AlbDnsName() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.AlbDnsName
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraPtrOutput) AlbSecurityGroupId() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.AlbSecurityGroupId
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraPtrOutput) ClusterArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.ClusterArn
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraPtrOutput) ExecutionRoleArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.ExecutionRoleArn
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraPtrOutput) HttpListenerArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.HttpListenerArn
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraPtrOutput) HttpsListenerArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.HttpsListenerArn
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o SharedInfraPtrOutput) LogGroupName() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.LogGroupName
+	}).(pulumi.StringPtrOutput)
 }
 
 func (o SharedInfraPtrOutput) PrivateSgID() pulumi.StringPtrOutput {

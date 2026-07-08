@@ -119,7 +119,7 @@ func createTgLrPair(
 	ctx *pulumi.Context,
 	serviceName string,
 	vpcId pulumi.StringInput,
-	listener *lb.Listener,
+	listenerArn pulumi.StringInput,
 	port compose.ServicePortConfig,
 	healthCheck *compose.HealthCheckConfig,
 	endpoints []string,
@@ -136,7 +136,7 @@ func createTgLrPair(
 		return nil, nil, nil // skip
 	}
 
-	tgName := targetGroupName(serviceName, int(port.Target), appProto)
+	tgName := targetGroupName(serviceName, int(port.Target), appProto, port.Listener)
 
 	// Target group health check (matches TS createTargetGroup in lb.ts)
 	defaultInterval := HealthCheckInterval.Get(ctx)
@@ -246,7 +246,7 @@ func createTgLrPair(
 	}
 
 	lr, lrErr := lb.NewListenerRule(ctx, tgName+"-rule", &lb.ListenerRuleArgs{
-		ListenerArn: listener.Arn,
+		ListenerArn: listenerArn,
 		Actions: lb.ListenerRuleActionArray{
 			&lb.ListenerRuleActionArgs{
 				Type:           pulumi.String("forward"),

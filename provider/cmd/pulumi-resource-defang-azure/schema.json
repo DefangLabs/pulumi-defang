@@ -39,11 +39,29 @@
             "type": "string"
           }
         },
+        "cacheFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cacheTo": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "context": {
           "type": "string"
         },
         "dockerfile": {
           "type": "string"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "shmSize": {
           "type": "string"
@@ -145,6 +163,9 @@
     },
     "defang-azure:compose:ServiceConfig": {
       "properties": {
+        "autoscaling": {
+          "type": "boolean"
+        },
         "build": {
           "$ref": "#/types/defang-azure:compose:BuildConfig"
         },
@@ -153,6 +174,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "containerName": {
+          "type": "string"
         },
         "dependsOn": {
           "type": "object",
@@ -210,6 +234,24 @@
         },
         "restart": {
           "type": "string"
+        },
+        "stopGracePeriod": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-azure:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workingDir": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -241,6 +283,9 @@
         "appProtocol": {
           "type": "string"
         },
+        "listener": {
+          "type": "string"
+        },
         "mode": {
           "type": "string"
         },
@@ -253,6 +298,24 @@
       },
       "type": "object",
       "required": [
+        "target"
+      ]
+    },
+    "defang-azure:compose:ServiceVolumeConfig": {
+      "properties": {
+        "readOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
         "target"
       ]
     }

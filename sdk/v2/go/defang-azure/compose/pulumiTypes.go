@@ -15,8 +15,11 @@ var _ = internal.GetEnvOrDefault
 
 type BuildConfig struct {
 	Args       map[string]string `pulumi:"args"`
+	CacheFrom  []string          `pulumi:"cacheFrom"`
+	CacheTo    []string          `pulumi:"cacheTo"`
 	Context    string            `pulumi:"context"`
 	Dockerfile *string           `pulumi:"dockerfile"`
+	Platforms  []string          `pulumi:"platforms"`
 	ShmSize    *string           `pulumi:"shmSize"`
 	Target     *string           `pulumi:"target"`
 }
@@ -33,11 +36,14 @@ type BuildConfigInput interface {
 }
 
 type BuildConfigArgs struct {
-	Args       pulumi.StringMapInput `pulumi:"args"`
-	Context    pulumi.StringInput    `pulumi:"context"`
-	Dockerfile pulumi.StringPtrInput `pulumi:"dockerfile"`
-	ShmSize    pulumi.StringPtrInput `pulumi:"shmSize"`
-	Target     pulumi.StringPtrInput `pulumi:"target"`
+	Args       pulumi.StringMapInput   `pulumi:"args"`
+	CacheFrom  pulumi.StringArrayInput `pulumi:"cacheFrom"`
+	CacheTo    pulumi.StringArrayInput `pulumi:"cacheTo"`
+	Context    pulumi.StringInput      `pulumi:"context"`
+	Dockerfile pulumi.StringPtrInput   `pulumi:"dockerfile"`
+	Platforms  pulumi.StringArrayInput `pulumi:"platforms"`
+	ShmSize    pulumi.StringPtrInput   `pulumi:"shmSize"`
+	Target     pulumi.StringPtrInput   `pulumi:"target"`
 }
 
 func (BuildConfigArgs) ElementType() reflect.Type {
@@ -121,12 +127,24 @@ func (o BuildConfigOutput) Args() pulumi.StringMapOutput {
 	return o.ApplyT(func(v BuildConfig) map[string]string { return v.Args }).(pulumi.StringMapOutput)
 }
 
+func (o BuildConfigOutput) CacheFrom() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v BuildConfig) []string { return v.CacheFrom }).(pulumi.StringArrayOutput)
+}
+
+func (o BuildConfigOutput) CacheTo() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v BuildConfig) []string { return v.CacheTo }).(pulumi.StringArrayOutput)
+}
+
 func (o BuildConfigOutput) Context() pulumi.StringOutput {
 	return o.ApplyT(func(v BuildConfig) string { return v.Context }).(pulumi.StringOutput)
 }
 
 func (o BuildConfigOutput) Dockerfile() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v BuildConfig) *string { return v.Dockerfile }).(pulumi.StringPtrOutput)
+}
+
+func (o BuildConfigOutput) Platforms() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v BuildConfig) []string { return v.Platforms }).(pulumi.StringArrayOutput)
 }
 
 func (o BuildConfigOutput) ShmSize() pulumi.StringPtrOutput {
@@ -170,6 +188,24 @@ func (o BuildConfigPtrOutput) Args() pulumi.StringMapOutput {
 	}).(pulumi.StringMapOutput)
 }
 
+func (o BuildConfigPtrOutput) CacheFrom() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *BuildConfig) []string {
+		if v == nil {
+			return nil
+		}
+		return v.CacheFrom
+	}).(pulumi.StringArrayOutput)
+}
+
+func (o BuildConfigPtrOutput) CacheTo() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *BuildConfig) []string {
+		if v == nil {
+			return nil
+		}
+		return v.CacheTo
+	}).(pulumi.StringArrayOutput)
+}
+
 func (o BuildConfigPtrOutput) Context() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *BuildConfig) *string {
 		if v == nil {
@@ -186,6 +222,15 @@ func (o BuildConfigPtrOutput) Dockerfile() pulumi.StringPtrOutput {
 		}
 		return v.Dockerfile
 	}).(pulumi.StringPtrOutput)
+}
+
+func (o BuildConfigPtrOutput) Platforms() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *BuildConfig) []string {
+		if v == nil {
+			return nil
+		}
+		return v.Platforms
+	}).(pulumi.StringArrayOutput)
 }
 
 func (o BuildConfigPtrOutput) ShmSize() pulumi.StringPtrOutput {
@@ -1337,22 +1382,28 @@ func (o ResourcesPtrOutput) Reservations() ResourceConfigPtrOutput {
 }
 
 type ServiceConfig struct {
-	Build       *BuildConfig                    `pulumi:"build"`
-	Command     []string                        `pulumi:"command"`
-	DependsOn   map[string]ServiceDependency    `pulumi:"dependsOn"`
-	Deploy      *DeployConfig                   `pulumi:"deploy"`
-	DomainName  *string                         `pulumi:"domainName"`
-	Entrypoint  []string                        `pulumi:"entrypoint"`
-	Environment map[string]string               `pulumi:"environment"`
-	HealthCheck *HealthCheckConfig              `pulumi:"healthCheck"`
-	Image       *string                         `pulumi:"image"`
-	Llm         *LlmConfig                      `pulumi:"llm"`
-	Networks    map[string]ServiceNetworkConfig `pulumi:"networks"`
-	Platform    *string                         `pulumi:"platform"`
-	Ports       []ServicePortConfig             `pulumi:"ports"`
-	Postgres    *PostgresConfig                 `pulumi:"postgres"`
-	Redis       *RedisConfig                    `pulumi:"redis"`
-	Restart     *string                         `pulumi:"restart"`
+	Autoscaling     *bool                           `pulumi:"autoscaling"`
+	Build           *BuildConfig                    `pulumi:"build"`
+	Command         []string                        `pulumi:"command"`
+	ContainerName   *string                         `pulumi:"containerName"`
+	DependsOn       map[string]ServiceDependency    `pulumi:"dependsOn"`
+	Deploy          *DeployConfig                   `pulumi:"deploy"`
+	DomainName      *string                         `pulumi:"domainName"`
+	Entrypoint      []string                        `pulumi:"entrypoint"`
+	Environment     map[string]string               `pulumi:"environment"`
+	HealthCheck     *HealthCheckConfig              `pulumi:"healthCheck"`
+	Image           *string                         `pulumi:"image"`
+	Llm             *LlmConfig                      `pulumi:"llm"`
+	Networks        map[string]ServiceNetworkConfig `pulumi:"networks"`
+	Platform        *string                         `pulumi:"platform"`
+	Ports           []ServicePortConfig             `pulumi:"ports"`
+	Postgres        *PostgresConfig                 `pulumi:"postgres"`
+	Redis           *RedisConfig                    `pulumi:"redis"`
+	Restart         *string                         `pulumi:"restart"`
+	StopGracePeriod *string                         `pulumi:"stopGracePeriod"`
+	Volumes         []ServiceVolumeConfig           `pulumi:"volumes"`
+	VolumesFrom     []string                        `pulumi:"volumesFrom"`
+	WorkingDir      *string                         `pulumi:"workingDir"`
 }
 
 // ServiceConfigInput is an input type that accepts ServiceConfigArgs and ServiceConfigOutput values.
@@ -1367,22 +1418,28 @@ type ServiceConfigInput interface {
 }
 
 type ServiceConfigArgs struct {
-	Build       BuildConfigPtrInput          `pulumi:"build"`
-	Command     pulumi.StringArrayInput      `pulumi:"command"`
-	DependsOn   ServiceDependencyMapInput    `pulumi:"dependsOn"`
-	Deploy      DeployConfigPtrInput         `pulumi:"deploy"`
-	DomainName  pulumi.StringPtrInput        `pulumi:"domainName"`
-	Entrypoint  pulumi.StringArrayInput      `pulumi:"entrypoint"`
-	Environment pulumi.StringMapInput        `pulumi:"environment"`
-	HealthCheck HealthCheckConfigPtrInput    `pulumi:"healthCheck"`
-	Image       pulumi.StringPtrInput        `pulumi:"image"`
-	Llm         LlmConfigPtrInput            `pulumi:"llm"`
-	Networks    ServiceNetworkConfigMapInput `pulumi:"networks"`
-	Platform    pulumi.StringPtrInput        `pulumi:"platform"`
-	Ports       ServicePortConfigArrayInput  `pulumi:"ports"`
-	Postgres    PostgresConfigPtrInput       `pulumi:"postgres"`
-	Redis       RedisConfigPtrInput          `pulumi:"redis"`
-	Restart     pulumi.StringPtrInput        `pulumi:"restart"`
+	Autoscaling     pulumi.BoolPtrInput           `pulumi:"autoscaling"`
+	Build           BuildConfigPtrInput           `pulumi:"build"`
+	Command         pulumi.StringArrayInput       `pulumi:"command"`
+	ContainerName   pulumi.StringPtrInput         `pulumi:"containerName"`
+	DependsOn       ServiceDependencyMapInput     `pulumi:"dependsOn"`
+	Deploy          DeployConfigPtrInput          `pulumi:"deploy"`
+	DomainName      pulumi.StringPtrInput         `pulumi:"domainName"`
+	Entrypoint      pulumi.StringArrayInput       `pulumi:"entrypoint"`
+	Environment     pulumi.StringMapInput         `pulumi:"environment"`
+	HealthCheck     HealthCheckConfigPtrInput     `pulumi:"healthCheck"`
+	Image           pulumi.StringPtrInput         `pulumi:"image"`
+	Llm             LlmConfigPtrInput             `pulumi:"llm"`
+	Networks        ServiceNetworkConfigMapInput  `pulumi:"networks"`
+	Platform        pulumi.StringPtrInput         `pulumi:"platform"`
+	Ports           ServicePortConfigArrayInput   `pulumi:"ports"`
+	Postgres        PostgresConfigPtrInput        `pulumi:"postgres"`
+	Redis           RedisConfigPtrInput           `pulumi:"redis"`
+	Restart         pulumi.StringPtrInput         `pulumi:"restart"`
+	StopGracePeriod pulumi.StringPtrInput         `pulumi:"stopGracePeriod"`
+	Volumes         ServiceVolumeConfigArrayInput `pulumi:"volumes"`
+	VolumesFrom     pulumi.StringArrayInput       `pulumi:"volumesFrom"`
+	WorkingDir      pulumi.StringPtrInput         `pulumi:"workingDir"`
 }
 
 func (ServiceConfigArgs) ElementType() reflect.Type {
@@ -1436,12 +1493,20 @@ func (o ServiceConfigOutput) ToServiceConfigOutputWithContext(ctx context.Contex
 	return o
 }
 
+func (o ServiceConfigOutput) Autoscaling() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v ServiceConfig) *bool { return v.Autoscaling }).(pulumi.BoolPtrOutput)
+}
+
 func (o ServiceConfigOutput) Build() BuildConfigPtrOutput {
 	return o.ApplyT(func(v ServiceConfig) *BuildConfig { return v.Build }).(BuildConfigPtrOutput)
 }
 
 func (o ServiceConfigOutput) Command() pulumi.StringArrayOutput {
 	return o.ApplyT(func(v ServiceConfig) []string { return v.Command }).(pulumi.StringArrayOutput)
+}
+
+func (o ServiceConfigOutput) ContainerName() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServiceConfig) *string { return v.ContainerName }).(pulumi.StringPtrOutput)
 }
 
 func (o ServiceConfigOutput) DependsOn() ServiceDependencyMapOutput {
@@ -1498,6 +1563,22 @@ func (o ServiceConfigOutput) Redis() RedisConfigPtrOutput {
 
 func (o ServiceConfigOutput) Restart() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v ServiceConfig) *string { return v.Restart }).(pulumi.StringPtrOutput)
+}
+
+func (o ServiceConfigOutput) StopGracePeriod() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServiceConfig) *string { return v.StopGracePeriod }).(pulumi.StringPtrOutput)
+}
+
+func (o ServiceConfigOutput) Volumes() ServiceVolumeConfigArrayOutput {
+	return o.ApplyT(func(v ServiceConfig) []ServiceVolumeConfig { return v.Volumes }).(ServiceVolumeConfigArrayOutput)
+}
+
+func (o ServiceConfigOutput) VolumesFrom() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v ServiceConfig) []string { return v.VolumesFrom }).(pulumi.StringArrayOutput)
+}
+
+func (o ServiceConfigOutput) WorkingDir() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServiceConfig) *string { return v.WorkingDir }).(pulumi.StringPtrOutput)
 }
 
 type ServiceConfigMapOutput struct{ *pulumi.OutputState }
@@ -1716,6 +1797,7 @@ func (o ServiceNetworkConfigMapOutput) MapIndex(k pulumi.StringInput) ServiceNet
 
 type ServicePortConfig struct {
 	AppProtocol *string `pulumi:"appProtocol"`
+	Listener    *string `pulumi:"listener"`
 	Mode        *string `pulumi:"mode"`
 	Protocol    *string `pulumi:"protocol"`
 	Target      int     `pulumi:"target"`
@@ -1734,6 +1816,7 @@ type ServicePortConfigInput interface {
 
 type ServicePortConfigArgs struct {
 	AppProtocol pulumi.StringPtrInput `pulumi:"appProtocol"`
+	Listener    pulumi.StringPtrInput `pulumi:"listener"`
 	Mode        pulumi.StringPtrInput `pulumi:"mode"`
 	Protocol    pulumi.StringPtrInput `pulumi:"protocol"`
 	Target      pulumi.IntInput       `pulumi:"target"`
@@ -1794,6 +1877,10 @@ func (o ServicePortConfigOutput) AppProtocol() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v ServicePortConfig) *string { return v.AppProtocol }).(pulumi.StringPtrOutput)
 }
 
+func (o ServicePortConfigOutput) Listener() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServicePortConfig) *string { return v.Listener }).(pulumi.StringPtrOutput)
+}
+
 func (o ServicePortConfigOutput) Mode() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v ServicePortConfig) *string { return v.Mode }).(pulumi.StringPtrOutput)
 }
@@ -1826,6 +1913,112 @@ func (o ServicePortConfigArrayOutput) Index(i pulumi.IntInput) ServicePortConfig
 	}).(ServicePortConfigOutput)
 }
 
+type ServiceVolumeConfig struct {
+	ReadOnly *bool  `pulumi:"readOnly"`
+	Source   string `pulumi:"source"`
+	Target   string `pulumi:"target"`
+}
+
+// ServiceVolumeConfigInput is an input type that accepts ServiceVolumeConfigArgs and ServiceVolumeConfigOutput values.
+// You can construct a concrete instance of `ServiceVolumeConfigInput` via:
+//
+//	ServiceVolumeConfigArgs{...}
+type ServiceVolumeConfigInput interface {
+	pulumi.Input
+
+	ToServiceVolumeConfigOutput() ServiceVolumeConfigOutput
+	ToServiceVolumeConfigOutputWithContext(context.Context) ServiceVolumeConfigOutput
+}
+
+type ServiceVolumeConfigArgs struct {
+	ReadOnly pulumi.BoolPtrInput `pulumi:"readOnly"`
+	Source   pulumi.StringInput  `pulumi:"source"`
+	Target   pulumi.StringInput  `pulumi:"target"`
+}
+
+func (ServiceVolumeConfigArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*ServiceVolumeConfig)(nil)).Elem()
+}
+
+func (i ServiceVolumeConfigArgs) ToServiceVolumeConfigOutput() ServiceVolumeConfigOutput {
+	return i.ToServiceVolumeConfigOutputWithContext(context.Background())
+}
+
+func (i ServiceVolumeConfigArgs) ToServiceVolumeConfigOutputWithContext(ctx context.Context) ServiceVolumeConfigOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ServiceVolumeConfigOutput)
+}
+
+// ServiceVolumeConfigArrayInput is an input type that accepts ServiceVolumeConfigArray and ServiceVolumeConfigArrayOutput values.
+// You can construct a concrete instance of `ServiceVolumeConfigArrayInput` via:
+//
+//	ServiceVolumeConfigArray{ ServiceVolumeConfigArgs{...} }
+type ServiceVolumeConfigArrayInput interface {
+	pulumi.Input
+
+	ToServiceVolumeConfigArrayOutput() ServiceVolumeConfigArrayOutput
+	ToServiceVolumeConfigArrayOutputWithContext(context.Context) ServiceVolumeConfigArrayOutput
+}
+
+type ServiceVolumeConfigArray []ServiceVolumeConfigInput
+
+func (ServiceVolumeConfigArray) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]ServiceVolumeConfig)(nil)).Elem()
+}
+
+func (i ServiceVolumeConfigArray) ToServiceVolumeConfigArrayOutput() ServiceVolumeConfigArrayOutput {
+	return i.ToServiceVolumeConfigArrayOutputWithContext(context.Background())
+}
+
+func (i ServiceVolumeConfigArray) ToServiceVolumeConfigArrayOutputWithContext(ctx context.Context) ServiceVolumeConfigArrayOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ServiceVolumeConfigArrayOutput)
+}
+
+type ServiceVolumeConfigOutput struct{ *pulumi.OutputState }
+
+func (ServiceVolumeConfigOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*ServiceVolumeConfig)(nil)).Elem()
+}
+
+func (o ServiceVolumeConfigOutput) ToServiceVolumeConfigOutput() ServiceVolumeConfigOutput {
+	return o
+}
+
+func (o ServiceVolumeConfigOutput) ToServiceVolumeConfigOutputWithContext(ctx context.Context) ServiceVolumeConfigOutput {
+	return o
+}
+
+func (o ServiceVolumeConfigOutput) ReadOnly() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v ServiceVolumeConfig) *bool { return v.ReadOnly }).(pulumi.BoolPtrOutput)
+}
+
+func (o ServiceVolumeConfigOutput) Source() pulumi.StringOutput {
+	return o.ApplyT(func(v ServiceVolumeConfig) string { return v.Source }).(pulumi.StringOutput)
+}
+
+func (o ServiceVolumeConfigOutput) Target() pulumi.StringOutput {
+	return o.ApplyT(func(v ServiceVolumeConfig) string { return v.Target }).(pulumi.StringOutput)
+}
+
+type ServiceVolumeConfigArrayOutput struct{ *pulumi.OutputState }
+
+func (ServiceVolumeConfigArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]ServiceVolumeConfig)(nil)).Elem()
+}
+
+func (o ServiceVolumeConfigArrayOutput) ToServiceVolumeConfigArrayOutput() ServiceVolumeConfigArrayOutput {
+	return o
+}
+
+func (o ServiceVolumeConfigArrayOutput) ToServiceVolumeConfigArrayOutputWithContext(ctx context.Context) ServiceVolumeConfigArrayOutput {
+	return o
+}
+
+func (o ServiceVolumeConfigArrayOutput) Index(i pulumi.IntInput) ServiceVolumeConfigOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) ServiceVolumeConfig {
+		return vs[0].([]ServiceVolumeConfig)[vs[1].(int)]
+	}).(ServiceVolumeConfigOutput)
+}
+
 func init() {
 	pulumi.RegisterInputType(reflect.TypeOf((*BuildConfigInput)(nil)).Elem(), BuildConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*BuildConfigPtrInput)(nil)).Elem(), BuildConfigArgs{})
@@ -1853,6 +2046,8 @@ func init() {
 	pulumi.RegisterInputType(reflect.TypeOf((*ServiceNetworkConfigMapInput)(nil)).Elem(), ServiceNetworkConfigMap{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServicePortConfigInput)(nil)).Elem(), ServicePortConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServicePortConfigArrayInput)(nil)).Elem(), ServicePortConfigArray{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ServiceVolumeConfigInput)(nil)).Elem(), ServiceVolumeConfigArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ServiceVolumeConfigArrayInput)(nil)).Elem(), ServiceVolumeConfigArray{})
 	pulumi.RegisterOutputType(BuildConfigOutput{})
 	pulumi.RegisterOutputType(BuildConfigPtrOutput{})
 	pulumi.RegisterOutputType(DeployConfigOutput{})
@@ -1879,4 +2074,6 @@ func init() {
 	pulumi.RegisterOutputType(ServiceNetworkConfigMapOutput{})
 	pulumi.RegisterOutputType(ServicePortConfigOutput{})
 	pulumi.RegisterOutputType(ServicePortConfigArrayOutput{})
+	pulumi.RegisterOutputType(ServiceVolumeConfigOutput{})
+	pulumi.RegisterOutputType(ServiceVolumeConfigArrayOutput{})
 }

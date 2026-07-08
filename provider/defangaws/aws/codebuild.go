@@ -76,14 +76,29 @@ func getBuildSpec(build compose.BuildConfig, destination string) (string, error)
 		targetArg = "--target " + target
 	}
 
+	// Matches TS prepareBuildSteps: --platform on both buildx create and buildx build,
+	// cache_from/cache_to passed through verbatim.
+	var platformArg string
+	if len(build.Platforms) > 0 {
+		platformArg = "--platform " + strings.Join(build.Platforms, ",")
+	}
+	cacheArgs := make([]string, 0, len(build.CacheFrom)+len(build.CacheTo))
+	for _, c := range build.CacheFrom {
+		cacheArgs = append(cacheArgs, "--cache-from="+c)
+	}
+	for _, c := range build.CacheTo {
+		cacheArgs = append(cacheArgs, "--cache-to="+c)
+	}
+
 	preBuildCommands := []string{
 		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com", //nolint:lll
 		"aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws",
-		"docker buildx create --use --driver=docker-container --use",
+		strings.TrimSpace("docker buildx create --use --driver=docker-container --use " + platformArg),
 	}
 
-	buildCmd := fmt.Sprintf("docker buildx build -t %s -f %s --push %s %s $CODEBUILD_SRC_DIR",
-		destination, dockerfile, buildArgsStr, targetArg)
+	buildCmd := fmt.Sprintf("docker buildx build %s %s -t %s -f %s --push %s %s $CODEBUILD_SRC_DIR",
+		platformArg, strings.Join(cacheArgs, " "), destination, dockerfile, buildArgsStr, targetArg)
+	buildCmd = strings.Join(strings.Fields(buildCmd), " ") // collapse empty args
 
 	spec := map[string]interface{}{
 		"version": 0.2,
@@ -120,7 +135,16 @@ func createCodeBuildProject(
 	region string,
 	opts ...pulumi.ResourceOption,
 ) (*codeBuildResult, error) {
+	// build.platforms takes precedence over the service platform. Matches TS:
+	// ARM_CONTAINER only when building for exactly one platform and it's arm64
+	// (multi-platform builds emulate via buildx, so run on the x86 fleet).
 	arch := platformToArch(platform)
+	if len(build.Platforms) > 0 {
+		arch = X86_64
+		if len(build.Platforms) == 1 {
+			arch = platformToArch(build.Platforms[0])
+		}
+	}
 
 	envType := "LINUX_CONTAINER"
 	if arch == Arm64 {

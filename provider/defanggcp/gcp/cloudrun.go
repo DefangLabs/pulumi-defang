@@ -7,7 +7,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -39,7 +38,7 @@ func CreateCloudRunService(
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
-	sa *serviceaccount.Account,
+	sa *ServiceIdentity,
 	gcpConfig *SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*CloudRunResult, error) {
@@ -48,14 +47,12 @@ func CreateCloudRunService(
 	// Grant the service account access to each referenced secret
 	iamDeps := make([]pulumi.Resource, 0, len(secretIds))
 	for _, sid := range secretIds {
+		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
 		member, err := secretmanager.NewSecretIamMember(ctx, serviceName+"-secret-"+sid, &secretmanager.SecretIamMemberArgs{
 			SecretId: pulumi.String(sid),
 			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
 			Member:   pulumi.Sprintf("serviceAccount:%v", sa.Email),
-		}, parentOpt,
-			pulumi.DeletedWith(sa),
-			pulumi.DeleteBeforeReplace(true),
-		)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("granting secret access for %s: %w", sid, err)
 		}
@@ -159,7 +156,7 @@ func buildTemplate(
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
-	sa *serviceaccount.Account,
+	sa *ServiceIdentity,
 	gcpConfig *SharedInfra,
 	opts ...pulumi.InvokeOption,
 ) (*cloudrunv2.ServiceTemplateArgs, []string) {
@@ -236,7 +233,7 @@ func buildTemplate(
 			},
 		},
 		MaxInstanceRequestConcurrency: pulumi.Int(80),
-		ServiceAccount:                sa.Email,
+		ServiceAccount:                sa.Email.ToStringOutput(),
 		Scaling: &cloudrunv2.ServiceTemplateScalingArgs{
 			MaxInstanceCount: pulumi.Int(maxInstances),
 		},

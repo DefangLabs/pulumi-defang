@@ -16,7 +16,8 @@ import (
 type Service struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	Endpoint            pulumi.StringOutput `pulumi:"endpoint"`
+	ServiceAccountEmail pulumi.StringOutput `pulumi:"serviceAccountEmail"`
 }
 
 // NewService registers a new resource with the given unique name, arguments, and options.
@@ -36,32 +37,50 @@ func NewService(ctx *pulumi.Context,
 }
 
 type serviceArgs struct {
-	Command     []string                    `pulumi:"command"`
-	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
-	DomainName  *string                     `pulumi:"domainName"`
-	Entrypoint  []string                    `pulumi:"entrypoint"`
-	Environment map[string]string           `pulumi:"environment"`
-	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck"`
-	Image       string                      `pulumi:"image"`
-	Llm         *compose.LlmConfig          `pulumi:"llm"`
-	Platform    *string                     `pulumi:"platform"`
-	Ports       []compose.ServicePortConfig `pulumi:"ports"`
-	ProjectName string                      `pulumi:"projectName"`
+	Command             []string                             `pulumi:"command"`
+	ContainerName       *string                              `pulumi:"containerName"`
+	DependsOn           map[string]compose.ServiceDependency `pulumi:"dependsOn"`
+	Deploy              *compose.DeployConfig                `pulumi:"deploy"`
+	DomainName          *string                              `pulumi:"domainName"`
+	Entrypoint          []string                             `pulumi:"entrypoint"`
+	Environment         map[string]string                    `pulumi:"environment"`
+	HealthCheck         *compose.HealthCheckConfig           `pulumi:"healthCheck"`
+	Image               string                               `pulumi:"image"`
+	Llm                 *compose.LlmConfig                   `pulumi:"llm"`
+	Platform            *string                              `pulumi:"platform"`
+	Ports               []compose.ServicePortConfig          `pulumi:"ports"`
+	ProjectName         string                               `pulumi:"projectName"`
+	ServiceAccountEmail *string                              `pulumi:"serviceAccountEmail"`
+	Sidecars            map[string]compose.ServiceConfig     `pulumi:"sidecars"`
+	StopGracePeriod     *string                              `pulumi:"stopGracePeriod"`
+	Triggers            map[string]string                    `pulumi:"triggers"`
+	Volumes             []compose.ServiceVolumeConfig        `pulumi:"volumes"`
+	VolumesFrom         []string                             `pulumi:"volumesFrom"`
+	WorkingDir          *string                              `pulumi:"workingDir"`
 }
 
 // The set of arguments for constructing a Service resource.
 type ServiceArgs struct {
-	Command     pulumi.StringArrayInput
-	Deploy      compose.DeployConfigPtrInput
-	DomainName  *string
-	Entrypoint  pulumi.StringArrayInput
-	Environment pulumi.StringMapInput
-	HealthCheck compose.HealthCheckConfigPtrInput
-	Image       string
-	Llm         compose.LlmConfigPtrInput
-	Platform    *string
-	Ports       compose.ServicePortConfigArrayInput
-	ProjectName string
+	Command             pulumi.StringArrayInput
+	ContainerName       *string
+	DependsOn           compose.ServiceDependencyMapInput
+	Deploy              compose.DeployConfigPtrInput
+	DomainName          *string
+	Entrypoint          pulumi.StringArrayInput
+	Environment         pulumi.StringMapInput
+	HealthCheck         compose.HealthCheckConfigPtrInput
+	Image               string
+	Llm                 compose.LlmConfigPtrInput
+	Platform            *string
+	Ports               compose.ServicePortConfigArrayInput
+	ProjectName         string
+	ServiceAccountEmail pulumi.StringPtrInput
+	Sidecars            compose.ServiceConfigMapInput
+	StopGracePeriod     *string
+	Triggers            pulumi.StringMapInput
+	Volumes             compose.ServiceVolumeConfigArrayInput
+	VolumesFrom         pulumi.StringArrayInput
+	WorkingDir          *string
 }
 
 func (ServiceArgs) ElementType() reflect.Type {
@@ -103,6 +122,10 @@ func (o ServiceOutput) ToServiceOutputWithContext(ctx context.Context) ServiceOu
 
 func (o ServiceOutput) Endpoint() pulumi.StringOutput {
 	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.Endpoint }).(pulumi.StringOutput)
+}
+
+func (o ServiceOutput) ServiceAccountEmail() pulumi.StringOutput {
+	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.ServiceAccountEmail }).(pulumi.StringOutput)
 }
 
 func init() {

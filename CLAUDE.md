@@ -64,24 +64,36 @@ Each cloud (AWS/GCP/Azure) follows the same structure:
 - `provider/defang{aws,gcp,azure}/redis.go` — Redis-compatible managed cache component
 - `provider/defang{aws,gcp,azure}/{aws,gcp,azure}/` — cloud-specific resource creation
 
-Components: **Project** (orchestrator), **Service** (container), **Postgres** (managed DB), **Redis** (managed cache), **Build** (AWS only, resource not component).
+Components: **Project** (orchestrator), **Service** (container), **Postgres** (managed DB), **Redis** (managed cache), **Build** (Pulumi *resource*, not component — registered by all three providers: CodeBuild on AWS, Cloud Build on GCP, ACR Task on Azure).
 
 ### Component Scopes: Project vs. Standalone
 
 Each managed-resource component has **one implementation**, invoked two ways:
 
-- **Standalone** — user instantiates `Service` / `Postgres` / `Redis` directly via the generated SDK. The component's `Construct` method runs with no shared project infrastructure by default. For GCP it builds a minimal `GlobalConfig` (region + project only) via `NewStandaloneGlobalConfig`; for AWS a nil `SharedInfra` is used. Callers in Go code may pass a richer `Infra` (AWS: `*SharedInfra`, GCP: `*GlobalConfig`) — these fields carry resource pointers and are **not** part of the SDK schema.
+- **Standalone** — user instantiates `Service` / `Postgres` / `Redis` directly via the generated SDK. The component's `Construct` method runs with no shared project infrastructure by default. All three providers now use a type named `SharedInfra`; how the standalone path obtains one differs:
+    - **AWS**: passes a nil `*SharedInfra` to the worker.
+    - **GCP**: builds a minimal `*SharedInfra` via `NewStandaloneGlobalConfig(ctx)` (the function name predates the `GlobalConfig` → `SharedInfra` type rename and was kept for back-compat).
+    - **Azure**: standalone `Service` builds a minimal `*SharedInfra` (resource group + managed environment, no VNet / DNS / Log Analytics / Key Vault) via `newStandaloneInfra`. Standalone `Postgres` / `Redis` create their own resource group inline.
+
+  Callers in Go code may pass a richer `Infra` (`*SharedInfra` in all three providers) — these fields carry resource pointers and Pulumi Outputs and are **not** part of the SDK schema.
 - **Project-owned** — `Project.Construct` runs `buildProject` / `newService`, which provisions shared infra (VPC, NAT, Artifact Registry, ALB/LB, DNS zones), then dispatches each service by registering the typed `*Outputs` component and calling the same internal worker (`createPostgres` / `createRedis` / `createECSService` / `createService`). Each component must be registered under the exact type token defined by the `<Component>ComponentType` constant so the SDK schema matches the runtime registration.
 
-**Build is a Project-only concern.** `Service` standalone is image-only — `ServiceInputs` does not carry a `Build` field. Build-from-source requires project-scope `BuildInfra` (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS). Don't re-add `Build` to standalone Service inputs.
+**Build-from-source on a `Service` is a Project-only concern.** Although each provider registers a standalone `Build` *resource* (CodeBuild / Cloud Build / ACR Task), `ServiceInputs` deliberately does not carry a `Build` field on any provider: build-from-source wiring requires the project-scope build pipeline (ECR + CodeBuild on AWS, Artifact Registry + Cloud Build on GCP, ACR + ACR Task on Azure). Don't re-add `Build` to standalone Service inputs.
 
-**VPC-dependent features require infra** in GCP: Compute Engine (CE), VpcAccess on Cloud Run, and LLM bindings that cross VPC boundaries. Standalone Cloud Run skips `VpcAccess` when `infra.PublicIP == nil`; standalone routing forces Cloud Run regardless of port configuration since CE cannot run without a VPC.
+**VPC-dependent features require infra** in GCP: VpcAccess on Cloud Run, and LLM bindings that cross VPC boundaries. Standalone Cloud Run skips `VpcAccess` when `infra.PublicIP == nil`; standalone routing forces Cloud Run regardless of port configuration (legacy behavior, kept for schema stability) — *except* when the service uses CE-only features (sidecars, volumes, volumes_from), in which case a standalone Compute Engine MIG is created on the GCP **default network**. Sidecars/volumes on a single-ingress-port service (which must be Cloud Run) are an error.
 
-**Dependency handles on outputs.** Each managed `*Outputs` struct carries an internal, untagged handle used by the project dispatcher for ordering and load-balancer wiring:
-- AWS: `PostgresOutputs.Dependency`, `RedisOutputs.Dependency`, `ServiceOutputs.Dependency` — all `pulumi.Resource` (either the backing instance or a private-zone CNAME record).
+**Dependency handles on outputs.** AWS and GCP `*Outputs` structs carry an internal, untagged handle used by the project dispatcher for ordering and load-balancer wiring:
+- AWS: `PostgresOutputs.Dependency`, `RedisOutputs.Dependency`, `ServiceOutputs.Dependency` — all `pulumi.Resource` (either the backing instance or a private-zone CNAME record). AWS `PostgresOutputs` also exports `InstanceIdentifier` (the RDS `DBInstanceIdentifier`) as a *schema* field for downstream consumers.
 - GCP: `PostgresOutputs.Instance`, `RedisOutputs.Instance` (typed), `ServiceOutputs.LBEntry` (built inside the worker).
+- Azure: standalone `AzurePostgresOutputs` / `AzureRedisOutputs` / `ServiceOutputs` currently expose only `Endpoint` — no equivalent untagged dependency handle. Project-scope wiring on Azure flows through the shared `ManagedEnvironment` instead of per-component handles.
 
 Untagged fields are ignored by the Pulumi infer framework (`introspect.ParseTag` treats them as `Internal: true`), so they don't need `pulumi:"-"`.
+
+### Compose-shape parity across providers
+
+`compose.ServiceConfig` carries a growing set of compose-shaped fields — `containerName`, `workingDir`, `stopGracePeriod`, `volumes`, `volumesFrom`, `dependsOn`, `autoscaling`, per-port `listener` — plus the standalone-Service extras `sidecars`, `secrets`, `taskRoleArn` / `serviceAccountEmail`, `securityGroupIds`, `triggers`, `waitForSteadyState`. AWS `ServiceInputs` and GCP `ServiceInputs` expose these; the underlying workers (`CreateECSService`, `CreateComputeEngine`) implement them.
+
+**Azure is intentionally behind on parity.** `provider/defangazure/service.go` `ServiceInputs` does *not* expose these fields yet, and the Container Apps worker does not honor them. Rationale: no current Defang customer stack drives the Azure Service standalone path with these features, so the added surface area (multi-container Container App revisions, Managed Identity reuse, Container Apps native secret refs, etc.) is deferred until there is a concrete consumer. **TODO(azure-parity)** — when adding this, mirror the AWS/GCP inputs 1:1 for schema stability, and follow the same design as GCP for sidecars (a `sidecars: map[string]ServiceConfig` alongside the main container). Keep any implementation-gap surface behind explicit `unsupported on Azure` errors rather than silent no-ops.
 
 ### Pulumi inputs and outputs
 
