@@ -369,10 +369,31 @@
     },
     "defang-aws:index:AWSConfig": {
       "properties": {
+        "albCertificateArn": {
+          "type": "string"
+        },
+        "dnsRoleArn": {
+          "type": "string"
+        },
+        "privateSubnetIDs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "projectDomain": {
           "type": "string"
         },
+        "publicSubnetIDs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "publicZoneId": {
+          "type": "string"
+        },
+        "vpcID": {
           "type": "string"
         }
       },
@@ -543,6 +564,10 @@
           "additionalProperties": {
             "$ref": "#/types/defang-aws:compose:ServiceConfig"
           }
+        },
+        "waitForSteadyState": {
+          "type": "boolean",
+          "plain": true
         }
       },
       "requiredInputs": [

@@ -45,18 +45,20 @@ func NewProject(ctx *pulumi.Context,
 }
 
 type projectArgs struct {
-	Aws      *AWSConfig                       `pulumi:"aws"`
-	Etag     *string                          `pulumi:"etag"`
-	Networks map[string]compose.NetworkConfig `pulumi:"networks"`
-	Services map[string]compose.ServiceConfig `pulumi:"services"`
+	Aws                *AWSConfig                       `pulumi:"aws"`
+	Etag               *string                          `pulumi:"etag"`
+	Networks           map[string]compose.NetworkConfig `pulumi:"networks"`
+	Services           map[string]compose.ServiceConfig `pulumi:"services"`
+	WaitForSteadyState *bool                            `pulumi:"waitForSteadyState"`
 }
 
 // The set of arguments for constructing a Project resource.
 type ProjectArgs struct {
-	Aws      AWSConfigPtrInput
-	Etag     *string
-	Networks compose.NetworkConfigMapInput
-	Services compose.ServiceConfigMapInput
+	Aws                AWSConfigPtrInput
+	Etag               *string
+	Networks           compose.NetworkConfigMapInput
+	Services           compose.ServiceConfigMapInput
+	WaitForSteadyState *bool
 }
 
 func (ProjectArgs) ElementType() reflect.Type {

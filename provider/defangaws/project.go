@@ -61,6 +61,11 @@ type ProjectInputs struct {
 
 	AWS *AWSConfig `pulumi:"aws,optional" yaml:"x-defang-aws,omitempty"`
 
+	// WaitForSteadyState makes every ECS service deployment wait until the
+	// service reaches a steady state (in addition to services other services
+	// depend on with condition: service_healthy, which always wait).
+	WaitForSteadyState bool `pulumi:"waitForSteadyState,optional" yaml:"waitForSteadyState,omitempty"`
+
 	// Etag is the deployment identifier supplied by the CD program; the
 	// provider injects it as a DEFANG_ETAG env var on every service container
 	// so application logs can be correlated with a specific deployment.
@@ -216,7 +221,7 @@ func buildProject(
 			}
 		}
 
-		waitForHealthy := waitForSteady[svcName]
+		waitForHealthy := waitForSteady[svcName] || args.WaitForSteadyState
 		endpoint, dependency, svcComp, err := newService(
 			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps, parentOpt)
 		if err != nil {

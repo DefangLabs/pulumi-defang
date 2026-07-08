@@ -51,6 +51,7 @@ func TestConstructAwsProjectFoldsSidecars(t *testing.T) {
 				taskDefs = append(taskDefs, args.Inputs)
 			case "aws:ecs/service:Service":
 				ecsServices++
+			default:
 			}
 			return args.Name, args.Inputs, nil
 		},

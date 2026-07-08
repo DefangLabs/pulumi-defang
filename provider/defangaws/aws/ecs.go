@@ -66,6 +66,9 @@ type SharedInfra struct {
 	BuildInfra     *BuildInfra       // nil if no builds needed
 	PublicEcrCache *PullThroughCache // ECR public pull-through cache
 	SkipNatGW      bool
+	// DnsProvider is a role-assuming AWS provider for public Route53
+	// operations when the DNS zone lives in another account; nil otherwise.
+	DnsProvider pulumi.ProviderResource
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
@@ -834,22 +837,32 @@ func CreateECSService(
 		serviceLabel := common.ServiceLabel(serviceName)
 
 		firstIngress := true
+		var prevRule pulumi.Resource // serializes rule creation so ALB priorities follow port order
 		for _, port := range svc.Ports {
 			var endpoints []string
 
 			if infra.ProjectDomain != "" {
 				endpoints = append(endpoints, fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.ProjectDomain))
 			}
-			if port.IsIngress() && firstIngress {
-				if svc.DomainName != "" {
+			if port.IsIngress() {
+				// The service's public FQDN matches every ingress port's rule:
+				// rules on the same listener are disambiguated by protocol
+				// conditions (gRPC content-type) or target a different
+				// listener (x-defang-listener: http).
+				switch {
+				case svc.DomainName != "":
 					endpoints = append(endpoints, svc.DomainName)
-				} else if infra.ProjectDomain != "" {
-					publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain)
-					// FIXME: which service should listen on the project domain?
-					endpoints = append(endpoints, publicFqdn, infra.ProjectDomain)
+				case infra.ProjectDomain != "":
+					endpoints = append(endpoints, fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain))
+					if firstIngress {
+						// FIXME: which service should listen on the project domain?
+						endpoints = append(endpoints, infra.ProjectDomain)
+					}
 				}
-				endpoints = append(endpoints, svc.Networks[compose.DefaultNetwork].Aliases...)
-				firstIngress = false
+				if firstIngress {
+					endpoints = append(endpoints, svc.Networks[compose.DefaultNetwork].Aliases...)
+					firstIngress = false
+				}
 			}
 
 			listenerArn := defaultListenerArn
@@ -859,6 +872,14 @@ func CreateECSService(
 				}
 			}
 
+			// Rules for different ports may match the same host (e.g. the
+			// service's domainname), disambiguated by protocol conditions.
+			// AWS assigns rule priorities in creation order, so serialize:
+			// earlier ports get higher-priority (more specific) rules.
+			tgLrOpt := pulumi.ResourceOption(parentOpt)
+			if prevRule != nil {
+				tgLrOpt = pulumi.Composite(tgLrOpt, pulumi.DependsOn([]pulumi.Resource{prevRule}))
+			}
 			tg, lr, err := createTgLrPair(
 				ctx,
 				serviceName,
@@ -868,13 +889,14 @@ func CreateECSService(
 				svc.HealthCheck,
 				endpoints,
 				infra.albDnsName(),
-				parentOpt)
+				tgLrOpt)
 			if err != nil {
 				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
 			}
 			if tg == nil || lr == nil {
 				continue
 			}
+			prevRule = lr
 
 			loadBalancers = append(loadBalancers, &ecs.ServiceLoadBalancerArgs{
 				ContainerName:  pulumi.String(containerName),
