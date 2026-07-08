@@ -72,14 +72,12 @@ type SharedInfra struct {
 	Policies
 
 	// Schema-exposed handles to pre-existing infrastructure, for standalone
-	// SDK callers that manage their own cluster/ALB/log group.
-	ClusterArn         pulumi.StringInput `pulumi:"clusterArn,optional"`
-	ExecutionRoleArn   pulumi.StringInput `pulumi:"executionRoleArn,optional"`
-	LogGroupName       pulumi.StringInput `pulumi:"logGroupName,optional"`
-	HttpListenerArn    pulumi.StringInput `pulumi:"httpListenerArn,optional"`
-	HttpsListenerArn   pulumi.StringInput `pulumi:"httpsListenerArn,optional"`
-	AlbDnsName         pulumi.StringInput `pulumi:"albDnsName,optional"`
-	AlbSecurityGroupId pulumi.StringInput `pulumi:"albSecurityGroupId,optional"`
+	// SDK callers that manage their own cluster/exec role/log group. ALB
+	// attachment is deliberately not exposed: ingress-bearing services
+	// belong in a Project, which owns its own ALB.
+	ClusterArn       pulumi.StringInput `pulumi:"clusterArn,optional"`
+	ExecutionRoleArn pulumi.StringInput `pulumi:"executionRoleArn,optional"`
+	LogGroupName     pulumi.StringInput `pulumi:"logGroupName,optional"`
 }
 
 func (i *SharedInfra) clusterArn() pulumi.StringInput {
@@ -110,28 +108,28 @@ func (i *SharedInfra) httpListenerArn() pulumi.StringInput {
 	if i.HttpListener != nil {
 		return i.HttpListener.Arn
 	}
-	return i.HttpListenerArn
+	return nil
 }
 
 func (i *SharedInfra) httpsListenerArn() pulumi.StringInput {
 	if i.HttpsListener != nil {
 		return i.HttpsListener.Arn
 	}
-	return i.HttpsListenerArn
+	return nil
 }
 
 func (i *SharedInfra) albDnsName() pulumi.StringInput {
 	if i.Alb != nil {
 		return i.Alb.DnsName
 	}
-	return i.AlbDnsName
+	return nil
 }
 
 func (i *SharedInfra) albSecurityGroupId() pulumi.StringInput {
 	if i.AlbSG != nil {
 		return i.AlbSG.ID().ToStringOutput()
 	}
-	return i.AlbSecurityGroupId
+	return nil
 }
 
 // ECSServiceArgs holds per-service arguments for CreateECSService.

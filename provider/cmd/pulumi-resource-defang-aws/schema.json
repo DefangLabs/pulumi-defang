@@ -34,22 +34,10 @@
   "types": {
     "defang-aws:aws:SharedInfra": {
       "properties": {
-        "albDnsName": {
-          "type": "string"
-        },
-        "albSecurityGroupId": {
-          "type": "string"
-        },
         "clusterArn": {
           "type": "string"
         },
         "executionRoleArn": {
-          "type": "string"
-        },
-        "httpListenerArn": {
-          "type": "string"
-        },
-        "httpsListenerArn": {
           "type": "string"
         },
         "logGroupName": {
