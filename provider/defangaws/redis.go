@@ -21,7 +21,7 @@ type RedisInputs struct {
 	Image       *string                     `pulumi:"image,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]*string          `pulumi:"environment,optional"`
+	Environment compose.Environment             `pulumi:"environment,optional"`
 	AWS         *provideraws.SharedInfra    `pulumi:"aws,optional"`
 }
 
@@ -54,7 +54,7 @@ func (*Redis) Construct(
 
 	svc := compose.ServiceConfig{
 		Redis:       redis,
-		Image:       inputs.Image,
+		Image:       compose.ImageFromPtr(inputs.Image),
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,

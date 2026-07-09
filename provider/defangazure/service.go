@@ -1,6 +1,7 @@
 package defangazure
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -11,19 +12,28 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+var errPoliciesUnsupported = errors.New("x-defang-policies is not supported on Azure")
+
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
 
 // ServiceInputs defines the inputs for a standalone Azure Container App.
 // Build-from-source is deliberately unsupported — images must be pre-built and supplied
 // via Image. Build orchestration belongs to the Project component.
+//
+// TODO(azure-parity): mirror the AWS/GCP compose-shape / sidecars / triggers /
+// taskRoleArn / secrets / securityGroupIds / waitForSteadyState / autoscaling
+// inputs added in feat/defang-on-defang-inputs. Deferred until there is a
+// concrete consumer — see CLAUDE.md § Compose-shape parity across providers.
 type ServiceInputs struct {
-	Image       string                      `pulumi:"image"`
+	// Image is the pre-built container image URI; it may be an Output of an
+	// image build (e.g. a Build resource or a caller-side pipeline).
+	Image       pulumi.StringInput          `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	ProjectName string                      `pulumi:"projectName,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]*string          `pulumi:"environment,optional"`
+	Environment compose.Environment             `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -57,11 +67,10 @@ func (*Service) Construct(
 	}
 
 	// Standalone Service is image-only — build belongs to Project.
-	if inputs.Image == "" {
+	if inputs.Image == nil {
 		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
 	}
 	svc := compose.ServiceConfig{
-		Image:       &inputs.Image,
 		Platform:    inputs.Platform,
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
@@ -84,8 +93,7 @@ func (*Service) Construct(
 		}
 	}
 
-	imageURI := pulumi.String(inputs.Image).ToStringOutput()
-	if err := createContainerApp(ctx, comp, name, svc, infra, imageURI, nil, nil); err != nil {
+	if err := createContainerApp(ctx, comp, name, svc, infra, inputs.Image, nil, nil); err != nil {
 		return nil, err
 	}
 	return comp, nil
@@ -125,6 +133,9 @@ func createContainerApp(
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
 ) error {
+	if len(svc.Policies) > 0 {
+		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)
+	}
 	caResult, err := azure.CreateContainerApp(
 		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, pulumi.Parent(comp),
 	)

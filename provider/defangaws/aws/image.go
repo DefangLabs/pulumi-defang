@@ -153,5 +153,5 @@ func GetServiceImage(
 	}
 
 	// Use pre-built image (either service.image or default)
-	return pulumi.String(*svc.Image).ToStringOutput(), nil
+	return svc.Image.ToStringOutput(), nil
 }

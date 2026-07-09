@@ -16,7 +16,7 @@ import (
 
 // CreateProjectInfra creates shared AWS infrastructure for a multi-service project.
 //
-//nolint:funlen // sequential infra setup is clearer as one function
+//nolint:funlen,maintidx // sequential infra setup is clearer as one function
 func CreateProjectInfra(
 	ctx *pulumi.Context,
 	projectName string,
@@ -29,7 +29,7 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	net, err := ResolveNetworking(ctx, projectName, opt)
+	net, err := ResolveNetworking(ctx, projectName, awsConfig, opt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -93,25 +93,47 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("attaching pull-through cache policy: %w", err)
 	}
 
+	// Role-assuming provider for public Route53 operations in another account
+	var dnsProvider pulumi.ProviderResource
+	if awsConfig != nil && awsConfig.DnsRoleArn != nil {
+		dnsProvider, err = aws.NewProvider(ctx, "route53", &aws.ProviderArgs{
+			Region: pulumi.String(region.Region), // required for STS
+			AssumeRoles: aws.ProviderAssumeRoleArray{
+				&aws.ProviderAssumeRoleArgs{
+					RoleArn: awsConfig.DnsRoleArn.ToStringOutput().ToStringPtrOutput(),
+				},
+			},
+		}, opt)
+		if err != nil {
+			return nil, fmt.Errorf("creating Route53 provider: %w", err)
+		}
+	}
+	dnsOpts := []pulumi.ResourceOption{opt}
+	if dnsProvider != nil {
+		dnsOpts = append(dnsOpts, pulumi.Provider(dnsProvider))
+	}
+
 	var projectDomain string
 	var albRes *AlbResult
 	if common.NeedIngress(services) {
 		var certArn pulumi.StringPtrInput
+		var domains []string
+		var publicZoneId pulumi.StringInput
 
-		// Create wildcard cert + DNS if a public zone is provided
+		// Create wildcard cert if a public zone is provided
 		if awsConfig != nil && awsConfig.PublicZoneId != nil && awsConfig.ProjectDomain != "" {
-			publicZoneId := awsConfig.PublicZoneId.ToStringPtrOutput().Elem() // TODO: look up?
+			publicZoneId = awsConfig.PublicZoneId.ToStringPtrOutput().Elem() // TODO: look up?
 			projectDomain = awsConfig.ProjectDomain
 
-			wildcardDomain := "*." + awsConfig.ProjectDomain
-			domains := []string{wildcardDomain}
+			domains = []string{"*." + projectDomain}
 			if CreateApexRecord.Get(ctx) {
-				domains = append(domains, awsConfig.ProjectDomain)
+				domains = append(domains, projectDomain)
 			}
 
 			certArn, err = CreateCertificateDNS(ctx, domains, CertificateDnsArgs{
-				CaaIssuer: []string{"amazon.com", "letsencrypt.org"}, // FIXME: only pick CAs that we need
-				ZoneId:    publicZoneId,
+				CaaIssuer:       []string{"amazon.com", "letsencrypt.org"}, // FIXME: only pick CAs that we need
+				ZoneId:          publicZoneId,
+				Route53Provider: dnsProvider,
 				Tags: pulumi.StringMap{
 					"defang:scope": pulumi.String("pub"),
 				},
@@ -119,34 +141,31 @@ func CreateProjectInfra(
 			if err != nil {
 				return nil, fmt.Errorf("creating certificate: %w", err)
 			}
+		} else if awsConfig != nil && awsConfig.AlbCertificateArn != nil {
+			// Caller-provided default certificate for the HTTPS listener
+			certArn = awsConfig.AlbCertificateArn.ToStringOutput().ToStringPtrOutput()
+		}
 
-			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opt)
-			if err != nil {
-				return nil, fmt.Errorf("creating ALB: %w", err)
-			}
+		albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, certArn, opt)
+		if err != nil {
+			return nil, fmt.Errorf("creating ALB: %w", err)
+		}
 
-			// Create ALIAS DNS records for the ALB
-			aliases := route53.RecordAliasArray{
-				&route53.RecordAliasArgs{
-					EvaluateTargetHealth: pulumi.Bool(true),
-					Name:                 albRes.Alb.DnsName,
-					ZoneId:               albRes.Alb.ZoneId,
-				},
-			}
-			for _, hostname := range domains {
-				_, err := CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
-					Aliases: aliases,
-					ZoneId:  publicZoneId,
-				}, opt)
-				if err != nil {
-					return nil, fmt.Errorf("creating DNS record for %s: %w", hostname, err)
-				}
-			}
-		} else {
-			// No public zone: HTTP-only ALB
-			albRes, err = CreateALB(ctx, net.VpcID, net.PublicSubnetIDs, nil, opt)
+		// Create ALIAS DNS records for the ALB
+		aliases := route53.RecordAliasArray{
+			&route53.RecordAliasArgs{
+				EvaluateTargetHealth: pulumi.Bool(true),
+				Name:                 albRes.Alb.DnsName,
+				ZoneId:               albRes.Alb.ZoneId,
+			},
+		}
+		for _, hostname := range domains {
+			_, err := CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
+				Aliases: aliases,
+				ZoneId:  publicZoneId,
+			}, dnsOpts...)
 			if err != nil {
-				return nil, fmt.Errorf("creating ALB: %w", err)
+				return nil, fmt.Errorf("creating DNS record for %s: %w", hostname, err)
 			}
 		}
 	}
@@ -170,6 +189,7 @@ func CreateProjectInfra(
 			route53SidecarPolicy: route53SidecarePolicy,
 		},
 		Cluster:          cluster,
+		DnsProvider:      dnsProvider,
 		ExecRole:         execRole,
 		LogGroup:         logGroup,
 		VpcID:            net.VpcID,

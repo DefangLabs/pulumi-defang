@@ -20,7 +20,7 @@ type PostgresInputs struct {
 	Postgres    *compose.PostgresConfig  `pulumi:"postgres,optional"`
 	Image       *string                  `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig    `pulumi:"deploy,optional"`
-	Environment map[string]*string       `pulumi:"environment,optional"`
+	Environment compose.Environment          `pulumi:"environment,optional"`
 	Infra       *provideraws.SharedInfra `pulumi:"aws,optional"`
 }
 
@@ -51,7 +51,7 @@ func (*Postgres) Construct(
 
 	svc := compose.ServiceConfig{
 		Postgres:    inputs.Postgres,
-		Image:       inputs.Image,
+		Image:       compose.ImageFromPtr(inputs.Image),
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 	}

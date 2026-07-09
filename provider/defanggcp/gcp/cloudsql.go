@@ -150,10 +150,11 @@ func CreateCloudSQL(
 	}
 
 	// Create user only if a password is explicitly provided as a literal.
-	// A nil *string (YAML "POSTGRES_PASSWORD:" with no value) means "resolve
-	// at runtime from config" — at this point we can't tell if a password
-	// exists, so skip custom user creation and let the default path handle it.
-	if pw := svc.Environment["POSTGRES_PASSWORD"]; pw != nil && *pw != "" {
+	// A nil value (YAML "POSTGRES_PASSWORD:" with no value) means "resolve
+	// at runtime from config", and a dynamic (Output) value can't be inspected
+	// here — in both cases skip custom user creation and let the default path
+	// handle it.
+	if pw, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_PASSWORD"]); pw != nil && *pw != "" {
 		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
 			Name:           pg.Username,
 			Instance:       instance.Name,
@@ -167,9 +168,10 @@ func CreateCloudSQL(
 	}
 
 	// Create database only if explicitly set to a non-default literal name.
-	// Same rationale as POSTGRES_PASSWORD above: nil (*string zero) is "resolve
+	// Same rationale as POSTGRES_PASSWORD above: nil or dynamic is "resolve
 	// at runtime", which we treat as "no custom DB requested" for scheduling.
-	if rawDB := svc.Environment["POSTGRES_DB"]; rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
+	rawDB, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_DB"])
+	if rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
 			Name:           pg.DBName,
 			Instance:       instance.Name,

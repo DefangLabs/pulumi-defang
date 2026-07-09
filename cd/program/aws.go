@@ -107,7 +107,7 @@ func toAWSServices(services compose.Services) awscompose.ServiceConfigMap {
 
 func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 	args := awscompose.ServiceConfigArgs{
-		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Image:       pulumi.StringPtrFromPtr(svc.StaticImage()),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),

@@ -209,7 +209,7 @@ func buildService(
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-		if err := createService(ctx, svcCompTyped, projectName, configProvider, svcName, image, svc, infra); err != nil {
+		if err := createService(ctx, svcCompTyped, projectName, configProvider, svcName, image, svc, infra, nil); err != nil {
 			return pulumi.StringOutput{}, nil, nil, err
 		}
 		endpoint = svcCompTyped.Endpoint
@@ -255,41 +255,45 @@ func enableLLM(
 	ctx *pulumi.Context,
 	svcName string,
 	svc *compose.ServiceConfig,
-	sa *serviceaccount.Account,
+	sa *providergcp.ServiceIdentity,
 	infra *providergcp.SharedInfra,
 	svcChildOpts []pulumi.ResourceOption,
 ) error {
-	// TODO: add dependency to the member resource
-	_, err := projects.NewIAMMember(ctx, svcName+"-defang-llm", &projects.IAMMemberArgs{
-		Project: pulumi.String(infra.GcpProject),
-		// for details see https://cloud.google.com/vertex-ai/docs/general/access-control
-		Role:   pulumi.String("roles/aiplatform.user"),
-		Member: pulumi.Sprintf("serviceAccount:%v", sa.Email),
-	}, append(svcChildOpts,
-		// prevent service account does not exist error when down, will be automatically removed when sa is removed
-		pulumi.DeletedWith(sa),
-		// membership is not a distinct resource, so we risk deleting the membership we are trying to create
-		pulumi.DeleteBeforeReplace(true),
-	)...,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to grant aiplatform access to service account %v: %w", sa.Email, err)
+	// Only grant the role on provider-created accounts; IAM on a
+	// caller-supplied service account is owned by the caller.
+	if sa.Account != nil {
+		// TODO: add dependency to the member resource
+		_, err := projects.NewIAMMember(ctx, svcName+"-defang-llm", &projects.IAMMemberArgs{
+			Project: pulumi.String(infra.GcpProject),
+			// for details see https://cloud.google.com/vertex-ai/docs/general/access-control
+			Role:   pulumi.String("roles/aiplatform.user"),
+			Member: pulumi.Sprintf("serviceAccount:%v", sa.Email),
+		}, append(svcChildOpts,
+			// prevent service account does not exist error when down, will be automatically removed when sa is removed
+			pulumi.DeletedWith(sa.Account),
+			// membership is not a distinct resource, so we risk deleting the membership we are trying to create
+			pulumi.DeleteBeforeReplace(true),
+		)...,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to grant aiplatform access to service account %v: %w", sa.Email, err)
+		}
 	}
 
 	if svc.Environment == nil {
-		svc.Environment = make(map[string]*string)
+		svc.Environment = compose.Environment{}
 	}
 
 	// setDefault fills an env var with a default only when absent or empty-literal.
-	// A nil *string value (YAML "KEY:" with no value) means "resolve at runtime from
-	// config" — leave it alone.
+	// A nil value (YAML "KEY:" with no value) means "resolve at runtime from
+	// config" and a dynamic (Output) value is opaque — leave both alone.
 	setDefault := func(key, defaultVal string) {
-		val, ok := svc.Environment[key]
-		if ok && (val == nil || *val != "") {
-			return
+		if val, ok := svc.Environment[key]; ok {
+			if sv, static := compose.StaticEnvValue(val); !static || sv == nil || *sv != "" {
+				return
+			}
 		}
-		v := defaultVal
-		svc.Environment[key] = &v
+		svc.Environment[key] = pulumi.String(defaultVal)
 	}
 
 	// Inject environment variables for Vercel routing for GCP Vertex AI access

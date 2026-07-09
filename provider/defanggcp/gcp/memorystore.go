@@ -79,8 +79,8 @@ func CreateMemoryStore(
 	}
 
 	imageTag := ""
-	if svc.Image != nil {
-		imageTag = compose.ParseImageTag(*svc.Image)
+	if img := svc.StaticImage(); img != nil {
+		imageTag = compose.ParseImageTag(*img)
 	}
 
 	instance, err := redis.NewInstance(ctx, serviceName, &redis.InstanceArgs{

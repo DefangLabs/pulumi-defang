@@ -42,8 +42,11 @@ type ServiceConfig struct {
 	// Build configuration
 	Build *BuildConfig `pulumi:"build,optional" yaml:"build,omitempty"`
 
-	// Container image to deploy (required if no build config)
-	Image *string `pulumi:"image,optional" yaml:"image,omitempty"`
+	// Container image to deploy (required if no build config). An Input so
+	// callers can pass the Output of an image build; compose files always
+	// yield a literal pulumi.String (see StaticImage). yaml:"-" because the
+	// yaml decoder cannot populate an interface field — see UnmarshalYAML.
+	Image pulumi.StringInput `pulumi:"image,optional" yaml:"-"`
 
 	// Target platform: "linux/amd64" or "linux/arm64"
 	Platform *string `pulumi:"platform,optional" yaml:"platform,omitempty"`
@@ -55,7 +58,7 @@ type ServiceConfig struct {
 	Deploy *DeployConfig `pulumi:"deploy,optional" yaml:"deploy,omitempty"`
 
 	// Environment variables
-	Environment map[string]*string `pulumi:"environment,optional" yaml:"environment,omitempty"`
+	Environment Environment `pulumi:"environment,optional" yaml:"environment,omitempty"`
 
 	// Command to run
 	Command []string `pulumi:"command,optional" yaml:"command,omitempty"`
@@ -84,7 +87,135 @@ type ServiceConfig struct {
 
 	LLM *LlmConfig `pulumi:"llm,optional" yaml:"x-defang-llm,omitempty"`
 
+	// Container name override (default: the service name)
+	ContainerName *string `pulumi:"containerName,optional" yaml:"container_name,omitempty"`
+
+	// Time to wait for the container to stop before killing it (Go duration, e.g. "120s")
+	StopGracePeriod *string `pulumi:"stopGracePeriod,optional" yaml:"stop_grace_period,omitempty"`
+
+	// Named volumes mounted into the container
+	Volumes []ServiceVolumeConfig `pulumi:"volumes,optional" yaml:"volumes,omitempty"`
+
+	// Mount all volumes from another service/container; entries are container
+	// names with an optional ":ro" or ":rw" suffix
+	VolumesFrom []string `pulumi:"volumesFrom,optional" yaml:"volumes_from,omitempty"`
+
+	// Working directory inside the container
+	WorkingDir *string `pulumi:"workingDir,optional" yaml:"working_dir,omitempty"`
+
+	// Network mode; "service:<name>" folds this service into <name>'s task as
+	// a sidecar container instead of deploying it standalone. Other values are
+	// ignored.
+	NetworkMode string `pulumi:"networkMode,optional" yaml:"network_mode,omitempty"`
+
+	// Enable autoscaling. Matches the x-defang-autoscaling extension.
+	Autoscaling bool `pulumi:"autoscaling,optional" yaml:"x-defang-autoscaling,omitempty"`
+
+	// Extra IAM policies to attach to the task role created for this service;
+	// each entry is a full policy ARN or a customer-managed policy name.
+	// Matches the x-defang-policies extension. AWS-only: other providers
+	// reject it, and it cannot be combined with a caller-supplied task role.
+	Policies []string `pulumi:"policies,optional" yaml:"x-defang-policies,omitempty"`
+
 	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
+}
+
+// UnmarshalYAML decodes a service, converting the literal "image" field into a
+// pulumi.String (the Image field is a pulumi.StringInput, which the yaml
+// decoder cannot populate directly).
+func (s *ServiceConfig) UnmarshalYAML(value *yaml.Node) error {
+	type raw ServiceConfig // methodless alias to avoid recursion
+	if err := value.Decode((*raw)(s)); err != nil {
+		return err
+	}
+	var img struct {
+		Image *string `yaml:"image"`
+	}
+	if err := value.Decode(&img); err != nil {
+		return err
+	}
+	s.Image = ImageFromPtr(img.Image)
+	return nil
+}
+
+// ImageFromPtr converts an optional literal image string to the Image input type.
+func ImageFromPtr(p *string) pulumi.StringInput {
+	if p == nil {
+		return nil
+	}
+	return pulumi.String(*p)
+}
+
+// Environment maps env var names to values. Values are Inputs so callers can
+// pass Outputs of other resources; compose files always yield literal
+// pulumi.String values, or nil for "KEY:" with no value (resolve from config
+// at deploy time). See StaticEnvValue.
+type Environment map[string]pulumi.StringInput
+
+// UnmarshalYAML decodes the compose map form, converting literal values into
+// pulumi.String (the yaml decoder cannot populate an interface value).
+func (e *Environment) UnmarshalYAML(value *yaml.Node) error {
+	var m map[string]*string
+	if err := value.Decode(&m); err != nil {
+		return err
+	}
+	if m == nil {
+		*e = nil
+		return nil
+	}
+	env := make(Environment, len(m))
+	for k, v := range m {
+		env[k] = ImageFromPtr(v)
+	}
+	*e = env
+	return nil
+}
+
+// StaticEnvValue returns the literal value of an environment entry and whether
+// it is static. A nil input (compose "KEY:" with no value, i.e. resolve from
+// config) is static with a nil pointer; Outputs of other resources are not
+// static and return (nil, false).
+func StaticEnvValue(v pulumi.StringInput) (*string, bool) {
+	switch t := v.(type) {
+	case nil:
+		return nil, true
+	case pulumi.String:
+		s := string(t)
+		return &s, true
+	default:
+		return nil, false
+	}
+}
+
+// SidecarParent returns the service name this config attaches to as a sidecar
+// (network_mode: "service:<name>"), or "" for a standalone service.
+func (s ServiceConfig) SidecarParent() string {
+	if parent, ok := strings.CutPrefix(s.NetworkMode, "service:"); ok {
+		return parent
+	}
+	return ""
+}
+
+// StaticImage returns the image as a literal string when it was set from a
+// compose file or plain string (pulumi.String), or nil when unset or dynamic.
+func (s ServiceConfig) StaticImage() *string {
+	if img, ok := s.Image.(pulumi.String); ok {
+		v := string(img)
+		return &v
+	}
+	return nil
+}
+
+// ServiceVolumeConfig defines a named-volume mount (long syntax). Bind mounts
+// are not supported.
+type ServiceVolumeConfig struct {
+	// Volume name
+	Source string `pulumi:"source" yaml:"source"`
+
+	// Mount path inside the container
+	Target string `pulumi:"target" yaml:"target"`
+
+	ReadOnly bool `pulumi:"readOnly,optional" yaml:"read_only,omitempty"`
 }
 
 type LlmConfig struct{}
@@ -155,7 +286,19 @@ type ServicePortConfig struct {
 
 	// Application protocol: "http", "http2", "grpc" (default: "http")
 	AppProtocol PortAppProtocol `pulumi:"appProtocol,optional" yaml:"app_protocol,omitempty"`
+
+	// Force the load-balancer listener protocol: "http" or "https" (default:
+	// derived from the port). Matches the x-defang-listener extension.
+	Listener PortListenerProtocol `pulumi:"listener,optional" yaml:"x-defang-listener,omitempty"`
 }
+
+type PortListenerProtocol string
+
+const (
+	PortListenerDefault PortListenerProtocol = ""
+	PortListenerHTTP    PortListenerProtocol = "http"
+	PortListenerHTTPS   PortListenerProtocol = "https"
+)
 
 // DeployConfig defines deployment parameters.
 // YAML tags match Docker Compose deploy spec.
@@ -204,6 +347,17 @@ type BuildConfig struct {
 
 	// Multi-stage build target
 	Target *string `pulumi:"target,optional" yaml:"target,omitempty"`
+
+	// Target platforms for multi-platform builds, e.g. ["linux/amd64", "linux/arm64"]
+	Platforms []string `pulumi:"platforms,optional" yaml:"platforms,omitempty"`
+
+	// External cache sources, passed through to `docker buildx build --cache-from`
+	// (e.g. "type=registry,ref=user/app:cache")
+	CacheFrom []string `pulumi:"cacheFrom,optional" yaml:"cache_from,omitempty"`
+
+	// External cache destinations, passed through to `docker buildx build --cache-to`
+	// (e.g. "type=registry,mode=max,ref=user/app:cache")
+	CacheTo []string `pulumi:"cacheTo,optional" yaml:"cache_to,omitempty"`
 }
 
 // UnmarshalYAML allows BuildConfig to be parsed from YAML, converting the
@@ -216,6 +370,9 @@ func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
 		Args       map[string]string `yaml:"args,omitempty"`
 		ShmSize    *string           `yaml:"shm_size,omitempty"`
 		Target     *string           `yaml:"target,omitempty"`
+		Platforms  []string          `yaml:"platforms,omitempty"`
+		CacheFrom  []string          `yaml:"cache_from,omitempty"`
+		CacheTo    []string          `yaml:"cache_to,omitempty"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -225,6 +382,9 @@ func (b *BuildConfig) UnmarshalYAML(value *yaml.Node) error {
 	b.Args = raw.Args
 	b.ShmSize = raw.ShmSize
 	b.Target = raw.Target
+	b.Platforms = raw.Platforms
+	b.CacheFrom = raw.CacheFrom
+	b.CacheTo = raw.CacheTo
 	return nil
 }
 
@@ -353,12 +513,14 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	}
 
 	var version pulumi.StringPtrInput
-	if s.Image != nil {
-		version = pulumi.StringPtr(getPostgresVersion(*s.Image))
+	if img := s.StaticImage(); img != nil {
+		version = pulumi.StringPtr(getPostgresVersion(*img))
 	}
 
-	dbNameStr, ok := s.Environment["POSTGRES_DB"]
-	if !ok || dbNameStr == nil || *dbNameStr == "" {
+	// POSTGRES_DB drives resource creation decisions, so it must be a static
+	// string; a dynamic (Output) value falls back to the default name.
+	dbNameStr, _ := StaticEnvValue(s.Environment["POSTGRES_DB"])
+	if dbNameStr == nil || *dbNameStr == "" {
 		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
 	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
@@ -421,6 +583,22 @@ func (s ServiceConfig) GetMemoryMiB() int {
 	return 512
 }
 
+// GetContainerName returns the container name, defaulting to fallback (the service name).
+func (s ServiceConfig) GetContainerName(fallback string) string {
+	if s.ContainerName != nil && *s.ContainerName != "" {
+		return *s.ContainerName
+	}
+	return fallback
+}
+
+// GetStopGracePeriodSeconds returns the stop grace period in seconds, or 0 if unset.
+func (s ServiceConfig) GetStopGracePeriodSeconds() int {
+	if s.StopGracePeriod == nil {
+		return 0
+	}
+	return int(parseDurationSeconds(*s.StopGracePeriod))
+}
+
 // NeedsBuild returns true if the service has a build config.
 func (s ServiceConfig) NeedsBuild() bool {
 	return s.Build != nil
@@ -442,9 +620,13 @@ func (s ServiceConfig) DefaultNetwork() ServiceNetworkConfig {
 func (s ServiceConfig) ResolvedEnvironment() map[string]string {
 	env := make(map[string]string, len(s.Environment))
 	for k, v := range s.Environment {
-		if v != nil {
-			env[k] = *v
-		} else {
+		sv, static := StaticEnvValue(v)
+		switch {
+		case !static:
+			// dynamic values never occur on this YAML-driven path
+		case sv != nil:
+			env[k] = *sv
+		default:
 			env[k] = "${" + k + "}" // preserve undefined env vars as placeholders
 		}
 	}

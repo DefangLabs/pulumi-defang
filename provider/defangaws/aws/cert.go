@@ -38,7 +38,10 @@ func groupHostnamesByCert(hostnames []string) map[string][]string {
 
 type CertificateDnsArgs struct {
 	CaaIssuer []string
-	// Route53Provider aws.Provider
+	// Route53Provider, when set, is used for the Route53 record operations
+	// (CAA and validation records) in case the zone lives in another account.
+	// The ACM certificate and its validation stay on the default provider.
+	Route53Provider   pulumi.ProviderResource
 	Tags              pulumi.StringMapInput
 	ValidationRecords map[string]pulumi.StringOutput
 	ZoneId            pulumi.StringInput
@@ -71,19 +74,17 @@ func CreateCertificateDNS(
 	// TODO: filter out RetainOnDelete from opts
 	resourceOpts := opts
 
-	// var route53Opts []pulumi.ResourceOption
-	// if args != nil && args.Route53Provider != nil {
-	// 	route53Opts = append(append([]pulumi.ResourceOption{}, resourceOpts...), pulumi.Provider(args.Route53Provider))
-	// } else {
-	// 	route53Opts = resourceOpts
-	// }
+	route53Opts := resourceOpts
+	if args.Route53Provider != nil {
+		route53Opts = common.MergeOptions(resourceOpts, pulumi.Provider(args.Route53Provider))
+	}
 
 	// NOTE: creation of CAA can fail with "RRSet of type CAA with DNS name sub.example.com. is not permitted
 	// because a conflicting RRSet of type CNAME with the same DNS name already exists in zone example.com"
 	var caaRecords []pulumi.Resource
 	if len(args.CaaIssuer) != 0 {
 		for _, hostname := range hostnames {
-			rec, err := createCaaDnsRecord(ctx, hostname, args.ZoneId, args.CaaIssuer, opts...)
+			rec, err := createCaaDnsRecord(ctx, hostname, args.ZoneId, args.CaaIssuer, route53Opts...)
 			if err != nil {
 				return pulumi.StringOutput{}, err
 			}
@@ -117,7 +118,7 @@ func CreateCertificateDNS(
 				if existing, ok := args.ValidationRecords[*dvo.ResourceRecordName]; ok {
 					fqdns[i] = existing
 				} else {
-					record, err := createValidationDnsRecord(ctx, dvo, args.ZoneId, opts...)
+					record, err := createValidationDnsRecord(ctx, dvo, args.ZoneId, route53Opts...)
 					if err != nil {
 						return pulumi.StringArrayOutput{}, err
 					}
@@ -201,17 +202,27 @@ func createCertsAndRoute53Dns(
 		},
 	}
 
+	// Route53 operations (zone lookup, validation/CAA/alias records) may need
+	// the role-assuming DNS provider when the zone lives in another account.
+	zoneLookupOpts := []pulumi.InvokeOption{opt}
+	dnsOpts := []pulumi.ResourceOption{opt}
+	if infra.DnsProvider != nil {
+		zoneLookupOpts = append(zoneLookupOpts, pulumi.Provider(infra.DnsProvider))
+		dnsOpts = append(dnsOpts, pulumi.Provider(infra.DnsProvider))
+	}
+
 	// Iterate groups in sorted order for deterministic resource names
 	for base, group := range certGroups {
 		// Look up the Route53 hosted zone for this domain
-		zone, err := GetHostedZoneForHost(ctx, base, opt)
+		zone, err := GetHostedZoneForHost(ctx, base, zoneLookupOpts...)
 		if err != nil {
 			return fmt.Errorf("finding hosted zone for %s: %w", base, err)
 		}
 
 		certArn, err := CreateCertificateDNS(ctx, group, CertificateDnsArgs{
-			CaaIssuer: []string{"amazon.com", "letsencrypt.org"},
-			ZoneId:    pulumi.String(zone.Id),
+			CaaIssuer:       []string{"amazon.com", "letsencrypt.org"},
+			Route53Provider: infra.DnsProvider,
+			ZoneId:          pulumi.String(zone.Id),
 			Tags: pulumi.StringMap{
 				"defang:service": pulumi.String(serviceName),
 			},
@@ -234,7 +245,7 @@ func createCertsAndRoute53Dns(
 			_, err = CreateRecord(ctx, hostname, common.RecordTypeA, &route53.RecordArgs{
 				Aliases: albAliases,
 				ZoneId:  zoneId,
-			}, opt)
+			}, dnsOpts...)
 			if err != nil {
 				return fmt.Errorf("creating DNS record for %s: %w", hostname, err)
 			}

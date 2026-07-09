@@ -151,11 +151,15 @@ func GetConfigName(value string) string {
 	return ""
 }
 
-func GetConfigName2(key string, value *string) string {
-	if value == nil {
+func GetConfigName2(key string, value pulumi.StringInput) string {
+	sv, static := StaticEnvValue(value)
+	if !static {
+		return "" // dynamic values are passed as plaintext env, never secret refs
+	}
+	if sv == nil {
 		return key
 	}
-	return GetConfigName(*value)
+	return GetConfigName(*sv)
 }
 
 func GetConfigOrEnvValue(
@@ -167,11 +171,15 @@ func GetConfigOrEnvValue(
 	opts ...pulumi.InvokeOption,
 ) pulumi.StringOutput {
 	if v, ok := s.Environment[key]; ok {
-		var value string
-		if v == nil {
-			value = "${" + key + "}"
-		} else {
-			value = *v
+		sv, static := StaticEnvValue(v)
+		if !static {
+			// Dynamic (Output) values pass through as-is; interpolation and
+			// config resolution only apply to static text.
+			return v.ToStringOutput()
+		}
+		value := "${" + key + "}"
+		if sv != nil {
+			value = *sv
 		}
 		// Resolve any $VAR / ${VAR} interpolations; empty string passes through as-is.
 		return InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)

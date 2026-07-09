@@ -14,8 +14,13 @@ import (
 var _ = internal.GetEnvOrDefault
 
 type AWSConfig struct {
-	ProjectDomain *string `pulumi:"projectDomain"`
-	PublicZoneId  *string `pulumi:"publicZoneId"`
+	AlbCertificateArn *string  `pulumi:"albCertificateArn"`
+	DnsRoleArn        *string  `pulumi:"dnsRoleArn"`
+	PrivateSubnetIDs  []string `pulumi:"privateSubnetIDs"`
+	ProjectDomain     *string  `pulumi:"projectDomain"`
+	PublicSubnetIDs   []string `pulumi:"publicSubnetIDs"`
+	PublicZoneId      *string  `pulumi:"publicZoneId"`
+	VpcID             *string  `pulumi:"vpcID"`
 }
 
 // AWSConfigInput is an input type that accepts AWSConfigArgs and AWSConfigOutput values.
@@ -30,8 +35,13 @@ type AWSConfigInput interface {
 }
 
 type AWSConfigArgs struct {
-	ProjectDomain pulumi.StringPtrInput `pulumi:"projectDomain"`
-	PublicZoneId  pulumi.StringPtrInput `pulumi:"publicZoneId"`
+	AlbCertificateArn pulumi.StringPtrInput   `pulumi:"albCertificateArn"`
+	DnsRoleArn        pulumi.StringPtrInput   `pulumi:"dnsRoleArn"`
+	PrivateSubnetIDs  pulumi.StringArrayInput `pulumi:"privateSubnetIDs"`
+	ProjectDomain     pulumi.StringPtrInput   `pulumi:"projectDomain"`
+	PublicSubnetIDs   pulumi.StringArrayInput `pulumi:"publicSubnetIDs"`
+	PublicZoneId      pulumi.StringPtrInput   `pulumi:"publicZoneId"`
+	VpcID             pulumi.StringPtrInput   `pulumi:"vpcID"`
 }
 
 func (AWSConfigArgs) ElementType() reflect.Type {
@@ -111,12 +121,32 @@ func (o AWSConfigOutput) ToAWSConfigPtrOutputWithContext(ctx context.Context) AW
 	}).(AWSConfigPtrOutput)
 }
 
+func (o AWSConfigOutput) AlbCertificateArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v AWSConfig) *string { return v.AlbCertificateArn }).(pulumi.StringPtrOutput)
+}
+
+func (o AWSConfigOutput) DnsRoleArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v AWSConfig) *string { return v.DnsRoleArn }).(pulumi.StringPtrOutput)
+}
+
+func (o AWSConfigOutput) PrivateSubnetIDs() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v AWSConfig) []string { return v.PrivateSubnetIDs }).(pulumi.StringArrayOutput)
+}
+
 func (o AWSConfigOutput) ProjectDomain() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v AWSConfig) *string { return v.ProjectDomain }).(pulumi.StringPtrOutput)
 }
 
+func (o AWSConfigOutput) PublicSubnetIDs() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v AWSConfig) []string { return v.PublicSubnetIDs }).(pulumi.StringArrayOutput)
+}
+
 func (o AWSConfigOutput) PublicZoneId() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v AWSConfig) *string { return v.PublicZoneId }).(pulumi.StringPtrOutput)
+}
+
+func (o AWSConfigOutput) VpcID() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v AWSConfig) *string { return v.VpcID }).(pulumi.StringPtrOutput)
 }
 
 type AWSConfigPtrOutput struct{ *pulumi.OutputState }
@@ -143,6 +173,33 @@ func (o AWSConfigPtrOutput) Elem() AWSConfigOutput {
 	}).(AWSConfigOutput)
 }
 
+func (o AWSConfigPtrOutput) AlbCertificateArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AWSConfig) *string {
+		if v == nil {
+			return nil
+		}
+		return v.AlbCertificateArn
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o AWSConfigPtrOutput) DnsRoleArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AWSConfig) *string {
+		if v == nil {
+			return nil
+		}
+		return v.DnsRoleArn
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o AWSConfigPtrOutput) PrivateSubnetIDs() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *AWSConfig) []string {
+		if v == nil {
+			return nil
+		}
+		return v.PrivateSubnetIDs
+	}).(pulumi.StringArrayOutput)
+}
+
 func (o AWSConfigPtrOutput) ProjectDomain() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *AWSConfig) *string {
 		if v == nil {
@@ -152,12 +209,30 @@ func (o AWSConfigPtrOutput) ProjectDomain() pulumi.StringPtrOutput {
 	}).(pulumi.StringPtrOutput)
 }
 
+func (o AWSConfigPtrOutput) PublicSubnetIDs() pulumi.StringArrayOutput {
+	return o.ApplyT(func(v *AWSConfig) []string {
+		if v == nil {
+			return nil
+		}
+		return v.PublicSubnetIDs
+	}).(pulumi.StringArrayOutput)
+}
+
 func (o AWSConfigPtrOutput) PublicZoneId() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *AWSConfig) *string {
 		if v == nil {
 			return nil
 		}
 		return v.PublicZoneId
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o AWSConfigPtrOutput) VpcID() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AWSConfig) *string {
+		if v == nil {
+			return nil
+		}
+		return v.VpcID
 	}).(pulumi.StringPtrOutput)
 }
 
