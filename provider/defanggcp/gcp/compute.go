@@ -428,7 +428,8 @@ func getComputeMachineType(svc compose.ServiceConfig) string {
 func dockerRunFlags(
 	svc compose.ServiceConfig, sidecars map[string]compose.ServiceConfig,
 ) ([]string, []string) {
-	var params, command []string
+	params := make([]string, 0, 2+2*len(svc.Ports)+2*len(svc.Volumes)+len(svc.VolumesFrom)+2)
+	var command []string
 	if len(svc.Entrypoint) > 0 {
 		params = append(params, "--entrypoint", svc.Entrypoint[0])
 		if len(svc.Entrypoint) > 1 {
@@ -557,7 +558,7 @@ func getCloudInitConfig(
 	)
 
 	var extraUnitsFmt strings.Builder
-	var extraUnitsArgs []any
+	extraUnitsArgs := make([]any, 0, len(sidecars)+1)
 	if addHealthCheckSidecar {
 		var hcUnits string
 		hcUnits, runcmds = buildHealthCheckUnits(serviceName, containerName, runcmds)

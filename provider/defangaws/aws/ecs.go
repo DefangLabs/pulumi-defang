@@ -345,7 +345,7 @@ var composeToEcsConditions = map[string]awsecs.ContainerCondition{
 func buildDependsOn(
 	dependsOn compose.DependsOnConfig, sidecars map[string]compose.ServiceConfig,
 ) []ContainerDependency {
-	var deps []ContainerDependency
+	deps := make([]ContainerDependency, 0, len(dependsOn))
 	for depName, dep := range common.Sorted(dependsOn) {
 		sc, ok := sidecars[depName]
 		if !ok {
@@ -632,7 +632,7 @@ func CreateECSService(
 		secrets    []Secret
 		imageIdx   int // index into allInputs where the resolved image URI will be
 	}
-	var sidecarDatas []sidecarData
+	sidecarDatas := make([]sidecarData, 0, len(args.Sidecars))
 	for scName, sc := range common.Sorted(args.Sidecars) {
 		if sc.Image == nil {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
