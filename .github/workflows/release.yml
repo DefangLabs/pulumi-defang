@@ -42,7 +42,36 @@ jobs:
   publish_binary:
     name: publish
     runs-on: ubuntu-latest
+    env:
+      # GoReleaser's per-build $WORK dirs default to $TMPDIR on the small root
+      # partition (~14GB free); the out-of-disk-space write happened there. Point
+      # transient build output at the larger /mnt partition (~65GB). Job-level so
+      # setup-go's cache restore/save (which resolves paths via `go env GOCACHE`)
+      # targets the same dir the GoReleaser build uses.
+      TMPDIR: /mnt/gorel-tmp
+      GOTMPDIR: /mnt/gorel-tmp
+      GOCACHE: /mnt/gorel-gocache
     steps:
+      # /mnt is root-owned on the runner; create the build dirs the job-level
+      # TMPDIR/GOCACHE point at and hand them to the runner user. First step,
+      # so every later step sees a valid $TMPDIR.
+      - name: Prepare /mnt build dirs
+        run: sudo mkdir -p /mnt/gorel-tmp /mnt/gorel-gocache && sudo chown "$USER" /mnt/gorel-tmp /mnt/gorel-gocache
+
+      # The runner's root partition (~14GB free) can't hold the 18 cross-compiled
+      # binaries (3 providers x 3 OS x 2 arch) linking the huge pulumi-{aws,gcp,azure}
+      # SDKs. Reclaim ~25GB of unused preinstalled toolchains before building.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false # slow to remove; the reclaim above is enough
+          docker-images: false
+          swap-storage: false
+
       - name: Checkout Repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 

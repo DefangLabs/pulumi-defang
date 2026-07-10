@@ -386,7 +386,9 @@ func resolveSubscriptionID(ctx *pulumi.Context) string {
 func readLiveCustomDomains(ctx *pulumi.Context, infra *SharedInfra, serviceName string) app.CustomDomainArrayOutput {
 	subscriptionID := resolveSubscriptionID(ctx)
 	return infra.ResourceGroup.Name.ApplyT(func(rgName string) ([]app.CustomDomain, error) {
-		if subscriptionID == "" {
+		// An empty resource group name means nothing has been deployed to read
+		// from (mock test servers resolve it to ""); ARM rejects it anyway.
+		if subscriptionID == "" || rgName == "" {
 			return nil, nil
 		}
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
