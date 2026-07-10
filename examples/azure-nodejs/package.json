@@ -6,6 +6,6 @@
 	"dependencies": {
 		"typescript": "^4.7.0",
 		"@pulumi/pulumi": "^3.0.0",
-		"@defang-io/pulumi-defang-azure": "2.3.1+dirty"
+		"@defang-io/pulumi-defang-azure": "2.4.0+dirty"
 	}
 }
