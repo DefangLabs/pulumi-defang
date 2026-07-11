@@ -14,8 +14,6 @@ var (
 	errSidecarsRequireComputeEngine = errors.New(
 		"sidecars and volumes are only supported on Compute Engine services (no single ingress port)")
 	errPoliciesUnsupported = errors.New("x-defang-policies is not supported on GCP")
-	errSidecarImageNotStatic = errors.New(
-		"sidecar image must be a static string on GCP (it is baked into a cloud-init systemd unit)")
 )
 
 // Service is the controller struct for the defang-gcp:index:Service component.
@@ -33,7 +31,7 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"projectName"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment compose.Environment             `pulumi:"environment,optional"`
+	Environment compose.Environment         `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -151,15 +149,16 @@ type serviceExtras struct {
 	Triggers            pulumi.StringMapInput
 }
 
-// validateSidecarImages requires every sidecar to have a non-empty, static
-// image: it gets baked into a cloud-init systemd unit, so Outputs won't do.
+// validateSidecarImages requires every sidecar to have an image; a static
+// image must also be non-empty. Dynamic (Output-valued) images are fine —
+// they resolve when the cloud-init systemd unit is rendered — matching the
+// AWS sidecar semantics.
 func validateSidecarImages(serviceName string, sidecars map[string]compose.ServiceConfig) error {
 	for name, sc := range sidecars {
-		img := sc.StaticImage()
-		if sc.Image != nil && img == nil {
-			return fmt.Errorf("service %s sidecar %s: %w", serviceName, name, errSidecarImageNotStatic)
+		if sc.Image == nil {
+			return fmt.Errorf("service %s sidecar %s: %w", serviceName, name, common.ErrStandaloneServiceRequiresImage)
 		}
-		if img == nil || *img == "" {
+		if img := sc.StaticImage(); img != nil && *img == "" {
 			return fmt.Errorf("service %s sidecar %s: %w", serviceName, name, common.ErrStandaloneServiceRequiresImage)
 		}
 	}

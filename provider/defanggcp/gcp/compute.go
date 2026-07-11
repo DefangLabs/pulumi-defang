@@ -653,10 +653,6 @@ func buildSidecarUnit(
 	containerName := sc.GetContainerName(sidecarName)
 	params, command := dockerRunFlags(sc, sidecars)
 	envFlags := flattenEnvFlags(nil, sc.Environment)
-	sidecarImage := "" // validated static & non-empty in createService
-	if img := sc.StaticImage(); img != nil {
-		sidecarImage = *img
-	}
 
 	var serviceSection string
 	if sc.Restart == "no" {
@@ -697,7 +693,7 @@ func buildSidecarUnit(
 		containerName,
 		strings.Join(params, " "),
 		envFlags,
-		sidecarImage,
+		sc.Image, // validated non-nil in createService; may resolve at apply time
 		strings.Join(command, " "))
 
 	runcmds = append(runcmds,
