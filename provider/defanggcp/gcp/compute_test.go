@@ -68,8 +68,11 @@ func TestGetCloudInitConfigDefangEnv(t *testing.T) {
 // A run-once sidecar (restart: "no") must become a oneshot unit started before
 // the main service, with the main container mounting its volumes via
 // --volumes-from; '%' in env values must survive the pulumi.Sprintf pass.
+// The sidecar image is an Output (e.g. a digest resolved at apply time) to
+// cover dynamic sidecar images.
 func TestGetCloudInitConfigSidecars(t *testing.T) {
-	handlerImage := pulumi.String("region-docker.pkg.dev/proj/repo/handler:1")
+	handlerImageURI := "region-docker.pkg.dev/proj/repo/handler@sha256:0123456789abcdef"
+	handlerImage := pulumi.String(handlerImageURI).ToStringOutput() // dynamic, StaticImage() == nil
 	percentVal := "100%"
 	svc := compose.ServiceConfig{
 		Entrypoint:  []string{"/handler/handler"},
@@ -110,7 +113,7 @@ func TestGetCloudInitConfigSidecars(t *testing.T) {
 	assert.Contains(t, cloudInit, "RemainAfterExit=yes")
 	assert.Contains(t, cloudInit,
 		"--name=handler --entrypoint true -v handler:/handler:ro -v pulumi-plugins:/root/.pulumi/plugins")
-	assert.Contains(t, cloudInit, handlerImage)
+	assert.Contains(t, cloudInit, handlerImageURI)
 	// main unit: ordered after the sidecar, volumes-from it
 	assert.Contains(t, cloudInit, "Requires=cd-handler.service")
 	assert.Contains(t, cloudInit, "After=cd-handler.service")
