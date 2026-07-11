@@ -29,6 +29,9 @@ type RedisInputs struct {
 type RedisOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	// ClusterId is the ElastiCache replication group ID or the MemoryDB
+	// cluster name, for downstream consumers such as CloudWatch alarms.
+	ClusterId pulumi.StringOutput `pulumi:"clusterId"`
 	// Dependency is an internal-only handle (CNAME record when a private zone
 	// exists, otherwise nil) used by downstream services for ordering. Untagged —
 	// not part of the SDK schema.
@@ -66,9 +69,11 @@ func (*Redis) Construct(
 	return comp, nil
 }
 
-// createRedis creates the ElastiCache cluster (plus optional private-zone CNAME)
-// under an already-registered Redis component, sets its Endpoint/Dependency, and
-// registers its outputs. Shared between Construct and the project-level dispatcher.
+// createRedis creates the managed Redis cluster (ElastiCache, or MemoryDB when
+// the redis-engine recipe says so), plus an optional private-zone CNAME, under
+// an already-registered Redis component, sets its Endpoint/ClusterId/Dependency,
+// and registers its outputs. Shared between Construct and the project-level
+// dispatcher.
 func createRedis(
 	ctx *pulumi.Context,
 	comp *RedisOutputs,
@@ -79,7 +84,11 @@ func createRedis(
 ) error {
 	childOpt := pulumi.Parent(comp)
 
-	redisResult, err := provideraws.CreateElasticache(
+	createCluster := provideraws.CreateElasticache
+	if provideraws.RedisEngine.Get(ctx) == "memorydb" {
+		createCluster = provideraws.CreateMemoryDB
+	}
+	redisResult, err := createCluster(
 		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, childOpt,
 	)
 	if err != nil {
@@ -108,8 +117,12 @@ func createRedis(
 	comp.Endpoint = pulumi.StringOutput(pulumix.Apply(redisResult.Address, func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, port)
 	}))
+	comp.ClusterId = redisResult.ClusterID
 
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": comp.Endpoint}); err != nil {
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"endpoint":  comp.Endpoint,
+		"clusterId": comp.ClusterId,
+	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
 	return nil

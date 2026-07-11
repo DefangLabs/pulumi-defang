@@ -61,7 +61,7 @@ func (cp *ConfigProvider) getParametersByPath(
 	ctx *pulumi.Context,
 	opts ...pulumi.InvokeOption,
 ) (map[string]string, error) {
-	path := cp.getSecretID(ctx.Stack(), "")
+	path := cp.getSecretID(ctx, "")
 	withDecryption := true
 
 	gpr, err := ssm.GetParametersByPath(ctx, &ssm.GetParametersByPathArgs{
@@ -81,9 +81,14 @@ func (cp *ConfigProvider) getParametersByPath(
 	return result, nil
 }
 
-func (cp *ConfigProvider) getSecretID(stackName, service string) string {
+func (cp *ConfigProvider) getSecretID(ctx *pulumi.Context, service string) string {
+	// The config-path recipe points at a pre-existing parameter namespace,
+	// e.g. a path established before migrating a deployment to this provider.
+	if path := ConfigPath.Get(ctx); path != "" {
+		return path + service
+	}
 	// Same as CLI
-	return fmt.Sprintf("/%s/%s/%s/%s", cp.prefix, cp.projectName, stackName, service)
+	return fmt.Sprintf("/%s/%s/%s/%s", cp.prefix, cp.projectName, ctx.Stack(), service)
 }
 
 // GetSecretRef returns the full SSM parameter ARN for a config key, so ECS can
@@ -97,6 +102,6 @@ func (cp *ConfigProvider) GetSecretRef(ctx *pulumi.Context, key string, opts ...
 	if err != nil {
 		return "", fmt.Errorf("getting account ID for secret ARN: %w", err)
 	}
-	id := cp.getSecretID(ctx.Stack(), key)
+	id := cp.getSecretID(ctx, key)
 	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s", region, accountId, id), nil
 }

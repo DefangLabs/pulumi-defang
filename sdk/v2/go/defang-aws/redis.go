@@ -17,7 +17,8 @@ import (
 type Redis struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	ClusterId pulumi.StringOutput `pulumi:"clusterId"`
+	Endpoint  pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // NewRedis registers a new resource with the given unique name, arguments, and options.
@@ -92,6 +93,10 @@ func (o RedisOutput) ToRedisOutput() RedisOutput {
 
 func (o RedisOutput) ToRedisOutputWithContext(ctx context.Context) RedisOutput {
 	return o
+}
+
+func (o RedisOutput) ClusterId() pulumi.StringOutput {
+	return o.ApplyT(func(v *Redis) pulumi.StringOutput { return v.ClusterId }).(pulumi.StringOutput)
 }
 
 func (o RedisOutput) Endpoint() pulumi.StringOutput {

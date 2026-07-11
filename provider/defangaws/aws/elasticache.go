@@ -15,8 +15,33 @@ import (
 
 var ErrRedisConfigNil = errors.New("redis config is nil")
 
+const (
+	engineRedis  = "redis"
+	engineValkey = "valkey"
+)
+
+// detectRedisEngine returns the engine (redis vs valkey) and version derived
+// from the service's image name; defaults to "redis" with no version when the
+// image is unset or a dynamic Output.
+func detectRedisEngine(svc compose.ServiceConfig) (string, string) {
+	engine := engineRedis
+	var engineVersion string
+	if img := svc.StaticImage(); img != nil {
+		if strings.Contains(strings.ToLower(*img), engineValkey) {
+			engine = engineValkey
+		}
+		if parts := strings.Split(*img, ":"); len(parts) == 2 {
+			engineVersion = parts[1]
+		}
+	}
+	return engine, engineVersion
+}
+
 type ElasticacheResult struct {
 	Address pulumi.StringOutput // primary or configuration endpoint address
+	// ClusterID is the ElastiCache replication group ID or the MemoryDB
+	// cluster name, for downstream consumers such as CloudWatch alarms.
+	ClusterID pulumi.StringOutput
 }
 
 // ElastiCache node type catalogs.
@@ -164,7 +189,7 @@ func cacheNodeType(minCPUs float64, minMemoryMiB int, nodeType string) string {
 // "Transit encryption mode is not supported for engine version 6.2.6.
 // Please use engine version 7.0.5 or higher."
 func transitEncryptionSupported(engine, engineVersion string) bool {
-	if engine == "valkey" {
+	if engine == engineValkey {
 		return true
 	}
 	if engineVersion == "" {
@@ -195,18 +220,7 @@ func CreateElasticache(
 		return nil, ErrRedisConfigNil
 	}
 
-	// Detect engine (redis vs valkey) and version from the image name;
-	// default to "redis" when the image is unset or a dynamic Output.
-	engine := "redis"
-	var engineVersion string
-	if img := svc.StaticImage(); img != nil {
-		if strings.Contains(strings.ToLower(*img), "valkey") {
-			engine = "valkey"
-		}
-		if parts := strings.Split(*img, ":"); len(parts) == 2 {
-			engineVersion = parts[1]
-		}
-	}
+	engine, engineVersion := detectRedisEngine(svc)
 
 	allowDowntime := false
 	if svc.Redis.AllowDowntime != nil {
@@ -350,5 +364,5 @@ func CreateElasticache(
 				return primary
 			}).(pulumi.StringOutput)
 
-	return &ElasticacheResult{Address: address}, nil
+	return &ElasticacheResult{Address: address, ClusterID: rg.ReplicationGroupId}, nil
 }

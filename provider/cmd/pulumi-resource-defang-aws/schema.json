@@ -576,12 +576,16 @@
     },
     "defang-aws:index:Redis": {
       "properties": {
+        "clusterId": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "clusterId"
       ],
       "inputProperties": {
         "aws": {
