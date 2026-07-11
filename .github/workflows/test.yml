@@ -116,6 +116,9 @@ jobs:
           # PRs check out the head SHA — the branch only exists on the fork,
           # but GitHub mirrors PR head commits into the base repo.
           ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || github.event.pull_request.head.sha || github.ref }}
+          # Only same-repo PRs push (the auto-commit); fork PRs and direct
+          # pushes never do, so don't leave the token in .git/config there.
+          persist-credentials: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
