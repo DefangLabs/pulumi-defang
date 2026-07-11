@@ -126,6 +126,7 @@ func (*Service) Construct(
 	infra := inputs.Infra
 	if infra == nil {
 		infra = providergcp.NewStandaloneGlobalConfig(ctx)
+		infra.ProjectName = projectName
 	}
 
 	image := inputs.Image

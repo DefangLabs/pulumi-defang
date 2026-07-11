@@ -34,6 +34,7 @@ type SharedInfra struct {
 	PrivateZone       pulumi.StringOutput                     // managed zone name for the private google.internal. zone
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
+	ProjectName       string                                  // compose project name (defang-project log label)
 	Repos             map[string]*artifactregistry.Repository // non-empty when services reference external registries
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
@@ -170,6 +171,7 @@ func BuildGlobalConfig(
 		Stack:       ctx.Stack(),
 		Region:      region,
 		GcpProject:  gcpProject,
+		ProjectName: projectName,
 		VpcId:       vpc.ID().ToStringOutput(),
 		SubnetId:    subnet.ID().ToStringOutput(),
 		PublicIP:    publicIP,

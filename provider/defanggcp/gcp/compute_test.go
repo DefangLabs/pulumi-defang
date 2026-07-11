@@ -44,7 +44,8 @@ func TestGetCloudInitConfigDefangEnv(t *testing.T) {
 			var wg sync.WaitGroup
 			wg.Add(1)
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				out := getCloudInitConfig("api", pulumi.String("img:latest"), svc, "us-central1", tt.etag, tt.fqdn, false, nil)
+				out := getCloudInitConfig(
+					"api", pulumi.String("img:latest"), svc, "us-central1", tt.etag, "", "", tt.fqdn, false, nil)
 				out.ApplyT(func(s string) string {
 					defer wg.Done()
 					cloudInit = s
@@ -61,6 +62,57 @@ func TestGetCloudInitConfigDefangEnv(t *testing.T) {
 			for _, notWant := range tt.absent {
 				assert.NotContains(t, cloudInit, notWant)
 			}
+		})
+	}
+}
+
+// getCloudInitConfig must stamp the defang-* LogEntry labels into the COS
+// fluent-bit config so the Defang CLI's (and Fabric's) Cloud Logging tail
+// queries match Compute Engine logs. Values are SafeLabelValue-normalized;
+// empty etag/project/stack are omitted.
+func TestGetCloudInitConfigLogLabels(t *testing.T) {
+	svc := compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 8080, Mode: compose.PortModeHost}},
+	}
+
+	tests := []struct {
+		name                     string
+		etag, projectName, stack string
+		want                     string
+	}{
+		{
+			name:        "all set, normalized",
+			etag:        "Etag123",
+			projectName: "My Project",
+			stack:       "beta",
+			want: `echo "    labels defang-etag=etag123,defang-project=my-project,defang-service=api,defang-stack=beta"` +
+				` >> /etc/fluent-bit/fluent-bit.conf`,
+		},
+		{
+			name: "empty etag/project/stack omitted",
+			want: `echo "    labels defang-service=api" >> /etc/fluent-bit/fluent-bit.conf`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cloudInit string
+			var wg sync.WaitGroup
+			wg.Add(1)
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				out := getCloudInitConfig(
+					"api", pulumi.String("img:latest"), svc, "us-central1", tt.etag, tt.projectName, tt.stack, "", false, nil)
+				out.ApplyT(func(s string) string {
+					defer wg.Done()
+					cloudInit = s
+					return s
+				})
+				return nil
+			}, pulumi.WithMocks("proj", "stack", testMocks{}))
+			require.NoError(t, err)
+			wg.Wait()
+
+			assert.Contains(t, cloudInit, tt.want)
+			assert.Contains(t, cloudInit, "systemctl restart fluent-bit")
 		})
 	}
 }
@@ -96,7 +148,7 @@ func TestGetCloudInitConfigSidecars(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		out := getCloudInitConfig("cd", pulumi.String("img:latest"), svc, "us-central1", "", "", true, sidecars)
+		out := getCloudInitConfig("cd", pulumi.String("img:latest"), svc, "us-central1", "", "", "", "", true, sidecars)
 		out.ApplyT(func(s string) string {
 			defer wg.Done()
 			cloudInit = s

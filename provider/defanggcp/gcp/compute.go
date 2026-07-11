@@ -78,7 +78,8 @@ func CreateComputeEngine(
 	// provisioned in alb.go and resolves within the VPC. See common.ServiceFQDN.
 	fqdn := common.ServiceFQDN(serviceName, svc, gcpConfig.Domain, "google.internal")
 	cloudInit := getCloudInitConfig(
-		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, fqdn, addHealthCheckSidecar, args.Sidecars)
+		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, gcpConfig.ProjectName, gcpConfig.Stack, fqdn,
+		addHealthCheckSidecar, args.Sidecars)
 
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, getComputeBootImage(svc), cloudInit,
@@ -531,7 +532,7 @@ func getCloudInitConfig(
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
-	region, etag, fqdn string,
+	region, etag, projectName, stack, fqdn string,
 	addHealthCheckSidecar bool,
 	sidecars map[string]compose.ServiceConfig,
 ) pulumi.StringOutput {
@@ -561,10 +562,12 @@ func getCloudInitConfig(
 		fmt.Fprintf(&dependencies, "\n      Requires=%s.service\n      After=%s.service", unit, unit)
 	}
 
-	runcmds := make([]string, 0, 3+4+2*len(sidecars)+2)
+	runcmds := make([]string, 0, 5+4+2*len(sidecars)+2)
 	runcmds = append(runcmds,
 		`echo 'DOCKER_OPTS="--registry-mirror=https://mirror.gcr.io"' | tee /etc/default/docker`,
+		fluentBitLabelsCmd(serviceName, etag, projectName, stack),
 		"systemctl daemon-reload",
+		"systemctl restart fluent-bit",
 		"systemctl restart docker",
 	)
 
@@ -627,6 +630,28 @@ runcmd:
 	// extra units — the Inputs that may resolve at apply time); all other
 	// dynamic text had its '%' doubled.
 	return pulumi.Sprintf(buf.String(), envFlags, image, extraUnits)
+}
+
+// fluentBitLabelsCmd returns the runcmd that stamps the defang-* LogEntry
+// labels the Defang CLI (and Fabric) filter their Cloud Logging tail queries
+// on. COS's fluent-bit ships container logs to Cloud Logging (logName
+// cos_containers); the 4-space indent lands the `labels` key inside the
+// stackdriver [OUTPUT] section of its config. Empty values are omitted so the
+// matching query clause can be omitted too.
+// TODO: find a more reliable way to add labels
+func fluentBitLabelsCmd(serviceName, etag, projectName, stack string) string {
+	labels := make([]string, 0, 4)
+	if etag != "" {
+		labels = append(labels, "defang-etag="+SafeLabelValue(etag))
+	}
+	if projectName != "" {
+		labels = append(labels, "defang-project="+SafeLabelValue(projectName))
+	}
+	labels = append(labels, "defang-service="+SafeLabelValue(serviceName))
+	if stack != "" {
+		labels = append(labels, "defang-stack="+SafeLabelValue(stack))
+	}
+	return fmt.Sprintf(`echo "    labels %s" >> /etc/fluent-bit/fluent-bit.conf`, strings.Join(labels, ","))
 }
 
 // escapePercent doubles '%' so text survives the final pulumi.Sprintf pass
