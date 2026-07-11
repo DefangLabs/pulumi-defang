@@ -406,7 +406,6 @@
       "type": "object"
     }
   },
-  "provider": {},
   "resources": {
     "defang-aws:index:Build": {
       "properties": {

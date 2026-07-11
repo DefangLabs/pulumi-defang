@@ -335,7 +335,6 @@
       ]
     }
   },
-  "provider": {},
   "resources": {
     "defang-azure:index:Build": {
       "properties": {
