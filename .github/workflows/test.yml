@@ -112,7 +112,10 @@ jobs:
       - name: Checkout PR branch or pushed ref
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          # Same-repo PRs check out the branch (needed to auto-commit); fork
+          # PRs check out the head SHA — the branch only exists on the fork,
+          # but GitHub mirrors PR head commits into the base repo.
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || github.event.pull_request.head.sha || github.ref }}
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
@@ -163,6 +166,8 @@ jobs:
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
       - name: Log in to GHCR
+        # Fork-PR tokens can't write org packages; forks build without pushing.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
         with:
           registry: ghcr.io
@@ -186,7 +191,7 @@ jobs:
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
         with:
           context: . # build context must be repo root to include generated Go SDK
-          push: true
+          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           target: all
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=${{ github.workflow }}
