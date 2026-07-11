@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -69,39 +68,6 @@ func memoryDBNodeType(minCPUs float64, minMemoryMiB int, nodeType string) string
 	return "db.t4g.small"
 }
 
-// redisAliasURNs returns the pre-migration URN aliases configured for one
-// child (kind) of the named Redis service via the redis-aliases recipe.
-func redisAliasURNs(ctx *pulumi.Context, serviceName, kind string) ([]pulumi.Alias, error) {
-	raw := RedisAliases.Get(ctx)
-	if raw == "" {
-		return nil, nil
-	}
-	var byService map[string]map[string]string
-	if err := json.Unmarshal([]byte(raw), &byService); err != nil {
-		return nil, fmt.Errorf("parsing defang-aws:redis-aliases: %w", err)
-	}
-	urn, ok := byService[serviceName][kind]
-	if !ok || urn == "" {
-		return nil, nil
-	}
-	return []pulumi.Alias{{URN: pulumi.URN(urn)}}, nil
-}
-
-// withRedisAliases appends any configured pre-migration aliases for the given
-// child kind to opts.
-func withRedisAliases(
-	ctx *pulumi.Context, serviceName, kind string, opts []pulumi.ResourceOption,
-) ([]pulumi.ResourceOption, error) {
-	aliases, err := redisAliasURNs(ctx, serviceName, kind)
-	if err != nil {
-		return nil, err
-	}
-	if len(aliases) == 0 {
-		return opts, nil
-	}
-	return common.MergeOptions(opts, pulumi.Aliases(aliases)), nil
-}
-
 // memoryDBParameterGroupFamily derives the parameter group family from the
 // engine and its major version, e.g. memorydb_redis7 or memorydb_valkey8.
 func memoryDBParameterGroupFamily(engine, engineVersion string) string {
@@ -147,10 +113,7 @@ func CreateMemoryDB(
 	// group can't be updated in place.
 	var subnetGroupName pulumi.StringPtrOutput
 	if privateSubnetIDs != nil {
-		sgOpts, err := withRedisAliases(ctx, serviceName, "subnetGroup", opts)
-		if err != nil {
-			return nil, err
-		}
+		sgOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasSubnetGroup)...)
 		subnetGroup, err := memorydb.NewSubnetGroup(ctx, serviceName, &memorydb.SubnetGroupArgs{
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
@@ -162,10 +125,7 @@ func CreateMemoryDB(
 		subnetGroupName = subnetGroup.Name.ToStringPtrOutput()
 	}
 
-	pgOpts, err := withRedisAliases(ctx, serviceName, "parameterGroup", opts)
-	if err != nil {
-		return nil, err
-	}
+	pgOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasParameterGroup)...)
 	parameterGroup, err := memorydb.NewParameterGroup(ctx, serviceName, &memorydb.ParameterGroupArgs{
 		Description: pulumi.String(common.DefangComment),
 		Family:      pulumi.String(memoryDBParameterGroupFamily(engine, engineVersion)),
@@ -187,10 +147,7 @@ func CreateMemoryDB(
 	if privateSgID != nil {
 		ingressSGs = pulumi.StringArray{privateSgID.ToStringPtrOutput().Elem()}
 	}
-	secOpts, err := withRedisAliases(ctx, serviceName, "securityGroup", opts)
-	if err != nil {
-		return nil, err
-	}
+	secOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasSecurityGroup)...)
 	cacheSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String("MemoryDB security group for " + serviceName),
@@ -256,10 +213,7 @@ func CreateMemoryDB(
 		clusterArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
-	clusterOpts, err := withRedisAliases(ctx, serviceName, "cluster", opts)
-	if err != nil {
-		return nil, err
-	}
+	clusterOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasCluster)...)
 	clusterOpts = common.MergeOptions(clusterOpts, pulumi.IgnoreChanges([]string{
 		"finalSnapshotName",
 		"maintenanceWindow",

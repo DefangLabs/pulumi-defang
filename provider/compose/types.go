@@ -117,6 +117,13 @@ type ServiceConfig struct {
 	// reject it, and it cannot be combined with a caller-supplied task role.
 	Policies []string `pulumi:"policies,optional" yaml:"x-defang-policies,omitempty"`
 
+	// Aliases maps this service's child cloud resources — by provider-defined
+	// kind, e.g. "cluster", "subnet-group", "parameter-group",
+	// "security-group" — to pre-migration Pulumi URNs, applied as aliases so
+	// the engine adopts the existing resources instead of replacing them.
+	// Matches the x-defang-aliases extension.
+	Aliases map[string]string `pulumi:"aliases,optional" yaml:"x-defang-aliases,omitempty"`
+
 	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
 }
 

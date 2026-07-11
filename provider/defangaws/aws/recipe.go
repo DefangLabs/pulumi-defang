@@ -29,10 +29,6 @@ var (
 	NatGatewayStrategy        = recipe.String("nat-gateway-strategy", "None") // None, Single, or OnePerAz
 	NumberOfAvailabilityZones = recipe.Int("number-of-availability-zones", 2)
 	RDSNodeType               = recipe.String("rds-node-type", "burstable")
-	// RedisAliases maps a Redis service name to the Pulumi URNs of pre-migration
-	// resources so the engine adopts them instead of replacing (JSON, e.g.
-	// {"redis":{"cluster":"urn:…","subnetGroup":"urn:…","parameterGroup":"urn:…","securityGroup":"urn:…"}}).
-	RedisAliases = recipe.String("redis-aliases", "")
 	// RedisEngine selects the managed Redis implementation: "elasticache" or "memorydb".
 	RedisEngine          = recipe.String("redis-engine", "elasticache")
 	RetainBucketOnDelete = recipe.Bool("retain-bucket-on-delete", false)

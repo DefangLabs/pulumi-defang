@@ -1382,6 +1382,7 @@ func (o ResourcesPtrOutput) Reservations() ResourceConfigPtrOutput {
 }
 
 type ServiceConfig struct {
+	Aliases         map[string]string               `pulumi:"aliases"`
 	Autoscaling     *bool                           `pulumi:"autoscaling"`
 	Build           *BuildConfig                    `pulumi:"build"`
 	Command         []string                        `pulumi:"command"`
@@ -1420,6 +1421,7 @@ type ServiceConfigInput interface {
 }
 
 type ServiceConfigArgs struct {
+	Aliases         pulumi.StringMapInput         `pulumi:"aliases"`
 	Autoscaling     pulumi.BoolPtrInput           `pulumi:"autoscaling"`
 	Build           BuildConfigPtrInput           `pulumi:"build"`
 	Command         pulumi.StringArrayInput       `pulumi:"command"`
@@ -1495,6 +1497,10 @@ func (o ServiceConfigOutput) ToServiceConfigOutput() ServiceConfigOutput {
 
 func (o ServiceConfigOutput) ToServiceConfigOutputWithContext(ctx context.Context) ServiceConfigOutput {
 	return o
+}
+
+func (o ServiceConfigOutput) Aliases() pulumi.StringMapOutput {
+	return o.ApplyT(func(v ServiceConfig) map[string]string { return v.Aliases }).(pulumi.StringMapOutput)
 }
 
 func (o ServiceConfigOutput) Autoscaling() pulumi.BoolPtrOutput {

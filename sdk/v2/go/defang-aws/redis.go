@@ -38,6 +38,7 @@ func NewRedis(ctx *pulumi.Context,
 }
 
 type redisArgs struct {
+	Aliases     map[string]string           `pulumi:"aliases"`
 	Aws         *aws.SharedInfra            `pulumi:"aws"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
 	Environment map[string]string           `pulumi:"environment"`
@@ -49,6 +50,7 @@ type redisArgs struct {
 
 // The set of arguments for constructing a Redis resource.
 type RedisArgs struct {
+	Aliases     pulumi.StringMapInput
 	Aws         aws.SharedInfraPtrInput
 	Deploy      compose.DeployConfigPtrInput
 	Environment pulumi.StringMapInput

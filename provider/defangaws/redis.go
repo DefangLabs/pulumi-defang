@@ -23,6 +23,9 @@ type RedisInputs struct {
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
 	Environment compose.Environment             `pulumi:"environment,optional"`
 	AWS         *provideraws.SharedInfra    `pulumi:"aws,optional"`
+	// Aliases maps child resource kinds to pre-migration URNs; see
+	// compose.ServiceConfig.Aliases (x-defang-aliases).
+	Aliases map[string]string `pulumi:"aliases,optional"`
 }
 
 // RedisOutputs holds the outputs of an AWS Redis component.
@@ -61,6 +64,7 @@ func (*Redis) Construct(
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
+		Aliases:     inputs.Aliases,
 	}
 
 	if err := createRedis(ctx, comp, name, svc, inputs.AWS, nil); err != nil {

@@ -246,7 +246,7 @@ func CreateElasticache(
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, opts...)
+		}, common.MergeOptions(opts, svc.AliasOptions(compose.AliasSubnetGroup)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ElastiCache subnet group: %w", err)
 		}
@@ -281,7 +281,7 @@ func CreateElasticache(
 			},
 		},
 		Tags: tags,
-	}, common.MergeOptions(opts,
+	}, common.MergeOptions(common.MergeOptions(opts, svc.AliasOptions(compose.AliasSecurityGroup)...),
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
 	)...)
 	if err != nil {
@@ -334,7 +334,8 @@ func CreateElasticache(
 		rgArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
-	clusterOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{
+	clusterOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasCluster)...)
+	clusterOpts = append(clusterOpts, pulumi.IgnoreChanges([]string{
 		"atRestEncryptionEnabled",
 		"authToken", // TODO: allow user to set authToken via config
 		"authTokenUpdateStrategy",

@@ -1,9 +1,9 @@
 package aws
 
 import (
-	"encoding/json"
 	"testing"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,67 +40,21 @@ func TestMemoryDBParameterGroupFamily(t *testing.T) {
 	assert.Equal(t, "memorydb_valkey7", memoryDBParameterGroupFamily("valkey", ""))
 }
 
-func TestRedisAliasURNs(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  string // value for defang-aws:redis-aliases
-		service string
-		kind    string
-		want    string // expected URN, "" for no alias
-		wantErr bool
-	}{
-		{name: "unset yields no aliases"},
-		{
-			name:    "returns URN for configured service and kind",
-			config:  `{"redis":{"cluster":"urn:pulumi:staging::ecs::aws:memorydb/cluster:Cluster::fabric"}}`,
-			service: "redis",
-			kind:    "cluster",
-			want:    "urn:pulumi:staging::ecs::aws:memorydb/cluster:Cluster::fabric",
-		},
-		{
-			name:    "no alias for other service",
-			config:  `{"redis":{"cluster":"urn:x"}}`,
-			service: "other",
-			kind:    "cluster",
-		},
-		{
-			name:    "no alias for other kind",
-			config:  `{"redis":{"cluster":"urn:x"}}`,
-			service: "redis",
-			kind:    "subnetGroup",
-		},
-		{
-			name:    "invalid JSON errors",
-			config:  `{not json`,
-			service: "redis",
-			kind:    "cluster",
-			wantErr: true,
+func TestAliasOptions(t *testing.T) {
+	urn := "urn:pulumi:staging::ecs::aws:memorydb/cluster:Cluster::fabric"
+	svc := compose.ServiceConfig{
+		Aliases: map[string]string{
+			compose.AliasCluster:     urn,
+			compose.AliasSubnetGroup: "",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.config != "" {
-				t.Setenv("PULUMI_CONFIG", `{"defang-aws:redis-aliases": `+mustJSONString(t, tt.config)+`}`)
-			}
-			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				aliases, err := redisAliasURNs(ctx, tt.service, tt.kind)
-				if tt.wantErr {
-					require.Error(t, err)
-					return nil
-				}
-				require.NoError(t, err)
-				if tt.want == "" {
-					assert.Empty(t, aliases)
-				} else {
-					require.Len(t, aliases, 1)
-					assert.Equal(t, pulumi.URN(tt.want), aliases[0].URN)
-				}
-				return nil
-			}, pulumi.WithMocks("ecs", "staging", ssmMocks{}))
-			require.NoError(t, err)
-		})
-	}
+	assert.Len(t, svc.AliasOptions(compose.AliasCluster), 1)
+	assert.Empty(t, svc.AliasOptions(compose.AliasSubnetGroup), "empty URN yields no alias")
+	assert.Empty(t, svc.AliasOptions(compose.AliasParameterGroup), "unset kind yields no alias")
+
+	var none compose.ServiceConfig
+	assert.Empty(t, none.AliasOptions(compose.AliasCluster), "nil map yields no alias")
 }
 
 func TestGetSecretID_ConfigPathRecipe(t *testing.T) {
@@ -124,10 +78,3 @@ func TestGetSecretID_ConfigPathRecipe(t *testing.T) {
 	})
 }
 
-// mustJSONString wraps a raw string as a JSON string literal.
-func mustJSONString(t *testing.T, s string) string {
-	t.Helper()
-	b, err := json.Marshal(s)
-	require.NoError(t, err)
-	return string(b)
-}
