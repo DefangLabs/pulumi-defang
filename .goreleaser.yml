@@ -1,7 +1,25 @@
 version: 2
 
+# One archive per provider build: pulumi's github:// plugin source resolves
+# release assets by name (pulumi-resource-defang-<cloud>-<tag>-<os>-<arch>),
+# so each plugin needs its own correctly-named archive. A single archive spec
+# bundles ALL builds' binaries under the first build's name, which left the
+# gcp/azure plugins uninstallable (registry PR 11614).
 archives:
-  - id: archive
+  - id: defang-aws
+    ids: [pulumi-resource-defang-aws]
+    name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: defang-gcp
+    ids: [pulumi-resource-defang-gcp]
+    name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: defang-azure
+    ids: [pulumi-resource-defang-azure]
     name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
     format_overrides:
       - goos: windows
