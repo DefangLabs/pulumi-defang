@@ -35,3 +35,10 @@ updates:
       pulumi-azure-native-sdk:
         patterns:
           - "github.com/pulumi/pulumi-azure-native-sdk*"
+      # Security updates ignore the schedule and would otherwise open one PR
+      # per vulnerable dependency; group them so each directory gets a single
+      # security-bump PR instead.
+      gomod-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
