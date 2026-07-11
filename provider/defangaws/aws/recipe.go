@@ -11,6 +11,10 @@ var (
 	BackupRetentionDays       = recipe.Int("backup-retention-days", 0)
 	BackupWindow              = recipe.String("backup-window", "04:00-05:00")
 	BucketKeyEnabled          = recipe.Bool("bucket-key-enabled", true) // minimize KMS costs in non-prod environments
+	// ConfigPath is the SSM path prefix ("/…/") for ${VAR} config resolution;
+	// empty means the default "/Defang/<project>/<stack>/". Lets deployments
+	// keep consuming parameters at a pre-existing path.
+	ConfigPath                = recipe.String("config-path", "")
 	CreateApexRecord          = recipe.Bool("create-apex-record", true)
 	DeletionProtection        = recipe.Bool("deletion-protection", false)
 	DeregistrationDelay       = recipe.Int("deregistration-delay", 0)
@@ -25,7 +29,9 @@ var (
 	NatGatewayStrategy        = recipe.String("nat-gateway-strategy", "None") // None, Single, or OnePerAz
 	NumberOfAvailabilityZones = recipe.Int("number-of-availability-zones", 2)
 	RDSNodeType               = recipe.String("rds-node-type", "burstable")
-	RetainBucketOnDelete      = recipe.Bool("retain-bucket-on-delete", false)
+	// RedisEngine selects the managed Redis implementation: "elasticache" or "memorydb".
+	RedisEngine          = recipe.String("redis-engine", "elasticache")
+	RetainBucketOnDelete = recipe.Bool("retain-bucket-on-delete", false)
 	Route53SidecarLogs        = recipe.Bool("route53-sidecar-logs", false)
 	RetainDnsOnDelete         = recipe.Bool("retain-dns-on-delete", false)
 )

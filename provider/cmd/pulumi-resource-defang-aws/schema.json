@@ -202,6 +202,12 @@
     },
     "defang-aws:compose:ServiceConfig": {
       "properties": {
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "autoscaling": {
           "type": "boolean"
         },
@@ -576,14 +582,25 @@
     },
     "defang-aws:index:Redis": {
       "properties": {
+        "clusterId": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "clusterId"
       ],
       "inputProperties": {
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
         "aws": {
           "$ref": "#/types/defang-aws:aws:SharedInfra"
         },

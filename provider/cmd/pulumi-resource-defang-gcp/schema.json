@@ -163,6 +163,12 @@
     },
     "defang-gcp:compose:ServiceConfig": {
       "properties": {
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "autoscaling": {
           "type": "boolean"
         },
