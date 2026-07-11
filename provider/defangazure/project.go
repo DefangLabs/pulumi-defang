@@ -173,10 +173,16 @@ func createRedisResources(
 		return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", svcName, err)
 	}
 
+	// Fold the private-DNS readiness resources into the outputs apps consume so
+	// Pulumi won't create a Container App until the cluster's A record is published
+	// and resolvable in the VNet. Without this, the app starts before DNS is
+	// effective, ioredis exhausts its retry budget, and wedges permanently (#287).
 	// ConnectionURL is the full redis:// or rediss:// URL including auth.
-	managedEndpoints[svcName] = redisResult.ConnectionURL
-	serviceHosts[svcName] = redisResult.Cluster.HostName
-	return pulumi.Sprintf("%s:10000", redisResult.Cluster.HostName), nil
+	connURL := withResourceDeps(redisResult.ConnectionURL, redisResult.Readiness)
+	host := withResourceDeps(redisResult.Cluster.HostName, redisResult.Readiness)
+	managedEndpoints[svcName] = connURL
+	serviceHosts[svcName] = host
+	return pulumi.Sprintf("%s:10000", host), nil
 }
 
 // createServiceResources creates the component resource and underlying cloud resources

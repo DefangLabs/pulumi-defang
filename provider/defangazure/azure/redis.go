@@ -17,6 +17,14 @@ type RedisResult struct {
 	Cluster       *redis.RedisEnterprise
 	Database      *redis.Database
 	ConnectionURL pulumi.StringOutput // rediss://:<key>@<host>:10000
+
+	// Readiness lists resources that must be fully applied before downstream
+	// Container Apps connect to the cluster. For VNet deployments this is the
+	// private DNS plumbing (PrivateDnsZoneGroup + VirtualNetworkLink) that
+	// publishes the cluster's A record; without waiting for it, apps resolve the
+	// hostname before DNS is effective and ioredis exhausts its retry budget and
+	// wedges permanently (see issue #287). Empty for the standalone/no-VNet path.
+	Readiness []pulumi.Resource
 }
 
 // selectEnterpriseSkuName picks the Azure Managed Redis SKU name based on memory in MiB.
@@ -139,9 +147,17 @@ func CreateRedisEnterprise(
 		ResourceGroupName: infra.ResourceGroup.Name,
 	}, pulumi.Parent(cluster))
 
+	var readiness []pulumi.Resource
 	if useVNet {
-		if err := createRedisVNetEndpoint(ctx, serviceName, cluster, infra, opts...); err != nil {
+		zoneGroup, err := createRedisVNetEndpoint(ctx, serviceName, cluster, infra, opts...)
+		if err != nil {
 			return nil, err
+		}
+		// The zone group publishes the A record; the VNet link makes it resolvable
+		// from inside the VNet. Apps must wait for both before connecting.
+		readiness = []pulumi.Resource{zoneGroup}
+		if infra.DNS.RedisVNetLink != nil {
+			readiness = append(readiness, infra.DNS.RedisVNetLink)
 		}
 	}
 
@@ -154,18 +170,20 @@ func CreateRedisEnterprise(
 		},
 	).(pulumi.StringOutput)
 
-	return &RedisResult{Cluster: cluster, Database: db, ConnectionURL: connectionURL}, nil
+	return &RedisResult{Cluster: cluster, Database: db, ConnectionURL: connectionURL, Readiness: readiness}, nil
 }
 
 // createRedisVNetEndpoint creates a private endpoint and DNS zone group so that traffic to
-// the Redis cluster stays within the VNet (Plaintext protocol, plain redis:// URL).
+// the Redis cluster stays within the VNet (Plaintext protocol, plain redis:// URL). It
+// returns the PrivateDnsZoneGroup, which publishes the cluster's A record — downstream apps
+// must wait for it before resolving the hostname (see issue #287).
 func createRedisVNetEndpoint(
 	ctx *pulumi.Context,
 	serviceName string,
 	cluster *redis.RedisEnterprise,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
-) error {
+) (*network.PrivateDnsZoneGroup, error) {
 	pe, err := network.NewPrivateEndpoint(ctx, serviceName, &network.PrivateEndpointArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.StringPtr(location),
@@ -182,12 +200,12 @@ func createRedisVNetEndpoint(
 		Tags: ServiceTags(serviceName),
 	}, opts...)
 	if err != nil {
-		return fmt.Errorf("creating Redis private endpoint: %w", err)
+		return nil, fmt.Errorf("creating Redis private endpoint: %w", err)
 	}
 
 	// Zone group auto-registers an A record in privatelink.redis.azure.net mapping
 	// the cluster's private-link FQDN to the private endpoint IP.
-	_, err = network.NewPrivateDnsZoneGroup(ctx, serviceName, &network.PrivateDnsZoneGroupArgs{
+	zoneGroup, err := network.NewPrivateDnsZoneGroup(ctx, serviceName, &network.PrivateDnsZoneGroupArgs{
 		ResourceGroupName:       infra.ResourceGroup.Name,
 		PrivateEndpointName:     pe.Name,
 		PrivateDnsZoneGroupName: pulumi.String("default"),
@@ -199,7 +217,7 @@ func createRedisVNetEndpoint(
 		},
 	}, append(opts, pulumi.Parent(pe))...)
 	if err != nil {
-		return fmt.Errorf("creating Redis private DNS zone group: %w", err)
+		return nil, fmt.Errorf("creating Redis private DNS zone group: %w", err)
 	}
-	return nil
+	return zoneGroup, nil
 }
