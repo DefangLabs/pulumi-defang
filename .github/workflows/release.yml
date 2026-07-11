@@ -156,15 +156,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Commit and push updated examples
+      - name: Commit, push, and merge updated examples
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/regenerate-examples-${{ github.ref_name }}"
           git add examples/
           if git diff --cached --quiet; then
             echo "No example changes to commit"
           else
-            BRANCH="chore/regenerate-examples-${{ github.ref_name }}"
             git checkout -b "$BRANCH"
             git commit -m "chore: regenerate examples for ${{ github.ref_name }}"
             git push origin "$BRANCH"
@@ -173,7 +173,22 @@ jobs:
               --body "Automated regeneration of examples triggered by release ${{ github.ref_name }}." \
               --base main \
               --head "$BRANCH"
+            # Merge right away: the content was produced by this release run
+            # on a green main, and bot-created PRs don't trigger the test
+            # workflows anyway. Fall back to enabling auto-merge in case
+            # branch protection is waiting on required checks.
+            gh pr merge "$BRANCH" --squash --delete-branch \
+              || gh pr merge "$BRANCH" --squash --delete-branch --auto \
+              || echo "::warning::Could not auto-merge $BRANCH; merge it manually"
           fi
+          # Regenerate-examples PRs from older releases are superseded by this
+          # run (which regenerated from current main): close them.
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("chore/regenerate-examples-")) | [.number, .headRefName] | @tsv' |
+          while IFS=$'\t' read -r num ref; do
+            [ "$ref" = "$BRANCH" ] && continue
+            gh pr close "$num" --delete-branch --comment "Superseded by the examples regeneration for ${{ github.ref_name }}"
+          done
         env:
           GH_TOKEN: ${{ github.token }}
 
