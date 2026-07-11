@@ -188,6 +188,9 @@ func CreateMemoryDB(
 	}
 
 	clusterArgs := &memorydb.ClusterArgs{
+		// open-access = no AUTH, matching the ElastiCache path's no-authToken
+		// posture (see the authToken TODO in elasticache.go); isolation comes
+		// from private subnets + the SG below. TLS stays enabled (AWS default).
 		AclName:                 pulumi.String("open-access"),
 		AutoMinorVersionUpgrade: pulumi.Bool(true),
 		Description:             pulumi.String(common.DefangComment),

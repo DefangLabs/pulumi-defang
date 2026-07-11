@@ -30,8 +30,8 @@ func detectRedisEngine(svc compose.ServiceConfig) (string, string) {
 		if strings.Contains(strings.ToLower(*img), engineValkey) {
 			engine = engineValkey
 		}
-		if parts := strings.Split(*img, ":"); len(parts) == 2 {
-			engineVersion = parts[1]
+		if tag := compose.ParseImageTag(*img); tag != "" {
+			engineVersion = tag
 		}
 	}
 	return engine, engineVersion

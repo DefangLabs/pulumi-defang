@@ -76,5 +76,38 @@ func TestGetSecretID_ConfigPathRecipe(t *testing.T) {
 		}, pulumi.WithMocks("myproj", "mystack", ssmMocks{}))
 		require.NoError(t, err)
 	})
+
+	t.Run("config-path override without trailing slash", func(t *testing.T) {
+		t.Setenv("PULUMI_CONFIG", `{"defang-aws:config-path": "/defang/ecs/prod"}`)
+		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+			cp := NewConfigProvider("myproj")
+			assert.Equal(t, "/defang/ecs/prod/KEY", cp.getSecretID(ctx, "KEY"))
+			return nil
+		}, pulumi.WithMocks("myproj", "mystack", ssmMocks{}))
+		require.NoError(t, err)
+	})
 }
 
+func TestDetectRedisEngine(t *testing.T) {
+	tests := []struct {
+		image       string
+		wantEngine  string
+		wantVersion string
+	}{
+		{"redis", "redis", ""},
+		{"redis:7.1", "redis", "7.1"},
+		{"valkey/valkey:8.0", "valkey", "8.0"},
+		{"redis@sha256:0123456789abcdef", "redis", ""}, // digest is not a version
+		{"myregistry:5000/redis:7.2", "redis", "7.2"},  // registry port is not a tag
+		{"myregistry:5000/redis", "redis", ""},         // registry port only
+		{"public.ecr.aws/docker/library/redis:6.2", "redis", "6.2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			svc := compose.ServiceConfig{Image: pulumi.String(tt.image)}
+			engine, version := detectRedisEngine(svc)
+			assert.Equal(t, tt.wantEngine, engine)
+			assert.Equal(t, tt.wantVersion, version)
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -85,7 +86,7 @@ func (cp *ConfigProvider) getSecretID(ctx *pulumi.Context, service string) strin
 	// The config-path recipe points at a pre-existing parameter namespace,
 	// e.g. a path established before migrating a deployment to this provider.
 	if path := ConfigPath.Get(ctx); path != "" {
-		return path + service
+		return strings.TrimSuffix(path, "/") + "/" + service
 	}
 	// Same as CLI
 	return fmt.Sprintf("/%s/%s/%s/%s", cp.prefix, cp.projectName, ctx.Stack(), service)
