@@ -81,7 +81,8 @@ func CreateComputeEngine(
 		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, fqdn, addHealthCheckSidecar, args.Sidecars)
 
 	instanceTemplate, err := createInstanceTemplate(
-		ctx, serviceName, serviceName, machineType, cloudInit, args.SA, args.Triggers, gcpConfig, iamDeps, parentOpt)
+		ctx, serviceName, serviceName, machineType, getComputeBootImage(svc), cloudInit,
+		args.SA, args.Triggers, gcpConfig, iamDeps, parentOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +172,7 @@ func zonesWithMachineType(
 
 func createInstanceTemplate(
 	ctx *pulumi.Context,
-	serviceName, instanceTag, machineType string,
+	serviceName, instanceTag, machineType, bootImage string,
 	cloudInit pulumi.StringInput,
 	sa *ServiceIdentity,
 	triggers pulumi.StringMapInput,
@@ -225,7 +226,7 @@ func createInstanceTemplate(
 			Disks: compute.InstanceTemplateDiskArray{
 				&compute.InstanceTemplateDiskArgs{
 					Boot:        pulumi.Bool(true),
-					SourceImage: pulumi.String("projects/cos-cloud/global/images/family/cos-stable"),
+					SourceImage: pulumi.String(bootImage),
 					DiskSizeGb:  pulumi.Int(21),
 				},
 			},
@@ -398,6 +399,16 @@ var t2aMachineTypes = []machineTypeEntry{
 	{"t2a-standard-16", 16, 64 * 1024},
 	{"t2a-standard-32", 32, 128 * 1024},
 	{"t2a-standard-48", 48, 192 * 1024},
+}
+
+// getComputeBootImage returns the Container-Optimized OS boot image family
+// matching the service's platform: ARM machine types (T2A) can only boot the
+// arm64 COS family; everything else uses the x86 family.
+func getComputeBootImage(svc compose.ServiceConfig) string {
+	if strings.Contains(svc.GetPlatform(), "arm64") {
+		return "projects/cos-cloud/global/images/family/cos-arm64-stable"
+	}
+	return "projects/cos-cloud/global/images/family/cos-stable"
 }
 
 // getComputeMachineType selects the smallest machine type that satisfies the
