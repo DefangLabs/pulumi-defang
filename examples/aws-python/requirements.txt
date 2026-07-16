@@ -1,2 +1,2 @@
-pulumi-defang-aws==2.4.1
+pulumi-defang-aws==2.5.2-alpha+0557a6af
 pulumi>=3.0.0,<4.0.0
