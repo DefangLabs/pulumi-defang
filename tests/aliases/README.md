@@ -105,10 +105,15 @@ Starter set of stateful resources to alias:
 - **AWS**: VPC + subnets, NAT EIPs (customers allowlist these — the old CD
   exported `publicNatIps`), RDS instance + DB subnet group, ElastiCache
   replication group / MemoryDB cluster + subnet group + parameter group,
-  Route53 zones (the public zone's NS delegation is externally pinned).
-- **GCP**: network + subnet, the global static IP, Cloud SQL instance +
-  service-networking connection/reserved range, Memorystore instance, the
-  public DNS managed zone.
+  Route53 zones (the public zone's NS delegation is externally pinned),
+  the ALB (its DNS name changes on recreation and customers CNAME to it),
+  ECR repositories and S3 buckets (access logs, build context — deleting
+  either **fails outright while non-empty**, stranding the update mid-way).
+- **GCP**: network + subnet, the global static IP (the LB address customers
+  point DNS at), Cloud SQL instance + service-networking connection/reserved
+  range, Memorystore instance, the public DNS managed zone, Artifact Registry
+  repositories and GCS buckets (same non-empty-delete failure class as
+  ECR/S3).
 
 Two subtleties the stateful-only cut must respect:
 
@@ -120,8 +125,12 @@ Two subtleties the stateful-only cut must respect:
    subnets → VPC. (This is exactly the shape of the existing
    `x-defang-aliases` kinds: cluster / subnet-group / parameter-group /
    security-group.)
-2. **An unmatched stateful resource isn't just "recreated" — it's emptied.**
-   The engine creates the new (empty) database first and deletes the old one
-   later in the same update, so without an alias the result is silent data
-   loss (or a deletion-protection failure mid-deploy). Databases are the hard
-   core of the set; everything else is availability/cost.
+2. **An unmatched stateful resource isn't just "recreated".** Three failure
+   classes, in decreasing severity: databases come back **empty** (the engine
+   creates the new one and deletes the old in the same update — silent data
+   loss, or a deletion-protection error mid-deploy); ECR/Artifact Registry
+   repositories and S3/GCS buckets **fail to delete while non-empty**,
+   stranding the update half-migrated; and pinned addresses/hostnames (NAT
+   EIPs, the global IP, the ALB DNS name, zone NS records) break whatever
+   customers configured externally. Databases are the hard core of the set;
+   the rest decides whether migration is one clean `up` or a support ticket.
