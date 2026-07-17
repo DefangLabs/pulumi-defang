@@ -510,7 +510,14 @@ func CreateECSService(
 		if len(skipped) > 0 {
 			_ = ctx.Log.Info(compose.SkippedPoliciesMessage(serviceName, skipped), nil)
 		}
+		// Dedup repeated entries: the attachment URN embeds policyName(policy),
+		// so a duplicate entry would collide on it.
+		seenPolicies := make(map[string]struct{}, len(policies))
 		for _, policy := range policies {
+			if _, dup := seenPolicies[policy]; dup {
+				continue
+			}
+			seenPolicies[policy] = struct{}{}
 			policyArn, err := resolvePolicyArn(ctx, policy, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)

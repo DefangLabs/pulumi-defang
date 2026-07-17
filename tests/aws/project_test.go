@@ -243,3 +243,41 @@ func TestConstructAwsProjectSkipsForeignPolicies(t *testing.T) {
 		assert.NotContains(t, arn, "run.developer", "GCP-qualified policy must be skipped on AWS")
 	}
 }
+
+func TestConstructAwsProjectDuplicatePoliciesDeduped(t *testing.T) {
+	var attachments []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				attachments = append(attachments, args.Inputs)
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	// The attachment URN embeds policyName(policy), so without dedup a
+	// repeated entry would collide.
+	const awsPolicy = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(awsPolicy),
+					property.New(awsPolicy),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	count := 0
+	for _, a := range attachments {
+		if a.Get("policyArn").AsString() == awsPolicy {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "duplicate x-defang-policies entries must be deduped")
+}

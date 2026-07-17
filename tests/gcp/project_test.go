@@ -1220,3 +1220,31 @@ func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing
 	})
 	assert.Equal(t, 2, members, "expected both the platform grant and the policy grant to be registered")
 }
+
+func TestConstructGcpProjectDuplicatePoliciesDeduped(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	// Repeated entries resolve to the same role; the member URN embeds the
+	// role, so without dedup the second entry would collide.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/run.developer"),
+					property.New("roles/run.developer"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	members := countTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/run.developer"
+	})
+	assert.Equal(t, 1, members, "duplicate x-defang-policies entries must be deduped")
+}
