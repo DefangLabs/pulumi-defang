@@ -152,6 +152,38 @@ type serviceExtras struct {
 	Triggers            pulumi.StringMapInput
 }
 
+// serviceIdentity returns the identity the service runs as: the
+// caller-supplied service account when given (its IAM is owned by the caller,
+// so x-defang-policies is an error), else a provider-created account with the
+// policies granted on it. The returned deps are the policy IAM members the
+// compute resources must wait for.
+func serviceIdentity(
+	ctx *pulumi.Context,
+	projectName string,
+	serviceName string,
+	policies []string,
+	serviceAccountEmail pulumi.StringInput,
+	infra *providergcp.SharedInfra,
+	childOpts []pulumi.ResourceOption,
+) (*providergcp.ServiceIdentity, []pulumi.Resource, error) {
+	if serviceAccountEmail != nil {
+		if policies, _ := compose.PoliciesFor(compose.PolicyCloudGCP, policies); len(policies) > 0 {
+			return nil, nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithServiceAccount)
+		}
+		return &providergcp.ServiceIdentity{Email: serviceAccountEmail}, nil, nil
+	}
+	sa, err := createServiceAccount(ctx, projectName, serviceName, infra, childOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	identity := &providergcp.ServiceIdentity{Account: sa, Email: sa.Email}
+	policyDeps, err := grantPolicies(ctx, serviceName, identity, policies, infra, childOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return identity, policyDeps, nil
+}
+
 // grantPolicies grants caller-specified IAM roles (x-defang-policies) on the
 // project to the service account created for the service. The grant is on the
 // service account, so it applies identically to the Cloud Run and Compute
@@ -231,23 +263,9 @@ func createService(
 		return err
 	}
 
-	var identity *providergcp.ServiceIdentity
-	var policyDeps []pulumi.Resource
-	if extras.ServiceAccountEmail != nil {
-		if policies, _ := compose.PoliciesFor(compose.PolicyCloudGCP, svc.Policies); len(policies) > 0 {
-			return fmt.Errorf("service %s: %w", serviceName, errPoliciesWithServiceAccount)
-		}
-		identity = &providergcp.ServiceIdentity{Email: extras.ServiceAccountEmail}
-	} else {
-		sa, err := createServiceAccount(ctx, projectName, serviceName, infra, childOpts)
-		if err != nil {
-			return err
-		}
-		identity = &providergcp.ServiceIdentity{Account: sa, Email: sa.Email}
-		policyDeps, err = grantPolicies(ctx, serviceName, identity, svc.Policies, infra, childOpts)
-		if err != nil {
-			return err
-		}
+	identity, policyDeps, err := serviceIdentity(ctx, projectName, serviceName, svc.Policies, extras.ServiceAccountEmail, infra, childOpts)
+	if err != nil {
+		return err
 	}
 
 	if svc.LLM != nil {
