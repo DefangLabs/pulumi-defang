@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -115,6 +116,22 @@ func buildEnvVars(
 		})
 	}
 	for k, v := range common.Sorted(svc.Environment) {
+		// Cloud Run reserves the PORT env var (it injects the container port
+		// itself) and rejects revisions that set it, so drop it here:
+		// https://cloud.google.com/run/docs/configuring/services/containers#configure-port
+		if k == "PORT" {
+			sv, static := compose.StaticEnvValue(v)
+			port := -1
+			if static && sv != nil {
+				port, _ = strconv.Atoi(*sv)
+			}
+			if len(svc.Ports) == 0 || port != int(svc.Ports[0].Target) {
+				msg := fmt.Sprintf("service %q: the PORT environment variable is reserved on Cloud Run"+
+					" and must match the container's port; the value has been ignored", serviceName)
+				_ = ctx.Log.Warn(msg, nil)
+			}
+			continue
+		}
 		if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
 			secretId, _ := configProvider.GetSecretRef(ctx, secretVar)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
