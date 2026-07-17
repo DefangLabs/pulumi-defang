@@ -233,6 +233,7 @@ func cdMain(ctx context.Context, args ...string) error {
 			optrefresh.ProgressStreams(progressStream),
 			optrefresh.ErrorProgressStreams(errorProgressStream),
 			optrefresh.EventStreams(evtCh),
+			optrefresh.TargetDependents(),
 			optrefresh.Target(pulumiTargets),
 		}
 		if pulumiDebug {
