@@ -24,6 +24,7 @@ var (
 	errUnsupportedProtocol     = errors.New("unsupported protocol")
 	errNoTCPPort               = errors.New("at least one tcp port is needed for health check")
 	errTooManyPorts            = errors.New("too many ports with protocol")
+	errMultipleIngressPorts    = errors.New("multiple ingress ports are not supported for Compute Engine services")
 )
 
 // LBServiceEntry holds the data needed to wire a service into the external load balancer.
@@ -73,6 +74,13 @@ func createExternalLoadBalancers(
 	var ingressEntries []LBServiceEntry
 	for _, e := range entries {
 		if e.Config.HasIngressPorts() && (e.CloudRunService != nil || e.InstanceGroup != nil) {
+			if e.InstanceGroup != nil && countIngressPorts(e.Config.Ports) > 1 {
+				return fmt.Errorf(
+					"service %s has multiple ingress ports; use at most one ingress port with any additional ports in host mode: %w",
+					e.Name,
+					errMultipleIngressPorts,
+				)
+			}
 			ingressEntries = append(ingressEntries, e)
 		}
 	}
@@ -563,6 +571,16 @@ func internalServiceDns(name string) string {
 	return common.ServiceLabel(name) + `.google.internal.`
 }
 
+func countIngressPorts(ports []compose.ServicePortConfig) int {
+	var count int
+	for _, port := range ports {
+		if port.IsIngress() {
+			count++
+		}
+	}
+	return count
+}
+
 func newCertMap(
 	ctx *pulumi.Context,
 	projectName string,
@@ -703,9 +721,10 @@ func buildMIGLBEntry(
 				Protocol:            pulumi.String("HTTP"),
 				LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
 				Backends: compute.BackendServiceBackendArray{
-					&compute.BackendServiceBackendArgs{Group: entry.InstanceGroup.InstanceGroup},
+					migBackend(entry),
 				},
 				HealthChecks: hc.ID(),
+				PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", port.GetProtocol(), port.Target)),
 			}, append(opts, pulumi.DependsOn([]pulumi.Resource{entry.InstanceGroup}))...)
 		if err != nil {
 			return pulumi.IDOutput{}, nil, nil, err
@@ -724,6 +743,15 @@ func buildMIGLBEntry(
 		return backend.ID(), matcher, hostRule, nil
 	}
 	return pulumi.IDOutput{}, nil, nil, nil
+}
+
+func migBackend(entry LBServiceEntry) *compute.BackendServiceBackendArgs {
+	backend := &compute.BackendServiceBackendArgs{Group: entry.InstanceGroup.InstanceGroup}
+	if entry.Config.HasHostPorts() {
+		backend.BalancingMode = pulumi.String("RATE")
+		backend.MaxRatePerInstance = pulumi.Float64(10000)
+	}
+	return backend
 }
 
 func createHTTPSForwardingRule(
