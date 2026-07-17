@@ -503,8 +503,14 @@ func CreateECSService(
 			lbDependsOn = append(lbDependsOn, dep)
 		}
 
-		// Attach caller-specified policies (x-defang-policies)
-		for _, policy := range svc.Policies {
+		// Attach caller-specified policies (x-defang-policies); entries
+		// qualified for another cloud are skipped, so multi-cloud compose
+		// files can list entries for each target side by side.
+		policies, skipped := compose.PoliciesFor(compose.PolicyCloudAWS, svc.Policies)
+		if len(skipped) > 0 {
+			_ = ctx.Log.Info(compose.SkippedPoliciesMessage(serviceName, skipped), nil)
+		}
+		for _, policy := range policies {
 			policyArn, err := resolvePolicyArn(ctx, policy, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)
@@ -519,7 +525,7 @@ func CreateECSService(
 			}
 			lbDependsOn = append(lbDependsOn, dep)
 		}
-	} else if len(svc.Policies) > 0 {
+	} else if policies, _ := compose.PoliciesFor(compose.PolicyCloudAWS, svc.Policies); len(policies) > 0 {
 		// A caller-supplied task role's policies are owned by the caller.
 		return nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithTaskRole)
 	}

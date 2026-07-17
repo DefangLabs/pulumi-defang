@@ -1167,6 +1167,7 @@ func TestConstructGcpProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
 					property.New("roles/run.developer"),
 					property.New("roles/storage.objectAdmin"),
 					property.New("deployer"),
+					property.New("arn:aws:iam::123456789012:policy/deployer"), // AWS entry: skipped on GCP
 				})),
 			})),
 		}),
@@ -1185,6 +1186,11 @@ func TestConstructGcpProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
 		return strings.HasSuffix(m.Get("role").AsString(), "/roles/deployer")
 	})
 	require.NotNil(t, custom, "expected a bare policy name to resolve to a project custom role")
+
+	foreign := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return strings.Contains(m.Get("role").AsString(), "arn:")
+	})
+	assert.Nil(t, foreign, "AWS-qualified policy must be skipped on GCP")
 }
 
 func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing.T) {

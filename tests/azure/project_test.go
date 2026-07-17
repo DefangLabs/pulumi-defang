@@ -64,3 +64,46 @@ func TestConstructAzureProjectAllResourcesAreChildren(t *testing.T) {
 
 	tracker.AssertAllDescendFrom(t, testutil.AzureURN("Project"))
 }
+
+func TestConstructAzureProjectIgnoresForeignPolicies(t *testing.T) {
+	server := testutil.MakeAzureTestServer()
+
+	// AWS/GCP-qualified x-defang-policies entries don't apply on Azure and
+	// must not trip the unsupported error.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("arn:aws:iam::123456789012:policy/deployer"),
+					property.New("roles/run.developer"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+}
+
+func TestConstructAzureProjectRejectsApplicablePolicies(t *testing.T) {
+	server := testutil.MakeAzureTestServer()
+
+	// A bare name applies on the current cloud, and Azure doesn't support
+	// policies yet.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("Contributor"),
+				})),
+			})),
+		}),
+	})
+
+	require.ErrorContains(t, err, "x-defang-policies is not supported on Azure")
+}

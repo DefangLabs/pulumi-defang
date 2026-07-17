@@ -206,3 +206,40 @@ func TestConstructAwsProjectAllResourcesAreChildren(t *testing.T) {
 
 	tracker.AssertAllDescendFrom(t, testutil.AwsURN("Project"))
 }
+
+func TestConstructAwsProjectSkipsForeignPolicies(t *testing.T) {
+	var attachments []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				attachments = append(attachments, args.Inputs)
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	const awsPolicy = "arn:aws:iam::123456789012:policy/deployer"
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(awsPolicy),
+					property.New("roles/run.developer"), // GCP entry: skipped on AWS
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	var arns []string
+	for _, a := range attachments {
+		arns = append(arns, a.Get("policyArn").AsString())
+	}
+	assert.Contains(t, arns, awsPolicy)
+	for _, arn := range arns {
+		assert.NotContains(t, arn, "run.developer", "GCP-qualified policy must be skipped on AWS")
+	}
+}
