@@ -263,7 +263,8 @@ func createService(
 		return err
 	}
 
-	identity, policyDeps, err := serviceIdentity(ctx, projectName, serviceName, svc.Policies, extras.ServiceAccountEmail, infra, childOpts)
+	identity, policyDeps, err := serviceIdentity(
+		ctx, projectName, serviceName, svc.Policies, extras.ServiceAccountEmail, infra, childOpts)
 	if err != nil {
 		return err
 	}
