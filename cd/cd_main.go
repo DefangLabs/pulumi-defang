@@ -202,7 +202,13 @@ func cdMain(ctx context.Context, args ...string) error {
 			optdestroy.ErrorProgressStreams(errorProgressStream),
 			optdestroy.EventStreams(evtCh),
 			optdestroy.ContinueOnError(),
-			optdestroy.Remove(),
+			optdestroy.TargetDependents(),
+			optdestroy.Target(pulumiTargets),
+		}
+		// A targeted destroy leaves resources in the stack, so only remove
+		// the stack when destroying everything.
+		if len(pulumiTargets) == 0 {
+			destroyOpts = append(destroyOpts, optdestroy.Remove())
 		}
 		// down = refresh + destroy (consistent with legacy behavior)
 		if command == "down" {
@@ -227,6 +233,7 @@ func cdMain(ctx context.Context, args ...string) error {
 			optrefresh.ProgressStreams(progressStream),
 			optrefresh.ErrorProgressStreams(errorProgressStream),
 			optrefresh.EventStreams(evtCh),
+			optrefresh.Target(pulumiTargets),
 		}
 		if pulumiDebug {
 			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
