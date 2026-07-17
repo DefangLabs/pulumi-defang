@@ -13,7 +13,9 @@ import (
 var (
 	errSidecarsRequireComputeEngine = errors.New(
 		"sidecars and volumes are only supported on Compute Engine services (no single ingress port)")
-	errPoliciesUnsupported = errors.New("x-defang-policies is not supported on GCP")
+	// A caller-supplied service account's IAM role grants are owned by the
+	// caller (the analogue of AWS errPoliciesWithTaskRole).
+	errPoliciesWithServiceAccount = errors.New("policies cannot be combined with serviceAccountEmail")
 )
 
 // Service is the controller struct for the defang-gcp:index:Service component.
@@ -150,6 +152,27 @@ type serviceExtras struct {
 	Triggers            pulumi.StringMapInput
 }
 
+// grantPolicies grants caller-specified IAM roles (x-defang-policies) on the
+// project to the service account created for the service. The grant is on the
+// service account, so it applies identically to the Cloud Run and Compute
+// Engine paths.
+func grantPolicies(
+	ctx *pulumi.Context,
+	identity *providergcp.ServiceIdentity,
+	policies []string,
+	infra *providergcp.SharedInfra,
+	opts []pulumi.ResourceOption,
+) {
+	if len(policies) == 0 {
+		return
+	}
+	roles := make([]string, len(policies))
+	for i, policy := range policies {
+		roles[i] = providergcp.ResolvePolicyRole(infra.GcpProject, policy)
+	}
+	providergcp.AddRolesToServiceAccount(ctx, identity, roles, infra, opts...)
+}
+
 // validateSidecarImages requires every sidecar to have an image; a static
 // image must also be non-empty. Dynamic (Output-valued) images are fine —
 // they resolve when the cloud-init systemd unit is rendered — matching the
@@ -186,15 +209,15 @@ func createService(
 	if extras == nil {
 		extras = &serviceExtras{}
 	}
-	if len(svc.Policies) > 0 {
-		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)
-	}
 	if err := validateSidecarImages(serviceName, extras.Sidecars); err != nil {
 		return err
 	}
 
 	var identity *providergcp.ServiceIdentity
 	if extras.ServiceAccountEmail != nil {
+		if len(svc.Policies) > 0 {
+			return fmt.Errorf("service %s: %w", serviceName, errPoliciesWithServiceAccount)
+		}
 		identity = &providergcp.ServiceIdentity{Email: extras.ServiceAccountEmail}
 	} else {
 		sa, err := createServiceAccount(ctx, projectName, serviceName, infra, childOpts)
@@ -202,6 +225,7 @@ func createService(
 			return err
 		}
 		identity = &providergcp.ServiceIdentity{Account: sa, Email: sa.Email}
+		grantPolicies(ctx, identity, svc.Policies, infra, childOpts)
 	}
 
 	if svc.LLM != nil {
