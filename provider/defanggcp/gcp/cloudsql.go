@@ -16,8 +16,19 @@ type CloudSQLResult struct {
 }
 
 // gcpPostgresVersion maps a major version number to the GCP database version string.
+// https://cloud.google.com/sql/docs/postgres/db-versions
 func gcpPostgresVersion(version int) string {
 	switch version {
+	case 9:
+		return "POSTGRES_9_6" // 9.6 was the only 9.x Cloud SQL offered
+	case 10:
+		return "POSTGRES_10"
+	case 11:
+		return "POSTGRES_11"
+	case 12:
+		return "POSTGRES_12"
+	case 13:
+		return "POSTGRES_13"
 	case 14:
 		return "POSTGRES_14"
 	case 15:
