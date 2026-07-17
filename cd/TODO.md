@@ -47,7 +47,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 ## Missing Pulumi options on commands
 
 - [x] **`TargetDependents` on destroy** — done: destroy passes `optdestroy.TargetDependents()` + `optdestroy.Target(pulumiTargets)`; a targeted destroy also skips `optdestroy.Remove()` so partial state isn't orphaned
-- [x] **`Target(pulumiTargets)` on refresh** — done: refresh passes `optrefresh.Target(pulumiTargets)`
+- [x] **`Target(pulumiTargets)` on refresh** — done: refresh passes `optrefresh.TargetDependents()` + `optrefresh.Target(pulumiTargets)` (old GCP `getRefreshOptions()` passed both, not just `Target`)
 - [x] **`UserAgent` on destroy/refresh** — old GCP set `UserAgent("defang/"+version)` on all commands; new only sets it on up/preview
 
 ## Missing commands (from old GCP code)
