@@ -207,11 +207,19 @@ func aliasesFor(mode aliasMode, urns map[string]string, name string) []pulumi.Re
 	return nil
 }
 
-// envs returns the per-workspace environment for an isolated file backend.
+// envs returns the per-workspace environment for a file backend. The legacy
+// (pre-project-scoped) DIY layout is pinned because that's what the defang CD
+// buckets use: the stack file path has no project segment, so the new program
+// reads the old project's state in place — no relocation step. A backend with
+// the modern project-scoped layout would shelve the old state under
+// stacks/cd/ and the new project would start empty.
 func envs(backendDir string) auto.LocalWorkspaceOption {
 	return auto.EnvVars(map[string]string{
 		"PULUMI_BACKEND_URL":       "file://" + backendDir,
 		"PULUMI_CONFIG_PASSPHRASE": "test",
+		// current + former name of the same knob, for pulumi-version drift
+		"PULUMI_DIY_BACKEND_LEGACY_LAYOUT":        "true",
+		"PULUMI_SELF_MANAGED_STATE_LEGACY_LAYOUT": "true",
 	})
 }
 
@@ -271,12 +279,14 @@ func TestAliasMigrationScenarios(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// Deploy the old-shape stack for real against a throwaway file backend,
-	// then export its state; each scenario below imports that state into a
-	// fresh backend under the NEW project name — modeling the state-relocation
-	// step the CLI must do (aliases can't resurrect state across stack files;
-	// they only remap URNs within one).
-	oldStack, err := auto.UpsertStackInlineSource(ctx, stackName, oldProject, oldProgram, envs(t.TempDir()))
+	// Deploy the old-shape stack for real against a throwaway file backend.
+	// The scenarios below select the SAME stack from the same backend under
+	// the NEW project name — with the legacy DIY layout (see envs) the stack
+	// file has no project segment, so the old state is found in place, exactly
+	// like a defang CD bucket. The export below is only used to harvest the
+	// old URNs for the explicit-URN mode.
+	backend := t.TempDir()
+	oldStack, err := auto.UpsertStackInlineSource(ctx, stackName, oldProject, oldProgram, envs(backend))
 	if err != nil {
 		t.Fatalf("upsert old stack: %v", err)
 	}
@@ -326,15 +336,12 @@ func TestAliasMigrationScenarios(t *testing.T) {
 	for _, sc := range scenarios {
 		t.Run(string(sc.mode), func(t *testing.T) {
 			stack, err := auto.UpsertStackInlineSource(ctx, stackName, newProject,
-				newProgram(sc.mode, urns), envs(t.TempDir()))
+				newProgram(sc.mode, urns), envs(backend))
 			if err != nil {
 				t.Fatalf("upsert new stack: %v", err)
 			}
 			if err := stack.Workspace().InstallPlugin(ctx, "random", "v4.19.2"); err != nil {
 				t.Fatalf("install random plugin: %v", err)
-			}
-			if err := stack.Import(ctx, deployment); err != nil {
-				t.Fatalf("import old state: %v", err)
 			}
 			ops := preview(t, ctx, stack)
 			t.Logf("%s: %v", sc.mode, ops)

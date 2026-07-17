@@ -26,10 +26,17 @@ plans a full delete+create of the world (verified below).
 
 1. Deploy a model of the **old** stack shape (project `cd`): a `Defang`
    component owning `vpc`/`cluster`, plus four flat per-service resources.
-2. `pulumi stack export` it, then **import the state into a fresh stack under
-   the new project name** — modeling the state relocation the CLI must do.
-3. For each alias strategy, preview a model of the **new** stack shape
-   (project = compose name, nested components) and tally the planned ops.
+2. For each alias strategy, select the **same stack from the same backend**
+   under the new project name and preview a model of the **new** stack shape
+   (project = compose name, nested components), tallying the planned ops.
+
+The backend is pinned to the legacy (pre-project-scoped) DIY layout via
+`PULUMI_DIY_BACKEND_LEGACY_LAYOUT`, matching the defang CD buckets: the stack
+file path has no project segment (`.pulumi/stacks/<stack>.json`), so the new
+program reads the old project's state **in place** — the project rename does
+not move the state file. (A backend created with the modern project-scoped
+layout would shelve the old state under `stacks/cd/` and need a copy step;
+that's not our situation.)
 
 Run it from this directory (needs the `pulumi` CLI; skipped under `-short`,
 so CI's provider-test run is unaffected):
@@ -54,12 +61,12 @@ pseudo-resources.
 
 ## Findings
 
-1. **State relocation is a prerequisite, not optional.** Aliases only remap
-   URNs *within* one stack's state. Because the Pulumi project name changed
-   (`cd` → compose name), the DIY-backend stack file lives at a different path;
-   the CLI (or a migration step) must copy/rename the old stack's state into
-   the new project's stack before the first `up`. The harness models this with
-   export/import.
+1. **The state file is found in place.** With the legacy DIY layout the CD
+   buckets use, the stack file path doesn't include the project name, so the
+   renamed project reads the old state directly — no relocation or import
+   step. Aliases are the only thing needed. (Keep the legacy layout pinned in
+   the cd driver; a layout upgrade would move stack files under per-project
+   directories.)
 2. **Per-resource aliases work — both flavors.** Explicit URNs (`urn`) and
    convention-computed specs (`spec`) both achieve zero deletes. `spec` is the
    interesting one for automation: `Alias{Project: "cd", NoParent: true}` for
@@ -82,9 +89,11 @@ pseudo-resources.
 
 ## Suggested direction
 
-Extend the existing `x-defang-aliases` mechanism with a convention mode: when
-migration from the old CD is detected (or requested via recipe/extension),
-have each `Create*` worker attach a computed `pulumi.Alias` spec (finding 2)
-for the resources the old CD created, keyed off the old naming rules. The
-explicit URN map stays as the escape hatch for resources whose old names are
-not derivable.
+Attach the convention-computed `pulumi.Alias` specs (finding 2) **by default**
+in each `Create*` worker for the resources the old CD created, keyed off the
+old naming rules. Aliases resolve purely in the engine against the current
+state: they are inert when no old URN is present, become permanent no-ops once
+the first post-migration `up` rewrites the URNs, and a wrong alias fails safe
+(no match → the replacement you'd have had anyway). The explicit
+`x-defang-aliases` URN map stays as the override for resources whose old names
+are not derivable, and a recipe kill-switch covers debugging.
