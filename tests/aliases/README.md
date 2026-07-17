@@ -89,11 +89,39 @@ pseudo-resources.
 
 ## Suggested direction
 
-Attach the convention-computed `pulumi.Alias` specs (finding 2) **by default**
-in each `Create*` worker for the resources the old CD created, keyed off the
-old naming rules. Aliases resolve purely in the engine against the current
-state: they are inert when no old URN is present, become permanent no-ops once
-the first post-migration `up` rewrites the URNs, and a wrong alias fails safe
-(no match → the replacement you'd have had anyway). The explicit
-`x-defang-aliases` URN map stays as the override for resources whose old names
-are not derivable, and a recipe kill-switch covers debugging.
+Attach convention-computed `pulumi.Alias` specs (finding 2) **by default** in
+the `Create*` workers — but scoped to **stateful resources only**. Full
+zero-replacement fidelity isn't the goal: stateless resources (task
+definitions, ECS/Cloud Run services, listeners, target groups, log groups,
+certs, IAM, builds) may recreate freely on migration. Aliases resolve purely
+in the engine against current state: inert when no old URN is present,
+permanent no-ops once the first post-migration `up` rewrites the URNs, and a
+wrong alias fails safe (no match → the replacement you'd have had anyway).
+The explicit `x-defang-aliases` URN map stays as the per-resource override,
+and a recipe kill-switch covers debugging.
+
+Starter set of stateful resources to alias:
+
+- **AWS**: VPC + subnets, NAT EIPs (customers allowlist these — the old CD
+  exported `publicNatIps`), RDS instance + DB subnet group, ElastiCache
+  replication group / MemoryDB cluster + subnet group + parameter group,
+  Route53 zones (the public zone's NS delegation is externally pinned).
+- **GCP**: network + subnet, the global static IP, Cloud SQL instance +
+  service-networking connection/reserved range, Memorystore instance, the
+  public DNS managed zone.
+
+Two subtleties the stateful-only cut must respect:
+
+1. **ForceNew attachments ride along.** A kept database pins whatever its
+   replace-forcing inputs reference — e.g. an ElastiCache/RDS instance whose
+   subnet group changes gets replaced anyway, and a subnet group referencing
+   recreated subnets drags the database with it. So the stateful set is
+   closed under "referenced by a ForceNew property": DB → subnet group →
+   subnets → VPC. (This is exactly the shape of the existing
+   `x-defang-aliases` kinds: cluster / subnet-group / parameter-group /
+   security-group.)
+2. **An unmatched stateful resource isn't just "recreated" — it's emptied.**
+   The engine creates the new (empty) database first and deletes the old one
+   later in the same update, so without an alias the result is silent data
+   loss (or a deletion-protection failure mid-deploy). Databases are the hard
+   core of the set; everything else is availability/cost.
