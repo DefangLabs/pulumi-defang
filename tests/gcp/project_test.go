@@ -1186,3 +1186,31 @@ func TestConstructGcpProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
 	})
 	require.NotNil(t, custom, "expected a bare policy name to resolve to a project custom role")
 }
+
+func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	// A portless worker runs on Compute Engine, which grants a platform role
+	// set (logging, monitoring, ...) on the same service account. Repeating
+	// one of those roles in x-defang-policies must not abort the deployment
+	// with a duplicate URN.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:worker"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/logging.logWriter"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	members := countTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/logging.logWriter"
+	})
+	assert.Equal(t, 2, members, "expected both the platform grant and the policy grant to be registered")
+}

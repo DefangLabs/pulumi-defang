@@ -158,19 +158,23 @@ type serviceExtras struct {
 // Engine paths.
 func grantPolicies(
 	ctx *pulumi.Context,
+	serviceName string,
 	identity *providergcp.ServiceIdentity,
 	policies []string,
 	infra *providergcp.SharedInfra,
 	opts []pulumi.ResourceOption,
-) {
+) error {
 	if len(policies) == 0 {
-		return
+		return nil
 	}
 	roles := make([]string, len(policies))
 	for i, policy := range policies {
 		roles[i] = providergcp.ResolvePolicyRole(infra.GcpProject, policy)
 	}
-	providergcp.AddRolesToServiceAccount(ctx, identity, roles, infra, opts...)
+	if err := providergcp.GrantPolicyRoles(ctx, serviceName, identity, roles, infra, opts...); err != nil {
+		return fmt.Errorf("granting policies for service %s: %w", serviceName, err)
+	}
+	return nil
 }
 
 // validateSidecarImages requires every sidecar to have an image; a static
@@ -225,7 +229,9 @@ func createService(
 			return err
 		}
 		identity = &providergcp.ServiceIdentity{Account: sa, Email: sa.Email}
-		grantPolicies(ctx, identity, svc.Policies, infra, childOpts)
+		if err := grantPolicies(ctx, serviceName, identity, svc.Policies, infra, childOpts); err != nil {
+			return err
+		}
 	}
 
 	if svc.LLM != nil {
