@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -9,14 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// alarmMocks records every MetricAlarm registration.
+// alarmMocks records every MetricAlarm registration by resource name.
+// Registrations arrive on concurrent goroutines, so guard with a mutex and
+// don't assume ordering.
 type alarmMocks struct {
-	alarms *[]pulumi.MockResourceArgs
+	mu     *sync.Mutex
+	alarms map[string]resource.PropertyMap
 }
 
 func (m alarmMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	if args.TypeToken == "aws:cloudwatch/metricAlarm:MetricAlarm" {
-		*m.alarms = append(*m.alarms, args)
+		m.mu.Lock()
+		m.alarms[args.Name] = args.Inputs
+		m.mu.Unlock()
 	}
 	return args.Name + "_id", args.Inputs, nil
 }
@@ -44,14 +50,14 @@ var testAlarms = []dbAlarm{
 	},
 }
 
-func runCreateDBAlarms(t *testing.T) []pulumi.MockResourceArgs {
+func runCreateDBAlarms(t *testing.T) map[string]resource.PropertyMap {
 	t.Helper()
-	var created []pulumi.MockResourceArgs
+	created := map[string]resource.PropertyMap{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return createDBAlarms(ctx, "cache", "AWS/MemoryDB",
 			pulumi.StringMap{"ClusterName": pulumi.String("cache-abc")},
 			pulumi.StringMap{"defang:service": pulumi.String("cache")}, testAlarms)
-	}, pulumi.WithMocks("myproj", "mystack", alarmMocks{alarms: &created}))
+	}, pulumi.WithMocks("myproj", "mystack", alarmMocks{mu: &sync.Mutex{}, alarms: created}))
 	require.NoError(t, err)
 	return created
 }
@@ -66,8 +72,8 @@ func TestCreateDBAlarms_Enabled(t *testing.T) {
 	created := runCreateDBAlarms(t)
 	require.Len(t, created, 2)
 
-	memory := created[0].Inputs
-	assert.Equal(t, "cache-memory-usage", created[0].Name)
+	memory, ok := created["cache-memory-usage"]
+	require.True(t, ok)
 	assert.Equal(t, "AWS/MemoryDB", memory["namespace"].StringValue())
 	assert.Equal(t, "DatabaseCapacityUsagePercentage", memory["metricName"].StringValue())
 	assert.Equal(t, "GreaterThanThreshold", memory["comparisonOperator"].StringValue())
@@ -79,8 +85,9 @@ func TestCreateDBAlarms_Enabled(t *testing.T) {
 	assert.Equal(t, "cache", memory["tags"].ObjectValue()["defang:service"].StringValue())
 	assert.False(t, memory.HasValue("alarmActions"), "no actions without alarm-topic-arn")
 
-	assert.Equal(t, "cache-cpu-usage", created[1].Name)
-	assert.Equal(t, "CPUUtilization", created[1].Inputs["metricName"].StringValue())
+	cpu, ok := created["cache-cpu-usage"]
+	require.True(t, ok)
+	assert.Equal(t, "CPUUtilization", cpu["metricName"].StringValue())
 }
 
 func TestCreateDBAlarms_TopicArn(t *testing.T) {
@@ -89,12 +96,12 @@ func TestCreateDBAlarms_TopicArn(t *testing.T) {
 	created := runCreateDBAlarms(t)
 	require.Len(t, created, 2)
 
-	for _, alarm := range created {
-		alarmActions := alarm.Inputs["alarmActions"].ArrayValue()
-		require.Len(t, alarmActions, 1)
-		assert.Equal(t, arn, alarmActions[0].StringValue())
-		okActions := alarm.Inputs["okActions"].ArrayValue()
-		require.Len(t, okActions, 1)
-		assert.Equal(t, arn, okActions[0].StringValue())
+	for name, alarm := range created {
+		alarmActions := alarm["alarmActions"].ArrayValue()
+		require.Len(t, alarmActions, 1, name)
+		assert.Equal(t, arn, alarmActions[0].StringValue(), name)
+		okActions := alarm["okActions"].ArrayValue()
+		require.Len(t, okActions, 1, name)
+		assert.Equal(t, arn, okActions[0].StringValue(), name)
 	}
 }
