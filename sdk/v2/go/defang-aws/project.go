@@ -17,6 +17,7 @@ type Project struct {
 	pulumi.ResourceState
 
 	ClusterName     pulumi.StringOutput    `pulumi:"clusterName"`
+	DatastoreIds    pulumi.StringMapOutput `pulumi:"datastoreIds"`
 	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
 	LoadBalancerArn pulumi.StringPtrOutput `pulumi:"loadBalancerArn"`
 	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
@@ -100,6 +101,10 @@ func (o ProjectOutput) ToProjectOutputWithContext(ctx context.Context) ProjectOu
 
 func (o ProjectOutput) ClusterName() pulumi.StringOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.ClusterName }).(pulumi.StringOutput)
+}
+
+func (o ProjectOutput) DatastoreIds() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.DatastoreIds }).(pulumi.StringMapOutput)
 }
 
 func (o ProjectOutput) Endpoints() pulumi.StringMapOutput {

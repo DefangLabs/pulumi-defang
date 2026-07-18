@@ -511,6 +511,13 @@
         "clusterName": {
           "type": "string"
         },
+        "datastoreIds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
         "endpoints": {
           "type": "object",
           "additionalProperties": {
@@ -547,7 +554,8 @@
         "clusterName",
         "logGroupName",
         "serviceNames",
-        "taskRoleArns"
+        "taskRoleArns",
+        "datastoreIds"
       ],
       "inputProperties": {
         "aws": {
