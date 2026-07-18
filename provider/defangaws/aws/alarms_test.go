@@ -49,7 +49,8 @@ func runCreateDBAlarms(t *testing.T) []pulumi.MockResourceArgs {
 	var created []pulumi.MockResourceArgs
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return createDBAlarms(ctx, "cache", "AWS/MemoryDB",
-			pulumi.StringMap{"ClusterName": pulumi.String("cache-abc")}, testAlarms)
+			pulumi.StringMap{"ClusterName": pulumi.String("cache-abc")},
+			pulumi.StringMap{"defang:service": pulumi.String("cache")}, testAlarms)
 	}, pulumi.WithMocks("myproj", "mystack", alarmMocks{alarms: &created}))
 	require.NoError(t, err)
 	return created
@@ -75,6 +76,7 @@ func TestCreateDBAlarms_Enabled(t *testing.T) {
 	assert.InDelta(t, 300, memory["period"].NumberValue(), 0)
 	assert.InDelta(t, 2, memory["evaluationPeriods"].NumberValue(), 0)
 	assert.Equal(t, "cache-abc", memory["dimensions"].ObjectValue()["ClusterName"].StringValue())
+	assert.Equal(t, "cache", memory["tags"].ObjectValue()["defang:service"].StringValue())
 	assert.False(t, memory.HasValue("alarmActions"), "no actions without alarm-topic-arn")
 
 	assert.Equal(t, "cache-cpu-usage", created[1].Name)

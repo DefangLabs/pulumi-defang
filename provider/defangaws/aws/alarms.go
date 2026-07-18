@@ -33,6 +33,7 @@ func createDBAlarms(
 	name string,
 	namespace string,
 	dimensions pulumi.StringMapInput,
+	tags pulumi.StringMapInput,
 	alarms []dbAlarm,
 	opts ...pulumi.ResourceOption,
 ) error {
@@ -57,6 +58,7 @@ func createDBAlarms(
 			Namespace:          pulumi.String(namespace),
 			Period:             pulumi.Int(alarmPeriod),
 			Statistic:          pulumi.String(alarm.statistic),
+			Tags:               tags,
 			Threshold:          pulumi.Float64(alarm.threshold),
 		}, opts...)
 		if err != nil {

@@ -231,7 +231,7 @@ func CreateMemoryDB(
 	}
 
 	err = createDBAlarms(ctx, serviceName, "AWS/MemoryDB",
-		pulumi.StringMap{"ClusterName": cluster.Name}, []dbAlarm{
+		pulumi.StringMap{"ClusterName": cluster.Name}, tags, []dbAlarm{
 			{
 				suffix:             "memory-usage",
 				metricName:         "DatabaseCapacityUsagePercentage",

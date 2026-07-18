@@ -353,12 +353,15 @@ func CreateElasticache(
 		return nil, fmt.Errorf("creating ElastiCache replication group: %w", err)
 	}
 
-	// ElastiCache metrics are per member cache cluster ("<rg-id>-00N"), not per
-	// replication group. EngineCPUUtilization tracks the (single) Redis thread,
-	// which saturates well before host CPUUtilization on multi-vCPU nodes.
-	for i := int32(1); i <= replicas; i++ {
-		err = createDBAlarms(ctx, fmt.Sprintf("%s-%03d", serviceName, i), "AWS/ElastiCache",
-			pulumi.StringMap{"CacheClusterId": pulumi.Sprintf("%s-%03d", rg.ReplicationGroupId, i)}, []dbAlarm{
+	// ElastiCache metrics are per member cache cluster, not per replication
+	// group. MemberClusters carries the actual member IDs — their naming
+	// differs between cluster-mode-disabled ("<rg-id>-00N") and "compatible"
+	// groups, so don't reconstruct them. EngineCPUUtilization tracks the
+	// (single) Redis thread, which saturates well before host CPUUtilization
+	// on multi-vCPU nodes.
+	for i := range replicas {
+		err = createDBAlarms(ctx, fmt.Sprintf("%s-%03d", serviceName, i+1), "AWS/ElastiCache",
+			pulumi.StringMap{"CacheClusterId": rg.MemberClusters.Index(pulumi.Int(i))}, tags, []dbAlarm{
 				{
 					suffix:             "memory-usage",
 					metricName:         "DatabaseMemoryUsagePercentage",
