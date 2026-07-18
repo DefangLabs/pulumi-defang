@@ -9,11 +9,9 @@ var (
 	// Alarms enables provider-created CloudWatch alarms on managed databases
 	// (Redis/MemoryDB memory+CPU, RDS CPU+storage). Off in the affordable
 	// default: alarms have a per-alarm cost and dev stacks don't need paging.
-	Alarms = recipe.Bool("alarms", false)
-	// AlarmTopicArn is a pre-existing SNS topic attached as the alarm/OK
-	// action of every provider-created alarm. Empty means alarms are still
-	// created (console-visible) but don't notify.
-	AlarmTopicArn         = recipe.String("alarm-topic-arn", "")
+	// Notification wiring is per project, not per recipe: the SNS topic is the
+	// AWSConfig.AlarmTopicArn input.
+	Alarms                = recipe.Bool("alarms", false)
 	AllowBurstable        = recipe.Bool("allow-burstable", true)
 	AllowOverwriteRecords = recipe.Bool("allow-overwrite-records", false)
 	BackupRetentionDays   = recipe.Int("backup-retention-days", 0)

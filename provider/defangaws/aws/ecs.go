@@ -57,11 +57,14 @@ type SharedInfra struct {
 	ProjectDomain    string
 	ZoneId           pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
 	// shared "private SG" — attached to all services, no ingress rules
-	PrivateSgID    pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
-	AlbSG          *ec2.SecurityGroup    // nil if no ALB
-	HttpListener   *lb.Listener          // nil if no ALB
-	HttpsListener  *lb.Listener          // nil if no ALB
-	Alb            *lb.LoadBalancer      // nil if no ALB
+	PrivateSgID pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
+	// SNS topic notified by provider-created database alarms (see the alarms
+	// recipe); nil means the alarms don't notify.
+	AlarmTopicArn  pulumi.StringInput `pulumi:"alarmTopicArn,optional"`
+	AlbSG          *ec2.SecurityGroup // nil if no ALB
+	HttpListener   *lb.Listener       // nil if no ALB
+	HttpsListener  *lb.Listener       // nil if no ALB
+	Alb            *lb.LoadBalancer   // nil if no ALB
 	Region         string
 	BuildInfra     *BuildInfra       // nil if no builds needed
 	PublicEcrCache *PullThroughCache // ECR public pull-through cache

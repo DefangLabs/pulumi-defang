@@ -171,6 +171,7 @@ func CreateRDS(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
@@ -296,7 +297,7 @@ func CreateRDS(
 	// autoscaling, so it only fires when autoscaling can't keep up or the
 	// maxAllocatedStorage cap is reached.
 	err = createDBAlarms(ctx, serviceName, "AWS/RDS",
-		pulumi.StringMap{"DBInstanceIdentifier": instance.Identifier}, tags, []dbAlarm{
+		pulumi.StringMap{"DBInstanceIdentifier": instance.Identifier}, tags, alarmTopicArn, []dbAlarm{
 			{
 				suffix:             "cpu-usage",
 				metricName:         "CPUUtilization",

@@ -25,15 +25,16 @@ const (
 )
 
 // createDBAlarms creates CloudWatch alarms for a managed database when the
-// alarms recipe is enabled; a no-op under the affordable default. When the
-// alarm-topic-arn recipe is set, each alarm notifies that SNS topic on both
-// the ALARM and OK transitions.
+// alarms recipe is enabled; a no-op under the affordable default. When
+// alarmTopicArn is non-nil, each alarm notifies that SNS topic on both the
+// ALARM and OK transitions.
 func createDBAlarms(
 	ctx *pulumi.Context,
 	name string,
 	namespace string,
 	dimensions pulumi.StringMapInput,
 	tags pulumi.StringMapInput,
+	alarmTopicArn pulumi.StringInput,
 	alarms []dbAlarm,
 	opts ...pulumi.ResourceOption,
 ) error {
@@ -42,8 +43,8 @@ func createDBAlarms(
 	}
 
 	var actions pulumi.ArrayInput
-	if arn := AlarmTopicArn.Get(ctx); arn != "" {
-		actions = pulumi.Array{pulumi.String(arn)}
+	if alarmTopicArn != nil {
+		actions = pulumi.Array{alarmTopicArn}
 	}
 
 	for _, alarm := range alarms {

@@ -14,6 +14,7 @@ import (
 var _ = internal.GetEnvOrDefault
 
 type SharedInfra struct {
+	AlarmTopicArn    *string  `pulumi:"alarmTopicArn"`
 	ClusterArn       *string  `pulumi:"clusterArn"`
 	ExecutionRoleArn *string  `pulumi:"executionRoleArn"`
 	LogGroupName     *string  `pulumi:"logGroupName"`
@@ -36,6 +37,7 @@ type SharedInfraInput interface {
 }
 
 type SharedInfraArgs struct {
+	AlarmTopicArn    pulumi.StringPtrInput   `pulumi:"alarmTopicArn"`
 	ClusterArn       pulumi.StringPtrInput   `pulumi:"clusterArn"`
 	ExecutionRoleArn pulumi.StringPtrInput   `pulumi:"executionRoleArn"`
 	LogGroupName     pulumi.StringPtrInput   `pulumi:"logGroupName"`
@@ -123,6 +125,10 @@ func (o SharedInfraOutput) ToSharedInfraPtrOutputWithContext(ctx context.Context
 	}).(SharedInfraPtrOutput)
 }
 
+func (o SharedInfraOutput) AlarmTopicArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v SharedInfra) *string { return v.AlarmTopicArn }).(pulumi.StringPtrOutput)
+}
+
 func (o SharedInfraOutput) ClusterArn() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v SharedInfra) *string { return v.ClusterArn }).(pulumi.StringPtrOutput)
 }
@@ -177,6 +183,15 @@ func (o SharedInfraPtrOutput) Elem() SharedInfraOutput {
 		var ret SharedInfra
 		return ret
 	}).(SharedInfraOutput)
+}
+
+func (o SharedInfraPtrOutput) AlarmTopicArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *SharedInfra) *string {
+		if v == nil {
+			return nil
+		}
+		return v.AlarmTopicArn
+	}).(pulumi.StringPtrOutput)
 }
 
 func (o SharedInfraPtrOutput) ClusterArn() pulumi.StringPtrOutput {

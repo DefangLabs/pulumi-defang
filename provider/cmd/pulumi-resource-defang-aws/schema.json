@@ -34,6 +34,9 @@
   "types": {
     "defang-aws:aws:SharedInfra": {
       "properties": {
+        "alarmTopicArn": {
+          "type": "string"
+        },
         "clusterArn": {
           "type": "string"
         },
@@ -375,6 +378,9 @@
     },
     "defang-aws:index:AWSConfig": {
       "properties": {
+        "alarmTopicArn": {
+          "type": "string"
+        },
         "albCertificateArn": {
           "type": "string"
         },

@@ -90,6 +90,7 @@ func CreateMemoryDB(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -231,7 +232,7 @@ func CreateMemoryDB(
 	}
 
 	err = createDBAlarms(ctx, serviceName, "AWS/MemoryDB",
-		pulumi.StringMap{"ClusterName": cluster.Name}, tags, []dbAlarm{
+		pulumi.StringMap{"ClusterName": cluster.Name}, tags, alarmTopicArn, []dbAlarm{
 			{
 				suffix:             "memory-usage",
 				metricName:         "DatabaseCapacityUsagePercentage",

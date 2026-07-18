@@ -213,6 +213,7 @@ func CreateElasticache(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -361,7 +362,7 @@ func CreateElasticache(
 	// on multi-vCPU nodes.
 	for i := range replicas {
 		err = createDBAlarms(ctx, fmt.Sprintf("%s-%03d", serviceName, i+1), "AWS/ElastiCache",
-			pulumi.StringMap{"CacheClusterId": rg.MemberClusters.Index(pulumi.Int(i))}, tags, []dbAlarm{
+			pulumi.StringMap{"CacheClusterId": rg.MemberClusters.Index(pulumi.Int(i))}, tags, alarmTopicArn, []dbAlarm{
 				{
 					suffix:             "memory-usage",
 					metricName:         "DatabaseMemoryUsagePercentage",

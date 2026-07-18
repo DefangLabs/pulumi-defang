@@ -50,26 +50,26 @@ var testAlarms = []dbAlarm{
 	},
 }
 
-func runCreateDBAlarms(t *testing.T) map[string]resource.PropertyMap {
+func runCreateDBAlarms(t *testing.T, alarmTopicArn pulumi.StringInput) map[string]resource.PropertyMap {
 	t.Helper()
 	created := map[string]resource.PropertyMap{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return createDBAlarms(ctx, "cache", "AWS/MemoryDB",
 			pulumi.StringMap{"ClusterName": pulumi.String("cache-abc")},
-			pulumi.StringMap{"defang:service": pulumi.String("cache")}, testAlarms)
+			pulumi.StringMap{"defang:service": pulumi.String("cache")}, alarmTopicArn, testAlarms)
 	}, pulumi.WithMocks("myproj", "mystack", alarmMocks{mu: &sync.Mutex{}, alarms: created}))
 	require.NoError(t, err)
 	return created
 }
 
 func TestCreateDBAlarms_AffordableDefaultCreatesNone(t *testing.T) {
-	created := runCreateDBAlarms(t)
+	created := runCreateDBAlarms(t, nil)
 	assert.Empty(t, created, "affordable default must not create alarms")
 }
 
 func TestCreateDBAlarms_Enabled(t *testing.T) {
 	t.Setenv("PULUMI_CONFIG", `{"defang-aws:alarms": "true"}`)
-	created := runCreateDBAlarms(t)
+	created := runCreateDBAlarms(t, nil)
 	require.Len(t, created, 2)
 
 	memory, ok := created["cache-memory-usage"]
@@ -83,7 +83,7 @@ func TestCreateDBAlarms_Enabled(t *testing.T) {
 	assert.InDelta(t, 2, memory["evaluationPeriods"].NumberValue(), 0)
 	assert.Equal(t, "cache-abc", memory["dimensions"].ObjectValue()["ClusterName"].StringValue())
 	assert.Equal(t, "cache", memory["tags"].ObjectValue()["defang:service"].StringValue())
-	assert.False(t, memory.HasValue("alarmActions"), "no actions without alarm-topic-arn")
+	assert.False(t, memory.HasValue("alarmActions"), "no actions without an alarm topic input")
 
 	cpu, ok := created["cache-cpu-usage"]
 	require.True(t, ok)
@@ -92,8 +92,8 @@ func TestCreateDBAlarms_Enabled(t *testing.T) {
 
 func TestCreateDBAlarms_TopicArn(t *testing.T) {
 	arn := "arn:aws:sns:us-west-2:123456789012:slackbot-alarms"
-	t.Setenv("PULUMI_CONFIG", `{"defang-aws:alarms": "true", "defang-aws:alarm-topic-arn": "`+arn+`"}`)
-	created := runCreateDBAlarms(t)
+	t.Setenv("PULUMI_CONFIG", `{"defang-aws:alarms": "true"}`)
+	created := runCreateDBAlarms(t, pulumi.String(arn))
 	require.Len(t, created, 2)
 
 	for name, alarm := range created {
