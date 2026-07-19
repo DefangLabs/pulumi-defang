@@ -43,16 +43,20 @@ type PullThroughCache struct {
 }
 
 // createEcrPullThroughCache creates an ECR pull-through cache rule for the given upstream registry.
-// Matches TS createEcrPullThroughCache in shared/aws/repos.ts.
+// Matches TS createEcrPullThroughCache in shared/aws/repos.ts. prefixSeed
+// seeds the repository prefix — an ACCOUNT-global namespace, so it must be
+// scoped (e.g. by project) to avoid colliding with rules owned by other
+// stacks/programs in the same account; name stays the (stable) resource name.
 func createEcrPullThroughCache(
 	ctx *pulumi.Context,
 	name string,
+	prefixSeed string,
 	upstreamRegistryURL pulumi.StringInput,
 	opts ...pulumi.ResourceOption,
 ) (*PullThroughCache, error) {
 	const maxCacheRepoLength = 30 // was 20 https://github.com/hashicorp/terraform-provider-aws/pull/34716
 	// PullThroughCacheRule does not support autonaming, so we need to generate a unique and compliant prefix ourselves.
-	prefix := strings.ToLower(common.AutonamingPrefix(ctx, name))
+	prefix := strings.ToLower(common.AutonamingPrefix(ctx, prefixSeed))
 	if len(prefix) > maxCacheRepoLength {
 		// 	TODO: hashTrim/truncate prefix smartly
 		prefix = prefix[:maxCacheRepoLength]
