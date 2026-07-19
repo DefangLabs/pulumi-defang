@@ -100,6 +100,15 @@ type ProjectOutputs struct {
 	// Task role ARNs by compose service name (container services only), for
 	// resource-based policies (e.g. KMS key policies) that must name the role.
 	TaskRoleArns pulumix.Output[map[string]string] `pulumi:"taskRoleArns"`
+
+	// ServiceIds maps every service name to the physical identifier of its
+	// primary backing resource — the ECS service name for container services
+	// (same value as serviceNames), the MemoryDB cluster name or ElastiCache
+	// replication group ID for Redis, the RDS DBInstanceIdentifier for
+	// Postgres — so consumers can attach externally managed alarms and
+	// dashboards. Child components' own outputs are unreachable on Project
+	// children.
+	ServiceIds pulumix.Output[map[string]string] `pulumi:"serviceIds"`
 }
 
 // Construct implements the ComponentResource interface for Project.
@@ -124,6 +133,7 @@ func (*Project) Construct(
 	comp.LogGroupName = pulumix.Output[string](result.LogGroupName)
 	comp.ServiceNames = pulumix.Output[map[string]string](result.ServiceNames)
 	comp.TaskRoleArns = pulumix.Output[map[string]string](result.TaskRoleArns)
+	comp.ServiceIds = pulumix.Output[map[string]string](result.ServiceIds)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       result.Endpoints,
@@ -133,6 +143,7 @@ func (*Project) Construct(
 		"logGroupName":    result.LogGroupName,
 		"serviceNames":    result.ServiceNames,
 		"taskRoleArns":    result.TaskRoleArns,
+		"serviceIds":      result.ServiceIds,
 	}); err != nil {
 		return nil, err
 	}
@@ -149,6 +160,7 @@ type projectResult struct {
 	LogGroupName    pulumi.StringOutput
 	ServiceNames    pulumi.StringMapOutput
 	TaskRoleArns    pulumi.StringMapOutput
+	ServiceIds      pulumi.StringMapOutput
 }
 
 // buildProject creates all AWS resources for the project.
@@ -177,6 +189,7 @@ func buildProject(
 	endpoints := pulumi.StringMap{}
 	serviceNames := pulumi.StringMap{}
 	taskRoleArns := pulumi.StringMap{}
+	serviceIds := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
 	var configProvider compose.ConfigProvider
@@ -222,7 +235,7 @@ func buildProject(
 		}
 
 		waitForHealthy := waitForSteady[svcName] || args.WaitForSteadyState
-		endpoint, dependency, svcComp, err := newService(
+		endpoint, dependency, svcComp, datastoreID, err := newService(
 			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
@@ -232,6 +245,14 @@ func buildProject(
 		if svcComp != nil {
 			serviceNames[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
 			taskRoleArns[svcName] = svcComp.TaskRoleArn.Untyped().(pulumi.StringOutput)
+			serviceIds[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
+		}
+		// For datastore services, deliberately overwrite the ECS service name set
+		// above with the backing resource's physical ID (RDS instance, MemoryDB/
+		// ElastiCache cluster). newService returns a non-nil datastoreID only for
+		// those, so container services keep their ECS service name.
+		if datastoreID != nil {
+			serviceIds[svcName] = datastoreID
 		}
 		if dependency != nil {
 			dependencies[svcName] = dependency
@@ -248,6 +269,7 @@ func buildProject(
 		LogGroupName:    infra.LogGroup.Name,
 		ServiceNames:    serviceNames.ToStringMapOutput(),
 		TaskRoleArns:    taskRoleArns.ToStringMapOutput(),
+		ServiceIds:      serviceIds.ToStringMapOutput(),
 	}, nil
 }
 
@@ -262,41 +284,47 @@ func newService(
 	waitForSteadyState bool,
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOrInvokeOption,
-) (pulumi.StringOutput, pulumi.Resource, *ServiceOutputs, error) {
+) (pulumi.StringOutput, pulumi.Resource, *ServiceOutputs, pulumi.StringInput, error) {
 	var endpoint pulumi.StringOutput
 	var dependency pulumi.Resource
 	var svcComp *ServiceOutputs
+	// datastoreID is the managed database's physical identifier (nil for
+	// container services, whose ECS service name is used instead), surfaced
+	// through the Project's serviceIds output.
+	var datastoreID pulumi.StringInput
 	var err error
 	switch {
 	case svc.Postgres != nil:
 		// Managed Postgres → RDS
 		pgComp := &PostgresOutputs{}
 		if regErr := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
 		}
 		if err = createPostgres(ctx, pgComp, configProvider, svcName, svc, infra, deps); err == nil {
 			endpoint = pgComp.Endpoint
 			dependency = pgComp.Dependency
+			datastoreID = pgComp.InstanceIdentifier
 		}
 	case svc.Redis != nil:
 		// Managed Redis → ElastiCache
 		redisComp := &RedisOutputs{}
 		if regErr := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
 		}
 		if err = createRedis(ctx, redisComp, svcName, svc, infra, deps); err == nil {
 			endpoint = redisComp.Endpoint
 			dependency = redisComp.Dependency
+			datastoreID = redisComp.ClusterId
 		}
 	default:
 		// Container service → ECS
 		svcComp = &ServiceOutputs{}
 		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
 		}
 		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pulumi.Parent(svcComp))
 		if imgErr != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}
 		args := &provideraws.ECSServiceArgs{
 			Infra:              infra,
@@ -311,7 +339,7 @@ func newService(
 		}
 	}
 	if err != nil {
-		return pulumi.StringOutput{}, nil, nil, err
+		return pulumi.StringOutput{}, nil, nil, nil, err
 	}
-	return endpoint, dependency, svcComp, nil
+	return endpoint, dependency, svcComp, datastoreID, nil
 }

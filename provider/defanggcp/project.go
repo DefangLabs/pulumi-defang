@@ -37,6 +37,21 @@ type ProjectOutputs struct {
 
 	// Load balancer DNS name (unused for GCP, kept for interface compat)
 	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
+
+	// ServiceIds maps every service name to the physical identifier of its
+	// primary backing resource — the Cloud Run service name or Compute Engine
+	// regional MIG name for container services, the Cloud SQL instance name
+	// for Postgres, the Memorystore instance ID for Redis — so consumers can
+	// attach externally managed alerting and dashboards. Child components'
+	// handles are unreachable on Project children.
+	ServiceIds pulumi.StringMapOutput `pulumi:"serviceIds"`
+}
+
+// projectResult extends the cross-provider BuildResult with GCP-specific
+// handles surfaced as Project outputs.
+type projectResult struct {
+	common.BuildResult
+	ServiceIds pulumi.StringMapOutput
 }
 
 // Construct implements the ComponentResource interface for Project.
@@ -57,10 +72,12 @@ func (*Project) Construct(
 
 	comp.Endpoints = result.Endpoints
 	comp.LoadBalancerDNS = result.LoadBalancerDNS
+	comp.ServiceIds = result.ServiceIds
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       result.Endpoints,
 		"loadBalancerDns": result.LoadBalancerDNS,
+		"serviceIds":      result.ServiceIds,
 	}); err != nil {
 		return nil, err
 	}
@@ -75,7 +92,7 @@ func buildProject(
 	projectName string,
 	args ProjectInputs,
 	parentOpt pulumi.ResourceOption,
-) (*common.BuildResult, error) {
+) (*projectResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
 	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
@@ -90,6 +107,7 @@ func buildProject(
 
 	// Deploy each service, wrapped in a component resource for tree organization
 	endpoints := pulumi.StringMap{}
+	serviceIds := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → component resource for dependees
 	var configProvider compose.ConfigProvider
 	if ctx.DryRun() {
@@ -121,12 +139,15 @@ func buildProject(
 			}
 		}
 
-		endpoint, svcComp, lbEntry, err := buildService(
+		endpoint, svcComp, lbEntry, datastoreID, err := buildService(
 			ctx, projectName, configProvider, svcName, svc, config, deps, childOpts)
 		if err != nil {
 			return nil, err
 		}
 		endpoints[svcName] = endpoint
+		if datastoreID != nil {
+			serviceIds[svcName] = datastoreID
+		}
 		dependencies[svcName] = svcComp
 		if lbEntry != nil {
 			lbEntries = append(lbEntries, *lbEntry)
@@ -150,9 +171,12 @@ func buildProject(
 		return nil, err
 	}
 
-	return &common.BuildResult{
-		Endpoints:       endpoints.ToStringMapOutput(),
-		LoadBalancerDNS: pulumi.StringPtr("").ToStringPtrOutput(),
+	return &projectResult{
+		BuildResult: common.BuildResult{
+			Endpoints:       endpoints.ToStringMapOutput(),
+			LoadBalancerDNS: pulumi.StringPtr("").ToStringPtrOutput(),
+		},
+		ServiceIds: serviceIds.ToStringMapOutput(),
 	}, nil
 }
 
@@ -165,10 +189,13 @@ func buildService(
 	infra *providergcp.SharedInfra,
 	deps []pulumi.Resource,
 	childOpts []pulumi.ResourceOption,
-) (pulumi.StringOutput, pulumi.Resource, *providergcp.LBServiceEntry, error) {
+) (pulumi.StringOutput, pulumi.Resource, *providergcp.LBServiceEntry, pulumi.StringInput, error) {
 	var endpoint pulumi.StringOutput
 	var lbEntry *providergcp.LBServiceEntry
 	var svcComp pulumi.Resource
+	// datastoreID is the physical identifier of the service's primary backing
+	// resource, surfaced through the Project's serviceIds output.
+	var datastoreID pulumi.StringInput
 
 	svcChildOpts := childOpts
 	if len(deps) > 0 {
@@ -180,40 +207,43 @@ func buildService(
 		// Managed Postgres → Cloud SQL
 		pgComp := &PostgresOutputs{}
 		if err := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, svcChildOpts...); err != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
 		}
 		if err := createPostgres(ctx, pgComp, configProvider, svcName, svc, infra); err != nil {
-			return pulumi.StringOutput{}, nil, nil, err
+			return pulumi.StringOutput{}, nil, nil, nil, err
 		}
 		endpoint = pgComp.Endpoint
 		lbEntry = &providergcp.LBServiceEntry{Name: svcName, PostgresInstance: pgComp.Instance, Config: svc}
+		datastoreID = pgComp.Instance.Name
 		svcComp = pgComp
 	case svc.Redis != nil:
 		// Managed Redis → Memorystore
 		redisComp := &RedisOutputs{}
 		if err := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, svcChildOpts...); err != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Memorystore component %s: %w", svcName, err)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering Memorystore component %s: %w", svcName, err)
 		}
 		if err := createRedis(ctx, redisComp, svcName, svc, infra); err != nil {
-			return pulumi.StringOutput{}, nil, nil, err
+			return pulumi.StringOutput{}, nil, nil, nil, err
 		}
 		endpoint = redisComp.Endpoint
 		lbEntry = &providergcp.LBServiceEntry{Name: svcName, RedisInstance: redisComp.Instance, Config: svc}
+		datastoreID = redisComp.Instance.Name
 		svcComp = redisComp
 	default:
 		svcCompTyped := &ServiceOutputs{}
 		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcCompTyped, svcChildOpts...); err != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("registering Service component %s: %w", svcName, err)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
 		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.Repos, infra.BuildInfra, svcChildOpts...)
 		if err != nil {
-			return pulumi.StringOutput{}, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
+			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
 		if err := createService(ctx, svcCompTyped, projectName, configProvider, svcName, image, svc, infra, nil); err != nil {
-			return pulumi.StringOutput{}, nil, nil, err
+			return pulumi.StringOutput{}, nil, nil, nil, err
 		}
 		endpoint = svcCompTyped.Endpoint
 		lbEntry = svcCompTyped.LBEntry
+		datastoreID = svcCompTyped.ResourceName
 		svcComp = svcCompTyped
 	}
 	// Managed Postgres/Redis still need the PrivateFqdn wired here because their
@@ -223,7 +253,7 @@ func buildService(
 		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", common.ServiceLabel(svcName), "google.internal")
 	}
 
-	return endpoint, svcComp, lbEntry, nil
+	return endpoint, svcComp, lbEntry, datastoreID, nil
 }
 
 func createServiceAccount(

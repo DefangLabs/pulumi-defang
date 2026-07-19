@@ -519,10 +519,18 @@
         },
         "loadBalancerDns": {
           "type": "string"
+        },
+        "serviceIds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
         }
       },
       "required": [
-        "endpoints"
+        "endpoints",
+        "serviceIds"
       ],
       "inputProperties": {
         "domain": {

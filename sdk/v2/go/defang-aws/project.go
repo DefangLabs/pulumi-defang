@@ -21,6 +21,7 @@ type Project struct {
 	LoadBalancerArn pulumi.StringPtrOutput `pulumi:"loadBalancerArn"`
 	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
 	LogGroupName    pulumi.StringOutput    `pulumi:"logGroupName"`
+	ServiceIds      pulumi.StringMapOutput `pulumi:"serviceIds"`
 	ServiceNames    pulumi.StringMapOutput `pulumi:"serviceNames"`
 	TaskRoleArns    pulumi.StringMapOutput `pulumi:"taskRoleArns"`
 }
@@ -116,6 +117,10 @@ func (o ProjectOutput) LoadBalancerDns() pulumi.StringPtrOutput {
 
 func (o ProjectOutput) LogGroupName() pulumi.StringOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.LogGroupName }).(pulumi.StringOutput)
+}
+
+func (o ProjectOutput) ServiceIds() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.ServiceIds }).(pulumi.StringMapOutput)
 }
 
 func (o ProjectOutput) ServiceNames() pulumi.StringMapOutput {

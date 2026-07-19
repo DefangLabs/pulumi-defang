@@ -77,6 +77,10 @@ type ServiceOutputs struct {
 	// LBEntry is an internal-only handle used by the project dispatcher to wire
 	// services into the external load balancer. Untagged — not part of the SDK schema.
 	LBEntry *providergcp.LBServiceEntry
+	// ResourceName is the physical name of the primary backing resource (Cloud
+	// Run service or Compute Engine regional MIG), surfaced through the
+	// Project's serviceIds output. Untagged — not part of the SDK schema.
+	ResourceName pulumi.StringOutput
 }
 
 // ServiceComponentType is the Pulumi resource type token for the Service component.
@@ -236,6 +240,7 @@ func createService(
 		}
 		endpoint = crResult.Service.Uri
 		lbEntry = &providergcp.LBServiceEntry{Name: serviceName, CloudRunService: crResult.Service, Config: svc}
+		comp.ResourceName = crResult.Service.Name
 	} else {
 		ceArgs := &providergcp.ComputeEngineArgs{
 			SA:       identity,
@@ -257,6 +262,7 @@ func createService(
 		if svc.HasIngressPorts() || svc.HasHostPorts() {
 			lbEntry = &providergcp.LBServiceEntry{Name: serviceName, InstanceGroup: ceResult.InstanceGroup, Config: svc}
 		}
+		comp.ResourceName = ceResult.InstanceGroup.Name
 	}
 
 	if lbEntry != nil && svc.HasHostPorts() {
