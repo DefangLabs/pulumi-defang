@@ -304,9 +304,10 @@ func CreateContainerApp(
 				Name:    pulumi.String(serviceName),
 				Image:   imageURI,
 				Command: compose.ToPulumiStringArray(svc.Entrypoint),
-				Args:    compose.ToPulumiStringArray(svc.Command),
-				Env:     result.Envs,
-				Probes:  probes,
+				// Resolve ${VAR} config references like env values
+				Args:   compose.InterpolateCommand(ctx, infra.ConfigProvider, svc.Command),
+				Env:    result.Envs,
+				Probes: probes,
 				Resources: &app.ContainerResourcesArgs{
 					Cpu:    pulumi.Float64(cpu),
 					Memory: pulumi.String(mem),

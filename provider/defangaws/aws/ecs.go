@@ -624,6 +624,20 @@ func CreateECSService(
 		return nil, err
 	}
 
+	// Resolve ${VAR} config references in the container command, mirroring
+	// env-value interpolation: the argv is exec'd without a shell, so
+	// references must be inlined at deploy time. Returns the index into
+	// allInputs, or -1 for an empty command.
+	resolveCommand := func(cmd []string) int {
+		if len(cmd) == 0 {
+			return -1
+		}
+		idx := len(allInputs)
+		allInputs = append(allInputs, compose.InterpolateCommand(ctx, configProvider, cmd, parentOpt))
+		return idx
+	}
+	commandIdx := resolveCommand(svc.Command)
+
 	// Resolve sidecar container env vars the same way as the main container.
 	type sidecarData struct {
 		name       string
@@ -631,6 +645,7 @@ func CreateECSService(
 		envEntries []envEntry
 		secrets    []Secret
 		imageIdx   int // index into allInputs where the resolved image URI will be
+		commandIdx int // index into allInputs where the resolved command will be, or -1
 	}
 	sidecarDatas := make([]sidecarData, 0, len(args.Sidecars))
 	for scName, sc := range common.Sorted(args.Sidecars) {
@@ -647,7 +662,8 @@ func CreateECSService(
 		imageIdx := len(allInputs)
 		allInputs = append(allInputs, sc.Image)
 		sidecarDatas = append(sidecarDatas, sidecarData{
-			name: scName, cfg: sc, envEntries: scEnvEntries, secrets: scSecrets, imageIdx: imageIdx,
+			name: scName, cfg: sc, envEntries: scEnvEntries, secrets: scSecrets,
+			imageIdx: imageIdx, commandIdx: resolveCommand(sc.Command),
 		})
 	}
 
@@ -703,6 +719,13 @@ func CreateECSService(
 		}
 		logConfiguration := logConfigurationFor(containerName)
 
+		commandAt := func(idx int) []string {
+			if idx < 0 {
+				return nil
+			}
+			return all[idx].([]string)
+		}
+
 		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
 
@@ -712,7 +735,7 @@ func CreateECSService(
 			PortMappings:     portMappings,
 			Environment:      envVars,
 			Secrets:          mainSecrets,
-			Command:          svc.Command,
+			Command:          commandAt(commandIdx),
 			EntryPoint:       svc.Entrypoint,
 			DependsOn:        buildDependsOn(svc.DependsOn, args.Sidecars),
 			HealthCheck:      healthCheck,
@@ -741,7 +764,7 @@ func CreateECSService(
 				PortMappings:     []PortMapping{},
 				Environment:      scEnvVars,
 				Secrets:          sd.secrets,
-				Command:          sd.cfg.Command,
+				Command:          commandAt(sd.commandIdx),
 				EntryPoint:       sd.cfg.Entrypoint,
 				DependsOn:        buildDependsOn(sd.cfg.DependsOn, args.Sidecars),
 				HealthCheck:      buildHealthCheck(sd.cfg.HealthCheck),
