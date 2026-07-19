@@ -503,12 +503,13 @@ func CreateECSService(
 			lbDependsOn = append(lbDependsOn, dep)
 		}
 
-		// Attach caller-specified policies (x-defang-policies); entries
-		// qualified for another cloud are skipped, so multi-cloud compose
-		// files can list entries for each target side by side.
-		policies, skipped := compose.PoliciesFor(compose.PolicyCloudAWS, svc.Policies)
-		if len(skipped) > 0 {
-			_ = ctx.Log.Info(compose.SkippedPoliciesMessage(serviceName, skipped), nil)
+		// Attach caller-specified policies (x-defang-policies). Entries are
+		// literals by now — the CLI substitutes ${VAR} from .env at load —
+		// so anything unresolved or qualified for a different cloud is a
+		// hard error; per-cloud values come from per-stack .env files.
+		policies := compose.NormalizePolicies(svc.Policies)
+		if err := compose.ValidatePolicies(compose.PolicyCloudAWS, policies); err != nil {
+			return nil, fmt.Errorf("service %s: %w", serviceName, err)
 		}
 		// Dedup repeated entries: the attachment URN embeds policyName(policy),
 		// so a duplicate entry would collide on it.
@@ -532,7 +533,7 @@ func CreateECSService(
 			}
 			lbDependsOn = append(lbDependsOn, dep)
 		}
-	} else if policies, _ := compose.PoliciesFor(compose.PolicyCloudAWS, svc.Policies); len(policies) > 0 {
+	} else if len(compose.NormalizePolicies(svc.Policies)) > 0 {
 		// A caller-supplied task role's policies are owned by the caller.
 		return nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithTaskRole)
 	}

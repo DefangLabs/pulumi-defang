@@ -133,12 +133,13 @@ func createContainerApp(
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
 ) error {
-	// Entries qualified for another cloud are ignored, so a multi-cloud
-	// compose file with AWS/GCP policies still deploys here; only entries
-	// that would apply on Azure hit the unsupported error.
-	policies, skipped := compose.PoliciesFor(compose.PolicyCloudAzure, svc.Policies)
-	if len(skipped) > 0 {
-		_ = ctx.Log.Info(compose.SkippedPoliciesMessage(serviceName, skipped), nil)
+	// Policies aren't supported on Azure yet. Entries a stack leaves empty
+	// ("${EXTRA:-}") normalize away, so a compose file parameterized per
+	// stack still deploys here; a foreign-cloud literal gets the validation
+	// error (with the ${VAR} hint), any other entry the unsupported error.
+	policies := compose.NormalizePolicies(svc.Policies)
+	if err := compose.ValidatePolicies(compose.PolicyCloudAzure, policies); err != nil {
+		return fmt.Errorf("service %s: %w", serviceName, err)
 	}
 	if len(policies) > 0 {
 		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)

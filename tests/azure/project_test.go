@@ -65,11 +65,12 @@ func TestConstructAzureProjectAllResourcesAreChildren(t *testing.T) {
 	tracker.AssertAllDescendFrom(t, testutil.AzureURN("Project"))
 }
 
-func TestConstructAzureProjectIgnoresForeignPolicies(t *testing.T) {
+func TestConstructAzureProjectRejectsForeignPolicies(t *testing.T) {
 	server := testutil.MakeAzureTestServer()
 
-	// AWS/GCP-qualified x-defang-policies entries don't apply on Azure and
-	// must not trip the unsupported error.
+	// No cross-cloud filtering: an AWS-qualified entry on an Azure deploy is
+	// a validation error pointing at per-stack .env variables. Entries a
+	// stack leaves empty ("${EXTRA:-}") normalize away and don't trip it.
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AzureURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
@@ -78,7 +79,29 @@ func TestConstructAzureProjectIgnoresForeignPolicies(t *testing.T) {
 				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
 				"policies": property.New(property.NewArray([]property.Value{
 					property.New("arn:aws:iam::123456789012:policy/deployer"),
-					property.New("roles/run.developer"),
+					property.New(""),
+				})),
+			})),
+		}),
+	})
+
+	require.ErrorContains(t, err, "aws identifier")
+	require.ErrorContains(t, err, "targets azure")
+}
+
+func TestConstructAzureProjectEmptyPoliciesDeploy(t *testing.T) {
+	server := testutil.MakeAzureTestServer()
+
+	// A policies list that normalizes to nothing (all entries are unset
+	// "${VAR:-}" substitutions) must not trip the unsupported error.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(""),
 				})),
 			})),
 		}),

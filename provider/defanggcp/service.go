@@ -167,7 +167,7 @@ func serviceIdentity(
 	childOpts []pulumi.ResourceOption,
 ) (*providergcp.ServiceIdentity, []pulumi.Resource, error) {
 	if serviceAccountEmail != nil {
-		if policies, _ := compose.PoliciesFor(compose.PolicyCloudGCP, policies); len(policies) > 0 {
+		if len(compose.NormalizePolicies(policies)) > 0 {
 			return nil, nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithServiceAccount)
 		}
 		return &providergcp.ServiceIdentity{Email: serviceAccountEmail}, nil, nil
@@ -197,9 +197,9 @@ func grantPolicies(
 	infra *providergcp.SharedInfra,
 	opts []pulumi.ResourceOption,
 ) ([]pulumi.Resource, error) {
-	policies, skipped := compose.PoliciesFor(compose.PolicyCloudGCP, policies)
-	if len(skipped) > 0 {
-		_ = ctx.Log.Info(compose.SkippedPoliciesMessage(serviceName, skipped), nil)
+	policies = compose.NormalizePolicies(policies)
+	if err := compose.ValidatePolicies(compose.PolicyCloudGCP, policies); err != nil {
+		return nil, fmt.Errorf("service %s: %w", serviceName, err)
 	}
 	if len(policies) == 0 {
 		return nil, nil

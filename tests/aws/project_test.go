@@ -207,7 +207,28 @@ func TestConstructAwsProjectAllResourcesAreChildren(t *testing.T) {
 	tracker.AssertAllDescendFrom(t, testutil.AwsURN("Project"))
 }
 
-func TestConstructAwsProjectSkipsForeignPolicies(t *testing.T) {
+func TestConstructAwsProjectRejectsForeignPolicies(t *testing.T) {
+	server := testutil.MakeAwsTestServer()
+
+	// No cross-cloud filtering: a GCP-qualified entry on an AWS deploy is a
+	// hard error pointing at per-stack .env variables instead.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("arn:aws:iam::123456789012:policy/deployer"),
+					property.New("roles/run.developer"), // GCP entry: rejected on AWS
+				})),
+			})),
+		}),
+	})
+	require.ErrorContains(t, err, "gcp identifier")
+	require.ErrorContains(t, err, "targets aws")
+}
+
+func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {
 	var attachments []property.Map
 	mock := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
@@ -219,29 +240,31 @@ func TestConstructAwsProjectSkipsForeignPolicies(t *testing.T) {
 	}
 	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
 
-	const awsPolicy = "arn:aws:iam::123456789012:policy/deployer"
+	// One comma-separated entry — a single ${VAR} from .env carrying a
+	// variable-length list — splits into individual attachments; an empty
+	// entry (a "${EXTRA:-}" the stack leaves unset) is dropped.
+	const policyA = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	const policyB = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
 			"app": property.New(property.NewMap(map[string]property.Value{
 				"image": property.New("myapp:latest"),
 				"policies": property.New(property.NewArray([]property.Value{
-					property.New(awsPolicy),
-					property.New("roles/run.developer"), // GCP entry: skipped on AWS
+					property.New(policyA + "," + policyB),
+					property.New(""),
 				})),
 			})),
 		}),
 	})
 	require.NoError(t, err)
 
-	var arns []string
+	arns := make([]string, 0, len(attachments))
 	for _, a := range attachments {
 		arns = append(arns, a.Get("policyArn").AsString())
 	}
-	assert.Contains(t, arns, awsPolicy)
-	for _, arn := range arns {
-		assert.NotContains(t, arn, "run.developer", "GCP-qualified policy must be skipped on AWS")
-	}
+	assert.Contains(t, arns, policyA)
+	assert.Contains(t, arns, policyB)
 }
 
 func TestConstructAwsProjectDuplicatePoliciesDeduped(t *testing.T) {
