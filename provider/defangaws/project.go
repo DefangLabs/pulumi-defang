@@ -247,6 +247,10 @@ func buildProject(
 			taskRoleArns[svcName] = svcComp.TaskRoleArn.Untyped().(pulumi.StringOutput)
 			serviceIds[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
 		}
+		// For datastore services, deliberately overwrite the ECS service name set
+		// above with the backing resource's physical ID (RDS instance, MemoryDB/
+		// ElastiCache cluster). newService returns a non-nil datastoreID only for
+		// those, so container services keep their ECS service name.
 		if datastoreID != nil {
 			serviceIds[svcName] = datastoreID
 		}
