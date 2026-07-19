@@ -51,6 +51,12 @@ type ProjectOutputs struct {
 
 	// Load balancer DNS name (unused for Azure, kept for interface compat)
 	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
+
+	// DatastoreIds maps managed database service names to their ARM resource
+	// IDs — the PostgreSQL Flexible Server for Postgres, the Redis Enterprise
+	// cluster for Redis — the scope Azure Monitor alert rules target. The
+	// components' typed resource handles are unreachable on Project children.
+	DatastoreIds pulumi.StringMapOutput `pulumi:"datastoreIds"`
 }
 
 // serviceTypes summarises which kinds of services are present in a project.
@@ -126,6 +132,7 @@ func createPostgresResources(
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	datastoreIds pulumi.StringMap,
 	comp *serviceComponent,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -150,6 +157,7 @@ func createPostgresResources(
 	endpoint := pulumi.Sprintf("%s:5432", fqdn)
 	managedEndpoints[svcName] = endpoint
 	serviceHosts[svcName] = fqdn
+	datastoreIds[svcName] = pgResult.Server.ID().ToStringOutput()
 	return endpoint, nil
 }
 
@@ -160,6 +168,7 @@ func createRedisResources(
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	datastoreIds pulumi.StringMap,
 	comp *serviceComponent,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -182,6 +191,7 @@ func createRedisResources(
 	host := withResourceDeps(redisResult.Cluster.HostName, redisResult.Readiness)
 	managedEndpoints[svcName] = connURL
 	serviceHosts[svcName] = host
+	datastoreIds[svcName] = redisResult.Cluster.ID().ToStringOutput()
 	return pulumi.Sprintf("%s:10000", host), nil
 }
 
@@ -195,6 +205,7 @@ func createServiceResources(
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	datastoreIds pulumi.StringMap,
 	llmModels map[string]string,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -204,14 +215,16 @@ func createServiceResources(
 	switch {
 	case svc.Postgres != nil:
 		var err error
-		endpoint, err = createPostgresResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, comp, childOpts)
+		endpoint, err = createPostgresResources(
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, datastoreIds, comp, childOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
 
 	case svc.Redis != nil:
 		var err error
-		endpoint, err = createRedisResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, comp, childOpts)
+		endpoint, err = createRedisResources(
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, datastoreIds, comp, childOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -490,6 +503,7 @@ func (*Project) Construct(
 	}
 
 	endpoints := pulumi.StringMap{}
+	datastoreIds := pulumi.StringMap{}
 
 	// managedEndpoints accumulates connection URLs for managed services (Postgres, Redis, LLM).
 	managedEndpoints := make(map[string]pulumi.StringOutput, len(inputs.Services))
@@ -508,7 +522,7 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, datastoreIds, llmModels, childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -520,7 +534,7 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, datastoreIds, llmModels, childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -532,10 +546,12 @@ func (*Project) Construct(
 
 	comp.Endpoints = endpoints.ToStringMapOutput()
 	comp.LoadBalancerDNS = loadBalancerDNS
+	comp.DatastoreIds = datastoreIds.ToStringMapOutput()
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       endpoints.ToStringMapOutput(),
 		"loadBalancerDns": loadBalancerDNS,
+		"datastoreIds":    datastoreIds.ToStringMapOutput(),
 	}); err != nil {
 		return nil, err
 	}

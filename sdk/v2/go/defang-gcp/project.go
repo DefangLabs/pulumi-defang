@@ -16,6 +16,7 @@ import (
 type Project struct {
 	pulumi.ResourceState
 
+	DatastoreIds    pulumi.StringMapOutput `pulumi:"datastoreIds"`
 	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
 	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
 }
@@ -89,6 +90,10 @@ func (o ProjectOutput) ToProjectOutput() ProjectOutput {
 
 func (o ProjectOutput) ToProjectOutputWithContext(ctx context.Context) ProjectOutput {
 	return o
+}
+
+func (o ProjectOutput) DatastoreIds() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.DatastoreIds }).(pulumi.StringMapOutput)
 }
 
 func (o ProjectOutput) Endpoints() pulumi.StringMapOutput {

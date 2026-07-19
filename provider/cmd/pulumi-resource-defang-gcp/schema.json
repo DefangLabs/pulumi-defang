@@ -510,6 +510,13 @@
     },
     "defang-gcp:index:Project": {
       "properties": {
+        "datastoreIds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
         "endpoints": {
           "type": "object",
           "additionalProperties": {
@@ -522,7 +529,8 @@
         }
       },
       "required": [
-        "endpoints"
+        "endpoints",
+        "datastoreIds"
       ],
       "inputProperties": {
         "domain": {
