@@ -52,6 +52,9 @@ type ServiceInputs struct {
 type ServiceOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	// AppID is the Container App's ARM resource ID, surfaced through the
+	// Project's serviceIds output. Untagged — not part of the SDK schema.
+	AppID pulumi.StringOutput
 }
 
 // ServiceComponentType is the Pulumi resource type token for the Service component.
@@ -143,6 +146,7 @@ func createContainerApp(
 		return fmt.Errorf("creating Container App %s: %w", serviceName, err)
 	}
 	comp.Endpoint = caResult.App.LatestRevisionFqdn.ApplyT(fqdnToHTTPS).(pulumi.StringOutput)
+	comp.AppID = caResult.App.ID().ToStringOutput()
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoint": comp.Endpoint,
 	}); err != nil {

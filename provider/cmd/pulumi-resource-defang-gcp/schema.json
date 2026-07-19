@@ -510,13 +510,6 @@
     },
     "defang-gcp:index:Project": {
       "properties": {
-        "datastoreIds": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string",
-            "plain": true
-          }
-        },
         "endpoints": {
           "type": "object",
           "additionalProperties": {
@@ -526,11 +519,18 @@
         },
         "loadBalancerDns": {
           "type": "string"
+        },
+        "serviceIds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
         }
       },
       "required": [
         "endpoints",
-        "datastoreIds"
+        "serviceIds"
       ],
       "inputProperties": {
         "domain": {

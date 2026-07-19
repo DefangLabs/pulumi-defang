@@ -101,13 +101,14 @@ type ProjectOutputs struct {
 	// resource-based policies (e.g. KMS key policies) that must name the role.
 	TaskRoleArns pulumix.Output[map[string]string] `pulumi:"taskRoleArns"`
 
-	// DatastoreIds maps managed database service names to their physical
-	// identifiers — the MemoryDB cluster name or ElastiCache replication
-	// group ID for Redis, the RDS DBInstanceIdentifier for Postgres — so
-	// consumers can attach externally managed alarms and dashboards. Mirrors
-	// the standalone components' clusterId/instanceIdentifier outputs, which
-	// are unreachable on Project children.
-	DatastoreIds pulumix.Output[map[string]string] `pulumi:"datastoreIds"`
+	// ServiceIds maps every service name to the physical identifier of its
+	// primary backing resource — the ECS service name for container services
+	// (same value as serviceNames), the MemoryDB cluster name or ElastiCache
+	// replication group ID for Redis, the RDS DBInstanceIdentifier for
+	// Postgres — so consumers can attach externally managed alarms and
+	// dashboards. Child components' own outputs are unreachable on Project
+	// children.
+	ServiceIds pulumix.Output[map[string]string] `pulumi:"serviceIds"`
 }
 
 // Construct implements the ComponentResource interface for Project.
@@ -132,7 +133,7 @@ func (*Project) Construct(
 	comp.LogGroupName = pulumix.Output[string](result.LogGroupName)
 	comp.ServiceNames = pulumix.Output[map[string]string](result.ServiceNames)
 	comp.TaskRoleArns = pulumix.Output[map[string]string](result.TaskRoleArns)
-	comp.DatastoreIds = pulumix.Output[map[string]string](result.DatastoreIds)
+	comp.ServiceIds = pulumix.Output[map[string]string](result.ServiceIds)
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       result.Endpoints,
@@ -142,7 +143,7 @@ func (*Project) Construct(
 		"logGroupName":    result.LogGroupName,
 		"serviceNames":    result.ServiceNames,
 		"taskRoleArns":    result.TaskRoleArns,
-		"datastoreIds":    result.DatastoreIds,
+		"serviceIds":      result.ServiceIds,
 	}); err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ type projectResult struct {
 	LogGroupName    pulumi.StringOutput
 	ServiceNames    pulumi.StringMapOutput
 	TaskRoleArns    pulumi.StringMapOutput
-	DatastoreIds    pulumi.StringMapOutput
+	ServiceIds      pulumi.StringMapOutput
 }
 
 // buildProject creates all AWS resources for the project.
@@ -188,7 +189,7 @@ func buildProject(
 	endpoints := pulumi.StringMap{}
 	serviceNames := pulumi.StringMap{}
 	taskRoleArns := pulumi.StringMap{}
-	datastoreIds := pulumi.StringMap{}
+	serviceIds := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
 
 	var configProvider compose.ConfigProvider
@@ -244,9 +245,10 @@ func buildProject(
 		if svcComp != nil {
 			serviceNames[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
 			taskRoleArns[svcName] = svcComp.TaskRoleArn.Untyped().(pulumi.StringOutput)
+			serviceIds[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
 		}
 		if datastoreID != nil {
-			datastoreIds[svcName] = datastoreID
+			serviceIds[svcName] = datastoreID
 		}
 		if dependency != nil {
 			dependencies[svcName] = dependency
@@ -263,7 +265,7 @@ func buildProject(
 		LogGroupName:    infra.LogGroup.Name,
 		ServiceNames:    serviceNames.ToStringMapOutput(),
 		TaskRoleArns:    taskRoleArns.ToStringMapOutput(),
-		DatastoreIds:    datastoreIds.ToStringMapOutput(),
+		ServiceIds:      serviceIds.ToStringMapOutput(),
 	}, nil
 }
 
@@ -283,7 +285,8 @@ func newService(
 	var dependency pulumi.Resource
 	var svcComp *ServiceOutputs
 	// datastoreID is the managed database's physical identifier (nil for
-	// container services), surfaced through the Project's datastoreIds output.
+	// container services, whose ECS service name is used instead), surfaced
+	// through the Project's serviceIds output.
 	var datastoreID pulumi.StringInput
 	var err error
 	switch {
