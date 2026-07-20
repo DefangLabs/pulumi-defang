@@ -1,0 +1,46 @@
+name: crewai
+runtime: go
+description: Example of using defang-aws to deploy the CrewAI sample to AWS
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
+config:
+  pulumi:autonaming:
+    value:
+      pattern: Defang-${project}-${stack}-${name}-${hex(7)}
+      providers:
+        aws:
+          resources:
+            aws:lb/loadBalancer:LoadBalancer:
+              pattern: ${project}-${stack}-${hex(4)}
+            aws:lb/targetGroup:TargetGroup:
+              pattern: ${name}-${hex(4)}
+            aws:ecs/service:Service:
+              pattern: ${name}-${hex(4)} # scoped by ecs.Cluster
+            aws:elasticache/subnetGroup:SubnetGroup:
+              pattern: defang-${project}-${stack}-${name}-${hex(7)} # lowercase
+            aws:ecr/repository:Repository:
+              pattern: defang-${project}-${stack}-${name}-${hex(7)} # lowercase
+            aws:rds/subnetGroup:SubnetGroup:
+              pattern: defang-${project}-${stack}-${name}-${hex(7)} # lowercase
+        azure-native:
+          resources:
+            azure-native:containerregistry:Registry:
+              pattern: ${name}${stack}${hex(7)} # name = sanitized project nam
+            azure-native:containerregistry:Task:
+              pattern: ${name}-${hex(7)}
+            azure-native:app:ManagedEnvironment:
+              pattern: Defang-${project}-${stack}-${hex(7)}
+        gcp:
+          resources:
+            gcp:serviceaccount/account:Account:
+              pattern: ${name}-${hex(4)}
+            gcp:cloudrunv2/service:Service:
+              pattern: ${project}-${stack}-${name}-${hex(7)} # TODO: sanitize project name
+            gcp:redis/instance:Instance:
+              pattern: ${project}-${name}-${hex(7)} # TODO: sanitize project name
+  pulumi:disable-default-providers:
+    - eks
+    - kubernetes
+    - aws
