@@ -248,7 +248,7 @@ func createService(
 			Triggers: extras.Triggers,
 		}
 		ceResult, ceErr := providergcp.CreateComputeEngine(
-			ctx, serviceName, image, svc, ceArgs, infra, parentOpt,
+			ctx, configProvider, serviceName, image, svc, ceArgs, infra, parentOpt,
 		)
 		if ceErr != nil {
 			return fmt.Errorf("creating Compute Engine service %s: %w", serviceName, ceErr)
