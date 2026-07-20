@@ -93,7 +93,7 @@ func createRedis(
 		createCluster = provideraws.CreateMemoryDB
 	}
 	redisResult, err := createCluster(
-		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, childOpt,
+		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, infra.AlarmTopicArn, deps, childOpt,
 	)
 	if err != nil {
 		return fmt.Errorf("creating Redis for %s: %w", serviceName, err)

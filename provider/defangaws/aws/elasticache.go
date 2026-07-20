@@ -213,6 +213,7 @@ func CreateElasticache(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -351,6 +352,37 @@ func CreateElasticache(
 	rg, err := awselasticache.NewReplicationGroup(ctx, serviceName, rgArgs, clusterOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache replication group: %w", err)
+	}
+
+	// ElastiCache metrics are per member cache cluster, not per replication
+	// group. MemberClusters carries the actual member IDs — their naming
+	// differs between cluster-mode-disabled ("<rg-id>-00N") and "compatible"
+	// groups, so don't reconstruct them. EngineCPUUtilization tracks the
+	// (single) Redis thread, which saturates well before host CPUUtilization
+	// on multi-vCPU nodes.
+	for i := range replicas {
+		err = createDBAlarms(ctx, fmt.Sprintf("%s-%03d", serviceName, i+1), "AWS/ElastiCache",
+			pulumi.StringMap{"CacheClusterId": rg.MemberClusters.Index(pulumi.Int(i))}, tags, alarmTopicArn, []dbAlarm{
+				{
+					suffix:             "memory-usage",
+					metricName:         "DatabaseMemoryUsagePercentage",
+					comparisonOperator: "GreaterThanThreshold",
+					threshold:          80,
+					statistic:          "Maximum",
+					description:        "ElastiCache memory usage has exceeded 80%",
+				},
+				{
+					suffix:             "cpu-usage",
+					metricName:         "EngineCPUUtilization",
+					comparisonOperator: "GreaterThanThreshold",
+					threshold:          80,
+					statistic:          "Maximum",
+					description:        "ElastiCache engine CPU usage has exceeded 80%",
+				},
+			}, opts...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Use configuration endpoint (cluster mode enabled) if available, else primary endpoint.

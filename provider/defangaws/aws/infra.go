@@ -98,6 +98,11 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("attaching pull-through cache policy: %w", err)
 	}
 
+	var alarmTopicArn pulumi.StringInput
+	if awsConfig != nil {
+		alarmTopicArn = awsConfig.AlarmTopicArn
+	}
+
 	// Role-assuming provider for public Route53 operations in another account
 	var dnsProvider pulumi.ProviderResource
 	if awsConfig != nil && awsConfig.DnsRoleArn != nil {
@@ -204,6 +209,7 @@ func CreateProjectInfra(
 		PrivateDomain:    net.PrivateDomain,
 		ProjectDomain:    projectDomain,
 		PrivateSgID:      privateSg.ID(),
+		AlarmTopicArn:    alarmTopicArn,
 		SkipNatGW:        !net.UseNatGW,
 		Region:           region.Region,
 		BuildInfra:       imgInfra,

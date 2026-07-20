@@ -171,6 +171,7 @@ func CreateRDS(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
@@ -290,6 +291,32 @@ func CreateRDS(
 	instance, err := rds.NewInstance(ctx, serviceName, rdsArgs, rdsOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS instance: %w", err)
+	}
+
+	// Free-storage threshold sits below the 10%-free trigger of RDS storage
+	// autoscaling, so it only fires when autoscaling can't keep up or the
+	// maxAllocatedStorage cap is reached.
+	err = createDBAlarms(ctx, serviceName, "AWS/RDS",
+		pulumi.StringMap{"DBInstanceIdentifier": instance.Identifier}, tags, alarmTopicArn, []dbAlarm{
+			{
+				suffix:             "cpu-usage",
+				metricName:         "CPUUtilization",
+				comparisonOperator: "GreaterThanThreshold",
+				threshold:          80,
+				statistic:          "Maximum",
+				description:        "RDS CPU usage has exceeded 80%",
+			},
+			{
+				suffix:             "free-storage",
+				metricName:         "FreeStorageSpace",
+				comparisonOperator: "LessThanThreshold",
+				threshold:          1 << 30, // 1 GiB
+				statistic:          "Minimum",
+				description:        "RDS free storage space is below 1 GiB",
+			},
+		}, opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &RDSResult{
