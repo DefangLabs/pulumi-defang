@@ -76,8 +76,8 @@ func TestHostPortRoutesToComputeEngine(t *testing.T) {
 	assert.Equal(t, 1, countType(*records, gcpInstanceGroupManagerType), "host port should use Compute Engine MIG")
 }
 
-func TestMultipleIngressPortsRoutesToComputeEngine(t *testing.T) {
-	mock, records := collectResources()
+func TestMultipleIngressPortsReturnActionableError(t *testing.T) {
+	mock, _ := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
@@ -87,11 +87,9 @@ func TestMultipleIngressPortsRoutesToComputeEngine(t *testing.T) {
 		}),
 	})
 
-	require.NoError(t, err)
-	assert.Equal(t, 0, countType(*records, gcpCloudRunServiceType),
-		"multiple ingress ports should not use Cloud Run")
-	assert.Equal(t, 1, countType(*records, gcpInstanceGroupManagerType),
-		"multiple ingress ports should use Compute Engine MIG")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service app has multiple ingress ports")
+	assert.Contains(t, err.Error(), "use at most one ingress port")
 }
 
 // --- Compute Engine resource creation ---
