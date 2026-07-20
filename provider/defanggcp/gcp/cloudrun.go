@@ -205,9 +205,9 @@ func buildTemplate(
 		}
 	}
 
-	// Build command/args, resolving ${VAR} config references like env values
+	// Build command/args
 	commands := compose.ToPulumiStringArray(svc.Entrypoint)
-	cmdArgs := compose.InterpolateCommand(ctx, configProvider, svc.Command, opts...)
+	cmdArgs := compose.ToPulumiStringArray(svc.Command)
 
 	// Cloud Run config from recipe
 	maxInstances := svc.GetReplicas()
