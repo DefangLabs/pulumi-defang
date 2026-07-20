@@ -218,7 +218,9 @@ func TestClassifyComputeSecretEnv(t *testing.T) {
 
 	// secret refs are sorted by env key: BARE, NULLED
 	require.Len(t, plan.secretRefs, 2)
+	//nolint:gosec // G101: secret resource names (IDs), not credential values.
 	assert.Equal(t, computeSecretEnv{envKey: "BARE", secretID: "Defang_proj_stack_SECRET_ONE"}, plan.secretRefs[0])
+	//nolint:gosec // G101: secret resource names (IDs), not credential values.
 	assert.Equal(t, computeSecretEnv{envKey: "NULLED", secretID: "Defang_proj_stack_NULLED"}, plan.secretRefs[1])
 	// literals and mixed interpolation stay inline
 	assert.Contains(t, plan.inline, "PLAIN")
@@ -237,8 +239,8 @@ func TestClassifyComputeSecretEnv(t *testing.T) {
 // flag that consume it.
 func TestSecretFetchScript(t *testing.T) {
 	refs := []computeSecretEnv{
-		{envKey: "DB", secretID: "Defang_p_s_DBPASS"},
-		{envKey: "API", secretID: "Defang_p_s_APIKEY"},
+		{envKey: "DB", secretID: "Defang_p_s_DBPASS"},  //nolint:gosec // G101 false positive
+		{envKey: "API", secretID: "Defang_p_s_APIKEY"}, //nolint:gosec // G101 false positive
 	}
 	wf, pre, flag := secretFetchScript("my-proj", "svc", refs)
 
@@ -268,7 +270,7 @@ func TestGetCloudInitConfigSecrets(t *testing.T) {
 	plan := containerSecretPlan{
 		inline: compose.Environment{"PLAIN": pulumi.String("x")},
 		secretRefs: []computeSecretEnv{
-			{envKey: "SECRET_ENV", secretID: "Defang_proj_stack_SECRET_ENV"},
+			{envKey: "SECRET_ENV", secretID: "Defang_proj_stack_SECRET_ENV"}, //nolint:gosec // G101 false positive
 		},
 	}
 
