@@ -1153,3 +1153,64 @@ func TestConstructProjectWithLLMPreservesExistingEnvVars(t *testing.T) {
 	assert.Equal(t, "my-custom-project", env.AsMap().Get("value").AsString(),
 		"enableLLM should not overwrite a pre-existing GOOGLE_VERTEX_PROJECT value")
 }
+
+func TestConstructGcpProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"redeployer": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("defangio/cli:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/run.developer"),
+					property.New("roles/storage.objectAdmin"),
+					property.New("deployer"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	for _, role := range []string{"roles/run.developer", "roles/storage.objectAdmin"} {
+		found := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+			return m.Get("role").AsString() == role
+		})
+		require.NotNil(t, found, "expected an IAM member for x-defang-policies role %s", role)
+	}
+
+	custom := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return strings.HasSuffix(m.Get("role").AsString(), "/roles/deployer")
+	})
+	require.NotNil(t, custom, "expected a bare policy name to resolve to a project custom role")
+}
+
+func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	// A portless worker runs on Compute Engine, which grants a platform role
+	// set (logging, monitoring, ...) on the same service account. Repeating
+	// one of those roles in x-defang-policies must not abort the deployment
+	// with a duplicate URN.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:worker"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/logging.logWriter"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	members := countTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/logging.logWriter"
+	})
+	assert.Equal(t, 2, members, "expected both the platform grant and the policy grant to be registered")
+}

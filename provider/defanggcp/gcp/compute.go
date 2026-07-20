@@ -46,7 +46,7 @@ func CreateComputeEngine(
 
 	var iamDeps pulumi.ResourceArrayOutput
 	if args.SA.Account != nil {
-		iamDeps = addRolesToServiceAccount(ctx, args.SA, []string{
+		iamDeps = AddRolesToServiceAccount(ctx, args.SA, []string{
 			"roles/artifactregistry.reader",
 			"roles/logging.logWriter",
 			"roles/monitoring.metricWriter",
@@ -332,9 +332,9 @@ func buildMIGUpdatePolicy(numZones, targetSize int) *compute.RegionInstanceGroup
 	return policy
 }
 
-// addRolesToServiceAccount grants IAM roles to a service account at the project level.
+// AddRolesToServiceAccount grants IAM roles to a service account at the project level.
 // Returns a resource array output that can be used as a dependency.
-func addRolesToServiceAccount(
+func AddRolesToServiceAccount(
 	ctx *pulumi.Context,
 	sa *ServiceIdentity,
 	roles []string,
