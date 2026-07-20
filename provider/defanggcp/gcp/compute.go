@@ -70,24 +70,7 @@ func CreateComputeEngine(
 		return nil, err
 	}
 
-	namedPorts := make(compute.RegionInstanceGroupManagerNamedPortArray, len(svc.Ports))
-	var healthCheckPort *int
-	for i, port := range svc.Ports {
-		proto := port.GetProtocol()
-		namedPorts[i] = &compute.RegionInstanceGroupManagerNamedPortArgs{
-			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
-			Port: pulumi.Int(port.Target),
-		}
-		if proto == "tcp" {
-			p := int(port.Target)
-			healthCheckPort = &p
-		}
-	}
-	addHealthCheckSidecar := healthCheckPort == nil
-	if addHealthCheckSidecar {
-		p := 8080
-		healthCheckPort = &p
-	}
+	namedPorts, healthCheckPort, addHealthCheckSidecar := computeNamedPorts(svc)
 
 	// DEFANG_FQDN: custom domain, else public FQDN (ingress), else the private
 	// FQDN (<label>.google.internal) for internal services — the private zone is
@@ -156,6 +139,33 @@ func CreateComputeEngine(
 	}
 
 	return &ComputeEngineResult{InstanceGroup: instanceGroup}, nil
+}
+
+// computeNamedPorts builds the MIG named-port array from the service's ports and
+// determines the health-check port. Services with no TCP port get a dedicated
+// HTTP health-check sidecar on 8080 so the MIG auto-healer can probe liveness.
+func computeNamedPorts(svc compose.ServiceConfig) (
+	compute.RegionInstanceGroupManagerNamedPortArray, *int, bool,
+) {
+	namedPorts := make(compute.RegionInstanceGroupManagerNamedPortArray, len(svc.Ports))
+	var healthCheckPort *int
+	for i, port := range svc.Ports {
+		proto := port.GetProtocol()
+		namedPorts[i] = &compute.RegionInstanceGroupManagerNamedPortArgs{
+			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
+			Port: pulumi.Int(port.Target),
+		}
+		if proto == "tcp" {
+			p := int(port.Target)
+			healthCheckPort = &p
+		}
+	}
+	addHealthCheckSidecar := healthCheckPort == nil
+	if addHealthCheckSidecar {
+		p := 8080
+		healthCheckPort = &p
+	}
+	return namedPorts, healthCheckPort, addHealthCheckSidecar
 }
 
 // networkID returns the network to attach instances and firewalls to: the
@@ -611,7 +621,8 @@ func classifyComputeSecretEnv(
 // NOTE: docker --env-file is line-oriented, so a secret whose value contains a
 // newline (e.g. a PEM key) cannot be injected this way. Such values need a
 // per-secret file mount; tracked as a follow-up.
-func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (writeFile, execStartPre, envFileFlag string) {
+// Returns (write_files block, ExecStartPre line, docker --env-file flag).
+func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string, string, string) {
 	if len(refs) == 0 {
 		return "", "", ""
 	}
@@ -685,6 +696,25 @@ func stopGraceSeconds(svc compose.ServiceConfig) int {
 	return 30
 }
 
+// buildUnitDependencies renders the [Unit] ordering directives for the main
+// service: it always waits on gcr-online + docker, and additionally requires and
+// orders After each same-instance sidecar named in depends_on (cross-instance
+// dependencies aren't enforceable from a single unit).
+func buildUnitDependencies(
+	serviceName string, svc compose.ServiceConfig, sidecars map[string]compose.ServiceConfig,
+) string {
+	var dependencies strings.Builder
+	dependencies.WriteString("Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket")
+	for name := range common.Sorted(svc.DependsOn) {
+		if _, ok := sidecars[name]; !ok {
+			continue // only same-instance sidecar dependencies are enforceable here
+		}
+		unit := sidecarUnitName(serviceName, name)
+		fmt.Fprintf(&dependencies, "\n      Requires=%s.service\n      After=%s.service", unit, unit)
+	}
+	return dependencies.String()
+}
+
 // getCloudInitConfig generates a cloud-init YAML string for running a container on
 // Container-Optimized OS using systemd. For portless services it adds an HTTP health
 // check sidecar so the MIG auto-healer can probe container liveness. User-defined
@@ -726,15 +756,7 @@ func getCloudInitConfig(
 	}
 	envFlags := flattenEnvFlags(staticEnv, mainPlan.inline)
 
-	var dependencies strings.Builder
-	dependencies.WriteString("Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket")
-	for name := range common.Sorted(svc.DependsOn) {
-		if _, ok := sidecars[name]; !ok {
-			continue // only same-instance sidecar dependencies are enforceable here
-		}
-		unit := sidecarUnitName(serviceName, name)
-		fmt.Fprintf(&dependencies, "\n      Requires=%s.service\n      After=%s.service", unit, unit)
-	}
+	dependencies := buildUnitDependencies(serviceName, svc, sidecars)
 
 	runcmds := make([]string, 0, 5+4+2*len(sidecars)+2)
 	runcmds = append(runcmds,
@@ -793,7 +815,7 @@ runcmd:
   - %[8]s
 `,
 		serviceName,
-		escapePercent(dependencies.String()),
+		escapePercent(dependencies),
 		escapePercent(strings.Join(params, " ")),
 		escapePercent(strings.Join(command, " ")),
 		region,
