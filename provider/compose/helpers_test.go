@@ -238,6 +238,81 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 	})
 }
 
+func TestInterpolateCommand(t *testing.T) {
+	t.Run("nil command returns nil", func(t *testing.T) {
+		assert.Nil(t, InterpolateCommand(nil, &mockConfigProvider{}, nil))
+	})
+	t.Run("empty command returns nil", func(t *testing.T) {
+		assert.Nil(t, InterpolateCommand(nil, &mockConfigProvider{}, []string{}))
+	})
+
+	tests := []struct {
+		name     string
+		command  []string
+		configs  map[string]string
+		expected []string
+	}{
+		{
+			name:     "literals pass through unchanged",
+			command:  []string{"litellm", "--port", "4000"},
+			expected: []string{"litellm", "--port", "4000"},
+		},
+		{
+			name:     "braced variable element",
+			command:  []string{"litellm", "--model", "${MODEL}"},
+			configs:  map[string]string{"MODEL": "gpt-4o"},
+			expected: []string{"litellm", "--model", "gpt-4o"},
+		},
+		{
+			name:     "unbraced variable element",
+			command:  []string{"litellm", "--model", "$MODEL"},
+			configs:  map[string]string{"MODEL": "gpt-4o"},
+			expected: []string{"litellm", "--model", "gpt-4o"},
+		},
+		{
+			name:     "variable embedded in text",
+			command:  []string{"sh", "-c", "serve --model=${MODEL} --host=0.0.0.0"},
+			configs:  map[string]string{"MODEL": "llama3"},
+			expected: []string{"sh", "-c", "serve --model=llama3 --host=0.0.0.0"},
+		},
+		{
+			name:     "escaped dollar stays literal",
+			command:  []string{"echo", "$${NOT_A_VAR}"},
+			expected: []string{"echo", "${NOT_A_VAR}"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				provider := &mockConfigProvider{values: tt.configs}
+				out := InterpolateCommand(ctx, provider, tt.command)
+
+				require.Len(t, out, len(tt.expected))
+				out.ToStringArrayOutput().ApplyT(func(got []string) []string {
+					assert.Equal(t, tt.expected, got)
+					return got
+				})
+				return nil
+			}, pulumi.WithMocks("proj", "stack", testMocks{}))
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("nil config provider passes command through", func(t *testing.T) {
+		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+			out := InterpolateCommand(ctx, nil, []string{"litellm", "--model", "${MODEL}"})
+
+			out.ToStringArrayOutput().ApplyT(func(got []string) []string {
+				assert.Equal(t, []string{"litellm", "--model", "${MODEL}"}, got)
+				return got
+			})
+			return nil
+		}, pulumi.WithMocks("proj", "stack", testMocks{}))
+		require.NoError(t, err)
+	})
+}
+
 // healthCheckPathPortCases mirrors the TS suite at
 // defang-mvp/pulumi/test/healthcheck.test.ts (#convertHealthcheck) so behavior
 // parity with the legacy pipeline is explicit. Additional cases beyond the TS
