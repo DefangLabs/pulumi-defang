@@ -200,28 +200,6 @@ func ToPulumiStringArray(ss []string) pulumi.StringArray {
 	return arr
 }
 
-// InterpolateCommand resolves $VAR / ${VAR} config references in each element
-// of a command (or entrypoint) list, mirroring environment-value
-// interpolation. Elements without references pass through unchanged. Unlike
-// bare ${VAR} environment values, command elements are always interpolated
-// inline: container runtimes exec the argv without a shell, so a native
-// secret reference is not an option here.
-func InterpolateCommand(
-	ctx *pulumi.Context,
-	configProvider ConfigProvider,
-	command []string,
-	opts ...pulumi.InvokeOption,
-) pulumi.StringArray {
-	if len(command) == 0 {
-		return nil
-	}
-	arr := make(pulumi.StringArray, len(command))
-	for i, s := range command {
-		arr[i] = InterpolateEnvironmentVariable(ctx, configProvider, s, opts...)
-	}
-	return arr
-}
-
 func InterpolateEnvironmentVariable(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
