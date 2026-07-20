@@ -41,6 +41,7 @@ func run(args ...string) int {
 	defer cancelTimeout()
 
 	if err := cdMain(ctx, args...); err != nil {
+		err = rewriteLockHint(err, os.Getenv("PROJECT"), os.Getenv("STACK"))
 		warn(err.Error())
 
 		var usageErr *usageError
