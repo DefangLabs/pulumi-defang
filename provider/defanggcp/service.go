@@ -156,10 +156,43 @@ type serviceExtras struct {
 	Triggers            pulumi.StringMapInput
 }
 
+// serviceIdentity returns the identity the service runs as: the
+// caller-supplied service account when given (its IAM is owned by the caller,
+// so x-defang-policies is an error), else a provider-created account with the
+// policies granted on it. The returned deps are the policy IAM members the
+// compute resources must wait for.
+func serviceIdentity(
+	ctx *pulumi.Context,
+	projectName string,
+	serviceName string,
+	policies []string,
+	serviceAccountEmail pulumi.StringInput,
+	infra *providergcp.SharedInfra,
+	childOpts []pulumi.ResourceOption,
+) (*providergcp.ServiceIdentity, []pulumi.Resource, error) {
+	if serviceAccountEmail != nil {
+		if len(compose.NormalizePolicies(policies)) > 0 {
+			return nil, nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithServiceAccount)
+		}
+		return &providergcp.ServiceIdentity{Email: serviceAccountEmail}, nil, nil
+	}
+	sa, err := createServiceAccount(ctx, projectName, serviceName, infra, childOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	identity := &providergcp.ServiceIdentity{Account: sa, Email: sa.Email}
+	policyDeps, err := grantPolicies(ctx, serviceName, identity, policies, infra, childOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return identity, policyDeps, nil
+}
+
 // grantPolicies grants caller-specified IAM roles (x-defang-policies) on the
 // project to the service account created for the service. The grant is on the
 // service account, so it applies identically to the Cloud Run and Compute
-// Engine paths.
+// Engine paths. Returns the created IAM members so the compute resources can
+// DependsOn them — the container may need the permissions at startup.
 func grantPolicies(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -167,18 +200,31 @@ func grantPolicies(
 	policies []string,
 	infra *providergcp.SharedInfra,
 	opts []pulumi.ResourceOption,
-) error {
+) ([]pulumi.Resource, error) {
+	policies = compose.NormalizePolicies(policies)
+	if err := compose.ValidatePolicies(compose.PolicyCloudGCP, policies); err != nil {
+		return nil, fmt.Errorf("service %s: %w", serviceName, err)
+	}
 	if len(policies) == 0 {
-		return nil
+		return nil, nil
 	}
-	roles := make([]string, len(policies))
-	for i, policy := range policies {
-		roles[i] = providergcp.ResolvePolicyRole(infra.GcpProject, policy)
+	// Dedup by resolved role: the member URN embeds the role, so a repeated
+	// entry (or a bare name alongside its qualified form) would collide.
+	roles := make([]string, 0, len(policies))
+	seen := make(map[string]struct{}, len(policies))
+	for _, policy := range policies {
+		role := providergcp.ResolvePolicyRole(infra.GcpProject, policy)
+		if _, dup := seen[role]; dup {
+			continue
+		}
+		seen[role] = struct{}{}
+		roles = append(roles, role)
 	}
-	if err := providergcp.GrantPolicyRoles(ctx, serviceName, identity, roles, infra, opts...); err != nil {
-		return fmt.Errorf("granting policies for service %s: %w", serviceName, err)
+	deps, err := providergcp.GrantPolicyRoles(ctx, serviceName, identity, roles, infra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("granting policies for service %s: %w", serviceName, err)
 	}
-	return nil
+	return deps, nil
 }
 
 // validateSidecarImages requires every sidecar to have an image; a static
@@ -221,21 +267,10 @@ func createService(
 		return err
 	}
 
-	var identity *providergcp.ServiceIdentity
-	if extras.ServiceAccountEmail != nil {
-		if len(svc.Policies) > 0 {
-			return fmt.Errorf("service %s: %w", serviceName, errPoliciesWithServiceAccount)
-		}
-		identity = &providergcp.ServiceIdentity{Email: extras.ServiceAccountEmail}
-	} else {
-		sa, err := createServiceAccount(ctx, projectName, serviceName, infra, childOpts)
-		if err != nil {
-			return err
-		}
-		identity = &providergcp.ServiceIdentity{Account: sa, Email: sa.Email}
-		if err := grantPolicies(ctx, serviceName, identity, svc.Policies, infra, childOpts); err != nil {
-			return err
-		}
+	identity, policyDeps, err := serviceIdentity(
+		ctx, projectName, serviceName, svc.Policies, extras.ServiceAccountEmail, infra, childOpts)
+	if err != nil {
+		return err
 	}
 
 	if svc.LLM != nil {
@@ -263,7 +298,7 @@ func createService(
 			return fmt.Errorf("service %s: %w", serviceName, errSidecarsRequireComputeEngine)
 		}
 		crResult, crErr := providergcp.CreateCloudRunService(
-			ctx, configProvider, serviceName, image, svc, identity, infra, parentOpt,
+			ctx, configProvider, serviceName, image, svc, identity, infra, policyDeps, parentOpt,
 		)
 		if crErr != nil {
 			return fmt.Errorf("creating Cloud Run service %s: %w", serviceName, crErr)
@@ -273,9 +308,10 @@ func createService(
 		comp.ResourceName = crResult.Service.Name
 	} else {
 		ceArgs := &providergcp.ComputeEngineArgs{
-			SA:       identity,
-			Sidecars: extras.Sidecars,
-			Triggers: extras.Triggers,
+			SA:         identity,
+			Sidecars:   extras.Sidecars,
+			Triggers:   extras.Triggers,
+			PolicyDeps: policyDeps,
 		}
 		ceResult, ceErr := providergcp.CreateComputeEngine(
 			ctx, serviceName, image, svc, ceArgs, infra, parentOpt,

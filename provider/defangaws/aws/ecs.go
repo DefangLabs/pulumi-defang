@@ -503,8 +503,22 @@ func CreateECSService(
 			lbDependsOn = append(lbDependsOn, dep)
 		}
 
-		// Attach caller-specified policies (x-defang-policies)
-		for _, policy := range svc.Policies {
+		// Attach caller-specified policies (x-defang-policies). Entries are
+		// literals by now — compose variables were interpolated before the
+		// project reached the provider — so anything unresolved or qualified
+		// for a different cloud is a hard error.
+		policies := compose.NormalizePolicies(svc.Policies)
+		if err := compose.ValidatePolicies(compose.PolicyCloudAWS, policies); err != nil {
+			return nil, fmt.Errorf("service %s: %w", serviceName, err)
+		}
+		// Dedup repeated entries: the attachment URN embeds policyName(policy),
+		// so a duplicate entry would collide on it.
+		seenPolicies := make(map[string]struct{}, len(policies))
+		for _, policy := range policies {
+			if _, dup := seenPolicies[policy]; dup {
+				continue
+			}
+			seenPolicies[policy] = struct{}{}
 			policyArn, err := resolvePolicyArn(ctx, policy, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)
@@ -519,7 +533,7 @@ func CreateECSService(
 			}
 			lbDependsOn = append(lbDependsOn, dep)
 		}
-	} else if len(svc.Policies) > 0 {
+	} else if len(compose.NormalizePolicies(svc.Policies)) > 0 {
 		// A caller-supplied task role's policies are owned by the caller.
 		return nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithTaskRole)
 	}
