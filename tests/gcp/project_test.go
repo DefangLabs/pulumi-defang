@@ -1191,7 +1191,7 @@ func TestConstructGcpProjectRejectsForeignPolicies(t *testing.T) {
 	server := testutil.MakeGcpTestServer()
 
 	// No cross-cloud filtering: an AWS-qualified entry on a GCP deploy is a
-	// hard error pointing at per-stack .env variables instead.
+	// hard error pointing at per-stack variable values instead.
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{

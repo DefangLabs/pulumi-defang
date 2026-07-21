@@ -69,7 +69,7 @@ func TestConstructAzureProjectRejectsForeignPolicies(t *testing.T) {
 	server := testutil.MakeAzureTestServer()
 
 	// No cross-cloud filtering: an AWS-qualified entry on an Azure deploy is
-	// a validation error pointing at per-stack .env variables. Entries a
+	// a validation error pointing at per-stack variable values. Entries a
 	// stack leaves empty ("${EXTRA:-}") normalize away and don't trip it.
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AzureURN("Project"),

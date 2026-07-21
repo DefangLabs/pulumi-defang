@@ -29,7 +29,7 @@ func TestClassifyPolicy(t *testing.T) {
 }
 
 func TestNormalizePolicies(t *testing.T) {
-	// Comma-separated entries split (one ${VAR} from .env can carry a list),
+	// Comma-separated entries split (one interpolated ${VAR} can carry a list),
 	// whitespace trims, empties drop (a "${VAR:-}" the stack leaves unset).
 	got := NormalizePolicies([]string{
 		"arn:aws:iam::aws:policy/A, arn:aws:iam::aws:policy/B",
@@ -65,11 +65,11 @@ func TestValidatePolicies(t *testing.T) {
 	err = ValidatePolicies(PolicyCloudGCP, []string{"arn:aws:iam::aws:policy/A"})
 	require.ErrorContains(t, err, "aws identifier")
 
-	// An unresolved variable means the CLI found no .env value; defang
-	// config is deliberately unsupported for policies.
+	// An unresolved variable means compose-load interpolation had no value
+	// for it; defang config is deliberately unsupported for policies.
 	err = ValidatePolicies(PolicyCloudAWS, []string{"${POLICIES}"})
 	require.ErrorContains(t, err, "unresolved variable")
-	require.ErrorContains(t, err, ".env")
+	require.ErrorContains(t, err, "defang config")
 }
 
 func TestPolicyListUnmarshalYAML(t *testing.T) {

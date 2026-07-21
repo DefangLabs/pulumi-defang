@@ -117,7 +117,7 @@ type ServiceConfig struct {
 	// rejects it. Cannot be combined with a caller-supplied task role /
 	// service account. Matches the x-defang-policies extension; see
 	// PolicyList for the accepted forms (scalar or list, comma-separated,
-	// `${VAR}` from `.env`).
+	// `${VAR}` interpolated at compose-load time).
 	Policies PolicyList `pulumi:"policies,optional" yaml:"x-defang-policies,omitempty"`
 
 	// Aliases maps this service's child cloud resources — by provider-defined

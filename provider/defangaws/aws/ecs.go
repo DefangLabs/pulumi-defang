@@ -504,9 +504,9 @@ func CreateECSService(
 		}
 
 		// Attach caller-specified policies (x-defang-policies). Entries are
-		// literals by now — the CLI substitutes ${VAR} from .env at load —
-		// so anything unresolved or qualified for a different cloud is a
-		// hard error; per-cloud values come from per-stack .env files.
+		// literals by now — compose variables were interpolated before the
+		// project reached the provider — so anything unresolved or qualified
+		// for a different cloud is a hard error.
 		policies := compose.NormalizePolicies(svc.Policies)
 		if err := compose.ValidatePolicies(compose.PolicyCloudAWS, policies); err != nil {
 			return nil, fmt.Errorf("service %s: %w", serviceName, err)

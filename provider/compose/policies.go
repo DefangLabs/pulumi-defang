@@ -10,15 +10,16 @@ import (
 
 var (
 	// ErrPolicyUnresolvedVariable rejects entries still containing `${…}`:
-	// the CLI substitutes `.env` values at compose-load time, and `defang
+	// compose variables are interpolated before the project reaches the
+	// provider (a CLI concern, e.g. from the stack's env files), and `defang
 	// config` is deliberately not supported for policies.
 	ErrPolicyUnresolvedVariable = errors.New(
-		"policy entries are substituted from `.env` when the compose file is loaded; " +
+		"policy variables must be resolved when the compose file is loaded; " +
 			"`defang config` is not supported for policies")
 	// ErrPolicyForeignCloud rejects an identifier whose syntax belongs to a
 	// different cloud: there is no cross-cloud filtering.
 	ErrPolicyForeignCloud = errors.New(
-		"use a ${VAR} entry with per-stack `.env` values to vary policies per cloud")
+		"use a ${VAR} entry whose per-stack value carries the identifier for the targeted cloud")
 )
 
 // PolicyCloud identifies which cloud an x-defang-policies entry targets.
@@ -35,9 +36,9 @@ const (
 
 // PolicyList holds x-defang-policies entries. In YAML it accepts a sequence
 // or a single scalar, and entries may hold several comma-separated
-// identifiers — so one `${VAR}` substituted from `.env` can carry a
-// variable-length list. Empty entries (a "${VAR:-}" the stack leaves unset)
-// are dropped.
+// identifiers — so one `${VAR}` interpolated at compose-load time can carry
+// a variable-length list. Empty entries (a "${VAR:-}" the stack leaves
+// unset) are dropped.
 type PolicyList []string
 
 // UnmarshalYAML accepts `x-defang-policies: ${POLICIES}` (scalar) in addition
@@ -95,11 +96,11 @@ func ClassifyPolicy(entry string) PolicyCloud {
 
 // ValidatePolicies rejects x-defang-policies entries that cannot apply on the
 // given cloud. Entries must be literals by the time they reach the provider:
-// the CLI substitutes `${VAR}` from `.env` at compose-load time, and `defang
-// config` is deliberately not supported for policies — so an unresolved
-// variable is an error, as is an identifier whose syntax belongs to a
-// different cloud (there is no cross-cloud filtering; per-cloud values come
-// from per-stack `.env` files).
+// compose variables are interpolated at compose-load time — by the CLI, not
+// by the CD/providers — and `defang config` is deliberately not supported
+// for policies, so an unresolved variable is an error, as is an identifier
+// whose syntax belongs to a different cloud (there is no cross-cloud
+// filtering; vary the variable's per-stack value instead).
 func ValidatePolicies(cloud PolicyCloud, policies []string) error {
 	for _, entry := range policies {
 		if strings.Contains(entry, "${") {

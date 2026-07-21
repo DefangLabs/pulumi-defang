@@ -211,7 +211,7 @@ func TestConstructAwsProjectRejectsForeignPolicies(t *testing.T) {
 	server := testutil.MakeAwsTestServer()
 
 	// No cross-cloud filtering: a GCP-qualified entry on an AWS deploy is a
-	// hard error pointing at per-stack .env variables instead.
+	// hard error pointing at per-stack variable values instead.
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AwsURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
@@ -240,7 +240,7 @@ func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {
 	}
 	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
 
-	// One comma-separated entry — a single ${VAR} from .env carrying a
+	// One comma-separated entry — a single interpolated ${VAR} carrying a
 	// variable-length list — splits into individual attachments; an empty
 	// entry (a "${EXTRA:-}" the stack leaves unset) is dropped.
 	const policyA = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
