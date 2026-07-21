@@ -204,6 +204,11 @@ func buildProject(
 		return nil, err
 	}
 
+	// Bind the project (apex) domain to a service only when the whole project
+	// has exactly one ingress port — i.e. a single service with a single
+	// ingress port. Otherwise the apex is left unbound (ALB default action).
+	infra.ApexServiceName = apexServiceName(standalone)
+
 	// Pre-compute which services need waitForSteadyState: true if any other
 	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)
 	waitForSteady := map[string]bool{}
@@ -271,6 +276,34 @@ func buildProject(
 		TaskRoleArns:    taskRoleArns.ToStringMapOutput(),
 		ServiceIds:      serviceIds.ToStringMapOutput(),
 	}, nil
+}
+
+// apexServiceName returns the service that should serve the bare project
+// (apex) domain: the sole service that has exactly one ingress port, but only
+// when it is the only ingress port in the whole project. Returns "" when the
+// project has zero or multiple ingress ports, leaving the apex unbound. The
+// result is independent of map iteration order (it depends only on the count
+// of ingress ports and, when that count is 1, the single owner).
+func apexServiceName(services compose.Services) string {
+	owner := ""
+	ingressPorts := 0
+	for name, svc := range services {
+		// Managed datastores are dispatched as Postgres/Redis, never as ALB
+		// ingress targets, so they can't own the apex even if a port is set.
+		if svc.Postgres != nil || svc.Redis != nil {
+			continue
+		}
+		for _, port := range svc.Ports {
+			if port.IsIngress() {
+				ingressPorts++
+				owner = name
+			}
+		}
+	}
+	if ingressPorts != 1 {
+		return ""
+	}
+	return owner
 }
 
 func newService(
