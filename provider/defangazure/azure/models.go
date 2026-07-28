@@ -65,9 +65,20 @@ func (s *StaticModelSelector) SelectModel(role ModelRole) pulumi.Output {
 // chatPreference and embeddingPreference define model preference order.
 // Earlier entries are preferred. Format "OpenAI" models are fully compatible
 // with the OpenAI SDK; marketplace models may have compatibility gaps.
+//
+// Lead with the current GA GPT-5 / GPT-4.1 families; the older GPT-4 line is
+// kept only as a deep fallback. Because findBest skips versions Azure has
+// closed to new deployments (see isDeployable), a family whose only versions
+// are deprecating is transparently passed over for the next entry — so as
+// individual models retire this list degrades gracefully instead of failing.
 var chatPreference = []struct {
 	name, format string
 }{
+	{"gpt-5.1", "OpenAI"},
+	{"gpt-5", "OpenAI"},
+	{"gpt-5-mini", "OpenAI"},
+	{"gpt-4.1", "OpenAI"},
+	{"gpt-4.1-mini", "OpenAI"},
 	{"gpt-4o", "OpenAI"},
 	{"gpt-4o-mini", "OpenAI"},
 	{"gpt-4", "OpenAI"},
@@ -90,10 +101,11 @@ var embeddingPreference = []struct {
 
 // availableModel is a model returned by the Azure API.
 type availableModel struct {
-	name    string
-	format  string
-	version string
-	skus    []string
+	name            string
+	format          string
+	version         string
+	skus            []string
+	lifecycleStatus string // e.g. "GenerallyAvailable", "Deprecating", "Deprecated"
 }
 
 // DynamicModelSelector queries the Azure AI account for available models
@@ -184,6 +196,9 @@ func listModels(subscriptionID, resourceGroup, accountName string) ([]availableM
 			if m.Version != nil {
 				am.version = *m.Version
 			}
+			if m.LifecycleStatus != nil {
+				am.lifecycleStatus = string(*m.LifecycleStatus)
+			}
 			for _, s := range m.SKUs {
 				if s != nil && s.Name != nil {
 					am.skus = append(am.skus, *s.Name)
@@ -232,7 +247,7 @@ func pickModel(models []availableModel, role ModelRole) (ModelSpec, error) {
 	return ModelSpec{}, fmt.Errorf("%w: %s role", ErrNoSuitableModel, role)
 }
 
-// findBest returns the highest-version model matching name and format.
+// findBest returns the highest-version deployable model matching name and format.
 func findBest(models []availableModel, name, format string) *availableModel {
 	var best *availableModel
 	for i := range models {
@@ -240,11 +255,37 @@ func findBest(models []availableModel, name, format string) *availableModel {
 		if !strings.EqualFold(m.name, name) || !strings.EqualFold(m.format, format) {
 			continue
 		}
+		if !isDeployable(m.lifecycleStatus) {
+			continue
+		}
 		if best == nil || m.version > best.version {
 			best = m
 		}
 	}
 	return best
+}
+
+// isDeployable reports whether a model version can still be deployed for the
+// first time. Azure keeps returning models from ListModels after closing them
+// to new deployments, so the selector must screen them out itself:
+//   - "Deprecating": blocked for new deployments — NewDeployment fails with
+//     HTTP 400 ServiceModelDeprecating — even though existing deployments keep
+//     working until the model's retirement date.
+//   - "Deprecated": fully retired (HTTP 410).
+//
+// Every other status (GenerallyAvailable, Stable, Preview, or an empty/unknown
+// value) is treated as deployable, so an absent status never over-filters.
+func isDeployable(lifecycleStatus string) bool {
+	// Match case-insensitively — findBest already distrusts Azure's casing for
+	// name/format, and a denylist can only ever err toward eligible, so this
+	// never over-filters an absent/unknown status.
+	switch {
+	case strings.EqualFold(lifecycleStatus, string(armcognitiveservices.ModelLifecycleStatusDeprecating)),
+		strings.EqualFold(lifecycleStatus, string(armcognitiveservices.ModelLifecycleStatusDeprecated)):
+		return false
+	default:
+		return true
+	}
 }
 
 func derefStr(s *string) string {
