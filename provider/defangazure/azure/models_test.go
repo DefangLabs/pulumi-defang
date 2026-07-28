@@ -5,6 +5,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsDeployable(t *testing.T) {
@@ -108,7 +109,7 @@ func TestPickModelSkipsDeprecating(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			spec, err := pickModel(tc.models, ModelRoleChat)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tc.wantName, spec.Name)
 			assert.Equal(t, tc.wantVersion, spec.Version)
 			assert.Equal(t, "OpenAI", spec.Format)
