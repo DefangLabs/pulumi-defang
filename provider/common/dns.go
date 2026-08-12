@@ -44,25 +44,33 @@ func ServiceLabel(name string) string {
 	return SafeLabel(strings.ReplaceAll(name, "_", "-"))
 }
 
-// ServiceFQDN returns the public-facing fully-qualified domain name for a
-// service, following the CLI source-of-truth precedence
-// (cd: domainname || publicFqdn || privateFqdn):
+// ServiceFQDN returns the fully-qualified domain name for a service. Networks
+// decide public vs private; the port mode only selects the exposure type. The
+// precedence is:
 //   - the custom DomainName if set;
-//   - else "<ServiceLabel>.<publicDomain>" when the service has ingress ports;
-//   - else "<ServiceLabel>.<privateDomain>" when it has host (internal) ports.
+//   - else "<ServiceLabel>.<publicDomain>" when the service is in a public network
+//     and exposes an ingress port (a public load-balanced service);
+//   - else "<ServiceLabel>.<privateDomain>" when the service is in a private
+//     network, or has host-mode ports (host is treated as private transitionally,
+//     so default-network host services keep their internal name — pulumi-defang#253).
 //
 // publicDomain is the project's delegate domain, privateDomain its internal
-// domain; pass "" for either when the provider has no such concept (e.g. GCP and
-// Azure today have no private-FQDN fallback). Returns "" when no FQDN applies,
-// which callers use to decide whether to set DEFANG_FQDN.
-func ServiceFQDN(serviceName string, svc compose.ServiceConfig, publicDomain, privateDomain string) string {
+// domain; pass "" for either when the provider has no such concept (e.g. GCP
+// Cloud Run and Azure have no private-FQDN fallback). Returns "" when no FQDN
+// applies, which callers use to decide whether to set DEFANG_FQDN.
+func ServiceFQDN(
+	networks compose.Networks,
+	serviceName string,
+	svc compose.ServiceConfig,
+	publicDomain, privateDomain string,
+) string {
 	if svc.DomainName != "" {
 		return svc.DomainName
 	}
 	switch {
-	case svc.HasIngressPorts() && publicDomain != "":
+	case svc.HasIngressPorts() && InPublicNetwork(networks, svc) && publicDomain != "":
 		return ServiceLabel(serviceName) + "." + publicDomain
-	case svc.HasHostPorts() && privateDomain != "":
+	case (InPrivateNetwork(networks, svc) || svc.HasHostPorts()) && privateDomain != "":
 		return ServiceLabel(serviceName) + "." + privateDomain
 	}
 	return ""

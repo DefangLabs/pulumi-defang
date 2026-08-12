@@ -25,15 +25,16 @@ type NetworkingResult struct {
 }
 
 // ResolveNetworking creates a new VPC using awsx, or adopts the VPC/subnets
-// provided via AWSConfig. In both cases the project's private hosted zone is
-// created and attached to the VPC.
+// provided via AWSConfig. The project's private hosted zone is created and
+// attached to the VPC only when needPrivateZone is true (i.e. the project has
+// host-mode services or a managed database that needs private DNS records).
 func ResolveNetworking(
-	ctx *pulumi.Context, projectName string, cfg *AWSConfig, opt pulumi.ResourceOrInvokeOption,
+	ctx *pulumi.Context, projectName string, cfg *AWSConfig, needPrivateZone bool, opt pulumi.ResourceOrInvokeOption,
 ) (*NetworkingResult, error) {
 	privateDomain := common.SafeLabel(projectName) + ".internal"
 
 	if cfg != nil && cfg.VpcID != nil {
-		return adoptVpc(ctx, privateDomain, cfg, opt)
+		return adoptVpc(ctx, privateDomain, cfg, needPrivateZone, opt)
 	}
 
 	strategy := awsxec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: missing type checking
@@ -88,9 +89,11 @@ func ResolveNetworking(
 		return nil, err
 	}
 
-	privateZone, err := createPrivateZone(ctx, privateDomain, vpc.VpcId, opt)
-	if err != nil {
-		return nil, err
+	var privateZone *route53.Zone
+	if needPrivateZone {
+		if privateZone, err = createPrivateZone(ctx, privateDomain, vpc.VpcId, opt); err != nil {
+			return nil, err
+		}
 	}
 
 	options, err := ec2.NewVpcDhcpOptions(ctx, "dhcp-options", &ec2.VpcDhcpOptionsArgs{
@@ -129,21 +132,25 @@ func ResolveNetworking(
 }
 
 // adoptVpc uses the caller-provided VPC and subnets instead of creating a VPC.
-// The project's private hosted zone is still created (managed Redis/Postgres
-// CNAMEs live there) and attached to the adopted VPC, but the VPC itself —
-// DHCP options, route tables, NAT — is left untouched. Private subnets, when
-// provided, are assumed to have outbound connectivity (NAT or equivalent);
-// when omitted, all workloads run in the public subnets with public IPs.
+// The project's private hosted zone is created (managed Redis/Postgres CNAMEs
+// live there) and attached to the adopted VPC only when needPrivateZone is true,
+// but the VPC itself — DHCP options, route tables, NAT — is left untouched.
+// Private subnets, when provided, are assumed to have outbound connectivity (NAT
+// or equivalent); when omitted, all workloads run in the public subnets with
+// public IPs.
 func adoptVpc(
-	ctx *pulumi.Context, privateDomain string, cfg *AWSConfig, opt pulumi.ResourceOrInvokeOption,
+	ctx *pulumi.Context, privateDomain string, cfg *AWSConfig, needPrivateZone bool, opt pulumi.ResourceOrInvokeOption,
 ) (*NetworkingResult, error) {
 	if cfg.PublicSubnetIDs == nil {
 		return nil, errMissingPublicSubnets
 	}
 
-	privateZone, err := createPrivateZone(ctx, privateDomain, cfg.VpcID, opt)
-	if err != nil {
-		return nil, err
+	var privateZone *route53.Zone
+	if needPrivateZone {
+		var err error
+		if privateZone, err = createPrivateZone(ctx, privateDomain, cfg.VpcID, opt); err != nil {
+			return nil, err
+		}
 	}
 
 	privateSubnetIDs := cfg.PrivateSubnetIDs
@@ -164,11 +171,11 @@ func adoptVpc(
 }
 
 // createPrivateZone creates the project's Route53 private hosted zone attached
-// to the given VPC, with a low negative-caching TTL.
+// to the given VPC, with a low negative-caching TTL. Callers gate this on
+// NeedPrivateZone so projects that need no private DNS records don't pay for it.
 func createPrivateZone(
 	ctx *pulumi.Context, privateDomain string, vpcID pulumi.StringInput, opt pulumi.ResourceOrInvokeOption,
 ) (*route53.Zone, error) {
-	// TODO: make this optional, so we can save $$
 	privateZone, err := route53.NewZone(ctx, privateDomain, &route53.ZoneArgs{
 		Comment:      pulumi.String(common.DefangComment),
 		Name:         pulumi.String(privateDomain),

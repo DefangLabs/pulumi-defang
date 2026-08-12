@@ -18,6 +18,7 @@ import (
 // SharedInfra holds resources shared across all services in a project.
 type SharedInfra struct {
 	ResourceGroup      *resources.ResourceGroup
+	Networks           compose.Networks       // top-level compose networks; classify services public vs private
 	Environment        *app.ManagedEnvironment
 	BuildInfra         *BuildInfra            // nil when no services require image builds
 	Networking         *NetworkingResult      // nil when no VNet-integrated services are present

@@ -21,6 +21,7 @@ func CreateProjectInfra(
 	ctx *pulumi.Context,
 	projectName string,
 	awsConfig *AWSConfig,
+	networks compose.Networks,
 	services compose.Services,
 	opt pulumi.ResourceOrInvokeOption,
 ) (*SharedInfra, error) {
@@ -29,7 +30,7 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("getting AWS region: %w", err)
 	}
 
-	net, err := ResolveNetworking(ctx, projectName, awsConfig, opt)
+	net, err := ResolveNetworking(ctx, projectName, awsConfig, common.NeedPrivateZone(networks, services), opt)
 	if err != nil {
 		return nil, fmt.Errorf("resolving networking: %w", err)
 	}
@@ -120,7 +121,7 @@ func CreateProjectInfra(
 
 	var projectDomain string
 	var albRes *AlbResult
-	if common.NeedIngress(services) {
+	if common.NeedIngress(networks, services) {
 		var certArn pulumi.StringPtrInput
 		var domains []string
 		var publicZoneId pulumi.StringInput
@@ -183,9 +184,14 @@ func CreateProjectInfra(
 		}
 	}
 
-	route53SidecarePolicy, err := createRoute53SidecarPolicy(ctx, "AllowRoute53Sidecar", net.PrivateZone, opt)
-	if err != nil {
-		return nil, fmt.Errorf("creating Route53 sidecar policy: %w", err)
+	// The Route53 sidecar (and its policy) only applies to host-mode services,
+	// which force a private zone to exist; skip the policy when there's no zone.
+	var route53SidecarePolicy *iam.Policy
+	if net.PrivateZone != nil {
+		route53SidecarePolicy, err = createRoute53SidecarPolicy(ctx, "AllowRoute53Sidecar", net.PrivateZone, opt)
+		if err != nil {
+			return nil, fmt.Errorf("creating Route53 sidecar policy: %w", err)
+		}
 	}
 
 	result := &SharedInfra{
@@ -200,7 +206,6 @@ func CreateProjectInfra(
 		VpcID:            net.VpcID,
 		PublicSubnetIDs:  net.PublicSubnetIDs,
 		PrivateSubnetIDs: net.PrivateSubnetIDs,
-		PrivateZoneID:    net.PrivateZone.ZoneId,
 		PrivateDomain:    net.PrivateDomain,
 		ProjectDomain:    projectDomain,
 		PrivateSgID:      privateSg.ID(),
@@ -208,6 +213,12 @@ func CreateProjectInfra(
 		Region:           region.Region,
 		BuildInfra:       imgInfra,
 		PublicEcrCache:   publicEcrCache,
+	}
+
+	// Only set when a private zone was created (host-mode services / managed DBs);
+	// downstream managed Postgres/Redis already gate on PrivateZoneID != nil.
+	if net.PrivateZone != nil {
+		result.PrivateZoneID = net.PrivateZone.ZoneId
 	}
 
 	if albRes != nil {

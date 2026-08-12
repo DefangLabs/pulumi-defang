@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
@@ -26,15 +27,16 @@ type SharedInfra struct {
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
-	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
-	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
+	WildcardCertId    pulumi.StringInput // set when a domain is configured and the project has ingress
+	PublicZoneId      pulumi.StringInput // public managed zone name; set alongside WildcardCertId
 	ProxySubnetId     string
 	BuildInfra        *BuildInfra                             // non-nil when at least one service has a build config
 	ServiceConnection *servicenetworking.Connection           // non-nil when any service uses managed Postgres or Redis
-	PrivateZone       pulumi.StringOutput                     // managed zone name for the private google.internal. zone
+	PrivateZone       pulumi.StringOutput                     // google.internal. zone; empty when not needed
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
 	ProjectName       string                                  // compose project name (defang-project log label)
+	Networks          compose.Networks                        // classify services public vs private
 	Repos             map[string]*artifactregistry.Repository // non-empty when services reference external registries
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
@@ -89,10 +91,13 @@ func NewStandaloneGlobalConfig(ctx *pulumi.Context) *SharedInfra {
 // domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 // a public DNS managed zone, a wildcard DNS authorization, and a wildcard certificate
 // are created for that domain.
+//
+//nolint:funlen // sequential infra setup is clearer as one function
 func BuildGlobalConfig(
 	ctx *pulumi.Context,
 	projectName string,
 	domain string,
+	networks compose.Networks,
 	services map[string]compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
@@ -151,22 +156,6 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	privateZone, err := dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
-		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
-		DnsName:     pulumi.String("google.internal."),
-		Visibility:  pulumi.String("private"),
-		PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
-			Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
-				&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
-					NetworkUrl: vpc.ID(),
-				},
-			},
-		},
-	}, append(opts, pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
-	if err != nil {
-		return nil, err
-	}
-
 	cfg := &SharedInfra{
 		Stack:       ctx.Stack(),
 		Region:      region,
@@ -175,13 +164,39 @@ func BuildGlobalConfig(
 		VpcId:       vpc.ID().ToStringOutput(),
 		SubnetId:    subnet.ID().ToStringOutput(),
 		PublicIP:    publicIP,
-		PrivateZone: privateZone.Name.ToStringOutput(),
+		Networks:    networks,
 	}
 
+	// The private zone only ever holds records for host-mode services and managed
+	// Postgres/Redis, so skip it (and save $$) when the project has none.
+	if common.NeedPrivateZone(networks, services) {
+		privateZone, err := dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
+			Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
+			DnsName:     pulumi.String("google.internal."),
+			Visibility:  pulumi.String("private"),
+			PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
+				Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
+					&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
+						NetworkUrl: vpc.ID(),
+					},
+				},
+			},
+		}, append(opts, pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
+		if err != nil {
+			return nil, err
+		}
+		cfg.PrivateZone = privateZone.Name.ToStringOutput()
+	}
+
+	// The public delegate zone and wildcard cert only serve ingress (public)
+	// services, so skip them when the project exposes none — even if a delegate
+	// domain is configured. Domain is still recorded for FQDN construction.
 	if domain != "" {
 		cfg.Domain = domain
-		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
-			return nil, err
+		if common.NeedIngress(networks, services) {
+			if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
+				return nil, err
+			}
 		}
 	}
 

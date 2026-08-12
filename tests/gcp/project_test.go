@@ -146,27 +146,77 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 	assert.Equal(t, "INGRESS", icmp.inputs.Get("direction").AsString())
 }
 
-func TestConstructProjectAlwaysCreatesPrivateDNSZone(t *testing.T) {
+func TestConstructProjectCreatesPrivateDNSZoneForHostModeService(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.GcpURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"internal": testutil.ServiceWithPorts("nginx:latest", testutil.HostPort(5432)),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	// Host-mode services (like managed Postgres/Redis) keep private A records in
+	// the zone for internal service discovery, so it is created.
+	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
+		return m.Get("visibility").AsString() == "private"
+	})
+	require.NotNil(t, zone, "expected a private ManagedZone for a host-mode service")
+	assert.Equal(t, "google.internal.", zone.inputs.Get("dnsName").AsString())
+}
+
+func TestConstructProjectWithoutPrivateServicesSkipsPrivateDNSZone(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app":    testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
 			"worker": testutil.ServiceWithImage("myapp:worker"),
 		}),
 	})
 
 	require.NoError(t, err)
 
+	// A project with only ingress/portless services and no managed database
+	// needs no private DNS records, so the private zone is skipped.
 	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
 		return m.Get("visibility").AsString() == "private"
 	})
-	require.NotNil(t, zone, "expected a private ManagedZone")
-	assert.Equal(t, "google.internal.", zone.inputs.Get("dnsName").AsString())
+	assert.Nil(t, zone, "expected no private ManagedZone without host-mode or managed-DB services")
 }
 
 func TestConstructProjectWithDomainCreatesPublicDNSZone(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
+		return m.Get("dnsName").AsString() == "example.com."
+	})
+	require.NotNil(t, zone, "expected a public ManagedZone for example.com")
+	assert.Equal(t, "example.com.", zone.inputs.Get("dnsName").AsString())
+}
+
+func TestConstructProjectWithDomainButNoIngressSkipsPublicDNSZone(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -184,11 +234,13 @@ func TestConstructProjectWithDomainCreatesPublicDNSZone(t *testing.T) {
 
 	require.NoError(t, err)
 
+	// The public delegate zone + wildcard cert only serve ingress services, so a
+	// domain with no public services creates neither.
 	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
 		return m.Get("dnsName").AsString() == "example.com."
 	})
-	require.NotNil(t, zone, "expected a public ManagedZone for example.com")
-	assert.Equal(t, "example.com.", zone.inputs.Get("dnsName").AsString())
+	assert.Nil(t, zone, "expected no public ManagedZone when no service has ingress ports")
+	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
 }
 
 func TestConstructProjectWithDomainCreatesCAARecord(t *testing.T) {
@@ -200,8 +252,9 @@ func TestConstructProjectWithDomainCreatesCAARecord(t *testing.T) {
 		Inputs: property.NewMap(map[string]property.Value{
 			"domain": property.New("example.com"),
 			"services": property.New(property.NewMap(map[string]property.Value{
-				"worker": property.New(property.NewMap(map[string]property.Value{
-					"image": property.New("myapp:worker"),
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
 				})),
 			})),
 		}),
@@ -304,8 +357,9 @@ func TestConstructProjectWithDomainCreatesWildcardCert(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// Private zone always created; public zone when domain is set → 2 total
-	assert.Equal(t, 2, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	// app is ingress-only (no host-mode port, no managed DB) so there's no private
+	// zone; only the public delegate zone is created for the domain → 1 total
+	assert.Equal(t, 1, countType(*records, "gcp:dns/managedZone:ManagedZone"))
 	// DNS authorization for the wildcard cert challenge
 	assert.Equal(t, 1, countType(*records, "gcp:certificatemanager/dnsAuthorization:DnsAuthorization"))
 	// Wildcard certificate
@@ -381,8 +435,8 @@ func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// Private zone is always created even without a domain
-	assert.Equal(t, 1, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	// app is ingress-only and there's no domain, so neither zone is created
+	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/dnsAuthorization:DnsAuthorization"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
@@ -953,6 +1007,44 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing
 		assert.Contains(t, userData, envName,
 			"expected %s to appear in Compute Engine cloud-init user-data", envName)
 	}
+}
+
+func TestConstructProjectPrivateNetworkIngressStaysPrivate(t *testing.T) {
+	// Networks (not port mode) decide reachability: a service with an ingress port
+	// but in a non-default (private) network is private — it gets no public delegate
+	// zone and no wildcard cert, but it does get a private zone for internal DNS.
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"api": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+					"networks": property.New(property.NewMap(map[string]property.Value{
+						"backend": property.New(property.NewMap(map[string]property.Value{})),
+					})),
+				})),
+			})),
+			"networks": nonInternalNetworks("backend"),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	publicZone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
+		return m.Get("dnsName").AsString() == "example.com."
+	})
+	assert.Nil(t, publicZone, "expected no public ManagedZone for an ingress service in a private network")
+	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
+
+	privateZone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
+		return m.Get("visibility").AsString() == "private"
+	})
+	require.NotNil(t, privateZone, "expected a private ManagedZone for a private-network service")
 }
 
 // --- NAT Gateway ---

@@ -191,10 +191,12 @@ func buildTemplate(
 	// DEFANG_FQDN: custom domain, else public FQDN (ingress). GCP has no
 	// private-FQDN fallback. See common.ServiceFQDN for the precedence.
 	var domain string
+	var networks compose.Networks
 	if gcpConfig != nil {
 		domain = gcpConfig.Domain
+		networks = gcpConfig.Networks
 	}
-	fqdn := common.ServiceFQDN(serviceName, svc, domain, "")
+	fqdn := common.ServiceFQDN(networks, serviceName, svc, domain, "")
 	envs, secretIds := buildEnvVars(ctx, configProvider, serviceName, etag, fqdn, svc, opts...)
 
 	// Build port config

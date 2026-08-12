@@ -403,6 +403,7 @@ func setupSharedInfra(
 
 	infra := &providerazure.SharedInfra{
 		ResourceGroup: rg,
+		Networks:      inputs.Networks,
 		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
 		Etag:          inputs.Etag,
 		Domain:        inputs.Domain,

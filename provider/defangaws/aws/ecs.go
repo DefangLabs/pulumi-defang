@@ -566,7 +566,7 @@ func CreateECSService(
 	if infra != nil {
 		publicDomain, privateDomain = infra.ProjectDomain, infra.PrivateDomain
 	}
-	if fqdn := common.ServiceFQDN(serviceName, svc, publicDomain, privateDomain); fqdn != "" {
+	if fqdn := common.ServiceFQDN(args.Networks, serviceName, svc, publicDomain, privateDomain); fqdn != "" {
 		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: fqdn})
 	}
 
@@ -833,7 +833,7 @@ func CreateECSService(
 		defaultListenerArn = infra.httpListenerArn()
 	}
 
-	if svc.HasIngressPorts() && defaultListenerArn != nil {
+	if svc.HasIngressPorts() && defaultListenerArn != nil && common.InPublicNetwork(args.Networks, svc) {
 		serviceLabel := common.ServiceLabel(serviceName)
 
 		firstIngress := true
@@ -989,7 +989,7 @@ func CreateECSService(
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}
 
-	hasIngress := svc.HasIngressPorts() && defaultListenerArn != nil
+	hasIngress := svc.HasIngressPorts() && defaultListenerArn != nil && common.InPublicNetwork(args.Networks, svc)
 	serviceLabel := common.ServiceLabel(serviceName)
 	switch {
 	case hasIngress && infra.ProjectDomain != "":
