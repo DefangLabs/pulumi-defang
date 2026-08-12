@@ -76,7 +76,7 @@ func CreateComputeEngine(
 	// DEFANG_FQDN: custom domain, else public FQDN (ingress), else the private
 	// FQDN (<label>.google.internal) for internal services — the private zone is
 	// provisioned in alb.go and resolves within the VPC. See common.ServiceFQDN.
-	fqdn := common.ServiceFQDN(serviceName, svc, gcpConfig.Domain, "google.internal")
+	fqdn := common.ServiceFQDN(gcpConfig.Networks, serviceName, svc, gcpConfig.Domain, "google.internal")
 	cloudInit := getCloudInitConfig(
 		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, gcpConfig.ProjectName, gcpConfig.Stack, fqdn,
 		addHealthCheckSidecar, args.Sidecars)

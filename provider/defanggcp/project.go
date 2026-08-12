@@ -95,7 +95,7 @@ func buildProject(
 ) (*projectResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
-	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
+	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Networks, args.Services, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
@@ -249,7 +249,8 @@ func buildService(
 	// Managed Postgres/Redis still need the PrivateFqdn wired here because their
 	// createX workers don't build the LBEntry themselves. createService sets
 	// PrivateFqdn internally for the Service case.
-	if lbEntry != nil && svc.HasHostPorts() && lbEntry.PrivateFqdn == "" {
+	needsPrivateFqdn := common.InPrivateNetwork(infra.Networks, svc) || svc.HasHostPorts()
+	if lbEntry != nil && needsPrivateFqdn && lbEntry.PrivateFqdn == "" {
 		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", common.ServiceLabel(svcName), "google.internal")
 	}
 

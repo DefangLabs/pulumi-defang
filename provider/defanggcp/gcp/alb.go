@@ -72,7 +72,9 @@ func createExternalLoadBalancers(
 	// pulumi.IDOutput and panics when ToStringOutput is called on it.
 	var ingressEntries []LBServiceEntry
 	for _, e := range entries {
-		if e.Config.HasIngressPorts() && (e.CloudRunService != nil || e.InstanceGroup != nil) {
+		// Networks decide public reachability; the ingress port only selects LB exposure.
+		isPublicIngress := e.Config.HasIngressPorts() && common.InPublicNetwork(config.Networks, e.Config)
+		if isPublicIngress && (e.CloudRunService != nil || e.InstanceGroup != nil) {
 			ingressEntries = append(ingressEntries, e)
 		}
 	}

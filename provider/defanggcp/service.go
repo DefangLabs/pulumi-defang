@@ -201,6 +201,8 @@ func validateSidecarImages(serviceName string, sidecars map[string]compose.Servi
 // the Cloud Run service or Compute Engine MIG under an already-registered Service
 // component, populates its Endpoint/LBEntry, and registers its outputs. Shared
 // between Construct and the project-level dispatcher.
+//
+//nolint:funlen // sequential service setup is clearer as one function
 func createService(
 	ctx *pulumi.Context,
 	comp *ServiceOutputs,
@@ -295,7 +297,7 @@ func createService(
 		comp.ResourceName = ceResult.InstanceGroup.Name
 	}
 
-	if lbEntry != nil && svc.HasHostPorts() {
+	if lbEntry != nil && (common.InPrivateNetwork(infra.Networks, svc) || svc.HasHostPorts()) {
 		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", common.ServiceLabel(serviceName), "google.internal")
 	}
 

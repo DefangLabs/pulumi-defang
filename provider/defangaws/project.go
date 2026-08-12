@@ -172,7 +172,7 @@ func buildProject(
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*projectResult, error) {
 	awsConfig := (*provideraws.AWSConfig)(args.AWS)
-	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Services, parentOpt)
+	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Networks, args.Services, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}

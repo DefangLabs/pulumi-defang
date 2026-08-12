@@ -153,7 +153,7 @@ func buildEnvVars(
 	// DEFANG_FQDN: custom domain, else public FQDN (ingress) under the delegate
 	// domain — matches the CNAME from CreateCustomDomain. Azure has no
 	// private-FQDN fallback. See common.ServiceFQDN for the precedence.
-	if fqdn := common.ServiceFQDN(serviceName, svc, infra.Domain, ""); fqdn != "" {
+	if fqdn := common.ServiceFQDN(infra.Networks, serviceName, svc, infra.Domain, ""); fqdn != "" {
 		envs = append(envs, app.EnvironmentVarArgs{
 			Name:  pulumi.String("DEFANG_FQDN"),
 			Value: pulumi.String(fqdn),
@@ -256,7 +256,7 @@ func CreateContainerApp(
 		maxReplicas = mr
 	}
 
-	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
+	ingress := buildIngress(svc, infra.Networks)
 	if ingress != nil {
 		// Preserve any customDomains binding added out-of-band by
 		// `defang cert generate` (BYOD) or the delegate-domain cert flow. The
