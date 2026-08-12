@@ -37,10 +37,28 @@ func ParseHealthCheckPathPort(test []string) (string, int) {
 	return path, port
 }
 
-// NeedIngress returns true if any non-managed service in the map has ingress ports.
-func NeedIngress(services compose.Services) bool {
+// NeedIngress returns true if the project needs a public load balancer: any
+// non-managed service that is in a public network AND exposes an ingress port.
+// Networks decide public vs private; the ingress port only selects load-balanced
+// exposure. A service with ingress ports in a private/internal network is NOT
+// public and does not need the public LB.
+func NeedIngress(networks compose.Networks, services compose.Services) bool {
 	for _, svc := range services {
-		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil {
+		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil && InPublicNetwork(networks, svc) {
+			return true
+		}
+	}
+	return false
+}
+
+// NeedPrivateZone reports whether the project needs a private DNS zone. A private
+// zone holds internal records for: a service in a private network (networks
+// decide public/private), a host-mode service (transitional — kept so default-
+// network host services keep their internal name, see pulumi-defang#253), or a
+// managed Postgres/Redis. A project of only public ingress services needs none.
+func NeedPrivateZone(networks compose.Networks, services compose.Services) bool {
+	for _, svc := range services {
+		if InPrivateNetwork(networks, svc) || svc.HasHostPorts() || IsManagedService(svc) {
 			return true
 		}
 	}

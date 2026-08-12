@@ -76,6 +76,7 @@ func TestServiceFQDN(t *testing.T) {
 
 	tests := []struct {
 		name          string
+		networks      compose.Networks
 		serviceName   string
 		svc           compose.ServiceConfig
 		publicDomain  string
@@ -84,72 +85,69 @@ func TestServiceFQDN(t *testing.T) {
 	}{
 		{
 			"custom domain wins",
-			"web",
+			nil, "web",
 			compose.ServiceConfig{DomainName: "example.com", Ports: []compose.ServicePortConfig{ingress}},
-			pub,
-			priv,
-			"example.com",
+			pub, priv, "example.com",
 		},
 		{
-			"public fqdn for ingress",
-			"web",
+			"public fqdn for ingress in default network",
+			nil, "web",
 			compose.ServiceConfig{Ports: []compose.ServicePortConfig{ingress}},
-			pub,
-			priv,
-			"web." + pub,
+			pub, priv, "web." + pub,
 		},
 		{
 			"private fqdn for host",
-			"db",
+			nil, "db",
 			compose.ServiceConfig{Ports: []compose.ServicePortConfig{host}},
-			pub,
-			priv,
-			"db." + priv,
+			pub, priv, "db." + priv,
 		},
 		{
-			"ingress beats host",
-			"web",
+			"ingress beats host in default network",
+			nil, "web",
 			compose.ServiceConfig{Ports: []compose.ServicePortConfig{ingress, host}},
-			pub,
-			priv,
-			"web." + pub,
+			pub, priv, "web." + pub,
 		},
 		{
 			"label sanitized",
-			"my_api",
+			nil, "my_api",
 			compose.ServiceConfig{Ports: []compose.ServicePortConfig{ingress}},
-			pub,
-			priv,
-			"my-api." + pub,
+			pub, priv, "my-api." + pub,
 		},
 		{
 			"ingress but no public domain",
-			"web",
+			nil, "web",
 			compose.ServiceConfig{Ports: []compose.ServicePortConfig{ingress}},
-			"",
-			priv,
-			"",
+			"", priv, "",
 		},
 		{
 			"host but no private domain (GCP/Azure)",
-			"db",
+			nil, "db",
 			compose.ServiceConfig{Ports: []compose.ServicePortConfig{host}},
-			pub,
-			"",
-			"",
+			pub, "", "",
 		},
 		{
 			"no ports",
-			"worker",
+			nil, "worker",
 			compose.ServiceConfig{},
-			pub,
-			priv,
-			"",
+			pub, priv, "",
+		},
+		// Networks decide public vs private, overriding port mode:
+		{
+			"ingress service in a private (non-default) network gets the private fqdn",
+			nil, "api",
+			compose.ServiceConfig{Ports: []compose.ServicePortConfig{ingress}, Networks: backendNet},
+			pub, priv, "api." + priv,
+		},
+		{
+			"ingress service in an internal default network gets the private fqdn",
+			internalDefault, "web",
+			compose.ServiceConfig{Ports: []compose.ServicePortConfig{ingress}, Networks: defaultNet},
+			pub, priv, "web." + priv,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ServiceFQDN(tt.serviceName, tt.svc, tt.publicDomain, tt.privateDomain); got != tt.want {
+			if got := ServiceFQDN(tt.networks, tt.serviceName, tt.svc, tt.publicDomain, tt.privateDomain); got != tt.want {
 				t.Errorf("ServiceFQDN(%q, ...) = %q, want %q", tt.serviceName, got, tt.want)
 			}
 		})
