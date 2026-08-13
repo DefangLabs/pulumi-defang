@@ -14,6 +14,7 @@ import (
 var _ = internal.GetEnvOrDefault
 
 type AWSConfig struct {
+	AlarmTopicArn     *string  `pulumi:"alarmTopicArn"`
 	AlbCertificateArn *string  `pulumi:"albCertificateArn"`
 	DnsRoleArn        *string  `pulumi:"dnsRoleArn"`
 	PrivateSubnetIDs  []string `pulumi:"privateSubnetIDs"`
@@ -35,6 +36,7 @@ type AWSConfigInput interface {
 }
 
 type AWSConfigArgs struct {
+	AlarmTopicArn     pulumi.StringPtrInput   `pulumi:"alarmTopicArn"`
 	AlbCertificateArn pulumi.StringPtrInput   `pulumi:"albCertificateArn"`
 	DnsRoleArn        pulumi.StringPtrInput   `pulumi:"dnsRoleArn"`
 	PrivateSubnetIDs  pulumi.StringArrayInput `pulumi:"privateSubnetIDs"`
@@ -121,6 +123,10 @@ func (o AWSConfigOutput) ToAWSConfigPtrOutputWithContext(ctx context.Context) AW
 	}).(AWSConfigPtrOutput)
 }
 
+func (o AWSConfigOutput) AlarmTopicArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v AWSConfig) *string { return v.AlarmTopicArn }).(pulumi.StringPtrOutput)
+}
+
 func (o AWSConfigOutput) AlbCertificateArn() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v AWSConfig) *string { return v.AlbCertificateArn }).(pulumi.StringPtrOutput)
 }
@@ -171,6 +177,15 @@ func (o AWSConfigPtrOutput) Elem() AWSConfigOutput {
 		var ret AWSConfig
 		return ret
 	}).(AWSConfigOutput)
+}
+
+func (o AWSConfigPtrOutput) AlarmTopicArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *AWSConfig) *string {
+		if v == nil {
+			return nil
+		}
+		return v.AlarmTopicArn
+	}).(pulumi.StringPtrOutput)
 }
 
 func (o AWSConfigPtrOutput) AlbCertificateArn() pulumi.StringPtrOutput {

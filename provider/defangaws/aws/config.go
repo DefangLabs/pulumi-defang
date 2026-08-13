@@ -12,6 +12,12 @@ type AWSConfig struct {
 	// account.
 	DnsRoleArn pulumi.StringInput `pulumi:"dnsRoleArn,optional" yaml:"dnsRoleArn,omitempty"`
 
+	// AlarmTopicArn is a pre-existing SNS topic attached as the alarm/OK
+	// action of every provider-created database alarm (created when the
+	// alarms recipe is enabled). Unset means alarms are still created
+	// (console-visible) but don't notify.
+	AlarmTopicArn pulumi.StringInput `pulumi:"alarmTopicArn,optional" yaml:"alarmTopicArn,omitempty"`
+
 	// AlbCertificateArn is the default certificate for the ALB's HTTPS
 	// listener when the project doesn't manage its own domain (i.e. no
 	// projectDomain/publicZoneId). Services can still bring their own domain

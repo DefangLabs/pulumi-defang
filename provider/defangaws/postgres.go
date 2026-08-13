@@ -84,7 +84,7 @@ func createPostgres(
 
 	rdsResult, err := provideraws.CreateRDS(
 		ctx, configProvider, serviceName, svc,
-		infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID,
+		infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, infra.AlarmTopicArn,
 		deps, childOpt,
 	)
 	if err != nil {

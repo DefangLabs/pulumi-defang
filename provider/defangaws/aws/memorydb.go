@@ -90,6 +90,7 @@ func CreateMemoryDB(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -228,6 +229,29 @@ func CreateMemoryDB(
 	cluster, err := memorydb.NewCluster(ctx, serviceName, clusterArgs, clusterOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating MemoryDB cluster: %w", err)
+	}
+
+	err = createDBAlarms(ctx, serviceName, "AWS/MemoryDB",
+		pulumi.StringMap{"ClusterName": cluster.Name}, tags, alarmTopicArn, []dbAlarm{
+			{
+				suffix:             "memory-usage",
+				metricName:         "DatabaseCapacityUsagePercentage",
+				comparisonOperator: "GreaterThanThreshold",
+				threshold:          80,
+				statistic:          "Maximum",
+				description:        "MemoryDB memory usage has exceeded 80%",
+			},
+			{
+				suffix:             "cpu-usage",
+				metricName:         "CPUUtilization",
+				comparisonOperator: "GreaterThanThreshold",
+				threshold:          80,
+				statistic:          "Maximum",
+				description:        "MemoryDB CPU usage has exceeded 80%",
+			},
+		}, opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	address := cluster.ClusterEndpoints.Index(pulumi.Int(0)).Address().Elem()
