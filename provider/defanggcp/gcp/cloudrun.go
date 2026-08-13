@@ -32,7 +32,9 @@ func cloudRunLimits(cpus float64, memMiB int) (string, string) {
 	return fmt.Sprintf("%g", cpu), fmt.Sprintf("%dMi", mem)
 }
 
-// CreateCloudRunService creates a Cloud Run service.
+// CreateCloudRunService creates a Cloud Run service. extraIAMDeps are IAM
+// bindings created by the caller (e.g. x-defang-policies grants) that the
+// service must wait for — the container may need them at startup.
 func CreateCloudRunService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -41,12 +43,14 @@ func CreateCloudRunService(
 	svc compose.ServiceConfig,
 	sa *ServiceIdentity,
 	gcpConfig *SharedInfra,
+	extraIAMDeps []pulumi.Resource,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*CloudRunResult, error) {
 	template, secretIds := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig, parentOpt)
 
 	// Grant the service account access to each referenced secret
-	iamDeps := make([]pulumi.Resource, 0, len(secretIds))
+	iamDeps := make([]pulumi.Resource, 0, len(secretIds)+len(extraIAMDeps))
+	iamDeps = append(iamDeps, extraIAMDeps...)
 	for _, sid := range secretIds {
 		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
 		member, err := secretmanager.NewSecretIamMember(ctx, serviceName+"-secret-"+sid, &secretmanager.SecretIamMemberArgs{

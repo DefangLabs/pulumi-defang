@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -48,6 +50,28 @@ func (e *pulumiError) Error() string { return e.msg }
 // names the operation (e.g. "error: deploying urn:..."), so an outer
 // "failed to deploy:" wrapper would just duplicate that. Returns err unchanged
 // if no such block is found.
+// lockFileHint is the fixed part of Pulumi's stack-locked message (the DIY
+// backend's conflict error), used to detect that case without pinning the
+// whole wording.
+const lockFileHint = "Either wait for the other process(es) to end or delete the lock file"
+
+// rewriteLockHint replaces the `pulumi cancel` suggestion in Pulumi's
+// stack-locked error with the defang CLI equivalent — users drive the CD
+// stack through defang, not the pulumi CLI. Mirrors the TS runner's
+// cleanPulumiErrorMessage. No-op for other errors.
+func rewriteLockHint(err error, projectName, stackName string) error {
+	var pErr *pulumiError
+	if !errors.As(err, &pErr) || !strings.Contains(pErr.msg, lockFileHint) {
+		return err
+	}
+	cancelCmd := "defang cd cancel"
+	if projectName != "" && stackName != "" {
+		cancelCmd += " " + projectName + "/" + stackName
+	}
+	pErr.msg = strings.Replace(pErr.msg, "`pulumi cancel`", "`"+cancelCmd+"`", 1)
+	return err
+}
+
 func pulumiErr(err error) error {
 	text := err.Error()
 	msg := pulumiErrRE.FindString(text)

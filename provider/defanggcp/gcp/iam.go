@@ -24,7 +24,9 @@ func ResolvePolicyRole(gcpProject, policy string) string {
 // member names derive from the account email), members are named
 // <service>-policy-<role> so a policy that repeats one of the platform-granted
 // roles (e.g. the Compute Engine logging/monitoring set) cannot collide on the
-// URN; the duplicate binding itself is idempotent on GCP.
+// URN; the duplicate binding itself is idempotent on GCP. The created members
+// are returned so the service's compute resources can DependsOn them — the
+// container may need the granted permissions at startup.
 func GrantPolicyRoles(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -32,9 +34,10 @@ func GrantPolicyRoles(
 	roles []string,
 	gcpConfig *SharedInfra,
 	opts ...pulumi.ResourceOption,
-) error {
+) ([]pulumi.Resource, error) {
+	members := make([]pulumi.Resource, 0, len(roles))
 	for _, role := range roles {
-		_, err := projects.NewIAMMember(ctx, serviceName+"-policy-"+role,
+		member, err := projects.NewIAMMember(ctx, serviceName+"-policy-"+role,
 			&projects.IAMMemberArgs{
 				Project: pulumi.String(gcpConfig.GcpProject),
 				Role:    pulumi.String(role),
@@ -43,8 +46,9 @@ func GrantPolicyRoles(
 			append(opts, sa.deleteOpts()...)...,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		members = append(members, member)
 	}
-	return nil
+	return members, nil
 }

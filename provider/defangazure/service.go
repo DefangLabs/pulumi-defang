@@ -136,7 +136,15 @@ func createContainerApp(
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
 ) error {
-	if len(svc.Policies) > 0 {
+	// Policies aren't supported on Azure yet. Entries a stack leaves empty
+	// ("${EXTRA:-}") normalize away, so a compose file parameterized per
+	// stack still deploys here; a foreign-cloud literal gets the validation
+	// error (with the ${VAR} hint), any other entry the unsupported error.
+	policies := compose.NormalizePolicies(svc.Policies)
+	if err := compose.ValidatePolicies(compose.PolicyCloudAzure, policies); err != nil {
+		return fmt.Errorf("service %s: %w", serviceName, err)
+	}
+	if len(policies) > 0 {
 		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)
 	}
 	caResult, err := azure.CreateContainerApp(
