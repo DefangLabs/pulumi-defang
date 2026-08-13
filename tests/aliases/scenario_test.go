@@ -326,11 +326,21 @@ func TestAliasMigrationScenarios(t *testing.T) {
 				t.Errorf("spec aliases should preserve all 7 old resources: %v", ops)
 			}
 		}},
-		// The two inheritance modes are exploratory: they document how far
-		// component-level aliases get you (see README findings). No hard
-		// assertions — the tally in the test log is the deliverable.
-		{modeParent, nil},
-		{modeParentProject, nil},
+		// The two inheritance modes document the headline finding: a
+		// component-level alias gives NO parent shortcut for the children —
+		// only the component itself is preserved (see README findings).
+		{modeParent, func(t *testing.T, ops map[apitype.OpType]int) {
+			t.Helper()
+			if ops[apitype.OpSame] != 1 || ops[apitype.OpCreate] != 8 || ops[apitype.OpDelete] != 6 {
+				t.Errorf("parent alias should preserve only the component itself (same 1 / create 8 / delete 6): %v", ops)
+			}
+		}},
+		{modeParentProject, func(t *testing.T, ops map[apitype.OpType]int) {
+			t.Helper()
+			if ops[apitype.OpSame] != 1 || ops[apitype.OpCreate] != 8 || ops[apitype.OpDelete] != 6 {
+				t.Errorf("parent+project alias should preserve only the component itself (same 1 / create 8 / delete 6): %v", ops)
+			}
+		}},
 	}
 
 	for _, sc := range scenarios {

@@ -94,11 +94,22 @@ the `Create*` workers — but scoped to **stateful resources only**. Full
 zero-replacement fidelity isn't the goal: stateless resources (task
 definitions, ECS/Cloud Run services, listeners, target groups, log groups,
 certs, IAM, builds) may recreate freely on migration. Aliases resolve purely
-in the engine against current state: inert when no old URN is present,
-permanent no-ops once the first post-migration `up` rewrites the URNs, and a
-wrong alias fails safe (no match → the replacement you'd have had anyway).
+in the engine against current state: inert when no old URN is present, and
+permanent no-ops once the first post-migration `up` rewrites the URNs.
+Failure modes differ, though: an *unmatched* alias fails safe (no match → the
+replacement you'd have had anyway), but a *colliding* alias — one that
+resolves to a different real legacy URN — makes the engine adopt the wrong
+state resource. Before turning convention aliases on by default for
+RDS/ElastiCache/Cloud SQL, the computed specs need collision validation
+against the old CD's actual naming (note: the type/name tokens in this
+harness are placeholders — production old-state also carries a historical
+`TenantStack` parent alias layer, see `pulumi/cd/aws/tenant_stack.ts`).
 The explicit `x-defang-aliases` URN map stays as the per-resource override,
 and a recipe kill-switch covers debugging.
+
+> This harness is a standalone Go module: `make test_provider` and CI do
+> **not** run it, and dependabot does not track its `go.mod`. It is a
+> one-shot design probe, not a regression suite.
 
 Starter set of stateful resources to alias:
 
