@@ -153,8 +153,18 @@ func collectCertJobs(cf *compose.Project, domain string, projectUpdate *defangv1
 	}
 	if projectUpdate != nil {
 		for _, si := range projectUpdate.Services {
-			if si.GetZoneId() != "" && si.GetDomainname() != "" {
-				jobs = append(jobs, certJob{service: si.GetService().GetName(), hostname: si.GetDomainname()})
+			name := si.GetService().GetName()
+			svc, ok := cf.Services[name]
+			// Only enqueue a cert job when the provider will actually create the
+			// BYOD records for this hostname: the service must have public ingress
+			// and the domain must be the zone apex or a subdomain of the resolved
+			// zone (see ByodRecordEligible). Otherwise aca.IssueCert would wait out
+			// its full DNS timeout for records that never appear.
+			if !ok || !svc.HasIngressPorts() {
+				continue
+			}
+			if providerazure.ByodRecordEligible(si.GetDomainname(), si.GetZoneId()) {
+				jobs = append(jobs, certJob{service: name, hostname: si.GetDomainname()})
 			}
 		}
 	}
