@@ -6,11 +6,17 @@ import "github.com/DefangLabs/pulumi-defang/provider/common"
 var recipe = common.NewRecipe("defang-aws")
 
 var (
-	AllowBurstable            = recipe.Bool("allow-burstable", true)
-	AllowOverwriteRecords     = recipe.Bool("allow-overwrite-records", false)
-	BackupRetentionDays       = recipe.Int("backup-retention-days", 0)
-	BackupWindow              = recipe.String("backup-window", "04:00-05:00")
-	BucketKeyEnabled          = recipe.Bool("bucket-key-enabled", true) // minimize KMS costs in non-prod environments
+	// Alarms enables provider-created CloudWatch alarms on managed databases
+	// (Redis/MemoryDB memory+CPU, RDS CPU+storage). Off in the affordable
+	// default: alarms have a per-alarm cost and dev stacks don't need paging.
+	// Notification wiring is per project, not per recipe: the SNS topic is the
+	// AWSConfig.AlarmTopicArn input.
+	Alarms                = recipe.Bool("alarms", false)
+	AllowBurstable        = recipe.Bool("allow-burstable", true)
+	AllowOverwriteRecords = recipe.Bool("allow-overwrite-records", false)
+	BackupRetentionDays   = recipe.Int("backup-retention-days", 0)
+	BackupWindow          = recipe.String("backup-window", "04:00-05:00")
+	BucketKeyEnabled      = recipe.Bool("bucket-key-enabled", true) // minimize KMS costs in non-prod environments
 	// ConfigPath is the SSM path prefix ("/…/") for ${VAR} config resolution;
 	// empty means the default "/Defang/<project>/<stack>/". Lets deployments
 	// keep consuming parameters at a pre-existing path.
@@ -32,6 +38,6 @@ var (
 	// RedisEngine selects the managed Redis implementation: "elasticache" or "memorydb".
 	RedisEngine          = recipe.String("redis-engine", "elasticache")
 	RetainBucketOnDelete = recipe.Bool("retain-bucket-on-delete", false)
-	Route53SidecarLogs        = recipe.Bool("route53-sidecar-logs", false)
-	RetainDnsOnDelete         = recipe.Bool("retain-dns-on-delete", false)
+	Route53SidecarLogs   = recipe.Bool("route53-sidecar-logs", false)
+	RetainDnsOnDelete    = recipe.Bool("retain-dns-on-delete", false)
 )
