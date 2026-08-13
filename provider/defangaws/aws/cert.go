@@ -214,6 +214,19 @@ func createCertsAndRoute53Dns(
 	for base, group := range certGroups {
 		// Look up the Route53 hosted zone for this domain
 		zone, err := GetHostedZoneForHost(ctx, base, zoneLookupOpts...)
+		if IsZoneNotFound(err) {
+			// No hosted zone for this domain: Defang can't manage its records or
+			// validate an ACM cert, but that's a supported configuration — the CLI
+			// marks such a service UseAcmeCert and the user runs `defang cert gen`.
+			// Skip the BYOD records instead of failing the deploy; the service is
+			// still reachable on its delegate-domain hostname. This matches the
+			// legacy CD, which gated the whole block on ServiceInfo.zoneId.
+			_ = ctx.Log.Warn(fmt.Sprintf(
+				"service %s: no Route53 hosted zone for %s; skipping its DNS records and ACM cert. "+
+					"Run `defang cert gen` to issue a certificate via ACME, or create the hosted zone and redeploy.",
+				serviceName, base), nil)
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("finding hosted zone for %s: %w", base, err)
 		}

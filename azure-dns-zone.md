@@ -131,7 +131,26 @@ The DNS wait needs no apex special-case: `dns.CheckDomainDNSReady` already
 accepts an A record whose addresses match those of the app FQDN, which is the
 environment's static IP — exactly what an apex A record must point at.
 
-### 5. SDK regeneration
+### 5. AWS: don't fail the deploy when there is no hosted zone
+
+Not Azure, but the same "zone may not exist" question, and worth fixing before the
+AWS cutover. On AWS the zone lookup **already** runs CD-side —
+`createCertsAndRoute53Dns` calls `GetHostedZoneForHost` and never reads
+`ServiceInfo.ZoneId` — but it treats a missing zone as fatal, so the whole deploy
+fails. The legacy CD gated the block on `serviceInfo.zoneId`
+(`defang-mvp/pulumi/cd/aws/defang_service.ts:414`), so "no zone" simply meant "no
+BYOD records" and the ACME path still worked. That difference would land as a
+cutover regression for exactly the services the CLI marks `UseAcmeCert`.
+
+`IsZoneNotFound` distinguishes "no zone matched" from a real failure (bad
+credentials, an un-assumable `x-defang-dns-role`, throttling) and the caller skips
+that hostname with a warning; anything else still fails loudly. The match is on
+text because the invoke crosses the Pulumi engine over gRPC, which flattens
+upstream's typed `*retry.NotFoundError` — see the helper's comment. If upstream
+rewords the message the match fails closed, i.e. back to today's hard failure,
+never to a silent skip.
+
+### 6. SDK regeneration
 
 `ProjectInputs`/`ServiceInputs` changes require regenerating the Azure SDK:
 `make schema` + `make sdks` (azure), commit the `sdk/v2/**` diff alongside the
@@ -145,6 +164,8 @@ defang (cloud-SDK layer):
 
 pulumi-defang (provider + CD):
 - `cd/program/azure.go` — `findByodZones` + `DnsZones` wiring + BYOD cert jobs
+- `provider/defangaws/aws/route53.go` — `IsZoneNotFound`
+- `provider/defangaws/aws/cert.go` — skip BYOD records when no hosted zone exists
 - `provider/defangazure/project.go` — `DnsZones` input + threading
 - `provider/defangazure/service.go` — `DnsZoneId` input + threading
 - `provider/defangazure/azure/containerapp.go` — `CreateContainerApp` param + call
