@@ -1187,6 +1187,26 @@ func TestConstructGcpProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
 	require.NotNil(t, custom, "expected a bare policy name to resolve to a project custom role")
 }
 
+func TestConstructGcpProjectRejectsForeignPolicies(t *testing.T) {
+	server := testutil.MakeGcpTestServer()
+
+	// No cross-cloud filtering: an AWS-qualified entry on a GCP deploy is a
+	// hard error pointing at per-stack variable values instead.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("arn:aws:iam::123456789012:policy/deployer"),
+				})),
+			})),
+		}),
+	})
+	require.ErrorContains(t, err, "aws identifier")
+	require.ErrorContains(t, err, "targets gcp")
+}
+
 func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
@@ -1213,4 +1233,32 @@ func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing
 		return m.Get("role").AsString() == "roles/logging.logWriter"
 	})
 	assert.Equal(t, 2, members, "expected both the platform grant and the policy grant to be registered")
+}
+
+func TestConstructGcpProjectDuplicatePoliciesDeduped(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	// Repeated entries resolve to the same role; the member URN embeds the
+	// role, so without dedup the second entry would collide.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/run.developer"),
+					property.New("roles/run.developer"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	members := countTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/run.developer"
+	})
+	assert.Equal(t, 1, members, "duplicate x-defang-policies entries must be deduped")
 }

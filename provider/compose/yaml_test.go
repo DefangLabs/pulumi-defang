@@ -106,7 +106,7 @@ networks:
 	assert.True(t, *db.Postgres.AllowDowntime)
 
 	worker := p.Services["worker"]
-	assert.Equal(t, []string{
+	assert.Equal(t, PolicyList{
 		"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
 		"MyCustomPolicy",
 	}, worker.Policies)

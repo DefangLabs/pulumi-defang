@@ -28,6 +28,10 @@ type ComputeEngineArgs struct {
 	// Triggers force an instance template replacement (and thus a rolling
 	// update) when any value changes.
 	Triggers pulumi.StringMapInput
+	// PolicyDeps are IAM bindings created by the caller (x-defang-policies
+	// grants) the instances must wait for — the container may need the
+	// permissions at startup.
+	PolicyDeps []pulumi.Resource
 }
 
 // CreateComputeEngine deploys a container service as a Compute Engine Managed Instance Group
@@ -81,9 +85,13 @@ func CreateComputeEngine(
 		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, gcpConfig.ProjectName, gcpConfig.Stack, fqdn,
 		addHealthCheckSidecar, args.Sidecars)
 
+	templateOpts := []pulumi.ResourceOption{parentOpt}
+	if len(args.PolicyDeps) > 0 {
+		templateOpts = append(templateOpts, pulumi.DependsOn(args.PolicyDeps))
+	}
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, getComputeBootImage(svc), cloudInit,
-		args.SA, args.Triggers, gcpConfig, iamDeps, parentOpt)
+		args.SA, args.Triggers, gcpConfig, iamDeps, templateOpts...)
 	if err != nil {
 		return nil, err
 	}

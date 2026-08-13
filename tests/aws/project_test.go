@@ -206,3 +206,101 @@ func TestConstructAwsProjectAllResourcesAreChildren(t *testing.T) {
 
 	tracker.AssertAllDescendFrom(t, testutil.AwsURN("Project"))
 }
+
+func TestConstructAwsProjectRejectsForeignPolicies(t *testing.T) {
+	server := testutil.MakeAwsTestServer()
+
+	// No cross-cloud filtering: a GCP-qualified entry on an AWS deploy is a
+	// hard error pointing at per-stack variable values instead.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("arn:aws:iam::123456789012:policy/deployer"),
+					property.New("roles/run.developer"), // GCP entry: rejected on AWS
+				})),
+			})),
+		}),
+	})
+	require.ErrorContains(t, err, "gcp identifier")
+	require.ErrorContains(t, err, "targets aws")
+}
+
+func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {
+	var attachments []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				attachments = append(attachments, args.Inputs)
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	// One comma-separated entry — a single interpolated ${VAR} carrying a
+	// variable-length list — splits into individual attachments; an empty
+	// entry (a "${EXTRA:-}" the stack leaves unset) is dropped.
+	const policyA = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	const policyB = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(policyA + "," + policyB),
+					property.New(""),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	arns := make([]string, 0, len(attachments))
+	for _, a := range attachments {
+		arns = append(arns, a.Get("policyArn").AsString())
+	}
+	assert.Contains(t, arns, policyA)
+	assert.Contains(t, arns, policyB)
+}
+
+func TestConstructAwsProjectDuplicatePoliciesDeduped(t *testing.T) {
+	var attachments []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				attachments = append(attachments, args.Inputs)
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	// The attachment URN embeds policyName(policy), so without dedup a
+	// repeated entry would collide.
+	const awsPolicy = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(awsPolicy),
+					property.New(awsPolicy),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	count := 0
+	for _, a := range attachments {
+		if a.Get("policyArn").AsString() == awsPolicy {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "duplicate x-defang-policies entries must be deduped")
+}
