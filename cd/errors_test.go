@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -101,4 +102,46 @@ func TestPulumiErrIndented(t *testing.T) {
 	if pErr.msg != want {
 		t.Errorf("msg = %q, want %q", pErr.msg, want)
 	}
+}
+
+// TestRewriteLockHint verifies the stack-locked message suggests the defang
+// CLI instead of `pulumi cancel` (parity with the TS runner's
+// cleanPulumiErrorMessage).
+func TestRewriteLockHint(t *testing.T) {
+	lockErr := func() error {
+		stderr := "error: the stack is currently locked by 1 lock(s). Either wait for the other process(es) to end or delete the lock file with `pulumi cancel`.\n" +
+			"  s3://defang-cd-bucket/.pulumi/locks/org/proj/stack/lock.json: created by user@host (pid 12345) at 2026-02-19T11:51:59-08:00"
+		return pulumiErr(autoErrorDump("Command failed with exit code 255", 255, "", stderr))
+	}
+
+	t.Run("with project and stack", func(t *testing.T) {
+		got := rewriteLockHint(lockErr(), "myproj", "beta")
+		if !strings.Contains(got.Error(), "`defang cd cancel myproj/beta`") {
+			t.Errorf("expected defang cd cancel hint, got %q", got.Error())
+		}
+		if strings.Contains(got.Error(), "pulumi cancel") {
+			t.Errorf("pulumi cancel should have been replaced, got %q", got.Error())
+		}
+	})
+
+	t.Run("without project", func(t *testing.T) {
+		got := rewriteLockHint(lockErr(), "", "beta")
+		if !strings.Contains(got.Error(), "`defang cd cancel`") {
+			t.Errorf("expected bare defang cd cancel hint, got %q", got.Error())
+		}
+	})
+
+	t.Run("non-lock pulumi error untouched", func(t *testing.T) {
+		orig := pulumiErr(autoErrorDump("failed", 255, "", "error: something else"))
+		if got := rewriteLockHint(orig, "myproj", "beta"); got.Error() != "error: something else" {
+			t.Errorf("expected untouched message, got %q", got.Error())
+		}
+	})
+
+	t.Run("plain error untouched", func(t *testing.T) {
+		orig := errors.New("plain error")
+		if got := rewriteLockHint(orig, "myproj", "beta"); got != orig {
+			t.Errorf("expected pass-through, got %v", got)
+		}
+	})
 }

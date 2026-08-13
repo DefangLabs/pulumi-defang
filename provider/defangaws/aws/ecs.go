@@ -55,7 +55,13 @@ type SharedInfra struct {
 	PrivateZoneID    pulumi.StringPtrInput   `pulumi:"privateZoneID,optional"`
 	PrivateDomain    string
 	ProjectDomain    string
-	ZoneId           pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
+	// ApexServiceName is the service that serves the bare project (apex)
+	// domain. Set only when the whole project has exactly one ingress port
+	// (a single service with a single ingress port); empty otherwise, in
+	// which case the apex is left to the ALB listener's default action.
+	// Resolved in buildProject; not a schema field.
+	ApexServiceName string
+	ZoneId          pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
 	// shared "private SG" — attached to all services, no ingress rules
 	PrivateSgID    pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
 	AlbSG          *ec2.SecurityGroup    // nil if no ALB
@@ -503,8 +509,22 @@ func CreateECSService(
 			lbDependsOn = append(lbDependsOn, dep)
 		}
 
-		// Attach caller-specified policies (x-defang-policies)
-		for _, policy := range svc.Policies {
+		// Attach caller-specified policies (x-defang-policies). Entries are
+		// literals by now — compose variables were interpolated before the
+		// project reached the provider — so anything unresolved or qualified
+		// for a different cloud is a hard error.
+		policies := compose.NormalizePolicies(svc.Policies)
+		if err := compose.ValidatePolicies(compose.PolicyCloudAWS, policies); err != nil {
+			return nil, fmt.Errorf("service %s: %w", serviceName, err)
+		}
+		// Dedup repeated entries: the attachment URN embeds policyName(policy),
+		// so a duplicate entry would collide on it.
+		seenPolicies := make(map[string]struct{}, len(policies))
+		for _, policy := range policies {
+			if _, dup := seenPolicies[policy]; dup {
+				continue
+			}
+			seenPolicies[policy] = struct{}{}
 			policyArn, err := resolvePolicyArn(ctx, policy, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)
@@ -519,7 +539,7 @@ func CreateECSService(
 			}
 			lbDependsOn = append(lbDependsOn, dep)
 		}
-	} else if len(svc.Policies) > 0 {
+	} else if len(compose.NormalizePolicies(svc.Policies)) > 0 {
 		// A caller-supplied task role's policies are owned by the caller.
 		return nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithTaskRole)
 	}
@@ -854,8 +874,11 @@ func CreateECSService(
 					endpoints = append(endpoints, svc.DomainName)
 				case infra.ProjectDomain != "":
 					endpoints = append(endpoints, fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain))
-					if firstIngress {
-						// FIXME: which service should listen on the project domain?
+					// The apex (bare project) domain is bound to a service only
+					// when the whole project has exactly one ingress port; the
+					// owner is resolved in buildProject. Otherwise the apex is
+					// left to the ALB listener's default action.
+					if serviceName == infra.ApexServiceName {
 						endpoints = append(endpoints, infra.ProjectDomain)
 					}
 				}
