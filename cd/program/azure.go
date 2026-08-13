@@ -36,23 +36,43 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf, domain, etag), pulumi.Providers(azureProvider))
+	args := toAzureArgs(cf, domain, etag)
+	// Thread per-service BYOD DNS zones (resolved CLI-side into ServiceInfo.ZoneId)
+	// into the project so the provider writes records into the customer's own zone.
+	if projectUpdate != nil {
+		zones := pulumi.StringMap{}
+		for _, si := range projectUpdate.Services {
+			if z := si.GetZoneId(); z != "" {
+				zones[si.GetService().GetName()] = pulumi.String(z)
+			}
+		}
+		if len(zones) > 0 {
+			args.DnsZones = zones
+		}
+	}
+
+	project, err := defangazure.NewProject(ctx, cf.Name, args, pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	// Provision delegate-domain TLS certs as part of the CD task itself —
-	// not the CLI — so the deploy converges even if the user disconnects
-	// after `defang compose up`. The work is chained off project.Endpoints
-	// (which transitively depends on every per-service Container App + its
-	// CNAME + asuid TXT records) so Pulumi sequences it after all required
-	// resources exist, and waits on it before declaring the deploy done.
-	// Each per-service call is idempotent: re-deploys are cheap, partial
-	// failures pick up where they left off.
-	if domain != "" {
+	// Provision managed TLS certs as part of the CD task itself — not the CLI —
+	// so the deploy converges even if the user disconnects after
+	// `defang compose up`. The work is chained off project.Endpoints (which
+	// transitively depends on every per-service Container App + its CNAME +
+	// asuid TXT records) so Pulumi sequences it after all required resources
+	// exist, and waits on it before declaring the deploy done. Each per-host
+	// call is idempotent: re-deploys are cheap, partial failures pick up where
+	// they left off.
+	//
+	// Two sources of cert jobs:
+	//   - delegate domain: `<svc>.<domain>` for every ingress service.
+	//   - BYOD: a service's own `domainname` when the CLI found a public DNS zone
+	//     for it (ServiceInfo.ZoneId set) and wrote records into that zone.
+	if certJobs := collectCertJobs(cf, domain, projectUpdate); len(certJobs) > 0 {
 		rg := providerazure.ProjectResourceGroupName(ctx, cf.Name)
 		certsDone := project.Endpoints.ApplyT(func(map[string]string) (string, error) {
-			provisionDelegateDomainCerts(ctx, cf, domain, config.GetSubscriptionId(ctx), rg)
+			provisionCerts(ctx, certJobs, config.GetSubscriptionId(ctx), rg)
 			return "", nil
 		}).(pulumi.StringOutput)
 		// Export so Pulumi treats it as a stack output and won't garbage-collect
@@ -105,24 +125,60 @@ const (
 	maxConcurrentCertIssuance = 8
 )
 
-// provisionDelegateDomainCerts walks the compose project's ingress services
-// and asks Azure to issue + bind a managed cert for each
-// `<service>.<domain>` hostname. Records (CNAME + asuid TXT) are already in
-// Azure DNS from the Pulumi-managed RecordSets, so aca.IssueCert's "wait for
-// DNS" step passes immediately and the flow proceeds straight to registering
-// the customDomain on the Container App, issuing the cert via CNAME
-// validation, and re-binding with SniEnabled.
+// certJob is a single managed-cert request: bind hostname to the Container App
+// named service (both live in the project resource group).
+type certJob struct {
+	service  string
+	hostname string
+}
+
+// collectCertJobs builds the list of managed-cert jobs for a deploy:
+//   - delegate domain: `<svc>.<domain>` for every ingress service (when domain
+//     is set), whose records live in the delegate-domain zone.
+//   - BYOD: a service's own domainname when the CLI resolved a public DNS zone
+//     for it (ServiceInfo.ZoneId set), whose records the provider wrote into
+//     that customer zone.
 //
-// Services are processed concurrently (bounded by maxConcurrentCertIssuance):
-// each aca.IssueCert can block up to perServiceCertTimeout, so a serial loop
-// would make the total wall-clock scale with the service count.
+// A service can yield both jobs (reachable on both hostnames). projectUpdate may
+// be nil (e.g. a bare run without service infos), in which case only delegate
+// jobs are produced.
+func collectCertJobs(cf *compose.Project, domain string, projectUpdate *defangv1.ProjectUpdate) []certJob {
+	var jobs []certJob
+	if domain != "" {
+		for name, svc := range cf.Services {
+			if svc.HasIngressPorts() {
+				jobs = append(jobs, certJob{service: name, hostname: name + "." + domain})
+			}
+		}
+	}
+	if projectUpdate != nil {
+		for _, si := range projectUpdate.Services {
+			if si.GetZoneId() != "" && si.GetDomainname() != "" {
+				jobs = append(jobs, certJob{service: si.GetService().GetName(), hostname: si.GetDomainname()})
+			}
+		}
+	}
+	return jobs
+}
+
+// provisionCerts asks Azure to issue + bind a managed cert for each job's
+// hostname on its Container App. Records (CNAME + asuid TXT) are already in
+// Azure DNS from the Pulumi-managed RecordSets — delegate-domain zone or the
+// customer's BYOD zone — so aca.IssueCert's "wait for DNS" step passes quickly
+// and the flow proceeds straight to registering the customDomain on the
+// Container App, issuing the cert via CNAME validation, and re-binding with
+// SniEnabled.
+//
+// Jobs are processed concurrently (bounded by maxConcurrentCertIssuance): each
+// aca.IssueCert can block up to perServiceCertTimeout, so a serial loop would
+// make the total wall-clock scale with the job count.
 //
 // Failures are logged as Pulumi warnings (so they surface in `pulumi up` and
 // the portal) but not surfaced as errors: the Container App is already serving
 // on its `*.azurecontainerapps.io` URL by this point, the cert flow is
 // idempotent, and the next deploy will retry. A hard error would force a
 // Pulumi destroy/replace cycle that doesn't actually fix anything cert-side.
-func provisionDelegateDomainCerts(pctx *pulumi.Context, cf *compose.Project, domain, subscriptionID, resourceGroup string) {
+func provisionCerts(pctx *pulumi.Context, jobs []certJob, subscriptionID, resourceGroup string) {
 	if subscriptionID == "" {
 		// deployAzure forwards config.GetSubscriptionId(ctx) unconditionally;
 		// when Pulumi config doesn't carry it, the ARM SDK clients we'd
@@ -130,34 +186,30 @@ func provisionDelegateDomainCerts(pctx *pulumi.Context, cf *compose.Project, dom
 		// early — the Container App is already serving on its
 		// azurecontainerapps.io URL; cert binding is a separate concern the
 		// next deploy can retry.
-		_ = pctx.Log.Warn("delegate-domain cert: skipping; AZURE_SUBSCRIPTION_ID not set in Pulumi config", nil)
+		_ = pctx.Log.Warn("managed cert: skipping; AZURE_SUBSCRIPTION_ID not set in Pulumi config", nil)
 		return
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		_ = pctx.Log.Warn(fmt.Sprintf("delegate-domain cert: build credential: %v", err), nil)
+		_ = pctx.Log.Warn(fmt.Sprintf("managed cert: build credential: %v", err), nil)
 		return
 	}
 
 	ctx := pctx.Context()
 	var g errgroup.Group
 	g.SetLimit(maxConcurrentCertIssuance)
-	for name, svc := range cf.Services {
-		if !svc.HasIngressPorts() {
-			continue
-		}
-		hostname := name + "." + domain
+	for _, job := range jobs {
 		g.Go(func() error {
-			// Bounded context per service; defer cancel so a panic inside
-			// IssueCert can't leak the timer goroutine for the full timeout.
+			// Bounded context per job; defer cancel so a panic inside IssueCert
+			// can't leak the timer goroutine for the full timeout.
 			svcCtx, cancel := context.WithTimeout(ctx, perServiceCertTimeout)
 			defer cancel()
-			_ = pctx.Log.Info(fmt.Sprintf("Issuing delegate-domain cert for %s at %s", name, hostname), nil)
-			if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, name, hostname, dns.DirectResolverAt); err != nil {
-				_ = pctx.Log.Warn(fmt.Sprintf("delegate-domain cert: issuance for %s failed: %v", hostname, err), nil)
+			_ = pctx.Log.Info(fmt.Sprintf("Issuing managed cert for %s at %s", job.service, job.hostname), nil)
+			if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, job.service, job.hostname, dns.DirectResolverAt); err != nil {
+				_ = pctx.Log.Warn(fmt.Sprintf("managed cert: issuance for %s failed: %v", job.hostname, err), nil)
 			}
-			// Errors are logged, not returned: one service's failure must not
-			// cancel the others' contexts via errgroup.
+			// Errors are logged, not returned: one job's failure must not cancel
+			// the others' contexts via errgroup.
 			return nil
 		})
 	}

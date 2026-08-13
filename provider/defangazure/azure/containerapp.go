@@ -91,6 +91,9 @@ type containerAppResult struct {
 	// WildcardDomain is nil unless the service declares a wildcard hostname and
 	// the project has a Front Door to serve it; see CreateWildcardDomain.
 	WildcardDomain *WildcardDomainResult
+	// ByodDomain is nil unless the service sets its own domainname *and* a public
+	// DNS zone for it was found in the subscription; see CreateByodDomain.
+	ByodDomain *CustomDomainResult
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -245,6 +248,7 @@ func CreateContainerApp(
 	imageURI pulumi.StringInput,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	dnsZoneID string,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
 	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts)
@@ -343,19 +347,21 @@ func CreateContainerApp(
 
 	// Attach the service's public hostnames. Bound to the CA's parent option set
 	// so failures here propagate through the normal component graph.
-	return createAppDomains(ctx, serviceName, svc, containerApp, infra, opts...)
+	return createAppDomains(ctx, serviceName, svc, containerApp, infra, dnsZoneID, opts...)
 }
 
 // createAppDomains attaches the service's public hostnames to its Container App:
-// the delegate-domain records and cert Azure Container Apps can bind itself, and
-// Front Door routing for the wildcard hostnames it can't. Either half is a no-op
-// when the service doesn't ask for it.
+// the delegate-domain records and cert Azure Container Apps can bind itself, the
+// BYOD records in a zone found in the subscription, and Front Door routing for
+// the wildcard hostnames Container Apps can't serve. Each is a no-op when the
+// service doesn't ask for it.
 func createAppDomains(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
 	containerApp *app.ContainerApp,
 	infra *SharedInfra,
+	dnsZoneID string,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
 	customDomain, err := CreateCustomDomain(ctx, serviceName, svc, containerApp, infra, opts...)
@@ -363,6 +369,18 @@ func createAppDomains(
 		return nil, fmt.Errorf("creating custom domain for %s: %w", serviceName, err)
 	}
 
+	// BYOD: when the CD task found a public DNS zone for the service's own
+	// domainname (dnsZoneID set), also write the CNAME + asuid TXT into that
+	// customer zone. The CD program issues a managed cert for the hostname. This
+	// is additive to the delegate-domain records above, so the service stays
+	// reachable on both names.
+	byodDomain, err := CreateByodDomain(ctx, serviceName, svc, containerApp, infra, dnsZoneID, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating BYOD domain for %s: %w", serviceName, err)
+	}
+
+	// Wildcard hostnames bypass Container Apps entirely — it binds one hostname
+	// at a time — and are served by the project's Front Door instead.
 	wildcardDomain, err := CreateWildcardDomain(ctx, serviceName, svc, containerApp, infra, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating wildcard domain for %s: %w", serviceName, err)
@@ -371,6 +389,7 @@ func createAppDomains(
 	return &containerAppResult{
 		App:            containerApp,
 		CustomDomain:   customDomain,
+		ByodDomain:     byodDomain,
 		WildcardDomain: wildcardDomain,
 	}, nil
 }

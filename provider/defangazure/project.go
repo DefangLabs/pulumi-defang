@@ -40,6 +40,13 @@ type ProjectInputs struct {
 	// (RevisionSuffix) so that logs and Resource Graph queries can be filtered
 	// per-deployment.
 	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
+	// DnsZones maps a service name to the ARM resource ID of a public Azure DNS
+	// zone (in the current subscription) that is a parent of that service's
+	// domainname, as resolved CLI-side by DNS.FindZone (ServiceInfo.ZoneId).
+	// When present, the service's CNAME + asuid TXT records are written into that
+	// customer-owned zone (BYOD) and the CD program issues a managed cert.
+	// Services absent from the map keep the ACME / delegate-domain behaviour.
+	DnsZones map[string]string `pulumi:"dnsZones,optional" yaml:"dnsZones,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -210,6 +217,7 @@ func createServiceResources(
 	serviceHosts map[string]pulumi.StringOutput,
 	serviceIds pulumi.StringMap,
 	llmModels map[string]string,
+	dnsZoneID string,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	comp := &serviceComponent{}
@@ -263,7 +271,7 @@ func createServiceResources(
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-		err = createContainerApp(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts)
+		err = createContainerApp(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZoneID)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -535,7 +543,7 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones[svcName], childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -547,7 +555,7 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones[svcName], childOpts,
 		)
 		if err != nil {
 			return nil, err

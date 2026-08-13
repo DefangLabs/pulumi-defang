@@ -505,6 +505,13 @@
         "serviceIds"
       ],
       "inputProperties": {
+        "dnsZones": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
         "domain": {
           "type": "string",
           "plain": true
@@ -586,6 +593,10 @@
         },
         "deploy": {
           "$ref": "#/types/defang-azure:compose:DeployConfig"
+        },
+        "dnsZoneId": {
+          "type": "string",
+          "plain": true
         },
         "domainName": {
           "type": "string",
