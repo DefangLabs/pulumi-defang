@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/DefangLabs/defang/src/pkg/clouds/azure"
 	"github.com/DefangLabs/defang/src/pkg/clouds/azure/aca"
-	azuredns "github.com/DefangLabs/defang/src/pkg/clouds/azure/dns"
 	"github.com/DefangLabs/defang/src/pkg/dns"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -161,16 +159,14 @@ func findByodZones(pctx *pulumi.Context, cf *compose.Project) map[string]string 
 		return nil
 	}
 
-	// The resource group is irrelevant here: FindZone lists zones across the whole
-	// subscription. It re-lists per call, which is fine — a project has at most a
-	// handful of BYOD domains, and this runs once per deploy.
-	azureDNS := azuredns.New("", azure.Azure{SubscriptionID: subscriptionID})
+	// FindZone re-lists the subscription's zones per call, which is fine — a
+	// project has at most a handful of BYOD domains, and this runs once per deploy.
 	ctx := pctx.Context()
 	zones := map[string]string{}
 	for svcName, domain := range domains {
 		// "delegate domain only" = no records in a customer zone and no managed
 		// cert for the custom hostname; the service still gets <svc>.<domain>.
-		zoneID, err := azureDNS.FindZone(ctx, domain)
+		zoneID, err := providerazure.FindZone(ctx, subscriptionID, domain)
 		if err != nil {
 			_ = pctx.Log.Warn(fmt.Sprintf(
 				"BYOD DNS: zone lookup for %s failed (%v); %s keeps the delegate domain only", domain, err, svcName), nil)

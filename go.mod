@@ -12,6 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3 v3.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/aws/aws-sdk-go-v2/config v1.32.20
