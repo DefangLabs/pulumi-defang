@@ -37,10 +37,10 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.21.0
-	github.com/pulumi/pulumi-go-provider v1.4.0
+	github.com/pulumi/pulumi-go-provider v1.4.1
 	github.com/pulumi/pulumi-random/sdk/v4 v4.19.2
-	github.com/pulumi/pulumi/pkg/v3 v3.251.0
-	github.com/pulumi/pulumi/sdk/v3 v3.251.0
+	github.com/pulumi/pulumi/pkg/v3 v3.253.0
+	github.com/pulumi/pulumi/sdk/v3 v3.253.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.274.0
 	google.golang.org/grpc v1.82.1
@@ -194,7 +194,7 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260713224248-f5fc221cf8c4 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260713224248-f5fc221cf8c4 // indirect
 	lukechampine.com/frand v1.5.1 // indirect
 )
