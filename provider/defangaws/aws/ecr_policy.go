@@ -9,10 +9,14 @@ import "encoding/json"
 // repository (prod1/kaniko-build) held 11,351 images.
 // See DefangLabs/defang-global#112.
 const (
-	// keepBuildImages bounds a per-project build repo. Chosen as a count rather
-	// than an age because a service that has not been rebuilt in a year still
-	// runs its old image and must be able to pull it again on a task restart —
-	// in the Defang org, live tasks reference images up to 742 days old.
+	// keepBuildImages bounds a per-project build repo. In this provider the
+	// repo holds a single mutable :latest tag (codebuild.go pushes every
+	// service's build there; nothing is deployed by digest), so the live image
+	// is always the newest and a count rule can never expire it — the count is
+	// a cap on sub-24h untagged churn, not an in-use-image guard. A count is
+	// still preferred over an age rule so a rarely-rebuilt project keeps its
+	// tagged image indefinitely (elsewhere in the Defang org, live tasks
+	// reference images up to 742 days old).
 	keepBuildImages = 20
 
 	// keepCacheImages bounds each pull-through cache repo. Mirrored images can
