@@ -1,7 +1,13 @@
 version: 2
 updates:
+  # "/" only covers .github/workflows/** plus a root-level action.yml, so each
+  # composite action under .github/actions/ needs its own entry — without one
+  # its pinned actions are never bumped and drift behind the workflows'.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/build-sdk"
+      - "/.github/actions/setup-go"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3
