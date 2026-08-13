@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/DefangLabs/defang/src/pkg/clouds/azure"
 	"github.com/DefangLabs/defang/src/pkg/clouds/azure/aca"
+	azuredns "github.com/DefangLabs/defang/src/pkg/clouds/azure/dns"
 	"github.com/DefangLabs/defang/src/pkg/dns"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -37,18 +39,16 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 	}
 
 	args := toAzureArgs(cf, domain, etag)
-	// Thread per-service BYOD DNS zones (resolved CLI-side into ServiceInfo.ZoneId)
-	// into the project so the provider writes records into the customer's own zone.
-	if projectUpdate != nil {
+	// Resolve each BYOD domain to an existing public Azure DNS zone and thread the
+	// zone ids into the project, so the provider writes the records into the
+	// customer's own zone.
+	dnsZones := findByodZones(ctx, cf)
+	if len(dnsZones) > 0 {
 		zones := pulumi.StringMap{}
-		for _, si := range projectUpdate.Services {
-			if z := si.GetZoneId(); z != "" {
-				zones[si.GetService().GetName()] = pulumi.String(z)
-			}
+		for svcName, zoneID := range dnsZones {
+			zones[svcName] = pulumi.String(zoneID)
 		}
-		if len(zones) > 0 {
-			args.DnsZones = zones
-		}
+		args.DnsZones = zones
 	}
 
 	project, err := defangazure.NewProject(ctx, cf.Name, args, pulumi.Providers(azureProvider))
@@ -67,9 +67,9 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 	//
 	// Two sources of cert jobs:
 	//   - delegate domain: `<svc>.<domain>` for every ingress service.
-	//   - BYOD: a service's own `domainname` when the CLI found a public DNS zone
-	//     for it (ServiceInfo.ZoneId set) and wrote records into that zone.
-	if certJobs := collectCertJobs(cf, domain, projectUpdate); len(certJobs) > 0 {
+	//   - BYOD: a service's own `domainname` when a public DNS zone for it was
+	//     found above and the provider wrote records into that zone.
+	if certJobs := collectCertJobs(cf, domain, dnsZones); len(certJobs) > 0 {
 		rg := providerazure.ProjectResourceGroupName(ctx, cf.Name)
 		certsDone := project.Endpoints.ApplyT(func(map[string]string) (string, error) {
 			provisionCerts(ctx, certJobs, config.GetSubscriptionId(ctx), rg)
@@ -132,17 +132,71 @@ type certJob struct {
 	hostname string
 }
 
+// findByodZones resolves each service's BYOD `domainname` to the ARM id of an
+// existing public Azure DNS zone in the deploy subscription, keyed by service
+// name. Services whose domain has no matching zone are absent from the result
+// and keep the delegate-domain / ACME behaviour.
+//
+// The lookup runs here rather than in the CLI (as AWS does in
+// ByocAws.UpdateServiceInfo) because the CD task executes inside the customer's
+// cloud with the deploy identity: it already has DNS read permission and knows
+// its subscription, so `defang compose up` needs no extra client-side role.
+//
+// A failed lookup is a warning, not an error: the Container App still deploys and
+// serves on its azurecontainerapps.io URL, and the delegate domain is unaffected.
+func findByodZones(pctx *pulumi.Context, cf *compose.Project) map[string]string {
+	domains := map[string]string{}
+	for name, svc := range cf.Services {
+		if svc.DomainName != "" && svc.HasIngressPorts() {
+			domains[name] = svc.DomainName
+		}
+	}
+	if len(domains) == 0 {
+		return nil
+	}
+
+	subscriptionID := config.GetSubscriptionId(pctx)
+	if subscriptionID == "" {
+		_ = pctx.Log.Warn("BYOD DNS: skipping zone lookup; AZURE_SUBSCRIPTION_ID not set in Pulumi config", nil)
+		return nil
+	}
+
+	// The resource group is irrelevant here: FindZone lists zones across the whole
+	// subscription. It re-lists per call, which is fine — a project has at most a
+	// handful of BYOD domains, and this runs once per deploy.
+	azureDNS := azuredns.New("", azure.Azure{SubscriptionID: subscriptionID})
+	ctx := pctx.Context()
+	zones := map[string]string{}
+	for svcName, domain := range domains {
+		// "delegate domain only" = no records in a customer zone and no managed
+		// cert for the custom hostname; the service still gets <svc>.<domain>.
+		zoneID, err := azureDNS.FindZone(ctx, domain)
+		if err != nil {
+			_ = pctx.Log.Warn(fmt.Sprintf(
+				"BYOD DNS: zone lookup for %s failed (%v); %s keeps the delegate domain only", domain, err, svcName), nil)
+			continue
+		}
+		if zoneID == "" {
+			_ = pctx.Log.Info(fmt.Sprintf(
+				"BYOD DNS: no Azure DNS zone hosts %s; %s keeps the delegate domain only", domain, svcName), nil)
+			continue
+		}
+		zones[svcName] = zoneID
+	}
+	if len(zones) == 0 {
+		return nil
+	}
+	return zones
+}
+
 // collectCertJobs builds the list of managed-cert jobs for a deploy:
 //   - delegate domain: `<svc>.<domain>` for every ingress service (when domain
 //     is set), whose records live in the delegate-domain zone.
-//   - BYOD: a service's own domainname when the CLI resolved a public DNS zone
-//     for it (ServiceInfo.ZoneId set), whose records the provider wrote into
-//     that customer zone.
+//   - BYOD: a service's own domainname when findByodZones resolved a public DNS
+//     zone for it, whose records the provider wrote into that customer zone.
 //
-// A service can yield both jobs (reachable on both hostnames). projectUpdate may
-// be nil (e.g. a bare run without service infos), in which case only delegate
-// jobs are produced.
-func collectCertJobs(cf *compose.Project, domain string, projectUpdate *defangv1.ProjectUpdate) []certJob {
+// A service can yield both jobs (reachable on both hostnames).
+func collectCertJobs(cf *compose.Project, domain string, dnsZones map[string]string) []certJob {
 	var jobs []certJob
 	if domain != "" {
 		for name, svc := range cf.Services {
@@ -151,21 +205,18 @@ func collectCertJobs(cf *compose.Project, domain string, projectUpdate *defangv1
 			}
 		}
 	}
-	if projectUpdate != nil {
-		for _, si := range projectUpdate.Services {
-			name := si.GetService().GetName()
-			svc, ok := cf.Services[name]
-			// Only enqueue a cert job when the provider will actually create the
-			// BYOD records for this hostname: the service must have public ingress
-			// and the domain must be the zone apex or a subdomain of the resolved
-			// zone (see ByodRecordEligible). Otherwise aca.IssueCert would wait out
-			// its full DNS timeout for records that never appear.
-			if !ok || !svc.HasIngressPorts() {
-				continue
-			}
-			if providerazure.ByodRecordEligible(si.GetDomainname(), si.GetZoneId()) {
-				jobs = append(jobs, certJob{service: name, hostname: si.GetDomainname()})
-			}
+	for name, zoneID := range dnsZones {
+		svc, ok := cf.Services[name]
+		if !ok {
+			continue
+		}
+		// Only enqueue a cert job when the provider will actually create the BYOD
+		// records for this hostname: the domain must be the zone apex or a
+		// subdomain of the resolved zone (see ByodRecordEligible). Otherwise
+		// aca.IssueCert would wait out its full DNS timeout for records that never
+		// appear.
+		if providerazure.ByodRecordEligible(svc.DomainName, zoneID) {
+			jobs = append(jobs, certJob{service: name, hostname: svc.DomainName})
 		}
 	}
 	return jobs

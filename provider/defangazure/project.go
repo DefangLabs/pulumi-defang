@@ -42,9 +42,9 @@ type ProjectInputs struct {
 	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
 	// DnsZones maps a service name to the ARM resource ID of a public Azure DNS
 	// zone (in the current subscription) that is a parent of that service's
-	// domainname, as resolved CLI-side by DNS.FindZone (ServiceInfo.ZoneId).
-	// When present, the service's CNAME + asuid TXT records are written into that
-	// customer-owned zone (BYOD) and the CD program issues a managed cert.
+	// domainname, as resolved by the CD task (cd/program/azure.go findByodZones).
+	// When present, the service's routing + asuid TXT records are written into
+	// that customer-owned zone (BYOD) and the CD program issues a managed cert.
 	// Services absent from the map keep the ACME / delegate-domain behaviour.
 	DnsZones map[string]string `pulumi:"dnsZones,optional" yaml:"dnsZones,omitempty"`
 }

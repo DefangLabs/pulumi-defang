@@ -370,9 +370,9 @@ func createAppDomains(
 	}
 
 	// BYOD: when the CD task found a public DNS zone for the service's own
-	// domainname (dnsZoneID set), also write the CNAME + asuid TXT into that
-	// customer zone. The CD program issues a managed cert for the hostname. This
-	// is additive to the delegate-domain records above, so the service stays
+	// domainname (dnsZoneID set), also write the routing + asuid TXT records into
+	// that customer zone. The CD program issues a managed cert for the hostname.
+	// This is additive to the delegate-domain records above, so the service stays
 	// reachable on both names.
 	byodDomain, err := CreateByodDomain(ctx, serviceName, svc, containerApp, infra, dnsZoneID, opts...)
 	if err != nil {

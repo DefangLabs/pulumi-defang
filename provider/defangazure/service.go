@@ -39,10 +39,11 @@ type ServiceInputs struct {
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
 	DomainName  string                      `pulumi:"domainName,optional"`
 	// DnsZoneId is the ARM resource ID of a public Azure DNS zone (in the current
-	// subscription) that is a parent of DomainName, as resolved CLI-side by
-	// DNS.FindZone. When set, the service's CNAME + asuid TXT records are written
-	// into that customer-owned zone (BYOD), enabling a managed cert. Empty means
-	// no zone was found — the ACME / delegate-domain path applies instead.
+	// subscription) that is a parent of DomainName, as resolved by the CD task
+	// (cd/program/azure.go findByodZones). When set, the service's routing + asuid
+	// TXT records are written into that customer-owned zone (BYOD), enabling a
+	// managed cert. Empty means no zone was found — the ACME / delegate-domain
+	// path applies instead.
 	DnsZoneId string `pulumi:"dnsZoneId,optional"`
 
 	// Infra is an optional shared Azure project infrastructure. When non-nil, the

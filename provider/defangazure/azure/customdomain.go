@@ -189,8 +189,8 @@ func CreateCustomDomain(
 
 // CreateByodDomain provisions the per-service DNS records for a "bring your own
 // domain" custom hostname (svc.DomainName) in the customer's *own* public DNS
-// zone, identified by dnsZoneID (an ARM resource ID the CLI resolved via
-// DNS.FindZone and threaded through ServiceInfo.ZoneId). This is the Azure
+// zone, identified by dnsZoneID (an ARM resource ID the CD task resolved via
+// DNS.FindZone; see cd/program/azure.go findByodZones). This is the Azure
 // analogue of the AWS BYOD path: when a zone for the domain exists in the
 // subscription, Defang writes records there directly (and the CD program issues
 // a managed cert) instead of the ACME fallback.
