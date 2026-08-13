@@ -55,7 +55,13 @@ type SharedInfra struct {
 	PrivateZoneID    pulumi.StringPtrInput   `pulumi:"privateZoneID,optional"`
 	PrivateDomain    string
 	ProjectDomain    string
-	ZoneId           pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
+	// ApexServiceName is the service that serves the bare project (apex)
+	// domain. Set only when the whole project has exactly one ingress port
+	// (a single service with a single ingress port); empty otherwise, in
+	// which case the apex is left to the ALB listener's default action.
+	// Resolved in buildProject; not a schema field.
+	ApexServiceName string
+	ZoneId          pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
 	// shared "private SG" — attached to all services, no ingress rules
 	PrivateSgID    pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
 	AlbSG          *ec2.SecurityGroup    // nil if no ALB
@@ -854,8 +860,11 @@ func CreateECSService(
 					endpoints = append(endpoints, svc.DomainName)
 				case infra.ProjectDomain != "":
 					endpoints = append(endpoints, fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain))
-					if firstIngress {
-						// FIXME: which service should listen on the project domain?
+					// The apex (bare project) domain is bound to a service only
+					// when the whole project has exactly one ingress port; the
+					// owner is resolved in buildProject. Otherwise the apex is
+					// left to the ALB listener's default action.
+					if serviceName == infra.ApexServiceName {
 						endpoints = append(endpoints, infra.ProjectDomain)
 					}
 				}
