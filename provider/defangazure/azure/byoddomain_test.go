@@ -113,12 +113,18 @@ func TestCreateByodDomainShortCircuits(t *testing.T) {
 		{name: "no domain", svc: compose.ServiceConfig{Ports: ingress}, zoneID: zoneID},
 		{name: "no zone id", svc: compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: ""},
 		{name: "no ingress", svc: compose.ServiceConfig{DomainName: "api.example.com"}, zoneID: zoneID},
-		{name: "unparseable zone", svc: compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: "garbage"},
+		{
+			name: "unparseable zone",
+			svc:  compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: "garbage",
+		},
 		{name: "domain not in zone", svc: compose.ServiceConfig{DomainName: "api.other.com", Ports: ingress}, zoneID: zoneID},
 		// A wildcard domainname is Front Door's to serve: writing a CNAME at "*"
 		// aimed at the Container App would shadow the record Front Door needs and
 		// answer 404 on every subdomain.
-		{name: "wildcard domainname", svc: compose.ServiceConfig{DomainName: "*.api.example.com", Ports: ingress}, zoneID: zoneID},
+		{
+			name: "wildcard domainname",
+			svc:  compose.ServiceConfig{DomainName: "*.api.example.com", Ports: ingress}, zoneID: zoneID,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

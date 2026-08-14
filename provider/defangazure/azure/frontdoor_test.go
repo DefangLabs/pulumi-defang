@@ -330,8 +330,11 @@ func TestWildcardZoneTarget(t *testing.T) {
 // TestWildcardZoneTargetNilInfra pins the standalone-caller guard: no infra means
 // no zone to write into, and certainly no panic.
 func TestWildcardZoneTargetNilInfra(t *testing.T) {
-	_, _, _, ok := wildcardZoneTarget(testHost, nil, "")
+	rgName, zoneName, label, ok := wildcardZoneTarget(testHost, nil, "")
 	assert.False(t, ok, "nil infra must resolve no zone")
+	assert.Nil(t, rgName)
+	assert.Nil(t, zoneName)
+	assert.Empty(t, label)
 }
 
 // TestPublishValidationByodZone is the end-to-end shape of the portal case: the

@@ -299,7 +299,8 @@ func CreateByodDomain(
 		return nil, fmt.Errorf("creating BYOD CNAME for %s: %w", serviceName, err)
 	}
 
-	asuid, err := createAsuidTXT(ctx, serviceName+"-byod-asuid", rgName, zoneName, "asuid."+relative, containerApp, tags, opts...)
+	asuid, err := createAsuidTXT(
+		ctx, serviceName+"-byod-asuid", rgName, zoneName, "asuid."+relative, containerApp, tags, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", serviceName, err)
 	}
@@ -370,7 +371,8 @@ func isApexDomain(domain, zoneName string) bool {
 // Segment matching is case-insensitive (ARM ids vary in casing); the zone name
 // is the final path segment. Returns ok=false if the id lacks a resource group
 // or a final segment.
-func parseDNSZoneID(id string) (resourceGroup, zoneName string, ok bool) {
+func parseDNSZoneID(id string) (string, string, bool) {
+	var resourceGroup string
 	parts := strings.Split(strings.Trim(id, "/"), "/")
 	for i, p := range parts {
 		if strings.EqualFold(p, "resourceGroups") && i+1 < len(parts) {
@@ -378,6 +380,7 @@ func parseDNSZoneID(id string) (resourceGroup, zoneName string, ok bool) {
 			break
 		}
 	}
+	var zoneName string
 	if len(parts) > 0 {
 		zoneName = parts[len(parts)-1]
 	}
@@ -386,4 +389,3 @@ func parseDNSZoneID(id string) (resourceGroup, zoneName string, ok bool) {
 	}
 	return resourceGroup, zoneName, true
 }
-

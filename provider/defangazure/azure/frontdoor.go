@@ -382,7 +382,7 @@ func wildcardZoneTarget(
 	base string,
 	infra *SharedInfra,
 	dnsZoneID string,
-) (rgName, zoneName pulumi.StringInput, label string, ok bool) {
+) (pulumi.StringInput, pulumi.StringInput, string, bool) {
 	if infra == nil {
 		return nil, nil, "", false
 	}
