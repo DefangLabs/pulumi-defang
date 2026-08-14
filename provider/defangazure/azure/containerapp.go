@@ -88,6 +88,9 @@ type containerAppResult struct {
 	// CustomDomain is nil unless the project sets a delegate Domain *and* the
 	// service exposes a public ingress; see CreateCustomDomain.
 	CustomDomain *CustomDomainResult
+	// WildcardDomain is nil unless the service declares a wildcard hostname and
+	// the project has a Front Door to serve it; see CreateWildcardDomain.
+	WildcardDomain *WildcardDomainResult
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -338,16 +341,38 @@ func CreateContainerApp(
 		return nil, fmt.Errorf("creating Container App: %w", err)
 	}
 
-	// Provision per-service DNS records + managed cert under the project
-	// delegate domain (no-op when infra.Domain is empty or the service is
-	// internal-only). Bound to the CA's parent option set so failures here
-	// propagate through the normal component graph.
+	// Attach the service's public hostnames. Bound to the CA's parent option set
+	// so failures here propagate through the normal component graph.
+	return createAppDomains(ctx, serviceName, svc, containerApp, infra, opts...)
+}
+
+// createAppDomains attaches the service's public hostnames to its Container App:
+// the delegate-domain records and cert Azure Container Apps can bind itself, and
+// Front Door routing for the wildcard hostnames it can't. Either half is a no-op
+// when the service doesn't ask for it.
+func createAppDomains(
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	containerApp *app.ContainerApp,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) (*containerAppResult, error) {
 	customDomain, err := CreateCustomDomain(ctx, serviceName, svc, containerApp, infra, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating custom domain for %s: %w", serviceName, err)
 	}
 
-	return &containerAppResult{App: containerApp, CustomDomain: customDomain}, nil
+	wildcardDomain, err := CreateWildcardDomain(ctx, serviceName, svc, containerApp, infra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating wildcard domain for %s: %w", serviceName, err)
+	}
+
+	return &containerAppResult{
+		App:            containerApp,
+		CustomDomain:   customDomain,
+		WildcardDomain: wildcardDomain,
+	}, nil
 }
 
 // resolveSubscriptionID resolves the Azure subscription for the out-of-band

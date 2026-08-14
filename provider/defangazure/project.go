@@ -444,6 +444,15 @@ func setupSharedInfra(
 	}
 	infra.Environment = env
 
+	// Wildcard hostnames can't be bound on a Container App, so they get an Azure
+	// Front Door profile in front of it. Nothing is created — and nothing is
+	// billed — unless a service actually asks for one.
+	frontDoor, err := providerazure.EnsureFrontDoor(ctx, inputs.Services, infra, parentOpt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating Front Door: %w", err)
+	}
+	infra.FrontDoor = frontDoor
+
 	if types.hasLLM {
 		llmInfra, err := providerazure.CreateLLMInfra(ctx, projectName, infra, parentOpt)
 		if err != nil {
