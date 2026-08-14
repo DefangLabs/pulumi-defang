@@ -214,7 +214,10 @@ func createCertsAndRoute53Dns(
 	for base, group := range certGroups {
 		// Look up the Route53 hosted zone for this domain
 		zone, err := GetHostedZoneForHost(ctx, base, zoneLookupOpts...)
-		if IsZoneNotFound(err) {
+		if err != nil {
+			if !errors.Is(err, ErrZoneNotFound) {
+				return fmt.Errorf("finding hosted zone for %s: %w", base, err)
+			}
 			// No hosted zone for this domain: Defang can't manage its records or
 			// validate an ACM cert, but that's a supported configuration — the CLI
 			// marks such a service UseAcmeCert and the user runs `defang cert gen`.
@@ -226,9 +229,6 @@ func createCertsAndRoute53Dns(
 					"Run `defang cert gen` to issue a certificate via ACME, or create the hosted zone and redeploy.",
 				serviceName, base), nil)
 			continue
-		}
-		if err != nil {
-			return fmt.Errorf("finding hosted zone for %s: %w", base, err)
 		}
 
 		certArn, err := CreateCertificateDNS(ctx, group, CertificateDnsArgs{

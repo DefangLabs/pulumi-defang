@@ -40,12 +40,16 @@ type ProjectInputs struct {
 	// (RevisionSuffix) so that logs and Resource Graph queries can be filtered
 	// per-deployment.
 	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
-	// DnsZones maps a service name to the ARM resource ID of a public Azure DNS
-	// zone (in the current subscription) that is a parent of that service's
-	// domainname, as resolved by the CD task (cd/program/azure.go findByodZones).
-	// When present, the service's routing + asuid TXT records are written into
-	// that customer-owned zone (BYOD) and the CD program issues a managed cert.
-	// Services absent from the map keep the ACME / delegate-domain behaviour.
+	// DnsZones maps a BYOD hostname — any service's `domainname` or default-network
+	// alias — to the ARM resource ID of the public Azure DNS zone (in the current
+	// subscription) that hosts it, as resolved by the CD task (cd/program/azure.go
+	// findByodZones). Hostnames present here get their routing + asuid TXT records
+	// written into that customer-owned zone (BYOD) and a managed cert from the CD
+	// program; hostnames absent from it keep the ACME / delegate-domain behaviour.
+	//
+	// Keyed by hostname rather than by service: a service can ask for several
+	// hostnames (aliases) that live in different zones, and the AWS path likewise
+	// resolves a zone per hostname rather than per service.
 	DnsZones map[string]string `pulumi:"dnsZones,optional" yaml:"dnsZones,omitempty"`
 }
 
@@ -217,7 +221,7 @@ func createServiceResources(
 	serviceHosts map[string]pulumi.StringOutput,
 	serviceIds pulumi.StringMap,
 	llmModels map[string]string,
-	dnsZoneID string,
+	dnsZones map[string]string,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	comp := &serviceComponent{}
@@ -271,7 +275,7 @@ func createServiceResources(
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-		err = createContainerApp(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZoneID)
+		err = createContainerApp(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -543,7 +547,7 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones[svcName], childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones, childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -555,7 +559,7 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones[svcName], childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones, childOpts,
 		)
 		if err != nil {
 			return nil, err

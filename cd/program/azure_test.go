@@ -35,7 +35,7 @@ func TestCollectCertJobs(t *testing.T) {
 			name:     "BYOD subdomain adds a second job for the same service",
 			services: compose.Services{web: {Ports: ingress, DomainName: byod}},
 			domain:   shard,
-			dnsZones: map[string]string{web: zone},
+			dnsZones: map[string]string{byod: zone},
 			want: []certJob{
 				{service: web, hostname: "web." + shard},
 				{service: web, hostname: byod},
@@ -44,7 +44,7 @@ func TestCollectCertJobs(t *testing.T) {
 		{
 			name:     "BYOD apex is eligible",
 			services: compose.Services{web: {Ports: ingress, DomainName: "example.com"}},
-			dnsZones: map[string]string{web: zone},
+			dnsZones: map[string]string{"example.com": zone},
 			want:     []certJob{{service: web, hostname: "example.com"}},
 		},
 		{
@@ -52,14 +52,29 @@ func TestCollectCertJobs(t *testing.T) {
 			// a cert job would sit in aca.IssueCert's DNS wait until it times out.
 			name:     "domain the resolved zone cannot host is skipped",
 			services: compose.Services{web: {Ports: ingress, DomainName: "api.elsewhere.net"}},
-			dnsZones: map[string]string{web: zone},
+			dnsZones: map[string]string{"api.elsewhere.net": zone},
 			want:     nil,
 		},
 		{
-			name:     "zone for a service not in the compose project is ignored",
+			name:     "zone for a hostname no service asks for is ignored",
 			services: compose.Services{web: {Ports: ingress}},
-			dnsZones: map[string]string{"ghost": zone},
+			dnsZones: map[string]string{"ghost.example.com": zone},
 			want:     nil,
+		},
+		{
+			// Keyed by hostname, so a wildcard alias and a plain domainname are
+			// resolved separately: the wildcard is Front Door's (no ACA cert job),
+			// the plain one still gets one.
+			name: "wildcard alias yields no cert job",
+			services: compose.Services{web: {
+				Ports:      ingress,
+				DomainName: byod,
+				Networks: map[compose.NetworkID]compose.ServiceNetworkConfig{
+					compose.DefaultNetwork: {Aliases: []string{"*." + byod}},
+				},
+			}},
+			dnsZones: map[string]string{byod: zone, "*." + byod: zone},
+			want:     []certJob{{service: web, hostname: byod}},
 		},
 		{
 			name:     "no delegate domain and no zones yields nothing",

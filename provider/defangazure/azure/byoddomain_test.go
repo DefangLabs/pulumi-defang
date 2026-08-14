@@ -97,44 +97,65 @@ func TestByodRecordEligible(t *testing.T) {
 	}
 }
 
-// TestCreateByodDomainShortCircuits checks the branches that return (nil, nil)
-// without creating records or touching the (nil) infra/app: no custom domain,
-// no zone id, no public ingress, an unparseable zone id, and a domain that isn't
-// within the zone. The last two warn-and-skip (rather than failing the deploy).
+// TestCreateByodDomainShortCircuits checks the branches that create nothing and
+// never touch the (nil) infra/app: no custom domain, no zone for the hostname, no
+// public ingress, an unparseable zone id, a hostname outside the zone it was
+// mapped to, and a wildcard (Front Door's job). The middle two warn-and-skip
+// rather than failing the deploy.
 func TestCreateByodDomainShortCircuits(t *testing.T) {
 	ingress := []compose.ServicePortConfig{{Target: 80, Mode: "ingress"}}
 	const zoneID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/dnszones/example.com"
 
+	apiSvc := compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}
 	tests := []struct {
-		name   string
-		svc    compose.ServiceConfig
-		zoneID string
+		name  string
+		svc   compose.ServiceConfig
+		zones map[string]string
 	}{
-		{name: "no domain", svc: compose.ServiceConfig{Ports: ingress}, zoneID: zoneID},
-		{name: "no zone id", svc: compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: ""},
-		{name: "no ingress", svc: compose.ServiceConfig{DomainName: "api.example.com"}, zoneID: zoneID},
 		{
-			name: "unparseable zone",
-			svc:  compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: "garbage",
+			name:  "no domain",
+			svc:   compose.ServiceConfig{Ports: ingress},
+			zones: map[string]string{"api.example.com": zoneID},
 		},
-		{name: "domain not in zone", svc: compose.ServiceConfig{DomainName: "api.other.com", Ports: ingress}, zoneID: zoneID},
-		// A wildcard domainname is Front Door's to serve: writing a CNAME at "*"
+		{name: "no zone for the hostname", svc: apiSvc, zones: nil},
+		{
+			name:  "hostname absent from a non-empty map",
+			svc:   apiSvc,
+			zones: map[string]string{"other.example.com": zoneID},
+		},
+		{
+			name:  "no ingress",
+			svc:   compose.ServiceConfig{DomainName: "api.example.com"},
+			zones: map[string]string{"api.example.com": zoneID},
+		},
+		{
+			name:  "unparseable zone",
+			svc:   apiSvc,
+			zones: map[string]string{"api.example.com": "garbage"},
+		},
+		{
+			name:  "hostname not in the zone it maps to",
+			svc:   compose.ServiceConfig{DomainName: "api.other.com", Ports: ingress},
+			zones: map[string]string{"api.other.com": zoneID},
+		},
+		// A wildcard hostname is Front Door's to serve: writing a CNAME at "*"
 		// aimed at the Container App would shadow the record Front Door needs and
 		// answer 404 on every subdomain.
 		{
-			name: "wildcard domainname",
-			svc:  compose.ServiceConfig{DomainName: "*.api.example.com", Ports: ingress}, zoneID: zoneID,
+			name:  "wildcard domainname",
+			svc:   compose.ServiceConfig{DomainName: "*.api.example.com", Ports: ingress},
+			zones: map[string]string{"*.api.example.com": zoneID},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				got, err := CreateByodDomain(ctx, "svc", tt.svc, nil, nil, tt.zoneID)
+				got, err := CreateByodDomain(ctx, "svc", tt.svc, nil, nil, tt.zones)
 				if err != nil {
 					t.Errorf("CreateByodDomain err: %v", err)
 				}
-				if got != nil {
-					t.Errorf("CreateByodDomain result = %+v, want nil", got)
+				if len(got) != 0 {
+					t.Errorf("CreateByodDomain result = %+v, want none", got)
 				}
 				return nil
 			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
@@ -168,13 +189,45 @@ func TestCreateByodDomainRecords(t *testing.T) {
 	ingress := []compose.ServicePortConfig{{Target: 80, Mode: "ingress"}}
 	const zoneID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/dnszones/example.com"
 
+	const otherZoneID = "/subscriptions/s/resourceGroups/rg2/providers/Microsoft.Network/dnszones/other.com"
+
 	tests := []struct {
 		name      string
 		domain    string
+		aliases   []string
+		zones     map[string]string
+		wantCount int
 		wantTypes map[string]string // relative name -> record type
 	}{
-		{name: "subdomain", domain: "api.example.com", wantTypes: map[string]string{"api": "CNAME", "asuid.api": "TXT"}},
-		{name: "apex", domain: "example.com", wantTypes: map[string]string{"@": "A", "asuid": "TXT"}},
+		{
+			name: "subdomain", domain: "api.example.com",
+			zones:     map[string]string{"api.example.com": zoneID},
+			wantCount: 1,
+			wantTypes: map[string]string{"api": "CNAME", "asuid.api": "TXT"},
+		},
+		{
+			name: "apex", domain: "example.com",
+			zones:     map[string]string{"example.com": zoneID},
+			wantCount: 1,
+			wantTypes: map[string]string{"@": "A", "asuid": "TXT"},
+		},
+		{
+			// The reason the map is keyed by hostname: one service's hostnames can
+			// live in different zones, and each gets records in its own.
+			name: "alias in a different zone", domain: "api.example.com",
+			aliases:   []string{"api.other.com"},
+			zones:     map[string]string{"api.example.com": zoneID, "api.other.com": otherZoneID},
+			wantCount: 2,
+			wantTypes: map[string]string{"api": "CNAME", "asuid.api": "TXT"},
+		},
+		{
+			// A wildcard alias is Front Door's; the plain hostname is still recorded.
+			name: "wildcard alias is skipped", domain: "api.example.com",
+			aliases:   []string{"*.api.example.com"},
+			zones:     map[string]string{"api.example.com": zoneID, "*.api.example.com": zoneID},
+			wantCount: 1,
+			wantTypes: map[string]string{"api": "CNAME", "asuid.api": "TXT"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -192,9 +245,13 @@ func TestCreateByodDomainRecords(t *testing.T) {
 
 				infra := &SharedInfra{Environment: env}
 				svc := compose.ServiceConfig{DomainName: tt.domain, Ports: ingress}
-				res, err := CreateByodDomain(ctx, "svc", svc, capp, infra, zoneID)
+				if len(tt.aliases) > 0 {
+					svc.Networks = aliasNetwork(tt.aliases...)
+				}
+				got, err := CreateByodDomain(ctx, "svc", svc, capp, infra, tt.zones)
 				require.NoError(t, err)
-				require.NotNil(t, res)
+				require.Len(t, got, tt.wantCount)
+				res := got[0]
 				require.NotNil(t, res.Asuid)
 				if tt.domain == "example.com" {
 					assert.NotNil(t, res.A, "apex must create an A record")

@@ -187,58 +187,93 @@ func CreateCustomDomain(
 	return &CustomDomainResult{Cname: cname, Asuid: asuid}, nil
 }
 
-// CreateByodDomain provisions the per-service DNS records for a "bring your own
-// domain" custom hostname (svc.DomainName) in the customer's *own* public DNS
-// zone, identified by dnsZoneID (an ARM resource ID the CD task resolved via
-// DNS.FindZone; see cd/program/azure.go findByodZones). This is the Azure
-// analogue of the AWS BYOD path: when a zone for the domain exists in the
-// subscription, Defang writes records there directly (and the CD program issues
-// a managed cert) instead of the ACME fallback.
+// CreateByodDomain provisions the DNS records for a service's "bring your own
+// domain" hostnames in the customer's *own* public DNS zones. dnsZones maps a
+// hostname to the ARM resource ID of the zone that hosts it, as resolved by the
+// CD task (FindZones; see cd/program/azure.go findByodZones). This is the Azure
+// analogue of the AWS BYOD path: where a zone for the hostname exists in the
+// subscription, Defang writes records there directly (and the CD program issues a
+// managed cert) instead of falling back to ACME.
 //
-// Records created in the zone (resource group + zone name parsed from
-// dnsZoneID):
-//   - CNAME `<relative>` → the Container App's stable FQDN.
-//   - TXT `asuid[.<relative>]` carrying the App's CustomDomainVerificationId.
+// A service can ask for several hostnames — its `domainname` plus any aliases on
+// its default network (common.ByodHostnames) — and they need not share a zone, so
+// each is resolved and recorded independently. Per hostname, in the zone the map
+// names for it:
+//   - a subdomain gets CNAME `<relative>` → the Container App's stable FQDN;
+//   - the zone apex gets A `@` → the environment's static inbound IP, because
+//     Azure DNS rejects a CNAME at the apex (RFC 1034);
+//   - both get TXT `asuid[.<relative>]` carrying the App's
+//     CustomDomainVerificationId.
 //
-// Returns (nil, nil) when there is nothing to do: no custom domain, no zone id,
-// or the service has no public ingress. Apex domains (DomainName == zone name)
-// are not supported because Azure DNS rejects a CNAME at the zone apex; such a
-// service falls through to its delegate-domain / auto FQDN.
+// Wildcard hostnames are skipped: Container Apps has no wildcard binding, so they
+// are Front Door's to serve and CreateWildcardDomain writes their records. A
+// hostname with no zone in the map is skipped too — that is the normal
+// "no zone, use ACME" outcome, not an error. Returns an empty slice when nothing
+// was provisioned.
 func CreateByodDomain(
 	ctx *pulumi.Context,
 	serviceName string,
 	svc compose.ServiceConfig,
 	containerApp *app.ContainerApp,
 	infra *SharedInfra,
-	dnsZoneID string,
+	dnsZones map[string]string,
 	opts ...pulumi.ResourceOption,
-) (*CustomDomainResult, error) {
-	if svc.DomainName == "" || dnsZoneID == "" || !svc.HasIngressPorts() {
-		return nil, nil //nolint:nilnil // nothing to provision; caller treats nil as "skipped"
-	}
-	// A wildcard domainname belongs to Front Door, not Container Apps: ACA binds
-	// one hostname at a time and has no wildcard binding at all, so a CNAME at
-	// "*" aimed at the app would shadow the record Front Door needs while
-	// answering 404, and an "asuid.*" TXT would validate nothing. See
-	// CreateWildcardDomain, which writes that pair into this same zone.
-	if common.IsWildcardHost(svc.DomainName) {
-		return nil, nil //nolint:nilnil // Front Door owns wildcard hostnames; caller treats nil as "skipped"
+) ([]*CustomDomainResult, error) {
+	if len(dnsZones) == 0 || !svc.HasIngressPorts() {
+		return nil, nil
 	}
 
+	var results []*CustomDomainResult
+	for _, hostname := range common.ByodHostnames(svc) {
+		// A wildcard hostname belongs to Front Door: ACA binds one hostname at a
+		// time and has no wildcard binding, so a CNAME at "*" aimed at the app
+		// would shadow the record Front Door needs while answering 404, and an
+		// "asuid.*" TXT would validate nothing.
+		if common.IsWildcardHost(hostname) {
+			continue
+		}
+		zoneID := dnsZones[common.NormalizeDNS(hostname)]
+		if zoneID == "" {
+			continue // no zone hosts this name; the ACME / delegate-domain path covers it
+		}
+		result, err := createByodRecords(ctx, serviceName, hostname, zoneID, containerApp, infra, opts...)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			results = append(results, result)
+		}
+	}
+	return results, nil
+}
+
+// createByodRecords writes the routing record and its asuid TXT for one hostname
+// into the zone named by dnsZoneID. Returns (nil, nil) when the zone id is
+// unusable or does not hold the hostname — warn-and-skip, because the Container
+// App still serves on its default FQDN and a hard error would block an
+// otherwise-healthy deploy.
+func createByodRecords(
+	ctx *pulumi.Context,
+	serviceName, hostname, dnsZoneID string,
+	containerApp *app.ContainerApp,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) (*CustomDomainResult, error) {
 	rgName, zoneName, ok := parseDNSZoneID(dnsZoneID)
 	if !ok {
-		// A malformed zone id shouldn't happen (the CLI resolves a real ARM id),
-		// but warn-and-skip rather than fail: the Container App still serves on its
-		// default FQDN, and a hard error would block an otherwise-healthy deploy.
+		// A malformed zone id shouldn't happen (the CD task resolves a real ARM id).
 		_ = ctx.Log.Warn(fmt.Sprintf(
 			"service %s: unparseable DNS zone id %q; skipping BYOD DNS records (no managed cert for %q)",
-			serviceName, dnsZoneID, svc.DomainName), nil)
+			serviceName, dnsZoneID, hostname), nil)
 		return nil, nil //nolint:nilnil // best-effort: skip BYOD records, deploy continues
 	}
 
+	// Logical names are per hostname, so a service with several BYOD hostnames
+	// doesn't collide with itself.
+	prefix := serviceName + "-" + common.SafeLabel(hostname)
 	tags := ServiceTags(serviceName)
 
-	// Apex (domain == zone): a CNAME is illegal at the zone apex (RFC 1034), so
+	// Apex (hostname == zone): a CNAME is illegal at the zone apex (RFC 1034), so
 	// route with an A record at "@" pointing to the Container App environment's
 	// static inbound IP, and put the asuid TXT at "asuid". Azure validates apex
 	// managed certs via HTTP (see aca.IssueCert), which needs no extra record.
@@ -247,8 +282,8 @@ func CreateByodDomain(
 	// environment — replacing it (e.g. a vnetConfiguration change, which forces
 	// ManagedEnvironment replacement) changes the IP and breaks this record. An
 	// apex custom domain accepts that trade-off; subdomains (CNAME) don't have it.
-	if isApexDomain(svc.DomainName, zoneName) {
-		a, err := dns.NewRecordSet(ctx, serviceName+"-byod-a", &dns.RecordSetArgs{
+	if isApexDomain(hostname, zoneName) {
+		a, err := dns.NewRecordSet(ctx, prefix+"-byod-a", &dns.RecordSetArgs{
 			ResourceGroupName:     pulumi.String(rgName),
 			ZoneName:              pulumi.String(zoneName),
 			RelativeRecordSetName: pulumi.String("@"),
@@ -260,31 +295,29 @@ func CreateByodDomain(
 			Metadata: tags,
 		}, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("creating BYOD A record for %s: %w", serviceName, err)
+			return nil, fmt.Errorf("creating BYOD A record for %s: %w", hostname, err)
 		}
-		asuid, err := createAsuidTXT(ctx, serviceName+"-byod-asuid", rgName, zoneName, "asuid", containerApp, tags, opts...)
+		asuid, err := createAsuidTXT(ctx, prefix+"-byod-asuid", rgName, zoneName, "asuid", containerApp, tags, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", serviceName, err)
+			return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", hostname, err)
 		}
 		return &CustomDomainResult{A: a, Asuid: asuid}, nil
 	}
 
-	relative, ok := relativeRecordName(svc.DomainName, zoneName)
+	relative, ok := relativeRecordName(hostname, zoneName)
 	if !ok {
-		// The domain is not within the zone (the apex is handled above). The CD
+		// The hostname is not within the zone (the apex is handled above). The CD
 		// task only ever resolves a parent zone, so this shouldn't happen — warn
 		// rather than fail (CodeRabbit flagged the prior silent skip as
-		// undiagnosable; a hard error would block an otherwise-healthy deploy). The
-		// service still serves on its default FQDN; no managed cert is issued for
-		// the custom domain.
+		// undiagnosable).
 		_ = ctx.Log.Warn(fmt.Sprintf(
 			"service %s: custom domain %q is not within DNS zone %q; skipping BYOD DNS records (no managed cert for it)",
-			serviceName, svc.DomainName, zoneName), nil)
+			serviceName, hostname, zoneName), nil)
 		return nil, nil //nolint:nilnil // best-effort: skip BYOD records, deploy continues
 	}
 
 	target := pulumi.Sprintf("%s.%s", containerApp.Name, infra.Environment.DefaultDomain)
-	cname, err := dns.NewRecordSet(ctx, serviceName+"-byod-cname", &dns.RecordSetArgs{
+	cname, err := dns.NewRecordSet(ctx, prefix+"-byod-cname", &dns.RecordSetArgs{
 		ResourceGroupName:     pulumi.String(rgName),
 		ZoneName:              pulumi.String(zoneName),
 		RelativeRecordSetName: pulumi.String(relative),
@@ -296,13 +329,13 @@ func CreateByodDomain(
 		Metadata: tags,
 	}, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating BYOD CNAME for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("creating BYOD CNAME for %s: %w", hostname, err)
 	}
 
 	asuid, err := createAsuidTXT(
-		ctx, serviceName+"-byod-asuid", rgName, zoneName, "asuid."+relative, containerApp, tags, opts...)
+		ctx, prefix+"-byod-asuid", rgName, zoneName, "asuid."+relative, containerApp, tags, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", hostname, err)
 	}
 
 	return &CustomDomainResult{Cname: cname, Asuid: asuid}, nil

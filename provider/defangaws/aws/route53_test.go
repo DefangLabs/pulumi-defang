@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Upstream diagnostics IsZoneNotFound has to recognise (or refuse to).
+// Upstream diagnostics the zone lookup has to recognise (or refuse to).
 var (
 	errNoMatchingZone       = errors.New("no matching Route 53 Hosted Zone found") // terraform-provider-aws >= v5.51
 	errNoMatchingZoneLegacy = errors.New("no matching Route53Zone found")          // pulumi-aws <= v6.37
@@ -16,7 +16,10 @@ var (
 	errThrottled            = errors.New("operation error Route 53: ListHostedZonesByName, api error Throttling")
 )
 
-func TestIsZoneNotFound(t *testing.T) {
+// TestAsZoneNotFound pins which upstream failures become ErrZoneNotFound — the
+// signal that makes a caller skip BYOD records instead of failing the deploy —
+// and, more importantly, which ones must stay opaque errors.
+func TestAsZoneNotFound(t *testing.T) {
 	// The shape a Pulumi Go caller actually sees: the engine and the bridge each
 	// wrap the upstream diagnostic, and multierror formats the body.
 	wrapped := func(err error) error {
@@ -73,8 +76,20 @@ func TestIsZoneNotFound(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsZoneNotFound(tt.err); got != tt.want {
-				t.Errorf("IsZoneNotFound() = %v, want %v", got, tt.want)
+			got := asZoneNotFound(tt.err, "example.com")
+			if isNotFound := errors.Is(got, ErrZoneNotFound); isNotFound != tt.want {
+				t.Errorf("errors.Is(asZoneNotFound(), ErrZoneNotFound) = %v, want %v", isNotFound, tt.want)
+			}
+			if tt.err == nil {
+				if got != nil {
+					t.Errorf("asZoneNotFound(nil) = %v, want nil", got)
+				}
+				return
+			}
+			// Whatever the verdict, the original error stays reachable: a
+			// not-found is wrapped, anything else is returned untouched.
+			if !errors.Is(got, tt.err) {
+				t.Errorf("asZoneNotFound() dropped the underlying error: %v", got)
 			}
 		})
 	}

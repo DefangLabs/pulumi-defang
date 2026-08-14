@@ -137,10 +137,35 @@ environment's static IP — exactly what an apex A record must point at.
 
 ## GCP
 
-Not implemented. `ServiceInfo.ZoneId` is unused on the GCP path and BYOD domains
-go through ACME. When it is added, it should answer the same two questions: a
-longest-suffix match over the project's Cloud DNS managed zones, and a warn-and-
-degrade response when nothing matches.
+Not implemented, tracked in
+[issue 395](https://github.com/DefangLabs/pulumi-defang/issues/395).
+`ServiceInfo.ZoneId` is unused on the GCP path and BYOD domains go through ACME.
+When it is added it should answer the same two questions: a longest-suffix match
+over the project's Cloud DNS managed zones, and a warn-and-degrade response when
+nothing matches. The legacy TypeScript CD had no BYOD DNS on GCP either
+(`defang-mvp/pulumi/cd/gcp` has no zone handling), so this is a gap rather than a
+cutover regression.
+
+## One rule for a missing zone, on every cloud
+
+"No zone hosts this hostname" is a **normal answer** and both implemented clouds
+degrade identically: warn, skip that hostname's records, issue no managed
+certificate for it, keep the service reachable on its delegate-domain hostname,
+and leave `defang cert gen` (ACME) available. Neither cloud fails the deploy, and
+the warning carries the same actionable hint on both.
+
+This matches the legacy TypeScript CD, which is the behaviour a cutover must not
+regress: `defang-mvp/pulumi/cd/aws/defang_service.ts` gated the whole Route 53 +
+ACM block on `serviceInfo.zoneId`, fell back to `createCertsAcme` when the CLI had
+marked the service `useAcmeCert`, and otherwise did nothing (a `TODO` for BYOC
+domains without an explicit zone id) — never an error. It also passed the
+default-network `aliases` alongside `domainname`, which is why zone resolution here
+is per hostname rather than per service.
+
+The only asymmetry left is *scope of the search*, which is a cloud constraint
+rather than a choice: AWS can reach zones in another account through
+`x-defang-dns-role`, while Azure has no cross-subscription equivalent of
+`AssumeRole`, so it searches the deploy subscription only.
 
 ## SDK regeneration
 
@@ -151,12 +176,12 @@ pre-push hook enforces a clean `sdk/v2/`).
 ## Files
 
 pulumi-defang:
-- `provider/defangaws/aws/route53.go` — `IsZoneNotFound`
+- `provider/defangaws/aws/route53.go` — `ErrZoneNotFound` + `asZoneNotFound`
 - `provider/defangaws/aws/cert.go` — skip BYOD records when no hosted zone exists
-- `provider/defangazure/azure/dnszone.go` — `FindZone` + `bestZoneMatch`
+- `provider/defangazure/azure/dnszone.go` — `FindZones` + `bestZoneMatch`
 - `cd/program/azure.go` — `findByodZones` + `DnsZones` wiring + BYOD cert jobs
 - `provider/defangazure/project.go` — `DnsZones` input + threading
-- `provider/defangazure/service.go` — `DnsZoneId` input + threading
+- `provider/defangazure/service.go` — `DnsZones` input + threading
 - `provider/defangazure/azure/containerapp.go` — `CreateContainerApp` param + call
 - `provider/defangazure/azure/customdomain.go` — `CreateByodDomain`
 - `sdk/v2/**` — regenerated

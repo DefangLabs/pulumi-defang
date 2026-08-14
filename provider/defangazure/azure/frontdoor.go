@@ -191,7 +191,7 @@ func CreateWildcardDomain(
 	svc compose.ServiceConfig,
 	containerApp *app.ContainerApp,
 	infra *SharedInfra,
-	dnsZoneID string,
+	dnsZones map[string]string,
 	opts ...pulumi.ResourceOption,
 ) (*WildcardDomainResult, error) {
 	hostnames := wildcardHostnames(svc)
@@ -271,7 +271,8 @@ func CreateWildcardDomain(
 		result.Domains = append(result.Domains, domain)
 		domainRefs = append(domainRefs, &cdn.ActivatedResourceReferenceArgs{Id: domain.ID()})
 
-		records, err := publishValidation(ctx, serviceName, hostname, domain, fd, infra, dnsZoneID, opts...)
+		records, err := publishValidation(
+			ctx, serviceName, hostname, domain, fd, infra, dnsZones[hostname], opts...)
 		if err != nil {
 			return nil, err
 		}

@@ -219,13 +219,13 @@ func TestFrontDoorShortCircuits(t *testing.T) {
 		// A wildcard with no Front Door to serve it is the standalone Service
 		// path. Failing beats deploying a service configured for a hostname that
 		// nothing will answer on.
-		_, err = CreateWildcardDomain(ctx, testService, wildcardSvc, nil, &SharedInfra{}, "")
+		_, err = CreateWildcardDomain(ctx, testService, wildcardSvc, nil, &SharedInfra{}, nil)
 		if !errors.Is(err, errWildcardNeedsProject) {
 			t.Errorf("CreateWildcardDomain(no front door) err = %v, want %v", err, errWildcardNeedsProject)
 		}
 
 		// No wildcard hostname: nothing to do even with a Front Door present.
-		got, err := CreateWildcardDomain(ctx, testService, plainSvc, nil, &SharedInfra{FrontDoor: &FrontDoorInfra{}}, "")
+		got, err := CreateWildcardDomain(ctx, testService, plainSvc, nil, &SharedInfra{FrontDoor: &FrontDoorInfra{}}, nil)
 		if err != nil {
 			t.Errorf("CreateWildcardDomain(no wildcard) err: %v", err)
 		}

@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -113,32 +115,49 @@ func createCaaDnsRecord(
 func getZone(ctx *pulumi.Context, name string, opts ...pulumi.InvokeOption) (*route53.LookupZoneResult, error) {
 	// ctx.Log.Warn("getZone "+name, nil)
 	isPrivateZone := common.IsPrivateZone(name)
-	return route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &name, PrivateZone: &isPrivateZone}, opts...)
+	zone, err := route53.LookupZone(ctx, &route53.LookupZoneArgs{Name: &name, PrivateZone: &isPrivateZone}, opts...)
+	if err != nil {
+		return nil, asZoneNotFound(err, name)
+	}
+	return zone, nil
 }
 
-// IsZoneNotFound reports whether err is the aws:route53/getZone invoke failing
-// because no hosted zone matched — as opposed to a real failure (bad credentials,
-// an un-assumable DNS role, throttling), which callers must not treat as "no
-// zone".
-//
-// This has to match on text. The invoke crosses the Pulumi engine over gRPC, so
-// upstream's *retry.NotFoundError is flattened to an opaque message and
-// errors.Is/As can't see it. The bridged terraform-provider-aws data source
-// produces "no matching Route 53 Hosted Zone found" (it said
-// "no matching Route53Zone found" before the AWS SDK v2 migration, carried by
-// pulumi-aws <= v6.37), wrapped as
+// ErrZoneNotFound wraps the aws:route53/getZone invoke failing because no hosted
+// zone matched — as opposed to a real failure (bad credentials, an un-assumable
+// DNS role, throttling), which callers must not treat as "no zone". Test for it
+// with errors.Is.
+var ErrZoneNotFound = errors.New("no matching Route 53 hosted zone")
+
+// zoneNotFoundMessages are the upstream wordings that mean "no zone matched".
+// Recognising the condition has to happen on text, and this is the one place it
+// does: the invoke crosses the Pulumi engine over gRPC, so upstream's
+// *retry.NotFoundError is flattened to an opaque message and errors.Is/As can't
+// see it. The bridged terraform-provider-aws data source produces "no matching
+// Route 53 Hosted Zone found" (it said "no matching Route53Zone found" before the
+// AWS SDK v2 migration, carried by pulumi-aws <= v6.37), wrapped as
 // `invoking aws:route53/getZone:getZone: 1 error occurred: * <message>`.
 //
-// If upstream rewords it again the match fails closed: the caller propagates the
-// error and the deploy fails loudly, which is the behaviour that predates this
-// helper — never a silent skip.
-func IsZoneNotFound(err error) bool {
+// If upstream rewords it again the match fails closed: getZone returns the raw
+// error, the caller propagates it and the deploy fails loudly, which is the
+// behaviour that predates this helper — never a silent skip.
+var zoneNotFoundMessages = []string{
+	"no matching Route 53 Hosted Zone found",
+	"no matching Route53Zone found",
+}
+
+// asZoneNotFound converts a "no zone matched" invoke failure into an error
+// wrapping ErrZoneNotFound, and returns every other error unchanged.
+func asZoneNotFound(err error, zoneName string) error {
 	if err == nil {
-		return false
+		return nil
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "no matching Route 53 Hosted Zone found") ||
-		strings.Contains(msg, "no matching Route53Zone found")
+	for _, notFound := range zoneNotFoundMessages {
+		if strings.Contains(msg, notFound) {
+			return fmt.Errorf("%w: %s: %w", ErrZoneNotFound, zoneName, err)
+		}
+	}
+	return err
 }
 
 func GetHostedZoneForHost(

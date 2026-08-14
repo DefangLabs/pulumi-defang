@@ -9,34 +9,40 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 )
 
-// FindZone returns the ARM resource ID of the public DNS zone in subscriptionID
-// whose name is the longest DNS suffix of domain, or "" if no zone matches.
+// FindZones maps each hostname to the ARM resource ID of the public DNS zone in
+// subscriptionID whose name is its longest DNS suffix, omitting hostnames no zone
+// matches. The subscription's zones are listed once for the whole batch, since a
+// project's hostnames are resolved together and each ARM listing is a round trip.
 //
 // This is Azure's half of BYOD ("bring your own domain") zone discovery: when a
-// service sets a custom domainname and a zone that can host it already exists,
+// service asks for a custom hostname and a zone that can host it already exists,
 // Defang manages the records there and issues an Azure-managed cert, instead of
 // falling back to the ACME / `defang cert generate` path. AWS's half is
-// GetHostedZoneForHost + IsZoneNotFound in provider/defangaws/aws/route53.go;
-// both answer the same question, and "no zone" is a normal answer on both.
+// GetHostedZoneForHost + ErrZoneNotFound in provider/defangaws/aws/route53.go;
+// both answer the same question per hostname, and "no zone" is a normal answer on
+// both.
 //
 // Unlike AWS's, this can't be a Pulumi invoke: azure-native exposes getZone
-// (resource group + zone name required) but no subscription-wide listing, and
-// the zone's resource group is exactly what we don't know yet. So it's an
-// imperative ARM call, like the other out-of-band lookups in this package
+// (resource group + zone name required) but no subscription-wide listing, and the
+// zone's resource group is exactly what we don't know yet. So it's an imperative
+// ARM call, like the other out-of-band lookups in this package
 // (readLiveCustomDomains, ModelSelector).
 //
 // The search applies no ownership or tag filter (per the BYOD design): whichever
-// existing zone is the closest parent of domain wins. Only subscriptionID is
+// existing zone is the closest parent of the hostname wins. Only subscriptionID is
 // searched — Azure has no cross-subscription equivalent of Route53's AssumeRole,
 // so there is no analogue of x-defang-dns-role here.
-func FindZone(ctx context.Context, subscriptionID, domain string) (string, error) {
+func FindZones(ctx context.Context, subscriptionID string, hostnames []string) (map[string]string, error) {
+	if len(hostnames) == 0 {
+		return map[string]string{}, nil
+	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return "", fmt.Errorf("finding DNS zone for %q: building credential: %w", domain, err)
+		return nil, fmt.Errorf("finding DNS zones: building credential: %w", err)
 	}
 	client, err := armdns.NewZonesClient(subscriptionID, cred, nil)
 	if err != nil {
-		return "", fmt.Errorf("finding DNS zone for %q: creating zones client: %w", domain, err)
+		return nil, fmt.Errorf("finding DNS zones: creating zones client: %w", err)
 	}
 
 	var zones []*armdns.Zone
@@ -44,13 +50,18 @@ func FindZone(ctx context.Context, subscriptionID, domain string) (string, error
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return "", fmt.Errorf("listing DNS zones: %w", err)
+			return nil, fmt.Errorf("listing DNS zones: %w", err)
 		}
 		zones = append(zones, page.Value...)
 	}
 
-	_, id := bestZoneMatch(domain, zones)
-	return id, nil
+	found := map[string]string{}
+	for _, hostname := range hostnames {
+		if _, id := bestZoneMatch(hostname, zones); id != "" {
+			found[strings.ToLower(strings.TrimSuffix(hostname, "."))] = id
+		}
+	}
+	return found, nil
 }
 
 // bestZoneMatch picks the zone whose name is the longest DNS suffix of domain,
