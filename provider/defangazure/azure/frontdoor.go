@@ -47,6 +47,7 @@
 package azure
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -77,6 +78,13 @@ const (
 	// record must have expired before the new token is read, so a long-lived
 	// record only delays a rotation that already runs 45 days ahead of expiry.
 	dnsAuthTTL = 3600
+)
+
+// errWildcardNeedsProject is returned when a service asks for a wildcard
+// hostname on the standalone Service path, which has no project-scoped Front
+// Door profile to route it through.
+var errWildcardNeedsProject = errors.New(
+	"wildcard domains on Azure need an Azure Front Door profile, which only the Project component provisions",
 )
 
 // FrontDoorInfra holds the project-scoped Front Door resources that every
@@ -189,15 +197,10 @@ func CreateWildcardDomain(
 		return nil, nil //nolint:nilnil // this service has no wildcard hostname
 	}
 	if infra == nil || infra.FrontDoor == nil {
-		// A standalone Service has no project to hang a Front Door profile off,
-		// so its wildcard hostnames can't be served. Say so rather than drop them
-		// silently — the service still comes up on its other hostnames.
-		_ = ctx.Log.Warn(fmt.Sprintf(
-			"service %q: wildcard hostnames %s need an Azure Front Door profile, which only the Project "+
-				"component provisions; they will not be served.",
-			serviceName, strings.Join(hostnames, ", "),
-		), nil)
-		return nil, nil //nolint:nilnil // nothing provisioned; the caller treats nil as "skipped"
+		// Only the Project component provisions a Front Door profile, so a
+		// standalone Service can't serve a wildcard. Fail rather than deploy a
+		// service that looks configured for a hostname nothing will answer on.
+		return nil, fmt.Errorf("service %s (%s): %w", serviceName, strings.Join(hostnames, ", "), errWildcardNeedsProject)
 	}
 
 	fd := infra.FrontDoor

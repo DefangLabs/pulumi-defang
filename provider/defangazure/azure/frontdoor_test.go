@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -208,18 +209,16 @@ func TestFrontDoorShortCircuits(t *testing.T) {
 			t.Errorf("EnsureFrontDoor(nil infra) = %+v, %v; want nil, nil", fd, err)
 		}
 
-		// A service with a wildcard but no Front Door (the standalone Service
-		// path) warns and moves on rather than failing the deploy.
-		got, err := CreateWildcardDomain(ctx, testService, wildcardSvc, nil, &SharedInfra{})
-		if err != nil {
-			t.Errorf("CreateWildcardDomain(no front door) err: %v", err)
-		}
-		if got != nil {
-			t.Errorf("CreateWildcardDomain(no front door) = %+v, want nil", got)
+		// A wildcard with no Front Door to serve it is the standalone Service
+		// path. Failing beats deploying a service configured for a hostname that
+		// nothing will answer on.
+		_, err = CreateWildcardDomain(ctx, testService, wildcardSvc, nil, &SharedInfra{})
+		if !errors.Is(err, errWildcardNeedsProject) {
+			t.Errorf("CreateWildcardDomain(no front door) err = %v, want %v", err, errWildcardNeedsProject)
 		}
 
 		// No wildcard hostname: nothing to do even with a Front Door present.
-		got, err = CreateWildcardDomain(ctx, testService, plainSvc, nil, &SharedInfra{FrontDoor: &FrontDoorInfra{}})
+		got, err := CreateWildcardDomain(ctx, testService, plainSvc, nil, &SharedInfra{FrontDoor: &FrontDoorInfra{}})
 		if err != nil {
 			t.Errorf("CreateWildcardDomain(no wildcard) err: %v", err)
 		}

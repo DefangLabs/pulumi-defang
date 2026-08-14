@@ -72,9 +72,12 @@ func ServiceFQDN(serviceName string, svc compose.ServiceConfig, publicDomain, pr
 // of the name that follows it, e.g. "*.example.com".
 const WildcardPrefix = "*."
 
-// IsWildcardHost reports whether hostname is a wildcard hostname.
+// IsWildcardHost reports whether hostname is a wildcard hostname. A bare "*."
+// isn't one: it stands for nothing, and passing it on as a domain would have a
+// cloud reject it — or worse, accept it.
 func IsWildcardHost(hostname string) bool {
-	return strings.HasPrefix(hostname, WildcardPrefix)
+	base, found := strings.CutPrefix(hostname, WildcardPrefix)
+	return found && base != ""
 }
 
 // ByodHostnames returns the bring-your-own-domain hostnames a service asks to be

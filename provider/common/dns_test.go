@@ -209,6 +209,8 @@ func TestIsWildcardHost(t *testing.T) {
 		// is just an invalid hostname, not a pattern.
 		{"a.*.example.com", false},
 		{"*", false},
+		// "*." stands for nothing; it is not a wildcard for the empty domain.
+		{"*.", false},
 	}
 	for _, tt := range tests {
 		if got := IsWildcardHost(tt.input); got != tt.want {
