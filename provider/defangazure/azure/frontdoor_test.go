@@ -3,10 +3,17 @@ package azure
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-azure-native-sdk/cdn/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/dns/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -212,13 +219,13 @@ func TestFrontDoorShortCircuits(t *testing.T) {
 		// A wildcard with no Front Door to serve it is the standalone Service
 		// path. Failing beats deploying a service configured for a hostname that
 		// nothing will answer on.
-		_, err = CreateWildcardDomain(ctx, testService, wildcardSvc, nil, &SharedInfra{})
+		_, err = CreateWildcardDomain(ctx, testService, wildcardSvc, nil, &SharedInfra{}, nil)
 		if !errors.Is(err, errWildcardNeedsProject) {
 			t.Errorf("CreateWildcardDomain(no front door) err = %v, want %v", err, errWildcardNeedsProject)
 		}
 
 		// No wildcard hostname: nothing to do even with a Front Door present.
-		got, err := CreateWildcardDomain(ctx, testService, plainSvc, nil, &SharedInfra{FrontDoor: &FrontDoorInfra{}})
+		got, err := CreateWildcardDomain(ctx, testService, plainSvc, nil, &SharedInfra{FrontDoor: &FrontDoorInfra{}}, nil)
 		if err != nil {
 			t.Errorf("CreateWildcardDomain(no wildcard) err: %v", err)
 		}
@@ -230,4 +237,190 @@ func TestFrontDoorShortCircuits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pulumi.RunErr: %v", err)
 	}
+}
+
+// TestWildcardZoneTarget covers which zone a wildcard's two records land in.
+// The delegate-domain zone wins when it holds the name — the provider owns it, so
+// the records are torn down with the project. Otherwise the BYOD zone the CD task
+// resolved is used, which is what makes a wildcard live in a zone Defang didn't
+// create (e.g. an Azure zone delegated from Route 53). With neither, the caller
+// falls back to printing the records for the operator.
+func TestWildcardZoneTarget(t *testing.T) {
+	const byodZoneID = "/subscriptions/s/resourceGroups/byod-rg/providers/Microsoft.Network/dnszones/" + testHost
+
+	tests := []struct {
+		name         string
+		base         string
+		delegate     string
+		withZone     bool // delegate zone imported into state
+		dnsZoneID    string
+		wantLabel    string
+		wantByodZone string // set when the resolved zone is the literal BYOD one
+		wantResolved bool
+	}{
+		{
+			name: "delegate zone holds the name",
+			base: testHost, delegate: testZone, withZone: true,
+			wantLabel: testService, wantResolved: true,
+		},
+		{
+			name: "byod zone at its apex",
+			base: testHost, dnsZoneID: byodZoneID,
+			wantLabel: "@", wantByodZone: testHost, wantResolved: true,
+		},
+		{
+			// The delegate domain is configured but its zone was never imported
+			// (the standalone path), so records can't be ordered against it.
+			name: "delegate domain without an imported zone falls through to byod",
+			base: testHost, delegate: testZone, dnsZoneID: byodZoneID,
+			wantLabel: "@", wantByodZone: testHost, wantResolved: true,
+		},
+		{
+			name: "delegate zone preferred over byod",
+			base: testHost, delegate: testZone, withZone: true, dnsZoneID: byodZoneID,
+			wantLabel: testService, wantResolved: true,
+		},
+		{
+			// A wildcard alias pointing outside the zone resolved for the service's
+			// own domainname: nothing reachable here can host it.
+			name: "byod zone can't host the name",
+			base: "auth.other.com", dnsZoneID: byodZoneID,
+		},
+		{name: "no zone at all", base: testHost},
+		{name: "unparseable byod zone id", base: testHost, dnsZoneID: "garbage"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				infra := &SharedInfra{Domain: tt.delegate}
+				if tt.withZone {
+					rg, err := resources.NewResourceGroup(ctx, "rg", &resources.ResourceGroupArgs{})
+					require.NoError(t, err)
+					zone, err := dns.NewZone(ctx, "zone", &dns.ZoneArgs{
+						ResourceGroupName: rg.Name,
+						ZoneName:          pulumi.String(tt.delegate),
+					})
+					require.NoError(t, err)
+					infra.ResourceGroup, infra.DomainZone = rg, zone
+				}
+
+				_, zoneName, label, ok := wildcardZoneTarget(tt.base, infra, tt.dnsZoneID)
+				require.Equal(t, tt.wantResolved, ok, "resolved")
+				if !ok {
+					return nil
+				}
+				assert.Equal(t, tt.wantLabel, label)
+				if tt.wantByodZone != "" {
+					// The BYOD zone is a plain string parsed out of the ARM id.
+					assert.Equal(t, pulumi.String(tt.wantByodZone), zoneName)
+				} else {
+					// The delegate zone is referenced through the imported
+					// resource, so records order against it rather than racing it.
+					assert.NotEqual(t, pulumi.String(tt.delegate), zoneName,
+						"delegate zone must be referenced by resource, not by literal name")
+				}
+				return nil
+			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestWildcardZoneTargetNilInfra pins the standalone-caller guard: no infra means
+// no zone to write into, and certainly no panic.
+func TestWildcardZoneTargetNilInfra(t *testing.T) {
+	rgName, zoneName, label, ok := wildcardZoneTarget(testHost, nil, "")
+	assert.False(t, ok, "nil infra must resolve no zone")
+	assert.Nil(t, rgName)
+	assert.Nil(t, zoneName)
+	assert.Empty(t, label)
+}
+
+// TestPublishValidationByodZone is the end-to-end shape of the portal case: the
+// wildcard's zone is one the CD task found (not the delegate domain), so both
+// records must be written into it — the `_dnsauth` TXT and the `*` CNAME, named
+// relative to that zone. Before this, they were only ever logged.
+func TestPublishValidationByodZone(t *testing.T) {
+	const byodZoneID = "/subscriptions/s/resourceGroups/byod-rg/providers/Microsoft.Network/dnszones/" + testZone
+
+	m := &recordZoneMocks{byRelative: map[string]recordZone{}}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		domain, err := cdn.NewAFDCustomDomain(ctx, "domain", &cdn.AFDCustomDomainArgs{
+			ResourceGroupName: pulumi.String("rg"),
+			ProfileName:       pulumi.String("profile"),
+			HostName:          pulumi.String(testWildcard),
+		})
+		require.NoError(t, err)
+		endpoint, err := cdn.NewAFDEndpoint(ctx, "endpoint", &cdn.AFDEndpointArgs{
+			ResourceGroupName: pulumi.String("rg"),
+			ProfileName:       pulumi.String("profile"),
+		})
+		require.NoError(t, err)
+
+		records, err := publishValidation(ctx, testService, testWildcard, domain,
+			&FrontDoorInfra{Endpoint: endpoint}, &SharedInfra{}, byodZoneID)
+		require.NoError(t, err)
+		require.Len(t, records, 2, "both records must be written into the resolved zone")
+		return nil
+	}, pulumi.WithMocks("project", "stack", m))
+	require.NoError(t, err)
+
+	assert.Equal(t, map[string]recordZone{
+		dnsAuthPrefix + "." + testService: {recordType: "TXT", zone: testZone, resourceGroup: "byod-rg"},
+		"*." + testService:                {recordType: "CNAME", zone: testZone, resourceGroup: "byod-rg"},
+	}, m.byRelative)
+}
+
+// TestPublishValidationNoZone keeps the warn-and-degrade path: with no zone this
+// deployment can write to, the records are logged and none are created.
+func TestPublishValidationNoZone(t *testing.T) {
+	m := &recordZoneMocks{byRelative: map[string]recordZone{}}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		domain, err := cdn.NewAFDCustomDomain(ctx, "domain", &cdn.AFDCustomDomainArgs{
+			ResourceGroupName: pulumi.String("rg"),
+			ProfileName:       pulumi.String("profile"),
+			HostName:          pulumi.String(testWildcard),
+		})
+		require.NoError(t, err)
+		endpoint, err := cdn.NewAFDEndpoint(ctx, "endpoint", &cdn.AFDEndpointArgs{
+			ResourceGroupName: pulumi.String("rg"),
+			ProfileName:       pulumi.String("profile"),
+		})
+		require.NoError(t, err)
+
+		records, err := publishValidation(ctx, testService, testWildcard, domain,
+			&FrontDoorInfra{Endpoint: endpoint}, &SharedInfra{}, "")
+		require.NoError(t, err)
+		assert.Empty(t, records)
+		return nil
+	}, pulumi.WithMocks("project", "stack", m))
+	require.NoError(t, err)
+	assert.Empty(t, m.byRelative, "no zone to write to means no records")
+}
+
+// recordZone is what a created DNS record set is asserted on: its type and the
+// zone (and resource group) it was written into.
+type recordZone struct {
+	recordType    string
+	zone          string
+	resourceGroup string
+}
+
+// recordZoneMocks captures every dns RecordSet by its relative name.
+type recordZoneMocks struct{ byRelative map[string]recordZone }
+
+func (m *recordZoneMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if strings.HasSuffix(args.TypeToken, ":RecordSet") {
+		m.byRelative[args.Inputs["relativeRecordSetName"].StringValue()] = recordZone{
+			recordType:    args.Inputs["recordType"].StringValue(),
+			zone:          args.Inputs["zoneName"].StringValue(),
+			resourceGroup: args.Inputs["resourceGroupName"].StringValue(),
+		}
+	}
+	return args.Name + "_id", args.Inputs, nil
+}
+
+func (recordZoneMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
 }

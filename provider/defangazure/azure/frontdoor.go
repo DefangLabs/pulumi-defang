@@ -28,12 +28,12 @@
 //
 // Two DNS records make a wildcard domain live: a TXT at `_dnsauth.<label>`
 // carrying the validation token, and a wildcard CNAME at `*.<label>` pointing at
-// the Front Door endpoint. The provider writes both itself when the hostname
-// sits under the project's delegate domain, whose zone it owns. A BYOD hostname
-// usually lives in a zone the deployment can't reach — another subscription, or
-// another cloud's DNS entirely — so there it logs the two records and leaves
-// them to the operator, the same warn-and-degrade rule the AWS BYOD path
-// follows. No CAA record is written: Front Door only needs one where the zone
+// the Front Door endpoint. The provider writes both itself into whichever zone it
+// can reach: the project's delegate-domain zone, which it owns, or a BYOD zone
+// the CD task found in the deploy subscription (FindZone). A hostname whose zone
+// is in neither place — another subscription, or another cloud's DNS entirely —
+// gets the two records logged for the operator instead, the same
+// warn-and-degrade rule the AWS BYOD path follows. No CAA record is written: Front Door only needs one where the zone
 // already restricts issuance, and adding a CAA where none exists would restrict
 // every other certificate in the zone.
 //
@@ -100,9 +100,10 @@ type WildcardDomainResult struct {
 	// Domains holds one AFDCustomDomain per wildcard hostname, in the order the
 	// hostnames appear in the service's compose config.
 	Domains []*cdn.AFDCustomDomain
-	// Records holds the DNS record sets written into the delegate-domain zone.
-	// Empty when the hostnames live in a zone this deployment doesn't own, in
-	// which case the records were logged for the operator instead.
+	// Records holds the DNS record sets written into the zone that hosts the
+	// hostnames — the delegate-domain zone or a resolved BYOD zone. Empty when
+	// neither can host them, in which case the records were logged for the
+	// operator instead.
 	Records []*dns.RecordSet
 }
 
@@ -190,6 +191,7 @@ func CreateWildcardDomain(
 	svc compose.ServiceConfig,
 	containerApp *app.ContainerApp,
 	infra *SharedInfra,
+	dnsZones map[string]string,
 	opts ...pulumi.ResourceOption,
 ) (*WildcardDomainResult, error) {
 	hostnames := wildcardHostnames(svc)
@@ -269,7 +271,8 @@ func CreateWildcardDomain(
 		result.Domains = append(result.Domains, domain)
 		domainRefs = append(domainRefs, &cdn.ActivatedResourceReferenceArgs{Id: domain.ID()})
 
-		records, err := publishValidation(ctx, serviceName, hostname, domain, fd, infra, opts...)
+		records, err := publishValidation(
+			ctx, serviceName, hostname, domain, fd, infra, dnsZones[hostname], opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -307,16 +310,18 @@ func CreateWildcardDomain(
 // the `_dnsauth.<label>` TXT carrying Front Door's validation token, and the
 // `*.<label>` CNAME pointing at the Front Door endpoint.
 //
-// It writes them when the hostname sits inside the project's delegate-domain
-// zone, which the provider owns. Otherwise it logs them — with the token, once
-// Front Door has issued it — and returns no records, leaving the operator to add
-// them wherever the zone actually lives.
+// It writes them into whichever zone this deployment can reach: the project's
+// delegate-domain zone, which the provider owns, or the BYOD zone the CD task
+// found in the subscription (dnsZoneID, see FindZone). With neither it logs them
+// — with the token, once Front Door has issued it — and returns no records,
+// leaving the operator to add them wherever the zone actually lives.
 func publishValidation(
 	ctx *pulumi.Context,
 	serviceName, hostname string,
 	domain *cdn.AFDCustomDomain,
 	fd *FrontDoorInfra,
 	infra *SharedInfra,
+	dnsZoneID string,
 	opts ...pulumi.ResourceOption,
 ) ([]*dns.RecordSet, error) {
 	token := domain.ValidationProperties.ValidationToken()
@@ -324,14 +329,12 @@ func publishValidation(
 	// "*.auth.example.com" validates via _dnsauth.auth.example.com.
 	base := strings.TrimPrefix(hostname, common.WildcardPrefix)
 
-	label, inZone := relativeRecordName(base, infra.Domain)
-	if !inZone || infra.DomainZone == nil {
+	rgName, zoneName, label, ok := wildcardZoneTarget(base, infra, dnsZoneID)
+	if !ok {
 		logManualRecords(ctx, serviceName, hostname, base, token, fd.Endpoint.HostName)
 		return nil, nil
 	}
 
-	rgName := infra.ResourceGroup.Name
-	zoneName := infra.DomainZone.Name
 	tags := ServiceTags(serviceName)
 
 	auth, err := dns.NewRecordSet(ctx, serviceName+"-"+common.SafeLabel(base)+"-dnsauth", &dns.RecordSetArgs{
@@ -363,6 +366,36 @@ func publishValidation(
 	}
 
 	return []*dns.RecordSet{auth, cname}, nil
+}
+
+// wildcardZoneTarget picks the zone the wildcard's records go into and names
+// them relative to it, given the domain being validated (the hostname with its
+// "*." stripped). Reports false when no reachable zone can host them, which
+// leaves the records to the operator.
+//
+// The delegate-domain zone is preferred: the provider created it, so records in
+// it are torn down with the project. The BYOD zone found by the CD task comes
+// second — this deployment writes records into it but does not own it, so they
+// outlive nothing else. Only the zone resolved for the service's own
+// `domainname` is considered, so a wildcard alias pointing outside that zone
+// still falls through to the manual path.
+func wildcardZoneTarget(
+	base string,
+	infra *SharedInfra,
+	dnsZoneID string,
+) (pulumi.StringInput, pulumi.StringInput, string, bool) {
+	if infra == nil {
+		return nil, nil, "", false
+	}
+	if label, inZone := relativeRecordName(base, infra.Domain); inZone && infra.DomainZone != nil {
+		return infra.ResourceGroup.Name, infra.DomainZone.Name, label, true
+	}
+	if byodRG, byodZone, parsed := parseDNSZoneID(dnsZoneID); parsed {
+		if label, inZone := relativeRecordName(base, byodZone); inZone {
+			return pulumi.String(byodRG), pulumi.String(byodZone), label, true
+		}
+	}
+	return nil, nil, "", false
 }
 
 // logManualRecords prints the two records the operator has to add for a wildcard

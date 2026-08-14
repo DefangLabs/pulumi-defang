@@ -41,6 +41,7 @@ func NewService(ctx *pulumi.Context,
 type serviceArgs struct {
 	Command     []string                    `pulumi:"command"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
+	DnsZones    map[string]string           `pulumi:"dnsZones"`
 	DomainName  *string                     `pulumi:"domainName"`
 	Entrypoint  []string                    `pulumi:"entrypoint"`
 	Environment map[string]string           `pulumi:"environment"`
@@ -55,6 +56,7 @@ type serviceArgs struct {
 type ServiceArgs struct {
 	Command     pulumi.StringArrayInput
 	Deploy      compose.DeployConfigPtrInput
+	DnsZones    pulumi.StringMapInput
 	DomainName  *string
 	Entrypoint  pulumi.StringArrayInput
 	Environment pulumi.StringMapInput
