@@ -68,6 +68,26 @@ func ServiceFQDN(serviceName string, svc compose.ServiceConfig, publicDomain, pr
 	return ""
 }
 
+// WildcardPrefix marks a hostname that stands for every single-level subdomain
+// of the name that follows it, e.g. "*.example.com".
+const WildcardPrefix = "*."
+
+// IsWildcardHost reports whether hostname is a wildcard hostname.
+func IsWildcardHost(hostname string) bool {
+	return strings.HasPrefix(hostname, WildcardPrefix)
+}
+
+// ByodHostnames returns the bring-your-own-domain hostnames a service asks to be
+// reachable on: its `domainname`, followed by the aliases on its default
+// network. A service with no `domainname` gets nil even when it has aliases —
+// aliases extend a BYOD request, they don't make one.
+func ByodHostnames(svc compose.ServiceConfig) []string {
+	if svc.DomainName == "" {
+		return nil
+	}
+	return append([]string{svc.DomainName}, svc.DefaultNetwork().Aliases...)
+}
+
 // https://www.rfc-editor.org/rfc/rfc6762#appendix-G and https://www.rfc-editor.org/rfc/rfc8375
 var privateZoneRegex = regexp.MustCompile(`(?i)\b(intranet|internal|private|corp|home|home\.arpa|lan|local)\.?$`)
 

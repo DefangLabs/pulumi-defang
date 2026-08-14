@@ -184,12 +184,11 @@ func createCertsAndRoute53Dns(
 	if infra == nil || infra.HttpsListener == nil || infra.Alb == nil {
 		return nil
 	}
-	if svc.DomainName == "" {
+	// Collect all BYOD hostnames: domainname + network aliases
+	hostnames := common.ByodHostnames(svc)
+	if len(hostnames) == 0 {
 		return nil
 	}
-
-	// Collect all BYOD hostnames: domainname + network aliases
-	hostnames := append([]string{svc.DomainName}, svc.DefaultNetwork().Aliases...)
 
 	// Group hostnames that share the same validation record onto one cert
 	certGroups := groupHostnamesByCert(hostnames)

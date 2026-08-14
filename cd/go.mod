@@ -163,6 +163,7 @@ require (
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.17.0 // indirect

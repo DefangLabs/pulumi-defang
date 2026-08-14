@@ -195,3 +195,81 @@ func TestGetZoneName(t *testing.T) {
 		}
 	}
 }
+
+func TestIsWildcardHost(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"*.example.com", true},
+		{"*.a.b.example.com", true},
+		{"example.com", false},
+		{"", false},
+		// A wildcard is only a wildcard as the leftmost label; anywhere else it
+		// is just an invalid hostname, not a pattern.
+		{"a.*.example.com", false},
+		{"*", false},
+	}
+	for _, tt := range tests {
+		if got := IsWildcardHost(tt.input); got != tt.want {
+			t.Errorf("IsWildcardHost(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestByodHostnames(t *testing.T) {
+	withAliases := func(aliases ...string) map[compose.NetworkID]compose.ServiceNetworkConfig {
+		return map[compose.NetworkID]compose.ServiceNetworkConfig{
+			compose.DefaultNetwork: {Aliases: aliases},
+		}
+	}
+
+	tests := []struct {
+		name string
+		svc  compose.ServiceConfig
+		want []string
+	}{
+		{
+			name: "no domainname yields nothing even with aliases",
+			svc:  compose.ServiceConfig{Networks: withAliases("alias.example.com")},
+			want: nil,
+		},
+		{
+			name: "domainname alone",
+			svc:  compose.ServiceConfig{DomainName: "auth.example.com"},
+			want: []string{"auth.example.com"},
+		},
+		{
+			name: "domainname comes first, then aliases in order",
+			svc: compose.ServiceConfig{
+				DomainName: "auth.example.com",
+				Networks:   withAliases("*.auth.example.com", "login.example.com"),
+			},
+			want: []string{"auth.example.com", "*.auth.example.com", "login.example.com"},
+		},
+		{
+			name: "aliases on a non-default network are ignored",
+			svc: compose.ServiceConfig{
+				DomainName: "auth.example.com",
+				Networks: map[compose.NetworkID]compose.ServiceNetworkConfig{
+					"internal": {Aliases: []string{"*.internal.example.com"}},
+				},
+			},
+			want: []string{"auth.example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ByodHostnames(tt.svc)
+			if len(got) != len(tt.want) {
+				t.Fatalf("ByodHostnames() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("ByodHostnames() = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
