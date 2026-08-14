@@ -36,6 +36,11 @@ func TestBestZoneMatch(t *testing.T) {
 		{name: "no match", domain: "elsewhere.net", want: ""},
 		{name: "suffix but not a DNS parent", domain: "notexample.com", want: ""},
 		{name: "zone name embedded in another domain", domain: "example.com.evil.com", want: ""},
+		// A wildcard hostname resolves to the zone that holds the name it stands
+		// for, so Front Door's validation TXT and wildcard CNAME land there
+		// (see publishValidation).
+		{name: "wildcard under a zone", domain: "*.api.example.com", want: "example.com"},
+		{name: "wildcard directly under the apex", domain: "*.example.com", want: "example.com"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

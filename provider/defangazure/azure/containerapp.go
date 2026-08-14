@@ -380,8 +380,10 @@ func createAppDomains(
 	}
 
 	// Wildcard hostnames bypass Container Apps entirely — it binds one hostname
-	// at a time — and are served by the project's Front Door instead.
-	wildcardDomain, err := CreateWildcardDomain(ctx, serviceName, svc, containerApp, infra, opts...)
+	// at a time — and are served by the project's Front Door instead. The zone
+	// resolved above also holds their validation TXT and wildcard CNAME when it
+	// can host them.
+	wildcardDomain, err := CreateWildcardDomain(ctx, serviceName, svc, containerApp, infra, dnsZoneID, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating wildcard domain for %s: %w", serviceName, err)
 	}

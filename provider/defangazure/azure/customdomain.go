@@ -216,6 +216,14 @@ func CreateByodDomain(
 	if svc.DomainName == "" || dnsZoneID == "" || !svc.HasIngressPorts() {
 		return nil, nil //nolint:nilnil // nothing to provision; caller treats nil as "skipped"
 	}
+	// A wildcard domainname belongs to Front Door, not Container Apps: ACA binds
+	// one hostname at a time and has no wildcard binding at all, so a CNAME at
+	// "*" aimed at the app would shadow the record Front Door needs while
+	// answering 404, and an "asuid.*" TXT would validate nothing. See
+	// CreateWildcardDomain, which writes that pair into this same zone.
+	if common.IsWildcardHost(svc.DomainName) {
+		return nil, nil //nolint:nilnil // Front Door owns wildcard hostnames; caller treats nil as "skipped"
+	}
 
 	rgName, zoneName, ok := parseDNSZoneID(dnsZoneID)
 	if !ok {
@@ -330,8 +338,11 @@ func createAsuidTXT(
 // scheduler enqueues a managed-cert job only for hostnames whose records will
 // actually exist (otherwise aca.IssueCert waits out its DNS timeout for nothing).
 // Callers must also confirm the service has public ingress.
+//
+// A wildcard hostname is never eligible: Container Apps cannot bind one, so its
+// certificate comes from Front Door's managed wildcard cert instead.
 func ByodRecordEligible(domain, dnsZoneID string) bool {
-	if domain == "" || dnsZoneID == "" {
+	if domain == "" || dnsZoneID == "" || common.IsWildcardHost(domain) {
 		return false
 	}
 	_, zoneName, ok := parseDNSZoneID(dnsZoneID)

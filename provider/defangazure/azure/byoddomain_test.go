@@ -50,25 +50,8 @@ func TestParseDNSZoneID(t *testing.T) {
 	}
 }
 
-func TestRelativeRecordName(t *testing.T) {
-	tests := []struct {
-		domain, zone, want string
-		wantOK             bool
-	}{
-		{"api.example.com", "example.com", "api", true},
-		{"a.b.example.com", "example.com", "a.b", true},
-		{"API.Example.com", "example.com", "API", true}, // case-insensitive suffix, original case preserved
-		{"example.com", "example.com", "", false},       // apex has no relative name
-		{"other.com", "example.com", "", false},         // not in zone
-	}
-	for _, tt := range tests {
-		got, ok := relativeRecordName(tt.domain, tt.zone)
-		if ok != tt.wantOK || got != tt.want {
-			t.Errorf("relativeRecordName(%q,%q) = (%q,%v), want (%q,%v)", tt.domain, tt.zone, got, ok, tt.want, tt.wantOK)
-		}
-	}
-}
-
+// relativeRecordName is covered by TestRelativeRecordName in frontdoor_test.go,
+// which owns the helper.
 func TestIsApexDomain(t *testing.T) {
 	tests := []struct {
 		domain, zone string
@@ -99,6 +82,11 @@ func TestByodRecordEligible(t *testing.T) {
 		{name: "no domain", domain: "", zone: zoneID, want: false},
 		{name: "no zone", domain: "api.example.com", zone: "", want: false},
 		{name: "unparseable zone", domain: "api.example.com", zone: "garbage", want: false},
+		// Container Apps has no wildcard binding, so a wildcard hostname's cert
+		// comes from Front Door instead — enqueuing an ACA cert job for it would
+		// wait out the full DNS timeout for records this path never writes.
+		{name: "wildcard subdomain", domain: "*.api.example.com", zone: zoneID, want: false},
+		{name: "wildcard at apex", domain: "*.example.com", zone: zoneID, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -127,6 +115,10 @@ func TestCreateByodDomainShortCircuits(t *testing.T) {
 		{name: "no ingress", svc: compose.ServiceConfig{DomainName: "api.example.com"}, zoneID: zoneID},
 		{name: "unparseable zone", svc: compose.ServiceConfig{DomainName: "api.example.com", Ports: ingress}, zoneID: "garbage"},
 		{name: "domain not in zone", svc: compose.ServiceConfig{DomainName: "api.other.com", Ports: ingress}, zoneID: zoneID},
+		// A wildcard domainname is Front Door's to serve: writing a CNAME at "*"
+		// aimed at the Container App would shadow the record Front Door needs and
+		// answer 404 on every subdomain.
+		{name: "wildcard domainname", svc: compose.ServiceConfig{DomainName: "*.api.example.com", Ports: ingress}, zoneID: zoneID},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
