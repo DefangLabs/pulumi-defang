@@ -31,6 +31,18 @@ runs:
         node-version: 24.x # should match the version in shell.nix
         registry-url: https://registry.npmjs.org
 
+    - if: ${{ inputs.language == 'nodejs' }}
+      name: Export placeholder NODE_AUTH_TOKEN
+      shell: bash
+      # setup-node's registry-url writes an .npmrc with _authToken=${NODE_AUTH_TOKEN}.
+      # Up to v6 the action exported a placeholder token so unauthenticated commands
+      # (yarn install, OIDC npm publish) could still expand it; v7 removed that
+      # (actions/setup-node PR 1558), so we restore it here.
+      run: |
+        if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+          echo "NODE_AUTH_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX" >> "$GITHUB_ENV"
+        fi
+
     - if: ${{ inputs.language == 'dotnet' }}
       name: Setup DotNet
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
