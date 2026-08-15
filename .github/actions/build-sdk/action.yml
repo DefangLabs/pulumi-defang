@@ -20,7 +20,7 @@ runs:
 
     - if: ${{ inputs.language == 'nodejs' }}
       name: Setup Node
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
       with:
         # Node 24 ships with npm 11, which supports OIDC Trusted Publishers natively.
         # We upgraded from Node 22 because the Node 22.22.2 tool cache on the ubuntu-24.04
@@ -33,13 +33,13 @@ runs:
 
     - if: ${{ inputs.language == 'dotnet' }}
       name: Setup DotNet
-      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v5
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
       with:
         dotnet-version: 8.0.x # should match the version in shell.nix
 
     - if: ${{ inputs.language == 'python' }}
       name: Setup Python
-      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
       with:
         python-version: "3.12" # should match the version in shell.nix
 
