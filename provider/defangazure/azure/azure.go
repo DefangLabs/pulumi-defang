@@ -39,6 +39,10 @@ type SharedInfra struct {
 	// EnsureDomainZone so that `defang compose down` deletes it (and its records)
 	// instead of orphaning it in the resource group. Nil when Domain is empty.
 	DomainZone *dns.Zone
+	// FrontDoor is the project's Azure Front Door profile and endpoint, which
+	// serve the wildcard hostnames Container Apps can't bind. Nil unless some
+	// service asks for one — see frontdoor.go.
+	FrontDoor *FrontDoorInfra
 }
 
 // BaseTags returns the project-wide tag map: defang-project (Pulumi project),

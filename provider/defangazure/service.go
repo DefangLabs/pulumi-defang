@@ -38,6 +38,15 @@ type ServiceInputs struct {
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
 	DomainName  string                      `pulumi:"domainName,optional"`
+	// DnsZones maps each of the service's BYOD hostnames — its DomainName and any
+	// aliases on its default network — to the ARM resource ID of the public Azure
+	// DNS zone (in the current subscription) that hosts it, as resolved by the CD
+	// task (cd/program/azure.go findByodZones). Hostnames present here get their
+	// routing + asuid TXT records written into that customer-owned zone (BYOD),
+	// enabling a managed cert; hostnames absent from it take the ACME /
+	// delegate-domain path instead. Keyed by hostname, not by service, because one
+	// service's hostnames need not share a zone.
+	DnsZones map[string]string `pulumi:"dnsZones,optional"`
 
 	// Infra is an optional shared Azure project infrastructure. When non-nil, the
 	// Service reuses it (resource group, managed environment, networking, DNS,
@@ -96,7 +105,7 @@ func (*Service) Construct(
 		}
 	}
 
-	if err := createContainerApp(ctx, comp, name, svc, infra, inputs.Image, nil, nil); err != nil {
+	if err := createContainerApp(ctx, comp, name, svc, infra, inputs.Image, nil, nil, inputs.DnsZones); err != nil {
 		return nil, err
 	}
 	return comp, nil
@@ -135,6 +144,7 @@ func createContainerApp(
 	imageURI pulumi.StringInput,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	dnsZones map[string]string,
 ) error {
 	// Policies aren't supported on Azure yet. Entries a stack leaves empty
 	// ("${EXTRA:-}") normalize away, so a compose file parameterized per
@@ -148,7 +158,7 @@ func createContainerApp(
 		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)
 	}
 	caResult, err := azure.CreateContainerApp(
-		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, pulumi.Parent(comp),
+		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones, pulumi.Parent(comp),
 	)
 	if err != nil {
 		return fmt.Errorf("creating Container App %s: %w", serviceName, err)

@@ -17,11 +17,6 @@ updates:
       github-actions:
         patterns:
           - "*"
-    ignore:
-      # Only major version bumps; security advisories always bypass ignore rules.
-      - dependency-name: "*"
-        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
-
   # Explicit gomod directories override GitHub's auto-discovery, which would
   # otherwise open PRs against generated code under /sdk and /examples.
   - package-ecosystem: "gomod"
