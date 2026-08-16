@@ -47,10 +47,10 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 			return err
 		}
 
-		if ttl > 0 && provider != "azure" {
+		if ttl > 0 && provider == "gcp" {
 			// Erroring (not warning) is deliberate: a stack that silently
 			// outlives its requested TTL is the failure mode this feature
-			// exists to prevent. Remove per cloud as support lands.
+			// exists to prevent. Remove once GCP support lands.
 			return fmt.Errorf("defang:ttl is not supported on %s yet", provider)
 		}
 
@@ -59,7 +59,7 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, ttl, projectUpdate)
 		case "gcp":
 			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectUpdate)
 		case "azure":

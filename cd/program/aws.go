@@ -3,6 +3,7 @@ package program
 import (
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -17,7 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, ttl time.Duration, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &aws.ProviderArgs{
 		Region: pulumi.String(config.GetRegion(ctx)),
 		DefaultTags: &aws.ProviderDefaultTagsArgs{
@@ -54,6 +55,15 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, pr
 	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Provider(awsProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Self-destruct: schedule this stack's own `defang cd down` at now + TTL.
+	// Registered independently of the project component (see
+	// createAWSSelfDestruct for why); every redeploy rewrites the schedule.
+	if ttl > 0 {
+		if err := createAWSSelfDestruct(ctx, cf, ttl, pulumi.Provider(awsProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed S3 object, gated on
