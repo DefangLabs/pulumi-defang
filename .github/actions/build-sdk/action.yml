@@ -20,7 +20,7 @@ runs:
 
     - if: ${{ inputs.language == 'nodejs' }}
       name: Setup Node
-      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
       with:
         # Node 24 ships with npm 11, which supports OIDC Trusted Publishers natively.
         # We upgraded from Node 22 because the Node 22.22.2 tool cache on the ubuntu-24.04
@@ -29,17 +29,23 @@ runs:
         # See: https://github.com/actions/runner-images/issues/13883
         #      https://github.com/nodejs/node/pull/62463
         node-version: 24.x # should match the version in shell.nix
-        registry-url: https://registry.npmjs.org
+        # No registry-url here on purpose. It makes setup-node write an .npmrc
+        # with _authToken=${NODE_AUTH_TOKEN}, and npm/yarn fail on the unresolved
+        # var whenever NODE_AUTH_TOKEN isn't set. This repo never sets it: the
+        # release workflow publishes to npm via OIDC Trusted Publishers, which
+        # needs only `id-token: write` and no .npmrc token at all. Re-add
+        # registry-url only alongside a real NODE_AUTH_TOKEN secret if we ever
+        # move off Trusted Publishers.
 
     - if: ${{ inputs.language == 'dotnet' }}
       name: Setup DotNet
-      uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
       with:
         dotnet-version: 8.0.x # should match the version in shell.nix
 
     - if: ${{ inputs.language == 'python' }}
       name: Setup Python
-      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
       with:
         python-version: "3.12" # should match the version in shell.nix
 
