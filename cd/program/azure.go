@@ -23,7 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, ttl time.Duration, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &pulumiazure.ProviderArgs{
 		Location:                  pulumi.String(config.GetLocation(ctx)),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
@@ -77,6 +77,16 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 		// the ApplyT before its side effects complete. The value is empty by
 		// design — we only care about the dependency edge.
 		ctx.Export("azureDelegateDomainCerts", certsDone)
+	}
+
+	// Self-destruct: schedule this stack's own `defang cd down` at now + TTL.
+	// Depends on the project component so the trigger lands in the (then
+	// existing) project resource group; every redeploy rewrites the schedule,
+	// extending the stack's life.
+	if ttl > 0 {
+		if err := createAzureSelfDestruct(ctx, cf, ttl, project, pulumi.Provider(azureProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed Azure Blob, gated on
@@ -416,10 +426,10 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 		return fmt.Errorf("DEFANG_STATE_URL %q missing storage_account", u.String())
 	}
 
-	// The CD storage account lives in the shared CD resource group, named
-	// `defang-cd` (single per subscription, location-independent —
-	// see defang/src/pkg/clouds/azure/cd/driver.go).
-	cdRG := "defang-cd"
+	// The CD storage account lives in the shared CD resource group (single
+	// per subscription, location-independent — see
+	// defang/src/pkg/clouds/azure/cd/driver.go).
+	cdRG := CdResourceGroup
 
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
 		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))

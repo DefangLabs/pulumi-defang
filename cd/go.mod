@@ -13,6 +13,7 @@ replace (
 require (
 	cloud.google.com/go/storage v1.61.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3 v3.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
 	github.com/DefangLabs/defang/src v0.0.0-20260602151443-3dfee3663c47
 	github.com/DefangLabs/pulumi-defang v0.0.0-00010101000000-000000000000
@@ -23,6 +24,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.41.0
+	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.34.0
@@ -45,7 +48,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers v1.1.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3 v3.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0 // indirect
@@ -161,8 +163,6 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.17.0 // indirect

@@ -97,6 +97,10 @@ func cdMain(ctx context.Context, args ...string) error {
 	case client.CdCommandList:
 		// List doesn't need a real stack, but select something so we can call ListStacks on the workspace.
 		stack, _ = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
+	case cdCommandTriggerDown:
+		// No Pulumi stack: only starts a regular down execution on the
+		// shared CD job (Azure self-destruct; see triggerdown.go).
+		return triggerDown(ctx)
 	default:
 		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
 	}

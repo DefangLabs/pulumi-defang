@@ -33,6 +33,10 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		if etag == "" {
 			etag = defangCfg.Get("etag")
 		}
+		ttl, err := parseTTL(defangCfg.Get("ttl")) // optional self-destruct; 0 = never
+		if err != nil {
+			return err
+		}
 
 		if len(projectUpdate.Compose) == 0 {
 			return errors.New("ProjectUpdate has no compose field")
@@ -41,6 +45,13 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		project, err := parseCompose(projectUpdate.Compose, ctx.Project())
 		if err != nil {
 			return err
+		}
+
+		if ttl > 0 && provider != "azure" {
+			// Erroring (not warning) is deliberate: a stack that silently
+			// outlives its requested TTL is the failure mode this feature
+			// exists to prevent. Remove per cloud as support lands.
+			return fmt.Errorf("defang:ttl is not supported on %s yet", provider)
 		}
 
 		var endpoints pulumi.StringMapOutput
@@ -52,7 +63,7 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		case "gcp":
 			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectUpdate)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, ttl, projectUpdate)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
 		}

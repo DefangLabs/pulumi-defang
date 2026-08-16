@@ -218,6 +218,12 @@ func addStackConfigFromEnv(config configMap) error {
 	if domain != "" {
 		config["defang:domain"] = configValue{Value: domain}
 	}
+	// Self-destruct TTL: the deployment schedules its own `down` at
+	// deploy time + TTL. Set per stack (stack file or `--ttl`), never in the
+	// compose file. Parsed and enforced by the program (see program.parseTTL).
+	if ttl := os.Getenv("DEFANG_TTL"); ttl != "" {
+		config["defang:ttl"] = configValue{Value: ttl}
+	}
 	return nil
 }
 
