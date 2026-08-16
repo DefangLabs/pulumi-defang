@@ -60,16 +60,6 @@ func TestAzureSelfDestructJobArgs(t *testing.T) {
 		t.Errorf("CronExpression = %v", sched.CronExpression)
 	}
 
-	// The passphrase must be a secret ref, not plain text.
-	secrets := cfg.Secrets.(app.SecretArray)
-	if len(secrets) != 1 {
-		t.Fatalf("secrets = %v, want exactly the passphrase", secrets)
-	}
-	secret := secrets[0].(app.SecretArgs)
-	if secret.Name != pulumi.String("pulumi-config-passphrase") || secret.Value != pulumi.String("hunter2") {
-		t.Errorf("secret = %+v", secret)
-	}
-
 	tmpl := args.Template.(app.JobTemplateArgs)
 	container := tmpl.Containers.(app.ContainerArray)[0].(app.ContainerArgs)
 	if container.Image != pulumi.String("defangio/cd:public-beta") {
@@ -80,23 +70,19 @@ func TestAzureSelfDestructJobArgs(t *testing.T) {
 	if args := container.Args.(pulumi.StringArray); len(args) != 1 || args[0] != pulumi.String("trigger-down") {
 		t.Errorf("Args = %v, want [trigger-down]", args)
 	}
-	var plain, secretRefs []string
+	// All values ride as plain env vars, matching how the CLI passes them to
+	// every CD execution (credentials never reach this point — SelfDestructEnv
+	// drops them).
+	var names []string
 	env := map[string]string{}
 	for _, ev := range container.Env.(app.EnvironmentVarArray) {
 		v := ev.(app.EnvironmentVarArgs)
 		name := string(v.Name.(pulumi.String))
-		if v.SecretRef != nil {
-			secretRefs = append(secretRefs, name)
-		} else {
-			plain = append(plain, name)
-			env[name] = string(v.Value.(pulumi.String))
-		}
+		names = append(names, name)
+		env[name] = string(v.Value.(pulumi.String))
 	}
-	if strings.Join(secretRefs, ",") != "PULUMI_CONFIG_PASSPHRASE" {
-		t.Errorf("secretRefs = %v", secretRefs)
-	}
-	if strings.Join(plain, ",") != "DEFANG_CD_IMAGE,DEFANG_STATE_URL,PROJECT,STACK" { // sorted, PATH dropped
-		t.Errorf("plain env = %v", plain)
+	if strings.Join(names, ",") != "DEFANG_CD_IMAGE,DEFANG_STATE_URL,PROJECT,PULUMI_CONFIG_PASSPHRASE,STACK" { // sorted, PATH dropped
+		t.Errorf("env names = %v", names)
 	}
 	// trigger-down re-runs this image on the defang-cd job.
 	if env["DEFANG_CD_IMAGE"] != "defangio/cd:public-beta" {

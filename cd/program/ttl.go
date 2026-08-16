@@ -2,18 +2,24 @@ package program
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// minTTL is the shortest supported time-to-live. The self-destruct trigger is
-// created as part of the deploy itself, so a TTL shorter than a few minutes
-// could yield a fire time that is already in the past by the time the trigger
-// exists — which cron-based triggers (Azure, GCP) would silently postpone by
-// a whole year.
-const minTTL = 5 * time.Minute
+// minTTL is the shortest supported time-to-live. The trigger's clock starts
+// when the deploy creates it, but resources can take 10+ minutes to finish
+// provisioning after that — a short TTL could tear the stack down while (or
+// right after) it comes up. It also keeps the fire time safely in the future:
+// cron-based triggers (Azure, GCP) silently postpone a passed occurrence by a
+// whole year.
+const minTTL = time.Hour
+
+// maxTTL guards the whole-days arithmetic in parseTTL against int64 overflow
+// (time.Duration caps at ~292 years) and against typo'd far-future dates.
+const maxTTL = 10 * 365 * 24 * time.Hour
 
 // parseTTL interprets the defang:ttl stack config (set from the DEFANG_TTL
 // env var by the CLI). Empty, "never" and "0" mean no self-destruct. Other
@@ -30,26 +36,24 @@ func parseTTL(value string) (time.Duration, error) {
 	var days time.Duration
 	if i := strings.IndexByte(s, 'd'); i > 0 {
 		n, err := strconv.Atoi(s[:i])
-		if err != nil {
-			return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
+		if err != nil || n < 0 || time.Duration(n) > maxTTL/(24*time.Hour) {
+			return 0, fmt.Errorf("invalid ttl %q: days must be between 0 and %d", value, maxTTL/(24*time.Hour))
 		}
 		days = time.Duration(n) * 24 * time.Hour
 		s = s[i+1:]
-		if s == "" {
-			if days < minTTL {
-				return 0, fmt.Errorf("ttl %q is below the minimum of %s", value, minTTL)
-			}
-			return days, nil
-		}
 	}
 
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
+	var d time.Duration
+	if s != "" {
+		var err error
+		d, err = time.ParseDuration(s)
+		if err != nil {
+			return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
+		}
 	}
 	d += days
-	if d < minTTL {
-		return 0, fmt.Errorf("ttl %q is below the minimum of %s", value, minTTL)
+	if d < minTTL || d > maxTTL {
+		return 0, fmt.Errorf("ttl %q must be between %s and %s", value, minTTL, maxTTL)
 	}
 	return d, nil
 }
@@ -91,11 +95,14 @@ var selfDestructEnvExclude = map[string]bool{
 	"DEFANG_TTL":            true,
 	// Points at a token file that only exists in the current container.
 	"AZURE_FEDERATED_TOKEN_FILE": true,
-	// Session credentials must never outlive the run that received them; the
-	// scheduled run authenticates with the ambient identity instead.
-	"AWS_ACCESS_KEY_ID":     true,
-	"AWS_SECRET_ACCESS_KEY": true,
-	"AWS_SESSION_TOKEN":     true,
+	// Credentials must never be frozen into a trigger resource; the scheduled
+	// run authenticates with the ambient (managed) identity instead.
+	"AWS_ACCESS_KEY_ID":                 true,
+	"AWS_SECRET_ACCESS_KEY":             true,
+	"AWS_SESSION_TOKEN":                 true,
+	"AZURE_CLIENT_SECRET":               true,
+	"AZURE_CLIENT_CERTIFICATE_PATH":     true,
+	"AZURE_CLIENT_CERTIFICATE_PASSWORD": true,
 }
 
 // selfDestructEnvPrefixes selects the config-carrying variables. The same
@@ -131,10 +138,5 @@ func SelfDestructEnv(environ []string) map[string]string {
 // sortedKeys returns the map's keys in stable order, for deterministic
 // resource inputs (unordered env lists would diff on every deploy).
 func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }

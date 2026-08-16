@@ -23,10 +23,13 @@ func TestParseTTL(t *testing.T) {
 		{"7d", 7 * 24 * time.Hour, false},
 		{"7D", 7 * 24 * time.Hour, false},
 		{"7d12h", 7*24*time.Hour + 12*time.Hour, false},
-		{"5m", 5 * time.Minute, false}, // exactly the minimum
-		{"4m", 0, true},                // below the minimum
-		{"1s", 0, true},                // below the minimum
-		{"-1h", 0, true},               // negative
+		{"1h", time.Hour, false}, // exactly the minimum
+		{"59m", 0, true},         // below the minimum
+		{"5m", 0, true},          // below the minimum
+		{"-1h", 0, true},         // negative
+		{"-1d48h", 0, true},      // negative day prefix
+		{"213504d", 0, true},     // would overflow time.Duration
+		{"3651d", 0, true},       // above the maximum
 		{"tomorrow", 0, true},
 		{"12", 0, true},   // bare number (only "0" is special)
 		{"d", 0, true},    // no digits
@@ -82,6 +85,9 @@ func TestSelfDestructEnv(t *testing.T) {
 		"DEFANG_EVENTS_UPLOAD_URL=https://presigned",
 		"DEFANG_PULUMI_TARGETS=urn:x",
 		"AZURE_FEDERATED_TOKEN_FILE=/tmp/token",
+		"AZURE_CLIENT_SECRET=shh",
+		"AZURE_CLIENT_CERTIFICATE_PATH=/tmp/cert.pem",
+		"AZURE_CLIENT_CERTIFICATE_PASSWORD=shh",
 		"AWS_ACCESS_KEY_ID=AKIA",
 		"AWS_SECRET_ACCESS_KEY=shh",
 		"AWS_SESSION_TOKEN=shh",

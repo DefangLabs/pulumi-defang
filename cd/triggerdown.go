@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/clouds/azure"
 	"github.com/DefangLabs/defang/src/pkg/clouds/azure/aca"
 	"github.com/DefangLabs/pulumi-defang/cd/program"
@@ -18,7 +19,7 @@ import (
 // itself must not run inside the trigger job, because the destroy deletes
 // that job — killing its own execution mid-destroy. On AWS/GCP the platform
 // scheduler starts the external CD runner directly, so no equivalent exists.
-const cdCommandTriggerDown = "trigger-down"
+const cdCommandTriggerDown = client.CdCommand("trigger-down")
 
 // triggerDown starts `/app/cd down` on the shared defang-cd job with this
 // process's own (already filtered) environment. The trigger job's

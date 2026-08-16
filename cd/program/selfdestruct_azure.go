@@ -3,7 +3,6 @@ package program
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -81,7 +80,9 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 		return fmt.Errorf("self-destruct: CD job has no resource id")
 	}
 
-	fireAt := time.Now().Add(ttl)
+	// Round up to the next whole minute: the cron expression has minute
+	// granularity, and truncating would fire up to 59s before now + TTL.
+	fireAt := time.Now().Add(ttl).Truncate(time.Minute).Add(time.Minute)
 	args, err := azureSelfDestructJobArgs(resp.Job, os.Environ(), fireAt, providerazure.ProjectResourceGroupName(pctx, cf.Name), pctx.Stack())
 	if err != nil {
 		return fmt.Errorf("self-destruct: %w", err)
@@ -126,22 +127,15 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 	env := SelfDestructEnv(environ)
 	// trigger-down re-runs this image on the defang-cd job; tell it which.
 	env["DEFANG_CD_IMAGE"] = image
+	// All values ride as plain env vars — exactly how the CLI passes them to
+	// every CD execution today (see the "TODO: make secret" in
+	// ByocAzure.environment). Real credentials never reach this point: the
+	// SelfDestructEnv exclusion list drops them, and the scheduled run
+	// authenticates with the trigger job's own managed identity. When the CLI
+	// grows a real secret channel, it should hand the CD an explicit list of
+	// secret names to mirror here — not a name heuristic.
 	var envVars app.EnvironmentVarArray
-	var secrets app.SecretArray
 	for _, k := range sortedKeys(env) {
-		if isSensitiveEnv(k) {
-			// ACA job secrets keep the value out of plain-text template reads.
-			secretName := strings.ToLower(strings.ReplaceAll(k, "_", "-"))
-			secrets = append(secrets, app.SecretArgs{
-				Name:  pulumi.String(secretName),
-				Value: pulumi.String(env[k]),
-			})
-			envVars = append(envVars, app.EnvironmentVarArgs{
-				Name:      pulumi.String(k),
-				SecretRef: pulumi.String(secretName),
-			})
-			continue
-		}
 		envVars = append(envVars, app.EnvironmentVarArgs{
 			Name:  pulumi.String(k),
 			Value: pulumi.String(env[k]),
@@ -169,7 +163,6 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 				Parallelism:            pulumi.Int(1),
 				ReplicaCompletionCount: pulumi.Int(1),
 			},
-			Secrets: secrets,
 		},
 		Template: app.JobTemplateArgs{
 			Containers: app.ContainerArray{
@@ -191,10 +184,4 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 		args.WorkloadProfileName = pulumi.StringPtr(*wp)
 	}
 	return args, nil
-}
-
-// isSensitiveEnv reports whether the variable's value must be stored as an
-// ACA secret rather than a plain-text template env var.
-func isSensitiveEnv(name string) bool {
-	return strings.Contains(name, "PASSPHRASE") || strings.Contains(name, "SECRET") || strings.Contains(name, "TOKEN") || strings.Contains(name, "PASSWORD")
 }
