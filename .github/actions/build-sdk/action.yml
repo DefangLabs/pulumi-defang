@@ -29,19 +29,13 @@ runs:
         # See: https://github.com/actions/runner-images/issues/13883
         #      https://github.com/nodejs/node/pull/62463
         node-version: 24.x # should match the version in shell.nix
-        registry-url: https://registry.npmjs.org
-
-    - if: ${{ inputs.language == 'nodejs' }}
-      name: Export placeholder NODE_AUTH_TOKEN
-      shell: bash
-      # setup-node's registry-url writes an .npmrc with _authToken=${NODE_AUTH_TOKEN}.
-      # Up to v6 the action exported a placeholder token so unauthenticated commands
-      # (yarn install, OIDC npm publish) could still expand it; v7 removed that
-      # (actions/setup-node PR 1558), so we restore it here.
-      run: |
-        if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-          echo "NODE_AUTH_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX" >> "$GITHUB_ENV"
-        fi
+        # No registry-url here on purpose. It makes setup-node write an .npmrc
+        # with _authToken=${NODE_AUTH_TOKEN}, and npm/yarn fail on the unresolved
+        # var whenever NODE_AUTH_TOKEN isn't set. This repo never sets it: the
+        # release workflow publishes to npm via OIDC Trusted Publishers, which
+        # needs only `id-token: write` and no .npmrc token at all. Re-add
+        # registry-url only alongside a real NODE_AUTH_TOKEN secret if we ever
+        # move off Trusted Publishers.
 
     - if: ${{ inputs.language == 'dotnet' }}
       name: Setup DotNet
