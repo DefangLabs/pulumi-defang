@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/scheduler"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -62,23 +63,23 @@ func createAWSSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 		return err
 	}
 
-	assumeRole, err := json.Marshal(map[string]any{
-		"Version": "2012-10-17",
-		"Statement": []map[string]any{{
-			"Effect":    "Allow",
-			"Principal": map[string]any{"Service": "scheduler.amazonaws.com"},
-			"Action":    "sts:AssumeRole",
+	assumeRole, err := json.Marshal(defangaws.PolicyDocument{
+		Version: iam.PolicyDocumentVersion_2012_10_17,
+		Statement: []defangaws.PolicyStatement{{
+			Effect:    iam.PolicyStatementEffectALLOW,
+			Principal: map[string]any{"Service": "scheduler.amazonaws.com"},
+			Action:    "sts:AssumeRole",
 		}},
 	})
 	if err != nil {
 		return err
 	}
-	policy, err := json.Marshal(map[string]any{
-		"Version": "2012-10-17",
-		"Statement": []map[string]any{{
-			"Effect":   "Allow",
-			"Action":   "codebuild:StartBuild",
-			"Resource": projectArn,
+	policy, err := json.Marshal(defangaws.PolicyDocument{
+		Version: iam.PolicyDocumentVersion_2012_10_17,
+		Statement: []defangaws.PolicyStatement{{
+			Effect:   iam.PolicyStatementEffectALLOW,
+			Action:   "codebuild:StartBuild",
+			Resource: projectArn,
 		}},
 	})
 	if err != nil {
@@ -139,29 +140,41 @@ func codebuildProjectFromBuildArn(buildArn string) (name, arn string, _ error) {
 // CodeBuild is camelCase JSON.
 func awsSelfDestructInput(projectName, image string, environ []string) (string, error) {
 	env := SelfDestructEnv(environ)
-	type envVar struct {
-		Name  string `json:"name"`
-		Value string `json:"value"`
-		Type  string `json:"type"`
-	}
-	envOverrides := make([]envVar, 0, len(env))
+	envOverrides := make([]startBuildEnvVar, 0, len(env))
 	for _, k := range slices.Sorted(maps.Keys(env)) {
-		envOverrides = append(envOverrides, envVar{Name: k, Value: env[k], Type: "PLAINTEXT"})
+		envOverrides = append(envOverrides, startBuildEnvVar{Name: k, Value: env[k], Type: "PLAINTEXT"})
 	}
-	input := map[string]any{
-		"projectName":                  projectName,
-		"imageOverride":                image,
-		"buildspecOverride":            selfDestructBuildspec,
-		"environmentVariablesOverride": envOverrides,
+	input := startBuildInput{
+		ProjectName:                  projectName,
+		ImageOverride:                image,
+		BuildspecOverride:            selfDestructBuildspec,
+		EnvironmentVariablesOverride: envOverrides,
 	}
 	// Mirrors AwsCodeBuild.Run: non-"aws/" images pull with the service role
 	// (e.g. via an ECR pull-through cache).
 	if !strings.HasPrefix(image, "aws/") {
-		input["imagePullCredentialsTypeOverride"] = "SERVICE_ROLE"
+		input.ImagePullCredentialsTypeOverride = "SERVICE_ROLE"
 	}
 	b, err := json.Marshal(input)
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// startBuildInput is the subset of the CodeBuild StartBuild request the
+// schedule sends (universal-target inputs use the target API's own camelCase
+// wire shape; see codebuild.StartBuildInput in the AWS SDK for the full set).
+type startBuildInput struct {
+	ProjectName                      string             `json:"projectName"`
+	ImageOverride                    string             `json:"imageOverride"`
+	BuildspecOverride                string             `json:"buildspecOverride"`
+	EnvironmentVariablesOverride     []startBuildEnvVar `json:"environmentVariablesOverride"`
+	ImagePullCredentialsTypeOverride string             `json:"imagePullCredentialsTypeOverride,omitempty"`
+}
+
+type startBuildEnvVar struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Type  string `json:"type"`
 }

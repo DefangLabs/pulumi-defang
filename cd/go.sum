@@ -106,6 +106,8 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.36 h1:A4N2f4YPcST0v+dWtX
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.36/go.mod h1:B/Qr859uxWUEfZeGotK5KAEoof4Q9YWgNtPSwV6jcyk=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.37 h1:oyd3ke4V9AhKcRR7rRgxk1VyI+DjK2CBQtbxh3OkdaA=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.37/go.mod h1:aA9D7SqfG9IC1b7FLD7Iyc8Q4JN0a8gHhNjN4zPlIaI=
+github.com/aws/aws-sdk-go-v2/service/ecs v1.90.1 h1:X6uVy3H1Xg7GK1SGrhwadV0IBIagB5WD/uO7iKr0ZE8=
+github.com/aws/aws-sdk-go-v2/service/ecs v1.90.1/go.mod h1:sLTx85N+itmZPBvAufetc8CFCBE5RQSEuiaelJuPyVs=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.16 h1:iE4NGbvqUZnHDqddQAauZzCILYtFjOHwRM5MOOKLB5A=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.16/go.mod h1:VsjEgrP+ibcou8TlWA4tYaB+0OojuhirsmCe+U60hTA=
 github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.29 h1:E65Hj648dOV6FuUfI0mYXXhQRHbsi7n+B9h6fZPJO/E=
@@ -354,6 +356,8 @@ github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 h1:vkHw5I/plNdTr435
 github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231/go.mod h1:murToZ2N9hNJzewjHBgfFdXhZKjY3z5cYC1VXk+lbFE=
 github.com/pulumi/pulumi-aws/sdk/v7 v7.41.0 h1:tT6MC4ZUbh+oyPSN1aCFO7YgJac0hDld+Rg9UUJKMZo=
 github.com/pulumi/pulumi-aws/sdk/v7 v7.41.0/go.mod h1:wImO2X5EeAVjuNtyJF/W/N96Q73tEO9t1Ne9Uqa50Ps=
+github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0 h1:jphjwZoSnNyW4d3dpS++T+TlZFTy6vb9gJt33u6xf14=
+github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0/go.mod h1:ALZ8aBuwNtHkhFCY019gJOfgo7q2WYlsL1kM+0apbEA=
 github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0 h1:QZksspyGhUliOncXYSunj50Rl1OCBp4Z4vDltCtfLyg=
 github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0/go.mod h1:A4c9UObJvoBe0GZLalGGCf3x4WJsutLuZTgHGB9Du1A=
 github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0 h1:XQ4akM+v4jT6bUDrbzqty0YpwPJAbS/47QzfuAt6+MM=
@@ -384,6 +388,10 @@ github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0 h1:P+CuRRxe13YBgiB3
 github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0/go.mod h1:G0SZoFekP5XgQxQ0Kd/B7vDPMtMasKMz+ZQPbPvsdvs=
 github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0 h1:CFtP/hsyGR2jSAm/Fz+4QW8d/Slw619gUoLuobnCCX8=
 github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0/go.mod h1:ELaNq3/fmYWdM6Y4vTQmheO9gGkeCrAMeiOD1XReDwA=
+github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 h1:NxCXxRvzhUJP9dIvlpNlZKt/A3NHu3i9pC5XO+i8bR0=
+github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3/go.mod h1:jw9NcyRXjv5V2HHHJlqUBdXFCFiLfZoCChWEn38LR2A=
+github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 h1:rik9L2SIpsoDenY51MkogR6GWgu/0Sy/XmyQmKWNUqU=
+github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8/go.mod h1:eph7BPNPkEIIK882/Ll4dbeHl5wZEc/UvTcUW0CK1UY=
 github.com/pulumi/pulumi-gcp/sdk/v9 v9.34.0 h1:geDS7s8LYCbpLFfx8EYiUx9iOzarp0cSP9oofDbSJq4=
 github.com/pulumi/pulumi-gcp/sdk/v9 v9.34.0/go.mod h1:YMIpKrD4W1lhzfiHGCDklsl8qh0jl3dwbc8CRifBzUQ=
 github.com/pulumi/pulumi-random/sdk/v4 v4.19.2 h1:YDGarxRPtAgpnUg7nXVe+gVfVABBjo88UC6EMAmmvhM=

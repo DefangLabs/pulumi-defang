@@ -72,6 +72,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.36 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.36 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.37 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.90.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.29 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.36 // indirect
@@ -163,6 +164,7 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
+	github.com/pulumi/pulumi-awsx/sdk/v3 v3.1.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.17.0 // indirect
@@ -174,6 +176,8 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.17.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.17.0 // indirect
+	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
+	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumi/pulumi-random/sdk/v4 v4.19.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
