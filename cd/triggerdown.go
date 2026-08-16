@@ -15,10 +15,18 @@ import (
 
 // cdCommandTriggerDown is the command the Azure self-destruct trigger job
 // runs (see program.createAzureSelfDestruct). It only STARTS a regular down
-// execution on the shared defang-cd Container Apps Job and exits; the down
-// itself must not run inside the trigger job, because the destroy deletes
-// that job — killing its own execution mid-destroy. On AWS/GCP the platform
-// scheduler starts the external CD runner directly, so no equivalent exists.
+// execution on the shared defang-cd Container Apps Job and exits.
+//
+// Why the indirection: on every cloud the trigger is an in-stack resource,
+// but AWS/GCP schedulers are pure control-plane pointers — when they fire,
+// the down runs in EXTERNAL compute (CodeBuild / Cloud Build), so the destroy
+// deleting the already-fired pointer is harmless. An ACA scheduled job cannot
+// call an API; it can only run its own container, and executions are child
+// resources of the job itself. If that container ran the destroy directly,
+// the destroy would delete the trigger job early (a dependent of the project)
+// and thereby terminate its own running execution. trigger-down splits the
+// two roles: the in-stack job stays a short-lived pointer, and the down runs
+// in the external defang-cd job — same shape as the other clouds.
 const cdCommandTriggerDown = client.CdCommand("trigger-down")
 
 // triggerDown starts `/app/cd down` on the shared defang-cd job with this
