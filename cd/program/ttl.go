@@ -103,11 +103,11 @@ var selfDestructEnvExclude = map[string]bool{
 // variables.
 var selfDestructEnvPrefixes = []string{"AWS_", "AZURE_", "DEFANG_", "GCLOUD_", "GCP_", "PULUMI_"}
 
-// selfDestructEnv filters the CD process's own environment down to what a
+// SelfDestructEnv filters the CD process's own environment down to what a
 // scheduled `down` run needs. The current environment is authoritative: it is
 // exactly the set the CLI composed for this run, minus runtime-injected
 // variables (PATH, HOSTNAME, ACA/ECS metadata, ...) which the allowlist drops.
-func selfDestructEnv(environ []string) map[string]string {
+func SelfDestructEnv(environ []string) map[string]string {
 	env := map[string]string{}
 	for _, kv := range environ {
 		k, v, ok := strings.Cut(kv, "=")

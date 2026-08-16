@@ -44,6 +44,12 @@ func cdMain(ctx context.Context, args ...string) error {
 		command = client.CdCommand(args[1])
 	}
 
+	// trigger-down needs no Pulumi stack: it only starts a regular down
+	// execution on the shared CD job (Azure self-destruct; see triggerdown.go).
+	if command == cdCommandTriggerDown {
+		return triggerDown(ctx)
+	}
+
 	var stack auto.Stack
 	var err error
 	switch command {

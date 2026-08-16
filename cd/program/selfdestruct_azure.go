@@ -3,7 +3,6 @@ package program
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/v3/commontypesv5"
 	azconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -25,39 +25,46 @@ const (
 	cdJobName       = "defang-cd"
 
 	// selfDestructJobName is deterministic so every redeploy updates the same
-	// trigger in place (extending the stack's life to now + TTL). It is unique
-	// within the project resource group, which is itself per project/stack.
+	// trigger in place (extending the stack's life). It is unique within the
+	// project resource group, which is itself per project/stack.
 	selfDestructJobName = "defang-self-destruct"
 
-	// selfDestructTimeout caps the scheduled down run, mirroring the 30-minute
-	// timeout the CLI applies to CD job executions (ByocAzure.runCdCommand).
-	selfDestructTimeout = 30 * time.Minute
+	// The trigger execution only STARTS the down (one ARM call); the down
+	// itself runs in the shared defang-cd job. It must not run the destroy
+	// in-place: the destroy deletes the trigger job early (it depends on the
+	// project resource group), which would kill its own running execution.
+	// Minimal sizing and a short timeout suffice for the one call.
+	selfDestructCPU     = 0.25
+	selfDestructMemory  = "0.5Gi"
+	selfDestructTimeout = 10 * time.Minute
 
-	// Replica sizing must be repeated on the trigger job: the CD job template
-	// keeps the platform default (0.25 vCPU / 0.5 GiB) because the CLI sizes
-	// each execution via start-time overrides — which a schedule-triggered
-	// job cannot carry. Values mirror cdJobCPU/cdJobMemory in the CLI.
-	selfDestructCPU    = 2.0
-	selfDestructMemory = "4Gi"
+	// Built-in Contributor role, assigned to the trigger job's own
+	// system-assigned identity, scoped to the defang-cd job only — just
+	// enough to start a down execution. The CD job's identity cannot be
+	// reused: it is system-assigned (subscription-wide Contributor + User
+	// Access Administrator, see aca.SetUpManagedIdentity in the CLI) and a
+	// system-assigned identity is bound to its own resource.
+	contributorRoleDefinitionID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
 )
 
 // createAzureSelfDestruct schedules this stack's own `defang cd down`: an ACA
 // Job in the project resource group with a Schedule trigger pinned to
-// now + ttl, running the CD image with args ["down"] and (a filtered copy of)
-// this run's environment. The job is a stack resource, so the down it starts
-// destroys it along with everything else; failing to create it fails the
-// deploy — a stack that silently outlives its requested TTL is the exact
-// failure mode this feature exists to prevent.
+// now + ttl, running this CD image with args ["trigger-down"], which starts a
+// regular down execution on the shared defang-cd job. All pieces (job, role
+// assignment) are ordinary Pulumi resources in the stack state, so an
+// explicit down — or the scheduled one — cleans them up, and dropping the TTL
+// on a redeploy deletes them. Failing to create them fails the deploy: a
+// stack that silently outlives its requested TTL is the exact failure mode
+// this feature exists to prevent.
 func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.Duration, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
 	subscriptionID := azconfig.GetSubscriptionId(pctx)
 	if subscriptionID == "" {
 		return fmt.Errorf("defang:ttl is set but AZURE_SUBSCRIPTION_ID is not in Pulumi config")
 	}
 
-	// Read the shared CD job's template: it carries the CD image, the managed
-	// identity the down run must assume, and the Container Apps environment
-	// (and thus the location) the trigger job must join. Reading it at deploy
-	// time keeps the CLI out of the loop — no new env vars to pass.
+	// Read the shared CD job: it carries the CD image and the Container Apps
+	// environment (and thus the location) the trigger job must join. Reading
+	// it at deploy time keeps the CLI out of the loop — no new env vars.
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return fmt.Errorf("self-destruct: build credential: %w", err)
@@ -70,6 +77,9 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 	if err != nil {
 		return fmt.Errorf("self-destruct: read CD job %s/%s: %w", cdResourceGroup, cdJobName, err)
 	}
+	if resp.ID == nil {
+		return fmt.Errorf("self-destruct: CD job has no resource id")
+	}
 
 	fireAt := time.Now().Add(ttl)
 	args, err := azureSelfDestructJobArgs(resp.Job, os.Environ(), fireAt, providerazure.ProjectResourceGroupName(pctx, cf.Name), pctx.Stack())
@@ -80,8 +90,22 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 	_ = pctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` on itself at %s (ttl %s); redeploying extends it",
 		fireAt.UTC().Format(time.RFC3339), ttl), nil)
 
-	_, err = app.NewJob(pctx, selfDestructJobName, args,
+	job, err := app.NewJob(pctx, selfDestructJobName, args,
 		append(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
+	if err != nil {
+		return err
+	}
+
+	// Let the trigger's identity start executions on the shared CD job. The
+	// assignment is created now (by the CD's own subscription-wide identity,
+	// which holds User Access Administrator) and used only at fire time, so
+	// AAD propagation delays are moot.
+	_, err = authorization.NewRoleAssignment(pctx, "self-destruct-starter", &authorization.RoleAssignmentArgs{
+		PrincipalId:      job.Identity.PrincipalId().Elem(),
+		PrincipalType:    pulumi.String("ServicePrincipal"),
+		RoleDefinitionId: pulumi.String(fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", subscriptionID, contributorRoleDefinitionID)),
+		Scope:            pulumi.String(*resp.ID),
+	}, opts...)
 	return err
 }
 
@@ -99,12 +123,9 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 	}
 	image := *cdJob.Properties.Template.Containers[0].Image
 
-	identity, err := azureSelfDestructIdentity(cdJob.Identity)
-	if err != nil {
-		return nil, err
-	}
-
-	env := selfDestructEnv(environ)
+	env := SelfDestructEnv(environ)
+	// trigger-down re-runs this image on the defang-cd job; tell it which.
+	env["DEFANG_CD_IMAGE"] = image
 	var envVars app.EnvironmentVarArray
 	var secrets app.SecretArray
 	for _, k := range sortedKeys(env) {
@@ -132,7 +153,9 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 		ResourceGroupName: pulumi.String(resourceGroup),
 		Location:          pulumi.String(*cdJob.Location), // must match the CD environment's region
 		EnvironmentId:     pulumi.String(*cdJob.Properties.EnvironmentID),
-		Identity:          identity,
+		Identity: commontypesv5.ManagedServiceIdentityArgs{
+			Type: pulumi.String("SystemAssigned"),
+		},
 		Tags: pulumi.StringMap{
 			"defang-fire-at": pulumi.String(fireAt.UTC().Format(time.RFC3339)),
 			"defang-stack":   pulumi.String(stack),
@@ -153,8 +176,8 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 				app.ContainerArgs{
 					Name:    pulumi.String(selfDestructJobName),
 					Image:   pulumi.String(image),
-					Command: pulumi.ToStringArray([]string{"/app/cd"}), // matches ByocAzure.runCdCommand
-					Args:    pulumi.ToStringArray([]string{"down"}),
+					Command: pulumi.ToStringArray([]string{"/app/cd"}),
+					Args:    pulumi.ToStringArray([]string{"trigger-down"}),
 					Env:     envVars,
 					Resources: app.ContainerResourcesArgs{
 						Cpu:    pulumi.Float64(selfDestructCPU),
@@ -168,25 +191,6 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 		args.WorkloadProfileName = pulumi.StringPtr(*wp)
 	}
 	return args, nil
-}
-
-// azureSelfDestructIdentity mirrors the CD job's user-assigned identity onto
-// the trigger job, so the scheduled down runs with the same permissions as
-// every other CD execution.
-func azureSelfDestructIdentity(id *armappcontainers.ManagedServiceIdentity) (commontypesv5.ManagedServiceIdentityPtrInput, error) {
-	if id == nil || len(id.UserAssignedIdentities) == 0 {
-		return nil, fmt.Errorf("CD job has no user-assigned identity; run `defang up` with a recent CLI to provision it")
-	}
-	var ids []string
-	for armID := range id.UserAssignedIdentities {
-		ids = append(ids, armID)
-	}
-	// map iteration order is random; keep inputs deterministic
-	sort.Strings(ids)
-	return commontypesv5.ManagedServiceIdentityArgs{
-		Type:                   pulumi.String("UserAssigned"),
-		UserAssignedIdentities: pulumi.ToStringArray(ids),
-	}, nil
 }
 
 // isSensitiveEnv reports whether the variable's value must be stored as an

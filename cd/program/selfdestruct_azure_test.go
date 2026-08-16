@@ -15,12 +15,6 @@ func ptr[T any](v T) *T { return &v }
 func validCdJob() armappcontainers.Job {
 	return armappcontainers.Job{
 		Location: ptr("westus"),
-		Identity: &armappcontainers.ManagedServiceIdentity{
-			Type: ptr(armappcontainers.ManagedServiceIdentityTypeUserAssigned),
-			UserAssignedIdentities: map[string]*armappcontainers.UserAssignedIdentity{
-				"/subscriptions/s/resourceGroups/defang-cd/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cd": {},
-			},
-		},
 		Properties: &armappcontainers.JobProperties{
 			EnvironmentID: ptr("/subscriptions/s/resourceGroups/defang-cd/providers/Microsoft.App/managedEnvironments/cd-env"),
 			Template: &armappcontainers.JobTemplate{
@@ -81,7 +75,13 @@ func TestAzureSelfDestructJobArgs(t *testing.T) {
 	if container.Image != pulumi.String("defangio/cd:public-beta") {
 		t.Errorf("Image = %v", container.Image)
 	}
+	// The trigger must only START the down on the shared CD job — running
+	// the destroy in-place would kill its own execution (see selfdestruct_azure.go).
+	if args := container.Args.(pulumi.StringArray); len(args) != 1 || args[0] != pulumi.String("trigger-down") {
+		t.Errorf("Args = %v, want [trigger-down]", args)
+	}
 	var plain, secretRefs []string
+	env := map[string]string{}
 	for _, ev := range container.Env.(app.EnvironmentVarArray) {
 		v := ev.(app.EnvironmentVarArgs)
 		name := string(v.Name.(pulumi.String))
@@ -89,13 +89,18 @@ func TestAzureSelfDestructJobArgs(t *testing.T) {
 			secretRefs = append(secretRefs, name)
 		} else {
 			plain = append(plain, name)
+			env[name] = string(v.Value.(pulumi.String))
 		}
 	}
 	if strings.Join(secretRefs, ",") != "PULUMI_CONFIG_PASSPHRASE" {
 		t.Errorf("secretRefs = %v", secretRefs)
 	}
-	if strings.Join(plain, ",") != "DEFANG_STATE_URL,PROJECT,STACK" { // sorted, PATH dropped
+	if strings.Join(plain, ",") != "DEFANG_CD_IMAGE,DEFANG_STATE_URL,PROJECT,STACK" { // sorted, PATH dropped
 		t.Errorf("plain env = %v", plain)
+	}
+	// trigger-down re-runs this image on the defang-cd job.
+	if env["DEFANG_CD_IMAGE"] != "defangio/cd:public-beta" {
+		t.Errorf("DEFANG_CD_IMAGE = %q", env["DEFANG_CD_IMAGE"])
 	}
 }
 
@@ -113,11 +118,5 @@ func TestAzureSelfDestructJobArgsValidation(t *testing.T) {
 	noImage.Properties.Template.Containers = nil
 	if _, err := azureSelfDestructJobArgs(noImage, environ, fireAt, "rg", "s"); err == nil {
 		t.Error("want error for missing container image")
-	}
-
-	noIdentity := validCdJob()
-	noIdentity.Identity = nil
-	if _, err := azureSelfDestructJobArgs(noIdentity, environ, fireAt, "rg", "s"); err == nil {
-		t.Error("want error for missing identity")
 	}
 }

@@ -106,7 +106,7 @@ func TestSelfDestructEnv(t *testing.T) {
 		"AZURE_SUBSCRIPTION_ID":      "sub",
 		"AZURE_LOCATION":             "westus",
 	}
-	got := selfDestructEnv(environ)
+	got := SelfDestructEnv(environ)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("selfDestructEnv() = %#v, want %#v", got, want)
 	}
