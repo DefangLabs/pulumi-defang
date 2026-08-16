@@ -2,8 +2,6 @@ package program
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -133,10 +131,4 @@ func SelfDestructEnv(environ []string) map[string]string {
 		}
 	}
 	return env
-}
-
-// sortedKeys returns the map's keys in stable order, for deterministic
-// resource inputs (unordered env lists would diff on every deploy).
-func sortedKeys(m map[string]string) []string {
-	return slices.Sorted(maps.Keys(m))
 }

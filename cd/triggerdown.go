@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/DefangLabs/defang/src/pkg/cli/client"
 	"github.com/DefangLabs/defang/src/pkg/clouds/azure"
@@ -49,11 +48,12 @@ func triggerDown(ctx context.Context) error {
 		},
 		ResourceGroup: "defang-cd", // the shared CD resource group; see program.createAzureSelfDestruct
 	}
+	// No Timeout: StartJobExecution never reads it — the effective bound is
+	// the defang-cd job template's ReplicaTimeout, set by the CLI's SetUpJob.
 	execution, err := job.StartJobExecution(ctx, aca.JobRequest{
 		Image:   image,
-		Command: []string{"/app/cd", "down"}, // matches ByocAzure.runCdCommand
+		Command: []string{"/app/cd", string(client.CdCommandDown)}, // matches ByocAzure.runCdCommand
 		Envs:    program.SelfDestructEnv(os.Environ()),
-		Timeout: 30 * time.Minute,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to start down execution: %w", err)

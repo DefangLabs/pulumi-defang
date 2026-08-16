@@ -2,7 +2,9 @@ package program
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -135,7 +137,8 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 	// grows a real secret channel, it should hand the CD an explicit list of
 	// secret names to mirror here — not a name heuristic.
 	var envVars app.EnvironmentVarArray
-	for _, k := range sortedKeys(env) {
+	// Sorted for deterministic inputs: an unordered env list diffs on every deploy.
+	for _, k := range slices.Sorted(maps.Keys(env)) {
 		envVars = append(envVars, app.EnvironmentVarArgs{
 			Name:  pulumi.String(k),
 			Value: pulumi.String(env[k]),
