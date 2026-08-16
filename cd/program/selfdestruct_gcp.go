@@ -5,14 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
-	"net/http"
 	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/compute/metadata"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudscheduler"
 	gcpconfig "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
@@ -26,7 +25,6 @@ import (
 // scheduling clean up jobs"), cloudbuild.builds.editor, and project-level
 // serviceAccountUser — and the CLI enables cloudscheduler.googleapis.com at
 // setup.
-const metadataSAEmailURL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
 
 // createGCPSelfDestruct schedules this stack's own `defang cd down`. Like the
 // AWS variant it does not depend on the project component, so even a deploy
@@ -96,7 +94,9 @@ func gcpSelfDestructBuild(cdImage, projectID, saEmail, stack string, environ []s
 			"logging":                 "CLOUD_LOGGING_ONLY",
 			"enableStructuredLogging": true,
 		},
-		"timeout":        "3600s",
+		// The CD run's wall-clock ceiling; same budget an interactive run
+		// gets (mirrors Gcp.RunCloudBuild's durationpb.New(time.Hour)).
+		"timeout":        fmt.Sprintf("%ds", int(CdTimeout.Seconds())),
 		"tags":           []string{"defang-cd", "defang-self-destruct", stack},
 		"serviceAccount": fmt.Sprintf("projects/%s/serviceAccounts/%s", projectID, saEmail),
 	}
@@ -104,28 +104,15 @@ func gcpSelfDestructBuild(cdImage, projectID, saEmail, stack string, environ []s
 }
 
 // metadataServiceAccountEmail asks the GCE metadata server which service
-// account this workload runs as.
+// account this workload runs as, via the official metadata client (which
+// handles the Metadata-Flavor header, retries, and GCE_METADATA_HOST).
 func metadataServiceAccountEmail(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataSAEmailURL, nil)
+	sa, err := metadata.EmailWithContext(ctx, "default")
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Metadata-Flavor", "Google")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("metadata server returned %s", resp.Status)
-	}
-	email, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
-	if err != nil {
-		return "", err
-	}
-	sa := strings.TrimSpace(string(email))
 	if sa == "" || !strings.Contains(sa, "@") {
 		return "", fmt.Errorf("metadata server returned no service account email")
 	}

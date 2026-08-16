@@ -61,13 +61,12 @@ func TestMetadataServiceAccountEmail(t *testing.T) {
 			http.Error(w, "missing flavor", http.StatusForbidden)
 			return
 		}
-		_, _ = w.Write([]byte("cd@proj.iam.gserviceaccount.com\n"))
+		_, _ = w.Write([]byte("cd@proj.iam.gserviceaccount.com"))
 	}))
 	defer srv.Close()
 
-	orig := http.DefaultClient.Transport
-	http.DefaultClient.Transport = rewriteTransport{srv.URL}
-	defer func() { http.DefaultClient.Transport = orig }()
+	// The official metadata client honors GCE_METADATA_HOST.
+	t.Setenv("GCE_METADATA_HOST", strings.TrimPrefix(srv.URL, "http://"))
 
 	sa, err := metadataServiceAccountEmail(context.Background())
 	if err != nil {
@@ -76,14 +75,4 @@ func TestMetadataServiceAccountEmail(t *testing.T) {
 	if sa != "cd@proj.iam.gserviceaccount.com" {
 		t.Errorf("sa = %q", sa)
 	}
-}
-
-// rewriteTransport sends every request to the test server, regardless of host.
-type rewriteTransport struct{ base string }
-
-func (rt rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := req.Clone(req.Context())
-	r.URL.Scheme = "http"
-	r.URL.Host = strings.TrimPrefix(rt.base, "http://")
-	return http.DefaultTransport.RoundTrip(r)
 }
