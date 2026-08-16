@@ -1,10 +1,7 @@
 package program
 
 import (
-	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -52,27 +49,5 @@ func TestGcpSelfDestructBuild(t *testing.T) {
 	}
 	if build.ServiceAccount != "projects/my-gcp-project/serviceAccounts/cd@my-gcp-project.iam.gserviceaccount.com" {
 		t.Errorf("serviceAccount = %q", build.ServiceAccount)
-	}
-}
-
-func TestMetadataServiceAccountEmail(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Metadata-Flavor") != "Google" {
-			http.Error(w, "missing flavor", http.StatusForbidden)
-			return
-		}
-		_, _ = w.Write([]byte("cd@proj.iam.gserviceaccount.com"))
-	}))
-	defer srv.Close()
-
-	// The official metadata client honors GCE_METADATA_HOST.
-	t.Setenv("GCE_METADATA_HOST", strings.TrimPrefix(srv.URL, "http://"))
-
-	sa, err := metadataServiceAccountEmail(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sa != "cd@proj.iam.gserviceaccount.com" {
-		t.Errorf("sa = %q", sa)
 	}
 }

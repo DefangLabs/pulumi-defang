@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"slices"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -39,9 +38,12 @@ func createGCPSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 	}
 
 	// The build must run as the same service account as this run; Cloud Build
-	// exposes it via the metadata server. Local debug runs have no metadata
-	// server — nothing to clone a down run from.
-	saEmail, err := metadataServiceAccountEmail(pctx.Context())
+	// exposes it via the metadata server (the official client handles the
+	// flavor header, retries, and GCE_METADATA_HOST). Local debug runs have
+	// no metadata server — nothing to clone a down run from.
+	saCtx, cancel := context.WithTimeout(pctx.Context(), 15*time.Second)
+	defer cancel()
+	saEmail, err := metadata.EmailWithContext(saCtx, "default")
 	if err != nil {
 		return fmt.Errorf("defang:ttl requires the CD to run in Cloud Build: %w", err)
 	}
@@ -101,20 +103,4 @@ func gcpSelfDestructBuild(cdImage, projectID, saEmail, stack string, environ []s
 		"serviceAccount": fmt.Sprintf("projects/%s/serviceAccounts/%s", projectID, saEmail),
 	}
 	return json.Marshal(build)
-}
-
-// metadataServiceAccountEmail asks the GCE metadata server which service
-// account this workload runs as, via the official metadata client (which
-// handles the Metadata-Flavor header, retries, and GCE_METADATA_HOST).
-func metadataServiceAccountEmail(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	sa, err := metadata.EmailWithContext(ctx, "default")
-	if err != nil {
-		return "", err
-	}
-	if sa == "" || !strings.Contains(sa, "@") {
-		return "", fmt.Errorf("metadata server returned no service account email")
-	}
-	return sa, nil
 }
