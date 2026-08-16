@@ -1,0 +1,108 @@
+name: auto-release
+on:
+  workflow_run:
+    workflows: ["test"]
+    types: [completed]
+  workflow_dispatch: {}
+
+# Serialize: two "test" runs finishing close together must not race to tag
+# the same baseline twice.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  auto-tag:
+    name: Auto-tag next release
+    runs-on: ubuntu-latest
+    if: >-
+      github.repository == 'DefangLabs/pulumi-defang' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'))
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # Classifies commits since the last vX.Y.Z tag using the Conventional
+      # Commits prefixes already in use on this repo (feat:, fix:,
+      # chore(deps):, etc.) and picks the next semver tag. Pushing that tag
+      # (next step) is all release.yml needs to build+publish everything.
+      - name: Determine next version
+        id: version
+        run: |
+          set -euo pipefail
+
+          LAST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -z "$LAST_TAG" ]; then
+            echo "::error::no baseline vX.Y.Z tag found"
+            exit 1
+          fi
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+
+          COMMIT_COUNT=$(git rev-list "${LAST_TAG}..HEAD" --count)
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SUBJECTS=$(git log "${LAST_TAG}..HEAD" --pretty=%s)
+          BODIES=$(git log "${LAST_TAG}..HEAD" --pretty=%b)
+
+          # Default to patch: any qualifying merge (fix, chore(deps), ci,
+          # build, or anything non-conventional) still ships rather than
+          # silently piling up unreleased on main.
+          BUMP="patch"
+          if grep -qE '^[a-zA-Z]+(\([^)]+\))?!:' <<<"$SUBJECTS" || grep -q 'BREAKING CHANGE' <<<"$BODIES"; then
+            BUMP="major"
+          elif grep -qE '^feat(\([^)]+\))?:' <<<"$SUBJECTS"; then
+            BUMP="minor"
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<<"${LAST_TAG#v}"
+          case "$BUMP" in
+            major) NEW_TAG="v$((MAJOR + 1)).0.0" ;;
+            minor) NEW_TAG="v${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+          esac
+
+          {
+            echo "skip=false"
+            echo "bump=$BUMP"
+            echo "tag=$NEW_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      # Pushed with a PAT, not GITHUB_TOKEN: tags (and other refs) pushed
+      # using the default GITHUB_TOKEN do NOT trigger other workflows, so a
+      # GITHUB_TOKEN-pushed tag here would never fire release.yml's
+      # `push: tags: v*.*.*` trigger.
+      - name: Create and push release tag
+        if: steps.version.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "chore: release ${{ steps.version.outputs.tag }} (auto, bump=${{ steps.version.outputs.bump }})"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### auto-release"
+            if [ "${{ steps.version.outputs.skip }}" = "true" ]; then
+              echo "No commits since \`${{ steps.version.outputs.last_tag }}\` — nothing to release."
+            else
+              echo "Bump: **${{ steps.version.outputs.bump }}** — tagged \`${{ steps.version.outputs.tag }}\` (was \`${{ steps.version.outputs.last_tag }}\`)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
