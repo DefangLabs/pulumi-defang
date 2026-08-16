@@ -22,7 +22,7 @@ const (
 	// The shared CD resource group and job the CLI provisions once per
 	// subscription (see defang/src/pkg/clouds/azure: cd/driver.go and
 	// aca/job.go). Their names are fixed by the CLI's conventions.
-	cdResourceGroup = "defang-cd"
+	CdResourceGroup = "defang-cd"
 	cdJobName       = "defang-cd"
 
 	// selfDestructJobName is deterministic so every redeploy updates the same
@@ -74,9 +74,9 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 	if err != nil {
 		return fmt.Errorf("self-destruct: build jobs client: %w", err)
 	}
-	resp, err := client.Get(pctx.Context(), cdResourceGroup, cdJobName, nil)
+	resp, err := client.Get(pctx.Context(), CdResourceGroup, cdJobName, nil)
 	if err != nil {
-		return fmt.Errorf("self-destruct: read CD job %s/%s: %w", cdResourceGroup, cdJobName, err)
+		return fmt.Errorf("self-destruct: read CD job %s/%s: %w", CdResourceGroup, cdJobName, err)
 	}
 	if resp.ID == nil {
 		return fmt.Errorf("self-destruct: CD job has no resource id")

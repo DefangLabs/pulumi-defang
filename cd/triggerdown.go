@@ -46,7 +46,7 @@ func triggerDown(ctx context.Context) error {
 			SubscriptionID: subscriptionID,
 			Location:       azure.Location(os.Getenv("AZURE_LOCATION")),
 		},
-		ResourceGroup: "defang-cd", // the shared CD resource group; see program.createAzureSelfDestruct
+		ResourceGroup: program.CdResourceGroup, // the shared CD resource group
 	}
 	// No Timeout: StartJobExecution never reads it — the effective bound is
 	// the defang-cd job template's ReplicaTimeout, set by the CLI's SetUpJob.
