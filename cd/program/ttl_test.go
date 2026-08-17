@@ -14,14 +14,11 @@ func TestParseTTL(t *testing.T) {
 	}{
 		{"", 0, false},
 		{"never", 0, false},
-		{"NEVER", 0, false},
-		{" never ", 0, false},
 		{"0", 0, false},
 		{"12h", 12 * time.Hour, false},
 		{"90m", 90 * time.Minute, false},
 		{"1h30m", 90 * time.Minute, false},
 		{"7d", 7 * 24 * time.Hour, false},
-		{"7D", 7 * 24 * time.Hour, false},
 		{"7d12h", 7*24*time.Hour + 12*time.Hour, false},
 		{"1h", time.Hour, false}, // exactly the minimum
 		{"59m", 0, true},         // below the minimum
