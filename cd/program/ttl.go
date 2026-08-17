@@ -2,9 +2,10 @@ package program
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DefangLabs/defang/src/pkg/timeutils"
 )
 
 // minTTL is the shortest supported time-to-live. The trigger's clock starts
@@ -15,15 +16,14 @@ import (
 // whole year.
 const minTTL = time.Hour
 
-// maxTTL guards the whole-days arithmetic in parseTTL against int64 overflow
-// (time.Duration caps at ~292 years) and against typo'd far-future dates.
+// maxTTL guards against typo'd far-future dates.
 const maxTTL = 10 * 365 * 24 * time.Hour
 
 // parseTTL interprets the defang:ttl stack config (set from the DEFANG_TTL
 // env var by the CLI). Empty, "never" and "0" mean no self-destruct. Other
-// values are Go durations ("12h", "90m"), with an extra whole-days prefix
-// ("7d", "7d12h") because stack files will typically express lifetimes in
-// days and time.ParseDuration stops at hours.
+// values are Go durations with an optional whole-days prefix ("12h", "7d",
+// "7d12h"), parsed by the same timeutils.ParseDuration the CLI validates
+// the value with, so the two sides cannot drift.
 func parseTTL(value string) (time.Duration, error) {
 	s := strings.ToLower(strings.TrimSpace(value))
 	switch s {
@@ -31,25 +31,10 @@ func parseTTL(value string) (time.Duration, error) {
 		return 0, nil
 	}
 
-	var days time.Duration
-	if i := strings.IndexByte(s, 'd'); i > 0 {
-		n, err := strconv.Atoi(s[:i])
-		if err != nil || n < 0 || time.Duration(n) > maxTTL/(24*time.Hour) {
-			return 0, fmt.Errorf("invalid ttl %q: days must be between 0 and %d", value, maxTTL/(24*time.Hour))
-		}
-		days = time.Duration(n) * 24 * time.Hour
-		s = s[i+1:]
+	d, err := timeutils.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
 	}
-
-	var d time.Duration
-	if s != "" {
-		var err error
-		d, err = time.ParseDuration(s)
-		if err != nil {
-			return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
-		}
-	}
-	d += days
 	if d < minTTL || d > maxTTL {
 		return 0, fmt.Errorf("ttl %q must be between %s and %s", value, minTTL, maxTTL)
 	}
