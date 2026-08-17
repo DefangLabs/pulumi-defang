@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -408,15 +409,21 @@ type recordZone struct {
 }
 
 // recordZoneMocks captures every dns RecordSet by its relative name.
-type recordZoneMocks struct{ byRelative map[string]recordZone }
+// Pulumi registers resources from concurrent goroutines, so the map needs a lock.
+type recordZoneMocks struct {
+	mu         sync.Mutex
+	byRelative map[string]recordZone
+}
 
 func (m *recordZoneMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	if strings.HasSuffix(args.TypeToken, ":RecordSet") {
+		m.mu.Lock()
 		m.byRelative[args.Inputs["relativeRecordSetName"].StringValue()] = recordZone{
 			recordType:    args.Inputs["recordType"].StringValue(),
 			zone:          args.Inputs["zoneName"].StringValue(),
 			resourceGroup: args.Inputs["resourceGroupName"].StringValue(),
 		}
+		m.mu.Unlock()
 	}
 	return args.Name + "_id", args.Inputs, nil
 }

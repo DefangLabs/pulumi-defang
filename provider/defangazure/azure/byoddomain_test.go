@@ -2,6 +2,7 @@ package azure
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -168,13 +169,19 @@ func TestCreateByodDomainShortCircuits(t *testing.T) {
 
 // recordTypeMocks captures the recordType of each dns RecordSet by its relative
 // name, so CreateByodDomain tests can assert which records (A vs CNAME, asuid
-// TXT) were created.
-type recordTypeMocks struct{ byRelative map[string]string }
+// TXT) were created. Pulumi registers resources from concurrent goroutines, so
+// the map needs a lock.
+type recordTypeMocks struct {
+	mu         sync.Mutex
+	byRelative map[string]string
+}
 
 func (m *recordTypeMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	if strings.HasSuffix(args.TypeToken, ":RecordSet") {
 		rel := args.Inputs["relativeRecordSetName"].StringValue()
+		m.mu.Lock()
 		m.byRelative[rel] = args.Inputs["recordType"].StringValue()
+		m.mu.Unlock()
 	}
 	return args.Name + "_id", args.Inputs, nil
 }
