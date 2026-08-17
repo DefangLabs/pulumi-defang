@@ -23,15 +23,15 @@ const maxTTL = 10 * 365 * 24 * time.Hour
 // env var by the CLI). Empty, "never" and "0" mean no self-destruct. Other
 // values are Go durations with an optional whole-days prefix ("12h", "7d",
 // "7d12h"), parsed by the same timeutils.ParseDuration the CLI validates
-// the value with, so the two sides cannot drift.
+// the value with, so the two sides cannot drift. The CLI's ParseTTL already
+// trims and lowercases before setting DEFANG_TTL, so this doesn't repeat it.
 func parseTTL(value string) (time.Duration, error) {
-	s := strings.ToLower(strings.TrimSpace(value))
-	switch s {
+	switch value {
 	case "", "never", "0":
 		return 0, nil
 	}
 
-	d, err := timeutils.ParseDuration(s)
+	d, err := timeutils.ParseDuration(value)
 	if err != nil {
 		return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
 	}
