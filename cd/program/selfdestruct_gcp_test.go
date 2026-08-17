@@ -2,6 +2,7 @@ package program
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -46,6 +47,9 @@ func TestGcpSelfDestructBuild(t *testing.T) {
 	}
 	if build.Options.Logging != "CLOUD_LOGGING_ONLY" {
 		t.Errorf("logging = %q", build.Options.Logging)
+	}
+	if want := fmt.Sprintf("%ds", int(CdTimeout.Seconds())); build.Timeout != want {
+		t.Errorf("timeout = %q, want %q", build.Timeout, want)
 	}
 	if build.ServiceAccount != "projects/my-gcp-project/serviceAccounts/cd@my-gcp-project.iam.gserviceaccount.com" {
 		t.Errorf("serviceAccount = %q", build.ServiceAccount)

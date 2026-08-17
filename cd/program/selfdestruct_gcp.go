@@ -48,7 +48,10 @@ func createGCPSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 		return fmt.Errorf("defang:ttl requires the CD to run in Cloud Build: %w", err)
 	}
 
-	fireAt := time.Now().Add(ttl)
+	// Round up to the next whole minute: the cron expression has minute
+	// granularity, and truncating would fire up to 59s before now + TTL
+	// (mirrors the Azure variant).
+	fireAt := time.Now().Add(ttl).Truncate(time.Minute).Add(time.Minute)
 	body, err := gcpSelfDestructBuild(cdImage, projectID, saEmail, pctx.Stack(), os.Environ())
 	if err != nil {
 		return err
