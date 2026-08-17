@@ -144,9 +144,14 @@ func setDefaultStackConfig(prefix string, config configMap) {
 // addStackConfigFromEnv adds any stack config from legacy environment variables.
 func addStackConfigFromEnv(config configMap) error {
 	region := os.Getenv("REGION")
-	awsProfile := os.Getenv("AWS_PROFILE")                    // AWS only
-	awsRegion := getenv("AWS_REGION", region)                 // AWS only
-	azureLocation := getenv("AZURE_LOCATION", region)         // Azure only
+	awsProfile := os.Getenv("AWS_PROFILE") // AWS only
+	// AWS only. No fallback to the generic `region`: real AWS builds always
+	// have AWS_REGION set (CodeBuild injects it automatically), so falling
+	// back here only causes false-positive AWS detection on GCP/Azure builds
+	// that pass the generic REGION var for their own region fallback below —
+	// this is exactly what "conflicting cloud providers configured" fired on.
+	awsRegion := os.Getenv("AWS_REGION")
+	azureLocation := getenv("AZURE_LOCATION", region) // Azure only
 	azureSubscriptionId := os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only; the project RG and Key Vault names are derived from (project, stack, location) and (subscription, RG) respectively — see provider/defangazure/azure/azure.go
 	cdImage := os.Getenv("DEFANG_CD_IMAGE")                   // GCP only; for cleanup
 	delegationSetId := os.Getenv("DELEGATION_SET_ID")         // AWS only
