@@ -186,7 +186,7 @@ func (m *recordTypeMocks) NewResource(args pulumi.MockResourceArgs) (string, res
 	return args.Name + "_id", args.Inputs, nil
 }
 
-func (recordTypeMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+func (*recordTypeMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	return args.Args, nil
 }
 

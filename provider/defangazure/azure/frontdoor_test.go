@@ -428,6 +428,6 @@ func (m *recordZoneMocks) NewResource(args pulumi.MockResourceArgs) (string, res
 	return args.Name + "_id", args.Inputs, nil
 }
 
-func (recordZoneMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+func (*recordZoneMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	return args.Args, nil
 }
