@@ -7,6 +7,14 @@ import (
 	"time"
 )
 
+// CdTimeout is the wall-clock ceiling for one CD run. It is shared by the cd
+// binary's own context timeout (cd/main.go) and the Cloud Build timeout the
+// GCP self-destruct trigger requests, so a scheduled down gets exactly the
+// budget an interactive run gets. (On Azure the ARM-side bound is the
+// defang-cd job template's ReplicaTimeout, set by the CLI — see
+// DefangLabs/defang issue 2213 for aligning that with this value.)
+const CdTimeout = time.Hour
+
 // minTTL is the shortest supported time-to-live. The trigger's clock starts
 // when the deploy creates it, but resources can take 10+ minutes to finish
 // provisioning after that — a short TTL could tear the stack down while (or

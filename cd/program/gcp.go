@@ -2,6 +2,7 @@ package program
 
 import (
 	"fmt"
+	"time"
 
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -15,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.Duration, cdImage string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
 		Project: pulumi.String(config.GetProject(ctx)),
 		Region:  pulumi.String(config.GetRegion(ctx)),
@@ -34,6 +35,15 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpd
 	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, etag), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Self-destruct: schedule this stack's own `defang cd down` at now + TTL.
+	// Registered independently of the project component (see
+	// createGCPSelfDestruct); every redeploy rewrites the schedule.
+	if ttl > 0 {
+		if err := createGCPSelfDestruct(ctx, cf, ttl, cdImage, pulumi.Provider(gcpProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed GCS object, gated on

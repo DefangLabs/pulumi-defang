@@ -7,7 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
+
+	"github.com/DefangLabs/pulumi-defang/cd/program"
 )
 
 var version = "development" // overwritten by -ldflags "-X main.version=..."
@@ -37,7 +38,7 @@ func run(args ...string) int {
 		}
 	}()
 
-	ctx, cancelTimeout := context.WithTimeoutCause(ctx, 60*time.Minute, &signalError{sig: syscall.SIGXCPU}) // like TS
+	ctx, cancelTimeout := context.WithTimeoutCause(ctx, program.CdTimeout, &signalError{sig: syscall.SIGXCPU}) // like TS
 	defer cancelTimeout()
 
 	if err := cdMain(ctx, args...); err != nil {
