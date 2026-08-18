@@ -636,20 +636,28 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	scriptPath := "/opt/defang/" + unit + "-secrets.sh"
 	envFile := "/run/defang/" + unit + ".env"
 
+	// Fail fast: a fetch that errors out (or yields an empty token) must fail
+	// ExecStartPre so the unit does not start the container with an empty
+	// secret value — a silent empty credential is far harder to diagnose than
+	// a unit that refuses to start. `curl -f` turns HTTP errors into non-zero
+	// exits and `grep` exits 1 when the expected field is absent (e.g. an
+	// error payload), so with pipefail every failure mode is caught.
 	var s strings.Builder
 	s.WriteString("#!/bin/bash\n")
-	s.WriteString("set -uo pipefail\n")
+	s.WriteString("set -euo pipefail\n")
 	s.WriteString("umask 077\n")
 	s.WriteString("mkdir -p /run/defang\n")
-	s.WriteString(`tok=$(curl -s -H "Metadata-Flavor: Google" ` +
+	s.WriteString(`tok=$(curl -fsS -H "Metadata-Flavor: Google" ` +
 		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token ` +
 		`| grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)` + "\n")
-	fmt.Fprintf(&s, `sm() { curl -s -H "Authorization: Bearer $tok" `+
+	s.WriteString(`[ -n "$tok" ] || { echo "defang: empty metadata token" >&2; exit 1; }` + "\n")
+	fmt.Fprintf(&s, `sm() { curl -fsS -H "Authorization: Bearer $tok" `+
 		`"https://secretmanager.googleapis.com/v1/projects/%s/secrets/$1/versions/latest:access" `+
 		`| grep -o '"data":"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
 	s.WriteString("{\n")
 	for _, r := range refs {
-		fmt.Fprintf(&s, "printf '%%s=%%s\\n' '%s' \"$(sm '%s')\"\n", r.envKey, r.secretID)
+		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n", r.secretID, r.secretID)
+		fmt.Fprintf(&s, "printf '%%s=%%s\\n' '%s' \"$v\"\n", r.envKey)
 	}
 	fmt.Fprintf(&s, "} > %s\n", envFile)
 
