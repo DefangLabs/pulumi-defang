@@ -12,6 +12,7 @@ package aws
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
@@ -42,10 +43,14 @@ func TestConstructAwsProject(t *testing.T) {
 // network_mode: "service:<name>" is folded into the parent's task definition
 // as an additional container instead of being deployed as its own ECS service.
 func TestConstructAwsProjectFoldsSidecars(t *testing.T) {
+	// NewResourceF runs concurrently (one goroutine per resource registration),
+	// so captures must be synchronized.
+	var mu sync.Mutex
 	var taskDefs []property.Map
 	ecsServices := 0
 	mock := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
 			switch string(args.TypeToken) {
 			case "aws:ecs/taskDefinition:TaskDefinition":
 				taskDefs = append(taskDefs, args.Inputs)
@@ -53,6 +58,7 @@ func TestConstructAwsProjectFoldsSidecars(t *testing.T) {
 				ecsServices++
 			default:
 			}
+			mu.Unlock()
 			return args.Name, args.Inputs, nil
 		},
 	}
@@ -229,11 +235,16 @@ func TestConstructAwsProjectRejectsForeignPolicies(t *testing.T) {
 }
 
 func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {
+	// NewResourceF runs concurrently; the unsynchronized append here used to
+	// drop attachments occasionally, failing this test flakily in CI.
+	var mu sync.Mutex
 	var attachments []property.Map
 	mock := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
 			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				mu.Lock()
 				attachments = append(attachments, args.Inputs)
+				mu.Unlock()
 			}
 			return args.Name, args.Inputs, nil
 		},
@@ -268,11 +279,14 @@ func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {
 }
 
 func TestConstructAwsProjectDuplicatePoliciesDeduped(t *testing.T) {
+	var mu sync.Mutex
 	var attachments []property.Map
 	mock := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
 			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				mu.Lock()
 				attachments = append(attachments, args.Inputs)
+				mu.Unlock()
 			}
 			return args.Name, args.Inputs, nil
 		},
