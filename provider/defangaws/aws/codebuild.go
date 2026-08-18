@@ -56,8 +56,134 @@ func platformToArch(platform string) ArchType {
 	return X86_64 // default to x86_64; TODO: revisit this default
 }
 
+// dockerhubMirrorContainerName is the name of the local pull-through mirror container.
+const dockerhubMirrorContainerName = "dockerhub-ecr-mirror"
+
+// publicEcrProxyURL is where the local pull-through mirror listens on the CodeBuild host.
+// Both the Docker daemon (registry-mirrors) and BuildKit (buildkitd.toml) point at it.
+const publicEcrProxyURL = "http://localhost:5000"
+
+// publicEcrProxyNginxConf is the nginx config for the Docker Hub -> public.ecr.aws pull-through
+// mirror. Docker Hub images are mirrored by AWS under public.ecr.aws/docker/<repo>, so /v2/<rest>
+// maps to /v2/docker/<rest>; anything the mirror does not have (404) falls back to Docker Hub
+// itself. The __TOKEN__ line is replaced at build time with the public-ECR bearer token.
+// Matches TS getPublicEcrProxySteps' nginxConf.
+//
+// The backslash-escaped $ are for the unquoted shell heredoc that writes this file: they must
+// reach nginx as literal nginx variables, not be expanded by the shell.
+const publicEcrProxyNginxConf = `events {}
+http {
+    server {
+
+        set \$token "";
+__TOKEN__
+
+        listen 80;
+        location = /v2/ {
+            proxy_pass https://public.ecr.aws/v2/;
+            proxy_intercept_errors on;
+            proxy_set_header Authorization "Bearer \$token";
+            proxy_ssl_server_name on;
+
+            error_page 404 = @fallback;
+        }
+
+        location ~ ^/v2/(.+) {
+            # Capture the rest of the path
+            set \$rest \$1;
+
+            # Build upstream path: /v2/docker/<rest>
+            proxy_pass https://public.ecr.aws/v2/docker/\$rest;
+            proxy_intercept_errors on;
+            proxy_set_header Authorization "Bearer \$token";
+            proxy_ssl_server_name on;
+
+            error_page 404 = @fallback;
+        }
+
+        location @fallback {
+            proxy_pass https://registry-1.docker.io;
+            proxy_ssl_server_name on;
+        }
+    }
+}
+`
+
+// getPublicEcrProxySteps returns the pre_build commands that start a local nginx container
+// proxying Docker Hub pulls to public.ecr.aws, so builds are not subject to Docker Hub's
+// anonymous pull rate limits. Matches TS getPublicEcrProxySteps.
+//
+// The bearer token is fetched with docker-credential-ecr-login (valid 12h, see
+// https://docs.aws.amazon.com/AmazonECRPublic/latest/APIReference/API_GetAuthorizationToken.html)
+// and split into 1024-char chunks, because nginx cannot hold a token that long in one directive.
+func getPublicEcrProxySteps() []string {
+	return []string{
+		"cat > /tmp/nginx.conf.tmpl << EOF\n" + publicEcrProxyNginxConf + "\nEOF",
+		`TOKEN_BLOCK=$(echo "https://public.ecr.aws" | docker-credential-ecr-login get | ` +
+			`jq -j '"\(.Username):\(.Secret)"' | base64 -w 1024 | ` +
+			`awk '{ print "set $token \"${token}" $0 "\";" }')`,
+		`awk -v token_block="$TOKEN_BLOCK" '{ if ($0 ~ /__TOKEN__/) { print token_block } else { print } }' ` +
+			`/tmp/nginx.conf.tmpl > /tmp/nginx.conf`,
+		// CodeBuild reuses warm hosts (we enable LOCAL_* caches), so a mirror container from an
+		// earlier build can still be around under this name; remove it before creating our own.
+		"docker rm -f " + dockerhubMirrorContainerName + " || true",
+		// NOTE: intentionally NO restart policy on this container -- do not add --restart=always.
+		// The container only has to live for one build. With a restart policy, the Docker daemon
+		// on a reused host resurrects the previous build's container from its stale
+		// /tmp/nginx.conf bind-mount spec, and Docker creates a missing bind-mount source as a
+		// *directory*, which then breaks this build's own `awk ... > /tmp/nginx.conf` redirect.
+		// See https://github.com/DefangLabs/defang-mvp/issues/2869
+		"docker run -d --rm -p 5000:80 --name " + dockerhubMirrorContainerName +
+			" -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro public.ecr.aws/nginx/nginx:stable-alpine",
+		"sleep 3", // give the mirror some time to start
+	}
+}
+
+// getSetupMirrorSteps returns the pre_build commands that point the Docker daemon and BuildKit at
+// the given docker.io mirrors. Matches TS getSetupMirrorSteps.
+func getSetupMirrorSteps(mirrors []string) ([]string, error) {
+	if len(mirrors) == 0 {
+		return nil, nil
+	}
+
+	daemonJSON, err := json.Marshal(map[string][]string{"registry-mirrors": mirrors})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling docker daemon.json: %w", err)
+	}
+
+	// BuildKit's `mirrors` entries are bare host:port (no scheme), with a separate `http = true`
+	// flag for a plaintext mirror -- unlike Docker's own daemon.json, which wants the full URL.
+	// https://docs.docker.com/build/buildkit/toml-configuration/
+	allHTTP := true
+	quoted := make([]string, 0, len(mirrors))
+	for _, m := range mirrors {
+		host, isHTTP := strings.CutPrefix(m, "http://")
+		if !isHTTP {
+			host = strings.TrimPrefix(m, "https://")
+			allHTTP = false
+		}
+		quoted = append(quoted, `"`+host+`"`)
+	}
+	var httpLine string
+	if allHTTP {
+		httpLine = "\n  http = true"
+	}
+	buildkitdToml := "\n[registry.\"docker.io\"]\n  mirrors = [\n    " +
+		strings.Join(quoted, ", ") + "\n  ]" + httpLine + "\n"
+
+	// Written via single-quoted heredocs, not `echo '...'`: a mirror value containing a single
+	// quote would otherwise break out of the shell string. These values are internal constants
+	// today, not user input, but this avoids the class of bug entirely rather than relying on that.
+	return []string{
+		"mkdir -p /etc/docker/\ncat > /etc/docker/daemon.json <<'EOF'\n" + string(daemonJSON) + "\nEOF",
+		"cat > /tmp/buildkitd.toml <<'EOF'" + buildkitdToml + "EOF",
+		// dockerd only picks up a changed registry-mirrors list on SIGHUP.
+		"kill -HUP $(pidof dockerd)",
+	}, nil
+}
+
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
-// Matches TS getBuildSpec: pre_build sets up buildx, build runs docker buildx build --push.
+// Matches TS getBuildSpec: pre_build sets up mirrors and buildx, build runs docker buildx build --push.
 func getBuildSpec(build compose.BuildConfig, destination string) (string, error) {
 	dockerfile := build.GetDockerfile()
 
@@ -90,11 +216,34 @@ func getBuildSpec(build compose.BuildConfig, destination string) (string, error)
 		cacheArgs = append(cacheArgs, "--cache-to="+c)
 	}
 
-	preBuildCommands := []string{
+	preBuildCommands := make([]string, 0, 12)
+	preBuildCommands = append(preBuildCommands,
 		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com", //nolint:lll
 		"aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws",
-		strings.TrimSpace("docker buildx create --use --driver=docker-container --use " + platformArg),
+	)
+
+	// Route docker.io through a local pull-through mirror backed by public.ecr.aws, so builds do
+	// not hit Docker Hub's anonymous pull rate limits. Matches TS prepareBuildSteps, minus the
+	// hasDockerhubAuth() opt-out: unlike TS, this provider has no way to configure explicit Docker
+	// Hub credentials, so there is never a reason to skip the mirror.
+	// TODO: also honor a user-supplied registry mirror here (TS BuildSpecArgs.registryMirror).
+	mirrors := []string{publicEcrProxyURL}
+	mirrorSteps, err := getSetupMirrorSteps(mirrors)
+	if err != nil {
+		return "", err
 	}
+	preBuildCommands = append(preBuildCommands, mirrorSteps...)
+	preBuildCommands = append(preBuildCommands, getPublicEcrProxySteps()...)
+
+	// BuildKit runs in its own container, so it needs both the mirror config and host networking
+	// to be able to reach the mirror on localhost:5000.
+	var buildkitdCfgArg string
+	if len(mirrors) > 0 {
+		buildkitdCfgArg = "--buildkitd-config=/tmp/buildkitd.toml"
+	}
+	buildxCreate := "docker buildx create --use --driver=docker-container " + buildkitdCfgArg +
+		" --driver-opt network=host --use " + platformArg
+	preBuildCommands = append(preBuildCommands, strings.Join(strings.Fields(buildxCreate), " "))
 
 	buildCmd := fmt.Sprintf("docker buildx build %s %s -t %s -f %s --push %s %s $CODEBUILD_SRC_DIR",
 		platformArg, strings.Join(cacheArgs, " "), destination, dockerfile, buildArgsStr, targetArg)
