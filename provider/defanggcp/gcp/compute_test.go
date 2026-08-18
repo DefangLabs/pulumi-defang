@@ -250,9 +250,11 @@ func TestSecretFetchScript(t *testing.T) {
 	assert.Contains(t, wf, `permissions: "0700"`)
 	assert.Contains(t, wf, "metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
 	assert.Contains(t, wf, "https://secretmanager.googleapis.com/v1/projects/my-proj/secrets/")
-	assert.Contains(t, wf, `v=$(sm 'Defang_p_s_DBPASS') || { echo "defang: failed to fetch secret Defang_p_s_DBPASS" >&2; exit 1; }`)
+	assert.Contains(t, wf,
+		`v=$(sm 'Defang_p_s_DBPASS') || { echo "defang: failed to fetch secret Defang_p_s_DBPASS" >&2; exit 1; }`)
 	assert.Contains(t, wf, `printf '%s=%s\n' 'DB' "$v"`)
-	assert.Contains(t, wf, `v=$(sm 'Defang_p_s_APIKEY') || { echo "defang: failed to fetch secret Defang_p_s_APIKEY" >&2; exit 1; }`)
+	assert.Contains(t, wf,
+		`v=$(sm 'Defang_p_s_APIKEY') || { echo "defang: failed to fetch secret Defang_p_s_APIKEY" >&2; exit 1; }`)
 	assert.Contains(t, wf, `printf '%s=%s\n' 'API' "$v"`)
 	assert.Contains(t, wf, "} > /run/defang/svc.env")
 	// fetch failures must fail ExecStartPre, never write an empty value

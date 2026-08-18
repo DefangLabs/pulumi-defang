@@ -656,7 +656,8 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 		`| grep -o '"data":"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
 	s.WriteString("{\n")
 	for _, r := range refs {
-		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n", r.secretID, r.secretID)
+		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n",
+			r.secretID, r.secretID)
 		fmt.Fprintf(&s, "printf '%%s=%%s\\n' '%s' \"$v\"\n", r.envKey)
 	}
 	fmt.Fprintf(&s, "} > %s\n", envFile)
