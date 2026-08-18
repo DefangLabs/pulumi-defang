@@ -74,7 +74,6 @@ func TestGetBuildSpecDockerhubMirror(t *testing.T) {
 	assert.Contains(t, joined, `"registry-mirrors":["http://localhost:5000"]`)
 	assert.Contains(t, joined, `> /etc/docker/daemon.json`)
 	assert.Contains(t, joined, `[registry."docker.io"]`)
-	assert.Contains(t, joined, `"http://localhost:5000"`)
 	assert.Contains(t, joined, "> /tmp/buildkitd.toml")
 	assert.Contains(t, joined, "kill -HUP $(pidof dockerd)")
 
@@ -86,15 +85,28 @@ func TestGetBuildSpecDockerhubMirror(t *testing.T) {
 	assert.Contains(t, joined, "docker run -d --rm -p 5000:80 --name dockerhub-ecr-mirror")
 	assert.Contains(t, joined, "-v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro")
 
-	// The daemon.json fragment must be valid JSON.
+	// The daemon.json fragment (written via a quoted heredoc, not `echo '...'`, so a mirror value
+	// containing a single quote can't break out of the shell string) must be valid JSON, and Docker
+	// wants the mirror as a full URL there.
 	daemonCmd := cmds[indexOfCommand(cmds, "/etc/docker/daemon.json")]
-	_, jsonPart, ok := strings.Cut(daemonCmd, "echo '")
+	_, jsonPart, ok := strings.Cut(daemonCmd, "daemon.json <<'EOF'\n")
 	require.True(t, ok)
-	jsonPart, _, ok = strings.Cut(jsonPart, "'")
+	jsonPart, _, ok = strings.Cut(jsonPart, "\nEOF")
 	require.True(t, ok)
 	var daemonCfg map[string][]string
 	require.NoError(t, json.Unmarshal([]byte(jsonPart), &daemonCfg))
 	assert.Equal(t, []string{"http://localhost:5000"}, daemonCfg["registry-mirrors"])
+
+	// BuildKit's buildkitd.toml wants bare host:port (no scheme) plus a separate http=true flag
+	// for a plaintext mirror, unlike daemon.json above (https://docs.docker.com/build/buildkit/toml-configuration/).
+	buildkitdCmd := cmds[indexOfCommand(cmds, "/tmp/buildkitd.toml")]
+	_, tomlPart, ok := strings.Cut(buildkitdCmd, "buildkitd.toml <<'EOF'")
+	require.True(t, ok)
+	tomlPart, _, ok = strings.Cut(tomlPart, "EOF")
+	require.True(t, ok)
+	assert.Contains(t, tomlPart, `mirrors = [`+"\n    \"localhost:5000\"\n  ]")
+	assert.NotContains(t, tomlPart, "http://localhost:5000")
+	assert.Contains(t, tomlPart, "\n  http = true")
 }
 
 // The mirror container must never get a restart policy: on a reused CodeBuild host the daemon

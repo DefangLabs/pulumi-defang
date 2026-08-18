@@ -151,15 +151,32 @@ func getSetupMirrorSteps(mirrors []string) ([]string, error) {
 		return nil, fmt.Errorf("marshaling docker daemon.json: %w", err)
 	}
 
+	// BuildKit's `mirrors` entries are bare host:port (no scheme), with a separate `http = true`
+	// flag for a plaintext mirror -- unlike Docker's own daemon.json, which wants the full URL.
+	// https://docs.docker.com/build/buildkit/toml-configuration/
+	allHTTP := true
 	quoted := make([]string, 0, len(mirrors))
 	for _, m := range mirrors {
-		quoted = append(quoted, `"`+m+`"`)
+		host, isHTTP := strings.CutPrefix(m, "http://")
+		if !isHTTP {
+			host = strings.TrimPrefix(m, "https://")
+			allHTTP = false
+		}
+		quoted = append(quoted, `"`+host+`"`)
 	}
-	buildkitdToml := "\n[registry.\"docker.io\"]\n  mirrors = [\n    " + strings.Join(quoted, ", ") + "\n  ]\n"
+	var httpLine string
+	if allHTTP {
+		httpLine = "\n  http = true"
+	}
+	buildkitdToml := "\n[registry.\"docker.io\"]\n  mirrors = [\n    " +
+		strings.Join(quoted, ", ") + "\n  ]" + httpLine + "\n"
 
+	// Written via single-quoted heredocs, not `echo '...'`: a mirror value containing a single
+	// quote would otherwise break out of the shell string. These values are internal constants
+	// today, not user input, but this avoids the class of bug entirely rather than relying on that.
 	return []string{
-		"mkdir -p /etc/docker/ && echo '" + string(daemonJSON) + "' > /etc/docker/daemon.json",
-		"echo '" + buildkitdToml + "' > /tmp/buildkitd.toml",
+		"mkdir -p /etc/docker/\ncat > /etc/docker/daemon.json <<'EOF'\n" + string(daemonJSON) + "\nEOF",
+		"cat > /tmp/buildkitd.toml <<'EOF'" + buildkitdToml + "EOF",
 		// dockerd only picks up a changed registry-mirrors list on SIGHUP.
 		"kill -HUP $(pidof dockerd)",
 	}, nil
