@@ -145,6 +145,36 @@ func TestStackConfigFromEnvGCP(t *testing.T) {
 	}
 }
 
+// Regression test for a real BYOC failure: Fabric sets the generic REGION env
+// var (alongside GCLOUD_REGION) on every GCP build, intending it only as a
+// fallback for gcp:region. Before the fix, awsRegion also fell back to that
+// same generic `region`, so any GCP build with REGION set was wrongly
+// detected as having AWS configured too, and addStackConfigFromEnv failed
+// with "conflicting cloud providers configured: [aws gcp]" on every GCP
+// deploy.
+func TestStackConfigFromEnvGCPWithGenericRegion(t *testing.T) {
+	unsetenv(t, "AWS_REGION", "AZURE_SUBSCRIPTION_ID")
+
+	t.Setenv("REGION", "us-central1") // generic region var Fabric sets for GCP builds
+	t.Setenv("GCLOUD_PROJECT", "my-gcp-project")
+	t.Setenv("GCLOUD_REGION", "us-central1")
+	t.Setenv("DEFANG_ORG", "testorg")
+
+	config := configMap{}
+	setDefaultStackConfig("", config)
+	err := addStackConfigFromEnv(config)
+	if err != nil {
+		t.Fatalf("stackConfig() error: %v", err)
+	}
+
+	if config["defang:provider"].Value != "gcp" {
+		t.Errorf("expected provider gcp, got %q", config["defang:provider"].Value)
+	}
+	if _, ok := config["aws:region"]; ok {
+		t.Error("aws:region should not be set on a GCP-only build")
+	}
+}
+
 func TestStackConfigFromEnvAzure(t *testing.T) {
 	// Clear ambient env that could pick a second provider or override fallbacks.
 	unsetenv(t, "REGION", "AWS_REGION", "GCP_PROJECT", "GCLOUD_PROJECT")
