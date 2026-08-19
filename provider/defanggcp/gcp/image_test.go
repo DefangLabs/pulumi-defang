@@ -397,8 +397,8 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 	spy := &buildDepsSpy{}
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		iamMember, err := storage.NewBucketIAMMember(ctx, "artifacts-viewer", &storage.BucketIAMMemberArgs{
-			Bucket: pulumi.String("my-artifacts-bucket"),
+		iamMember, err := storage.NewBucketIAMMember(ctx, "source-viewer", &storage.BucketIAMMemberArgs{
+			Bucket: pulumi.String("defang-cd-test"),
 			Role:   pulumi.String("roles/storage.objectViewer"),
 			Member: pulumi.String("serviceAccount:build@proj.iam.gserviceaccount.com"),
 		})
@@ -425,7 +425,7 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 			Build: &compose.BuildConfig{
 				// A real `defang up` always arrives with a gs:// URI, so
 				// resolveSourceURI passes it straight through.
-				Context: pulumi.String("gs://my-artifacts-bucket/context.zip"),
+				Context: pulumi.String("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 			},
 		}
 
