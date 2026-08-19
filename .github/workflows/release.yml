@@ -282,6 +282,7 @@ jobs:
           build-args: |
             CD_VERSION=${{ github.ref_name }}
             PROVIDER_VERSION=${{ github.ref_name }}
+            ${{ matrix.clouds == 'aws' && 'CDBASE=alpine:3.21' || '' }}
           tags: ${{ env.IMAGE_TAGS }}
           cache-from: type=gha,scope=${{ github.workflow }}-amd64
           cache-to: type=gha,scope=${{ github.workflow }}-amd64,mode=max

@@ -196,6 +196,7 @@ jobs:
           context: . # build context must be repo root to include generated Go SDK
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           target: all
+          build-args: CDBASE=alpine:3.21
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=${{ github.workflow }}
           cache-to: type=gha,scope=${{ github.workflow }},mode=max

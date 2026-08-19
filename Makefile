@@ -119,10 +119,14 @@ PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
 .PHONY: images
 images: image_aws image_gcp image_azure image_all
 
+# aws and all run as an AWS CodeBuild build container, which needs a shell to provision at all
+# (see the CDBASE comment in Dockerfile); gcp/azure keep the smaller scratch default.
+image_aws image_all: CDBASE_ARG := --build-arg CDBASE=alpine:3.21
+
 .PHONY: image_%
 image_%: go_sdk
 	$(DOCKER_BUILDX) $(PUSH) --target $* \
-	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) \
+	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) $(CDBASE_ARG) \
 	  -t $(IMAGE_REPO):$(CD_VERSION)-$* .
 
 .PHONY: push_%
