@@ -2,9 +2,20 @@ package testutil
 
 import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 )
+
+// StackConfig builds the stack config map for a Construct call from
+// "namespace:key" strings, e.g. StackConfig("defang:stateUrl", "gs://bucket").
+func StackConfig(kv ...string) map[config.Key]string {
+	cfg := make(map[config.Key]string, len(kv)/2)
+	for i := 0; i+1 < len(kv); i += 2 {
+		cfg[config.MustParseKey(kv[i])] = kv[i+1]
+	}
+	return cfg
+}
 
 // AwsURN builds a URN for an AWS provider component type.
 func AwsURN(typ string) resource.URN {

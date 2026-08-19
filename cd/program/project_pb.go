@@ -12,7 +12,7 @@ import (
 const protobufContentType = "application/protobuf"
 
 func parseStateURL(ctx *pulumi.Context) (*url.URL, error) {
-	stateURL := common.Defang.String("stateUrl", "").Get(ctx)
+	stateURL := common.StateUrl.Get(ctx)
 	if stateURL == "" {
 		return nil, nil
 	}

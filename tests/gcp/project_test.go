@@ -388,16 +388,22 @@ func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
 }
 
+// TestConstructProjectWithBuildCreatesBuildInfra mirrors a real `defang up`:
+// the CLI has already uploaded the build context to the shared CD bucket and
+// rewritten build.context to a gs:// URI, so the provider must build the image
+// straight from there without provisioning any GCS bucket of its own — the CD
+// service account has no project-level storage.buckets.create permission.
 func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.GcpURN("Project"),
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
 			"app": property.New(property.NewMap(map[string]property.Value{
 				"build": property.New(property.NewMap(map[string]property.Value{
-					"context": property.New("./app"),
+					"context": property.New("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 				})),
 			})),
 		}),
@@ -416,6 +422,69 @@ func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 	assert.Equal(t, 1, countType(*records, "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding"))
 	// Build resource for the service
 	assert.Equal(t, 1, countType(*records, "defang-gcp:defanggcp:Build"))
+
+	// No GCS bucket may be created: the build context already lives in the shared
+	// CD bucket, and creating one needs storage.buckets.create on the project.
+	assert.Equal(t, 0, countType(*records, "gcp:storage/bucket:Bucket"))
+	assert.Equal(t, 0, countType(*records, "gcp:storage/bucketObject:BucketObject"))
+
+	// Instead, the build SA gets bucket-scoped read access on the shared CD bucket.
+	viewer := findTypeWhere(*records, "gcp:storage/bucketIAMMember:BucketIAMMember", func(_ property.Map) bool {
+		return true
+	})
+	require.NotNil(t, viewer, "expected a BucketIAMMember on the shared CD bucket")
+	assert.Equal(t, "defang-cd-test", viewer.inputs.Get("bucket").AsString())
+	assert.Equal(t, "roles/storage.objectViewer", viewer.inputs.Get("role").AsString())
+}
+
+// TestConstructProjectWithLocalBuildContextUploadsToSharedBucket covers the
+// direct-Pulumi path (no `defang up`): a local build context is archived and
+// uploaded into the configured shared bucket rather than a freshly created one.
+func TestConstructProjectWithLocalBuildContextUploadsToSharedBucket(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"build": property.New(property.NewMap(map[string]property.Value{
+					"context": property.New("./app"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, countType(*records, "gcp:storage/bucket:Bucket"))
+	obj := findTypeWhere(*records, "gcp:storage/bucketObject:BucketObject", func(_ property.Map) bool {
+		return true
+	})
+	require.NotNil(t, obj, "expected the local build context to be uploaded")
+	assert.Equal(t, "defang-cd-test", obj.inputs.Get("bucket").AsString())
+}
+
+// TestConstructProjectWithLocalBuildContextRequiresBucket asserts a clear error
+// when a local build context has nowhere to be uploaded to.
+func TestConstructProjectWithLocalBuildContextRequiresBucket(t *testing.T) {
+	mock, _ := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"build": property.New(property.NewMap(map[string]property.Value{
+					"context": property.New("./app"),
+				})),
+			})),
+		}),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "defang:stateUrl")
 }
 
 func TestConstructProjectWithoutBuildSkipsBuildInfra(t *testing.T) {
@@ -1088,7 +1157,8 @@ func TestConstructProjectAllResourcesAreChildren(t *testing.T) {
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.GcpURN("Project"),
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"domain": property.New("example.com"),
 			"services": property.New(property.NewMap(map[string]property.Value{

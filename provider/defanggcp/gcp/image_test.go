@@ -390,7 +390,7 @@ func TestBuildSourceDigest(t *testing.T) {
 
 // TestBuildServiceImageDependsOnBucketIAMMember verifies that the Build custom
 // resource has an explicit Pulumi dependency on the BucketIAMMember that grants
-// the build service account read access to the artifacts bucket. Without this
+// the build service account read access to the shared CD bucket. Without this
 // dependency Cloud Build can be submitted before GCP IAM has propagated the
 // binding (~60 s window), causing a 403 on first deploy.
 func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
@@ -423,8 +423,8 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 
 		svc := compose.ServiceConfig{
 			Build: &compose.BuildConfig{
-				// Use a gs:// URI so resolveSourceURI skips the BucketObject creation
-				// and we don't need a real BuildBucket in infra.
+				// A real `defang up` always arrives with a gs:// URI, so
+				// resolveSourceURI passes it straight through.
 				Context: pulumi.String("gs://my-artifacts-bucket/context.zip"),
 			},
 		}

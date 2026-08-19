@@ -20,6 +20,10 @@ import (
 
 var errNoRemoteRepoConfigured = errors.New("no remote repository configured for registry")
 var errMultiPlatformUnsupported = errors.New("multi-platform builds are unsupported on GCP Cloud Build")
+var errNoSourceBucket = errors.New(
+	"a local build context needs a GCS bucket to upload to: " +
+		"set the defang:stateUrl config to gs://<bucket>, or use a gs:// build context",
+)
 
 // Based on Cloud Run error:
 // "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
@@ -224,9 +228,15 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 }
 
 // resolveSourceURI ensures the build context is available at a GCS URI.
-// If the context is already a gs:// URI it is returned as-is. If it is a local
-// path (expressed as a pulumi.String literal), the directory is archived and
-// uploaded to the project's build-artifacts bucket via a BucketObject.
+//
+// Every `defang up` deploy arrives here with a gs:// URI already: the CLI archives
+// the build context, uploads it to the shared Defang CD bucket with a presigned URL,
+// and rewrites build.context to "gs://<cd-bucket>/uploads/<digest>.tar.gz" before CD
+// runs. Those are passed through untouched.
+//
+// A local path only reaches here when the Pulumi program is driven directly (not by
+// `defang up`). In that case the directory is archived and uploaded into the same
+// shared CD bucket, which must be configured via the defang:stateUrl config.
 func resolveSourceURI(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -236,15 +246,19 @@ func resolveSourceURI(
 ) (pulumi.StringOutput, error) {
 	ps, ok := build.Context.(pulumi.String)
 	if ok && !strings.HasPrefix(string(ps), "gs://") {
+		if infra.SourceBucket == "" {
+			return pulumi.StringOutput{}, fmt.Errorf("%w: service %s has build context %q",
+				errNoSourceBucket, serviceName, string(ps))
+		}
 		obj, err := storage.NewBucketObject(ctx, serviceName+"-context", &storage.BucketObjectArgs{
-			Bucket: infra.BuildBucket.Name,
-			Name:   pulumi.Sprintf("%s-context.zip", serviceName),
+			Bucket: pulumi.String(infra.SourceBucket),
+			Name:   pulumi.String(fmt.Sprintf("uploads/%s/%s-context.zip", ctx.Project(), serviceName)),
 			Source: pulumi.NewFileArchive(string(ps)),
 		}, opts...)
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
 		}
-		return pulumi.Sprintf("gs://%s/%s", infra.BuildBucket.Name, obj.Name), nil
+		return pulumi.Sprintf("gs://%s/%s", infra.SourceBucket, obj.Name), nil
 	}
 	// Already a GCS URI (or an unresolved output) — use as-is.
 	return build.Context.ToStringOutput(), nil
@@ -268,11 +282,11 @@ func buildServiceImage(
 		return pulumi.StringOutput{}, err
 	}
 
-	// The Build resource must depend on the BucketIAMMember so Pulumi waits for
-	// the IAM binding before submitting the Cloud Build job. GCP IAM changes can
-	// take ~60 s to propagate globally; without this explicit edge the build SA
-	// may not yet have objectViewer access when Cloud Build attempts to read the
-	// source archive, causing a 403 on first deploy.
+	// The Build resource must depend on the BucketIAMMember (objectViewer on the
+	// shared CD bucket) so Pulumi waits for the IAM binding before submitting the
+	// Cloud Build job. GCP IAM changes can take ~60 s to propagate globally; without
+	// this explicit edge the build SA may not yet have read access when Cloud Build
+	// attempts to fetch the source archive, causing a 403 on first deploy.
 	buildOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
 	buildOpts = append(buildOpts, opts...)
 	if infra.BucketIAMMember != nil {
