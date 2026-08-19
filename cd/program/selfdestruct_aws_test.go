@@ -38,16 +38,46 @@ func TestAwsSelfDestructInput(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// encoding/json matches keys case-insensitively on unmarshal, so decoding
+	// into a struct tagged with the PascalCase names (below) would still pass
+	// even if the produced JSON regressed to camelCase. Assert the raw keys
+	// too, since that casing is exactly what EventBridge Scheduler's
+	// universal target requires (see startBuildInput's doc comment).
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(got), &raw); err != nil {
+		t.Fatal(err)
+	}
+	wantKeys := []string{
+		"ProjectName", "ImageOverride", "BuildspecOverride",
+		"EnvironmentVariablesOverride", "ImagePullCredentialsTypeOverride",
+	}
+	for _, key := range wantKeys {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("missing exact key %q in %s", key, got)
+		}
+	}
+	var rawEnv []map[string]json.RawMessage
+	if err := json.Unmarshal(raw["EnvironmentVariablesOverride"], &rawEnv); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range rawEnv {
+		for _, key := range []string{"Name", "Value", "Type"} {
+			if _, ok := e[key]; !ok {
+				t.Errorf("missing exact env key %q in %v", key, e)
+			}
+		}
+	}
+
 	var input struct {
-		ProjectName       string `json:"projectName"`
-		ImageOverride     string `json:"imageOverride"`
-		BuildspecOverride string `json:"buildspecOverride"`
-		PullCreds         string `json:"imagePullCredentialsTypeOverride"`
+		ProjectName       string `json:"ProjectName"`
+		ImageOverride     string `json:"ImageOverride"`
+		BuildspecOverride string `json:"BuildspecOverride"`
+		PullCreds         string `json:"ImagePullCredentialsTypeOverride"`
 		Env               []struct {
-			Name  string `json:"name"`
-			Value string `json:"value"`
-			Type  string `json:"type"`
-		} `json:"environmentVariablesOverride"`
+			Name  string `json:"Name"`
+			Value string `json:"Value"`
+			Type  string `json:"Type"`
+		} `json:"EnvironmentVariablesOverride"`
 	}
 	if err := json.Unmarshal([]byte(got), &input); err != nil {
 		t.Fatal(err)
@@ -56,7 +86,7 @@ func TestAwsSelfDestructInput(t *testing.T) {
 		t.Errorf("project/image = %q/%q", input.ProjectName, input.ImageOverride)
 	}
 	if input.PullCreds != "SERVICE_ROLE" {
-		t.Errorf("imagePullCredentialsTypeOverride = %q", input.PullCreds)
+		t.Errorf("ImagePullCredentialsTypeOverride = %q", input.PullCreds)
 	}
 	if !strings.Contains(input.BuildspecOverride, "/app/cd down") {
 		t.Errorf("buildspec = %q", input.BuildspecOverride)
@@ -77,7 +107,7 @@ func TestAwsSelfDestructInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "imagePullCredentialsTypeOverride") {
+	if strings.Contains(got, "ImagePullCredentialsTypeOverride") {
 		t.Errorf("curated image must not override pull credentials: %s", got)
 	}
 }

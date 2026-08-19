@@ -11,6 +11,7 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
+	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/scheduler"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -138,14 +139,17 @@ func codebuildProjectFromBuildArn(buildArn string) (name, arn string, _ error) {
 }
 
 // awsSelfDestructInput renders the codebuild:StartBuild request the schedule
-// fires — the same overrides AwsCodeBuild.Run passes, with args ["down"].
-// Universal-target inputs use the target API's own wire shape, which for
-// CodeBuild is camelCase JSON.
+// fires — the same overrides AwsCodeBuild.Run passes, with args ["down"]. See
+// startBuildInput for why the fields are PascalCase rather than CodeBuild's
+// own camelCase wire shape.
 func awsSelfDestructInput(projectName, image string, environ []string) (string, error) {
 	env := SelfDestructEnv(environ)
-	envOverrides := make([]startBuildEnvVar, 0, len(env))
+	envOverrides := make([]cbtypes.EnvironmentVariable, 0, len(env))
 	for _, k := range slices.Sorted(maps.Keys(env)) {
-		envOverrides = append(envOverrides, startBuildEnvVar{Name: k, Value: env[k], Type: "PLAINTEXT"})
+		k, v := k, env[k]
+		envOverrides = append(envOverrides, cbtypes.EnvironmentVariable{
+			Name: &k, Value: &v, Type: cbtypes.EnvironmentVariableTypePlaintext,
+		})
 	}
 	input := startBuildInput{
 		ProjectName:                  projectName,
@@ -166,18 +170,29 @@ func awsSelfDestructInput(projectName, image string, environ []string) (string, 
 }
 
 // startBuildInput is the subset of the CodeBuild StartBuild request the
-// schedule sends (universal-target inputs use the target API's own camelCase
-// wire shape; see codebuild.StartBuildInput in the AWS SDK for the full set).
+// schedule sends. EventBridge Scheduler's universal target (unlike
+// CodeBuild's own StartBuild wire API, which is camelCase) requires the
+// AWS SDK request-shape PascalCase names — confirmed by AWS's own universal
+// target examples (e.g. SQS's "QueueUrl", "MessageBody") and by the
+// ValidationException this produced with the old camelCase tags:
+// "Request payload is missing the following field(s): ProjectName."
+//
+// This intentionally does NOT reuse codebuild.StartBuildInput from the AWS
+// SDK. That type has no json tags of its own (it's built for the smithy
+// protocol marshaler, not encoding/json), so json.Marshal falls back to its
+// Go field names — which happens to be exactly the PascalCase shape we
+// want, but only for the fields we set. Its ~20 other optional members are
+// mostly untagged *T pointers, which marshal to explicit "Field":null
+// rather than being omitted, and ImagePullCredentialsTypeOverride is a bare
+// string-enum that marshals to "" rather than omitting itself. Sending that
+// wider, untested shape (vs. the exact five fields confirmed live) risks a
+// new validation failure we can't easily re-verify from this environment.
+// EnvironmentVariablesOverride's element type has no such fields, so it's
+// safe to reuse from the SDK (cbtypes.EnvironmentVariable) directly.
 type startBuildInput struct {
-	ProjectName                      string             `json:"projectName"`
-	ImageOverride                    string             `json:"imageOverride"`
-	BuildspecOverride                string             `json:"buildspecOverride"`
-	EnvironmentVariablesOverride     []startBuildEnvVar `json:"environmentVariablesOverride"`
-	ImagePullCredentialsTypeOverride string             `json:"imagePullCredentialsTypeOverride,omitempty"`
-}
-
-type startBuildEnvVar struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-	Type  string `json:"type"`
+	ProjectName                      string                        `json:"ProjectName"`
+	ImageOverride                    string                        `json:"ImageOverride"`
+	BuildspecOverride                string                        `json:"BuildspecOverride"`
+	EnvironmentVariablesOverride     []cbtypes.EnvironmentVariable `json:"EnvironmentVariablesOverride"`
+	ImagePullCredentialsTypeOverride string                        `json:"ImagePullCredentialsTypeOverride,omitempty"`
 }
