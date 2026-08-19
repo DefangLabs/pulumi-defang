@@ -16,14 +16,6 @@ import (
 // DefangLabs/defang issue 2213 for aligning that with this value.)
 const CdTimeout = time.Hour
 
-// minTTL is the shortest supported time-to-live. The trigger's clock starts
-// when the deploy creates it, but resources can take 10+ minutes to finish
-// provisioning after that — a short TTL could tear the stack down while (or
-// right after) it comes up. It also keeps the fire time safely in the future:
-// cron-based triggers (Azure, GCP) silently postpone a passed occurrence by a
-// whole year.
-const minTTL = time.Hour
-
 // maxTTL guards against typo'd far-future dates.
 const maxTTL = 10 * 365 * 24 * time.Hour
 
@@ -33,6 +25,13 @@ const maxTTL = 10 * 365 * 24 * time.Hour
 // "7d12h"), parsed by the same timeutils.ParseDuration the CLI validates
 // the value with, so the two sides cannot drift. The CLI's ParseTTL already
 // trims and lowercases before setting DEFANG_TTL, so this doesn't repeat it.
+//
+// There is deliberately no minimum here (the CLI's ParseTTL enforces a 1h
+// floor for real deployments — see byoc.ParseTTL in the defang CLI repo) so a
+// test or manual CD invocation that bypasses the CLI can use a short TTL
+// (seconds or minutes) to verify the self-destruct trigger actually fires,
+// without waiting an hour. A stack driven by the real CLI never sees
+// anything shorter than the CLI's floor.
 func parseTTL(value string) (time.Duration, error) {
 	switch value {
 	case "", "never", "0":
@@ -43,8 +42,8 @@ func parseTTL(value string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid ttl %q: %w", value, err)
 	}
-	if d < minTTL || d > maxTTL {
-		return 0, fmt.Errorf("ttl %q must be between %s and %s", value, minTTL, maxTTL)
+	if d <= 0 || d > maxTTL {
+		return 0, fmt.Errorf("ttl %q must be between 0 and %s", value, maxTTL)
 	}
 	return d, nil
 }
