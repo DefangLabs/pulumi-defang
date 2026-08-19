@@ -43,3 +43,11 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+  # Covers every ARG default that feeds a FROM line in the root Dockerfile
+  # (BUILDBASE=golang, CDBASE_SHELL=alpine, PULUMIBASE=pulumi/pulumi-base) —
+  # that's the only place these base images are pinned, so this is the one
+  # ecosystem entry that keeps them patched for CVEs.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
