@@ -24,7 +24,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.36
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/pulumi/pulumi-aws/sdk/v7 v7.41.0
+	github.com/pulumi/pulumi-aws/sdk/v7 v7.42.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0
