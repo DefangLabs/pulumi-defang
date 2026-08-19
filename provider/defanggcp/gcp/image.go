@@ -13,13 +13,15 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
 )
 
 var errNoRemoteRepoConfigured = errors.New("no remote repository configured for registry")
 var errMultiPlatformUnsupported = errors.New("multi-platform builds are unsupported on GCP Cloud Build")
+var errBuildContextNotGCS = errors.New(
+	"build context must be a gs:// URI; only `defang up` deploys are supported on GCP",
+)
 
 // Based on Cloud Run error:
 // "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
@@ -223,28 +225,21 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 	}).(pulumi.StringOutput)
 }
 
-// resolveSourceURI ensures the build context is available at a GCS URI.
-// If the context is already a gs:// URI it is returned as-is. If it is a local
-// path (expressed as a pulumi.String literal), the directory is archived and
-// uploaded to the project's build-artifacts bucket via a BucketObject.
-func resolveSourceURI(
-	ctx *pulumi.Context,
-	serviceName string,
-	build *compose.BuildConfig,
-	infra *BuildInfra,
-	opts ...pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
-	ps, ok := build.Context.(pulumi.String)
-	if ok && !strings.HasPrefix(string(ps), "gs://") {
-		obj, err := storage.NewBucketObject(ctx, serviceName+"-context", &storage.BucketObjectArgs{
-			Bucket: infra.BuildBucket.Name,
-			Name:   pulumi.Sprintf("%s-context.zip", serviceName),
-			Source: pulumi.NewFileArchive(string(ps)),
-		}, opts...)
-		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
-		}
-		return pulumi.Sprintf("gs://%s/%s", infra.BuildBucket.Name, obj.Name), nil
+// resolveSourceURI asserts that the build context is already a GCS URI.
+//
+// Every `defang up` deploy arrives here with a gs:// URI already: the CLI archives
+// the build context, uploads it to the shared Defang CD bucket with a presigned URL,
+// and rewrites build.context to "gs://<cd-bucket>/uploads/<digest>.tar.gz" before CD
+// runs. Those are passed through untouched.
+//
+// A local path only reaches here when the Pulumi program is driven directly (not by
+// `defang up`) or via `compose config` dry runs (which never invoke CD). Neither is
+// a supported way to build on GCP, so it's a hard error rather than an upload-on-the-
+// fly fallback: there is no real caller to preserve that behavior for.
+func resolveSourceURI(serviceName string, build *compose.BuildConfig) (pulumi.StringOutput, error) {
+	if ps, ok := build.Context.(pulumi.String); ok && !strings.HasPrefix(string(ps), "gs://") {
+		return pulumi.StringOutput{}, fmt.Errorf("%w: service %s has build context %q",
+			errBuildContextNotGCS, serviceName, string(ps))
 	}
 	// Already a GCS URI (or an unresolved output) — use as-is.
 	return build.Context.ToStringOutput(), nil
@@ -263,16 +258,16 @@ func buildServiceImage(
 	steps := generateBuildSteps(svc.Build, dest)
 	shmBytes := svc.Build.GetShmSizeBytes()
 
-	sourceURI, err := resolveSourceURI(ctx, serviceName, svc.Build, infra, opts...)
+	sourceURI, err := resolveSourceURI(serviceName, svc.Build)
 	if err != nil {
 		return pulumi.StringOutput{}, err
 	}
 
-	// The Build resource must depend on the BucketIAMMember so Pulumi waits for
-	// the IAM binding before submitting the Cloud Build job. GCP IAM changes can
-	// take ~60 s to propagate globally; without this explicit edge the build SA
-	// may not yet have objectViewer access when Cloud Build attempts to read the
-	// source archive, causing a 403 on first deploy.
+	// The Build resource must depend on the BucketIAMMember (objectViewer on the
+	// shared CD bucket) so Pulumi waits for the IAM binding before submitting the
+	// Cloud Build job. GCP IAM changes can take ~60 s to propagate globally; without
+	// this explicit edge the build SA may not yet have read access when Cloud Build
+	// attempts to fetch the source archive, causing a 403 on first deploy.
 	buildOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
 	buildOpts = append(buildOpts, opts...)
 	if infra.BucketIAMMember != nil {

@@ -390,15 +390,15 @@ func TestBuildSourceDigest(t *testing.T) {
 
 // TestBuildServiceImageDependsOnBucketIAMMember verifies that the Build custom
 // resource has an explicit Pulumi dependency on the BucketIAMMember that grants
-// the build service account read access to the artifacts bucket. Without this
+// the build service account read access to the shared CD bucket. Without this
 // dependency Cloud Build can be submitted before GCP IAM has propagated the
 // binding (~60 s window), causing a 403 on first deploy.
 func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 	spy := &buildDepsSpy{}
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		iamMember, err := storage.NewBucketIAMMember(ctx, "artifacts-viewer", &storage.BucketIAMMemberArgs{
-			Bucket: pulumi.String("my-artifacts-bucket"),
+		iamMember, err := storage.NewBucketIAMMember(ctx, "source-viewer", &storage.BucketIAMMemberArgs{
+			Bucket: pulumi.String("defang-cd-test"),
 			Role:   pulumi.String("roles/storage.objectViewer"),
 			Member: pulumi.String("serviceAccount:build@proj.iam.gserviceaccount.com"),
 		})
@@ -423,9 +423,9 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 
 		svc := compose.ServiceConfig{
 			Build: &compose.BuildConfig{
-				// Use a gs:// URI so resolveSourceURI skips the BucketObject creation
-				// and we don't need a real BuildBucket in infra.
-				Context: pulumi.String("gs://my-artifacts-bucket/context.zip"),
+				// A real `defang up` always arrives with a gs:// URI, so
+				// resolveSourceURI passes it straight through.
+				Context: pulumi.String("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 			},
 		}
 

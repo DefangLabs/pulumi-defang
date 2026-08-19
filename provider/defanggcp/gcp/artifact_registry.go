@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -16,13 +17,41 @@ import (
 // BuildInfra holds GCP infrastructure shared across all services with build configs.
 // Created once per project when at least one service defines a build context.
 type BuildInfra struct {
-	Repository      *artifactregistry.Repository
-	ServiceAccount  *serviceaccount.Account
-	BuildBucket     *storage.Bucket          // GCS bucket for uploading local build contexts
-	BucketIAMMember *storage.BucketIAMMember // grants build SA objectViewer on BuildBucket
+	Repository     *artifactregistry.Repository
+	ServiceAccount *serviceaccount.Account
+	// SourceBucket is the name of the shared Defang CD bucket that holds the
+	// build-context archives; "" when defang:stateUrl is not a gs:// URL.
+	SourceBucket    string
+	BucketIAMMember *storage.BucketIAMMember // grants build SA objectViewer on SourceBucket
 	RepositoryURL   pulumi.StringOutput      // e.g. "us-central1-docker.pkg.dev/project/repo"
 	Region          string
 	GcpProject      string
+}
+
+// cdSourceBucket returns the name of the shared Defang CD bucket, parsed out of
+// the defang:stateUrl stack config (which the CD program sets from
+// DEFANG_STATE_URL, e.g. "gs://defang-cd-abc123"). That bucket already holds the
+// build-context archives: the CLI uploads each service's tarball to it with a
+// presigned URL and rewrites build.context to "gs://<bucket>/uploads/<digest>.tar.gz"
+// before CD ever runs. Returns "" when the config is unset or not a gs:// URL,
+// e.g. when the Pulumi program is driven directly instead of by `defang up`.
+//
+// This is GCP-specific: Cloud Build needs an explicit bucket-scoped IAM grant to
+// read the source object, so the build SA must be told the bucket's name (below).
+// AWS's CodeBuild grants wildcard S3 read instead, and Azure's ACR Task consumes a
+// CLI-issued SAS URL that's self-authorizing — neither needs to resolve a bucket/
+// container name, so this stays local to the GCP package rather than living in
+// provider/common.
+func cdSourceBucket(ctx *pulumi.Context) string {
+	stateURL := common.Defang.String("stateUrl", "").Get(ctx)
+	if stateURL == "" {
+		return ""
+	}
+	u, err := url.Parse(stateURL)
+	if err != nil || u.Scheme != "gs" {
+		return ""
+	}
+	return u.Host
 }
 
 // hasBuildConfig reports whether any service in the map defines a build context.
@@ -93,8 +122,12 @@ func createRemoteRepos(
 }
 
 // createBuildInfra creates the shared GCP infrastructure required to build container images:
-// an Artifact Registry repository, a GCS bucket for build artifacts, a build service account,
-// and the associated IAM bindings.
+// an Artifact Registry repository, a build service account, and the associated IAM bindings.
+//
+// No GCS bucket is created for build sources: the build context already lives in the
+// shared Defang CD bucket (see cdSourceBucket), so the build service account only needs
+// bucket-scoped read access to it. Creating a per-project bucket here needed
+// project-level storage.buckets.create on the CD service account, which it does not have.
 func createBuildInfra(
 	ctx *pulumi.Context,
 	projectName string,
@@ -121,15 +154,6 @@ func createBuildInfra(
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)
 	}
 
-	bucket, err := storage.NewBucket(ctx, projectName, &storage.BucketArgs{
-		Location:                 pulumi.String(region),
-		ForceDestroy:             pulumi.Bool(true),
-		UniformBucketLevelAccess: pulumi.Bool(true),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating build artifacts bucket: %w", err)
-	}
-
 	saOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
 	saOpts = append(append(saOpts, opts...), pulumi.DeleteBeforeReplace(true))
 
@@ -146,13 +170,22 @@ func createBuildInfra(
 		return nil, fmt.Errorf("binding artifact registry admin role: %w", err)
 	}
 
-	artifactsViewer, err := storage.NewBucketIAMMember(ctx, projectName+"-artifacts-viewer", &storage.BucketIAMMemberArgs{
-		Bucket: bucket.Name,
-		Role:   pulumi.String("roles/storage.objectViewer"),
-		Member: pulumi.Sprintf("serviceAccount:%v", bsa.Email),
-	}, saOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
+	// Bucket-scoped read access on the shared CD bucket, so Cloud Build can fetch
+	// the source archive the CLI uploaded there. The CD service account holds
+	// roles/storage.admin on that bucket (granted by the CLI), which includes
+	// storage.buckets.setIamPolicy, so it can add this member. Targeting the bucket
+	// by name does not require Pulumi to manage the bucket itself.
+	sourceBucket := cdSourceBucket(ctx)
+	var sourceViewer *storage.BucketIAMMember
+	if sourceBucket != "" {
+		sourceViewer, err = storage.NewBucketIAMMember(ctx, projectName+"-source-viewer", &storage.BucketIAMMemberArgs{
+			Bucket: pulumi.String(sourceBucket),
+			Role:   pulumi.String("roles/storage.objectViewer"),
+			Member: pulumi.Sprintf("serviceAccount:%v", bsa.Email),
+		}, saOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("binding storage.objectViewer role: %w", err)
+		}
 	}
 
 	if _, err := projects.NewIAMMember(ctx, projectName+"-logWriter", &projects.IAMMemberArgs{
@@ -176,8 +209,8 @@ func createBuildInfra(
 	return &BuildInfra{
 		Repository:      ar,
 		ServiceAccount:  bsa,
-		BuildBucket:     bucket,
-		BucketIAMMember: artifactsViewer,
+		SourceBucket:    sourceBucket,
+		BucketIAMMember: sourceViewer,
 		RepositoryURL:   repoURL,
 		Region:          region,
 		GcpProject:      gcpProject,
