@@ -27,6 +27,8 @@ var (
 	errMultipleIngressPorts    = errors.New("multiple ingress ports are not supported for Compute Engine services")
 )
 
+const internalLBLogicalNameMax = 24
+
 // LBServiceEntry holds the data needed to wire a service into the external load balancer.
 // Exactly one of CloudRunJob, CloudRunService, InstanceGroup, PostgresInstance, or RedisInstance should be non-nil.
 type LBServiceEntry struct {
@@ -152,28 +154,31 @@ func createInternalLoadBalancer(
 	var firstPrivateBackendID pulumi.StringPtrInput
 	var privateHostRules compute.RegionUrlMapHostRuleArray
 	var privatePathMatchers compute.RegionUrlMapPathMatcherArray
+	legacyCloudRunBackendAliasAvailable := true
 	for _, service := range services {
 		// Managed services: always create private DNS regardless of ports.
 		switch {
 		case service.Config.Postgres != nil:
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-db-dns", &dns.RecordSetArgs{
+			oldName := projectName + "-" + service.Name + "-private-db-dns"
+			if _, err := dns.NewRecordSet(ctx, internalLBName(service.Name, "postgres-dns"), &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{service.PostgresInstance.PrivateIpAddress},
-			}, opts...); err != nil {
+			}, renamedChildOpts(opts, oldName)...); err != nil {
 				return err
 			}
 			continue
 		case service.Config.Redis != nil:
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-redis-dns", &dns.RecordSetArgs{
+			oldName := projectName + "-" + service.Name + "-private-redis-dns"
+			if _, err := dns.NewRecordSet(ctx, internalLBName(service.Name, "redis-dns"), &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{service.RedisInstance.Host},
-			}, opts...); err != nil {
+			}, renamedChildOpts(opts, oldName)...); err != nil {
 				return err
 			}
 			continue
@@ -186,7 +191,7 @@ func createInternalLoadBalancer(
 		case service.CloudRunService != nil && service.PrivateFqdn != "":
 			serviceNeg, err := compute.NewRegionNetworkEndpointGroup(
 				ctx,
-				service.Name,
+				internalLBName(service.Name, "private-neg"),
 				&compute.RegionNetworkEndpointGroupArgs{
 					NetworkEndpointType: pulumi.String("SERVERLESS"),
 					Region:              pulumi.String(config.Region),
@@ -194,14 +199,20 @@ func createInternalLoadBalancer(
 						Service: pulumi.StringPtrInput(service.CloudRunService.Name),
 					},
 				},
+				adoptChildOpts(opts, service.Name)...,
 			)
 			if err != nil {
 				return err
 			}
 
+			backendOpts := adoptChildOpts(opts, "")
+			if legacyCloudRunBackendAliasAvailable {
+				backendOpts = adoptChildOpts(opts, "private-lb-cloudrun-backend")
+				legacyCloudRunBackendAliasAvailable = false
+			}
 			serviceBackend, err := compute.NewRegionBackendService(
 				ctx,
-				"private-lb-cloudrun-backend",
+				internalLBName(service.Name, "private-backend"),
 				&compute.RegionBackendServiceArgs{
 					Region:              pulumi.String(config.Region),
 					Protocol:            pulumi.String("HTTPS"),
@@ -212,6 +223,7 @@ func createInternalLoadBalancer(
 						},
 					},
 				},
+				backendOpts...,
 			)
 			if err != nil {
 				return err
@@ -245,7 +257,7 @@ func createInternalLoadBalancer(
 				}
 
 				firewall, err := compute.NewFirewall(ctx,
-					service.Name,
+					internalLBName(service.Name, "private-ingress-fw"),
 					&compute.FirewallArgs{
 						Network: config.VpcId,
 						// Fixed health check IP ranges for internal passthrough NLB:
@@ -264,13 +276,14 @@ func createInternalLoadBalancer(
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
+					adoptChildOpts(opts, service.Name)...,
 				)
 				if err != nil {
 					return err
 				}
 
 				healthCheck, err := compute.NewHealthCheck(ctx,
-					service.Name,
+					internalLBName(service.Name, "private-http-hc"),
 					&compute.HealthCheckArgs{
 						CheckIntervalSec: pulumi.Int(5),
 						TimeoutSec:       pulumi.Int(5),
@@ -279,13 +292,15 @@ func createInternalLoadBalancer(
 							RequestPath: pulumi.String(healthCheckPath),
 						},
 					},
-					pulumi.DependsOn([]pulumi.Resource{firewall}),
+					common.MergeOptions(adoptChildOpts(opts, service.Name),
+						pulumi.DependsOn([]pulumi.Resource{firewall}),
+					)...,
 				)
 				if err != nil {
 					return err
 				}
 				serviceBackend, err := compute.NewRegionBackendService(ctx,
-					service.Name,
+					internalLBName(service.Name, "private-backend"),
 					&compute.RegionBackendServiceArgs{
 						Region:              pulumi.String(config.Region),
 						Protocol:            pulumi.String("HTTP"),
@@ -298,6 +313,7 @@ func createInternalLoadBalancer(
 						HealthChecks: healthCheck.ID(),
 						PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", portProto, port.Target)), // Matching compute.go
 					},
+					adoptChildOpts(opts, service.Name)...,
 				)
 				if err != nil {
 					return err
@@ -323,13 +339,14 @@ func createInternalLoadBalancer(
 				}
 				// Create a private IP for the service
 				internalNlbIP, err := compute.NewAddress(ctx,
-					service.Name,
+					internalLBName(service.Name, "host-ip"),
 					&compute.AddressArgs{
 						Subnetwork:  config.SubnetId,
 						AddressType: pulumi.String("INTERNAL"),
 						Region:      pulumi.String(config.Region),
 						Purpose:     pulumi.String("SHARED_LOADBALANCER_VIP"),
 					},
+					adoptChildOpts(opts, service.Name)...,
 				)
 				if err != nil {
 					return err
@@ -361,7 +378,7 @@ func createInternalLoadBalancer(
 				}
 
 				trafficFirewall, err := compute.NewFirewall(ctx,
-					service.Name,
+					internalLBName(service.Name, "host-traffic-fw"),
 					&compute.FirewallArgs{
 						Network:      config.VpcId,
 						SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")}, // TODO: Can this be stricter?
@@ -371,13 +388,14 @@ func createInternalLoadBalancer(
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
+					adoptChildOpts(opts, service.Name)...,
 				)
 				if err != nil {
 					return err
 				}
 
 				healthCheckFirewall, err := compute.NewFirewall(ctx,
-					service.Name,
+					internalLBName(service.Name, "host-health-fw"),
 					&compute.FirewallArgs{
 						Network: config.VpcId,
 						// Fixed health check IP ranges for internal passthrough NLB:
@@ -395,6 +413,9 @@ func createInternalLoadBalancer(
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
+					// The previous code registered both firewalls with the same
+					// type/name URN, so the health-check rule had no valid prior URN.
+					adoptChildOpts(opts, "")...,
 				)
 				if err != nil {
 					return err
@@ -402,7 +423,7 @@ func createInternalLoadBalancer(
 
 				hcPortStr := strconv.FormatUint(uint64(*tcpHealthCheckPort), 10)
 				healthCheck, err := compute.NewHealthCheck(ctx,
-					service.Name+hcPortStr,
+					internalLBName(service.Name, "host-"+hcPortStr+"-hc"),
 					&compute.HealthCheckArgs{
 						CheckIntervalSec:   pulumi.Int(30),
 						TimeoutSec:         pulumi.Int(10),
@@ -412,7 +433,9 @@ func createInternalLoadBalancer(
 							Port: pulumi.Int(*tcpHealthCheckPort),
 						},
 					},
-					pulumi.DependsOn([]pulumi.Resource{healthCheckFirewall}),
+					common.MergeOptions(adoptChildOpts(opts, service.Name+hcPortStr),
+						pulumi.DependsOn([]pulumi.Resource{healthCheckFirewall}),
+					)...,
 				)
 				if err != nil {
 					return err
@@ -426,9 +449,14 @@ func createInternalLoadBalancer(
 					// https://cloud.google.com/load-balancing/docs/forwarding-rule-concepts#port_specifications
 					for ports := range slices.Chunk(allPorts, 5) {
 						portsName := strings.Trim(strings.ReplaceAll(fmt.Sprint(ports), " ", "-"), "[]")
+						portsKey := common.BoundedName(portsName, "", 8)
+						backendRole := fmt.Sprintf("host-%s-%s-backend", protocol, portsKey)
+						forwardingRole := fmt.Sprintf("host-%s-%s-forward", protocol, portsKey)
+						oldBackendName := service.Name + fmt.Sprintf("host-%v-backend-service", portsName)
+						oldForwardingName := service.Name + fmt.Sprintf("host-%v-forwarding-rule", portsName)
 
 						backendService, err := compute.NewRegionBackendService(ctx,
-							service.Name+fmt.Sprintf("host-%v-backend-service", portsName),
+							internalLBName(service.Name, backendRole),
 							&compute.RegionBackendServiceArgs{
 								Region:              pulumi.String(config.Region),
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
@@ -443,6 +471,7 @@ func createInternalLoadBalancer(
 								ConnectionDrainingTimeoutSec: pulumi.Int(0), // Make configurable?
 								HealthChecks:                 healthCheck.ID(),
 							},
+							adoptChildOpts(opts, oldBackendName)...,
 						)
 						if err != nil {
 							return err
@@ -454,7 +483,7 @@ func createInternalLoadBalancer(
 						}
 						// Create a forwarding rule
 						_, err = compute.NewForwardingRule(ctx,
-							service.Name+fmt.Sprintf("host-%v-forwarding-rule", portsName),
+							internalLBName(service.Name, forwardingRole),
 							&compute.ForwardingRuleArgs{
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
 								IpProtocol:          pulumi.String(strings.ToUpper(string(protocol))),
@@ -466,6 +495,7 @@ func createInternalLoadBalancer(
 								// Multiple forwarding rules share the same IP so internal DNS works.
 								IpAddress: internalNlbIP.Address,
 							},
+							adoptChildOpts(opts, oldForwardingName)...,
 						)
 						if err != nil {
 							return err
@@ -473,13 +503,16 @@ func createInternalLoadBalancer(
 					}
 				}
 
-				if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-lb-dns", &dns.RecordSetArgs{
+				oldName := projectName + "-" + service.Name + "-private-lb-dns"
+				if _, err := dns.NewRecordSet(ctx, internalLBName(service.Name, "private-dns"), &dns.RecordSetArgs{
 					Name:        pulumi.String(internalServiceDns(service.Name)),
 					Type:        pulumi.String("A"),
 					Ttl:         pulumi.Int(60),
 					ManagedZone: config.PrivateZone,
 					Rrdatas:     pulumi.StringArray{internalNlbIP.Address},
-				}, pulumi.DependsOn([]pulumi.Resource{trafficFirewall})); err != nil {
+				}, common.MergeOptions(adoptChildOpts(opts, oldName),
+					pulumi.DependsOn([]pulumi.Resource{trafficFirewall}),
+				)...); err != nil {
 					return err
 				}
 			}
@@ -504,6 +537,7 @@ func createInternalLoadBalancer(
 					Role:        pulumi.String("ACTIVE"),
 					Network:     config.VpcId,
 				},
+				adoptChildOpts(opts, "")...,
 			)
 		}
 		if err != nil {
@@ -518,6 +552,7 @@ func createInternalLoadBalancer(
 				HostRules:      privateHostRules,
 				PathMatchers:   privatePathMatchers,
 			},
+			adoptChildOpts(opts, "")...,
 		)
 		if err != nil {
 			return err
@@ -529,7 +564,9 @@ func createInternalLoadBalancer(
 				Region: pulumi.String(config.Region),
 				UrlMap: privateUrlMap.SelfLink,
 			},
-			pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
+			common.MergeOptions(adoptChildOpts(opts, ""),
+				pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
+			)...,
 		)
 		if err != nil {
 			return err
@@ -545,19 +582,22 @@ func createInternalLoadBalancer(
 				PortRange:           pulumi.String("80"),
 				LoadBalancingScheme: pulumi.String("INTERNAL_MANAGED"),
 			},
-			pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
+			common.MergeOptions(adoptChildOpts(opts, ""),
+				pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
+			)...,
 		)
 		if err != nil {
 			return err
 		}
 		for _, serviceName := range internalAlbServices {
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+serviceName+"-private-lb-dns", &dns.RecordSetArgs{
+			oldName := projectName + "-" + serviceName + "-private-lb-dns"
+			if _, err := dns.NewRecordSet(ctx, internalLBName(serviceName, "private-dns"), &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(serviceName)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{forwardingRule.IpAddress},
-			}); err != nil {
+			}, adoptChildOpts(opts, oldName)...); err != nil {
 				return err
 			}
 		}
@@ -569,6 +609,32 @@ func internalServiceDns(name string) string {
 	// ServiceLabel so the record name matches the PrivateFqdn handle
 	// (project.go/service.go) and the DEFANG_FQDN injected on the CE path.
 	return common.ServiceLabel(name) + `.google.internal.`
+}
+
+// internalLBName keeps service-discriminated children readable but bounded.
+// The GCP autonaming recipe adds project, stack, and a random suffix to this
+// logical name, so unbounded service/port concatenations can otherwise exceed
+// the common 63-character GCP resource-name limit.
+func internalLBName(serviceName, role string) string {
+	serviceKey := common.BoundedName(serviceName, "", 8)
+	return common.BoundedName(role, "-"+serviceKey, internalLBLogicalNameMax)
+}
+
+// renamedChildOpts aliases a resource that already inherited the component
+// parent/provider before its logical name changed.
+func renamedChildOpts(opts []pulumi.ResourceOption, oldName string) []pulumi.ResourceOption {
+	return common.MergeOptions(opts, pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(oldName)}}))
+}
+
+// adoptChildOpts propagates the component parent/provider to a resource that
+// was formerly registered directly beneath the stack. oldName may be empty
+// when only the parent changes.
+func adoptChildOpts(opts []pulumi.ResourceOption, oldName string) []pulumi.ResourceOption {
+	alias := pulumi.Alias{NoParent: pulumi.Bool(true)}
+	if oldName != "" {
+		alias.Name = pulumi.String(oldName)
+	}
+	return common.MergeOptions(opts, pulumi.Aliases([]pulumi.Alias{alias}))
 }
 
 func countIngressPorts(ports []compose.ServicePortConfig) int {

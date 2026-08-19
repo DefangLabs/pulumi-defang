@@ -160,6 +160,11 @@ func createTgLrPair(
 	}
 
 	tgName := targetGroupName(serviceName, int(port.Target), appProto, port.Listener)
+	tgOpts := []pulumi.ResourceOption{opt}
+	legacyTgName := legacyTargetGroupName(serviceName, int(port.Target), appProto, port.Listener)
+	if legacyTgName != tgName {
+		tgOpts = append(tgOpts, pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(legacyTgName)}}))
+	}
 
 	// Target group health check (matches TS createTargetGroup in lb.ts)
 	interval, timeout := tgHealthCheckTiming(HealthCheckInterval.Get(ctx), healthCheck)
@@ -212,7 +217,7 @@ func createTgLrPair(
 		// defaults to HTTP1
 	}
 
-	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, opt)
+	tg, tgErr := lb.NewTargetGroup(ctx, tgName, tgArgs, tgOpts...)
 	if tgErr != nil {
 		return nil, nil, fmt.Errorf("creating target group: %w", tgErr)
 	}
