@@ -104,8 +104,11 @@ func createAWSSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 
 	_, err = scheduler.NewSchedule(pctx, "self-destruct", &scheduler.ScheduleArgs{
 		Description: pulumi.Sprintf("defang self-destruct for %s/%s", cf.Name, pctx.Stack()),
-		// One-time schedule, evaluated in UTC (the provider default); a fire
-		// time in the past is rejected at create, which minTTL prevents.
+		// One-time schedule, evaluated in UTC (the provider default). AWS
+		// rejects a fire time in the past at create — the CLI's minTTL floor
+		// keeps that from happening for real deploys, but a short TTL from a
+		// test or manual CD invocation can still hit it if this resource
+		// isn't created until after fireAt has passed.
 		ScheduleExpression: pulumi.String(fmt.Sprintf("at(%s)", fireAt.UTC().Format("2006-01-02T15:04:05"))),
 		FlexibleTimeWindow: scheduler.ScheduleFlexibleTimeWindowArgs{
 			Mode: pulumi.String("OFF"),
