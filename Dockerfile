@@ -1,18 +1,17 @@
 # syntax=docker/dockerfile:1.4
 #
 # Build context must be the repo root (because cd/go.mod has replace directives to ../).
-# Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 \
-#   --build-arg CDBASE=alpine:3.21 --target aws .
+# Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 --target aws .
 #
 ARG GOVERSION=1.25
 ARG PULUMI_VERSION=latest
 ARG BUILDBASE=golang:${GOVERSION}-alpine
-# scratch is fine for gcp/azure, which just run this image's own ENTRYPOINT. aws and all must
-# override this (--build-arg CDBASE=alpine:3.21) because AWS CodeBuild runs the CD image as its
-# own build container and needs a shell to provision at all (scratch's SINGLE_BUILD_CONTAINER_DEAD),
-# and CD code that shells out to build customer images (the Docker Hub mirror setup in
-# provider/defangaws/aws/codebuild.go) needs jq/awk.
+# scratch is fine for gcp/azure, which just run this image's own ENTRYPOINT.
 ARG CDBASE=scratch
+# aws and all need a shell + jq/awk instead (see the cd-base-shell rationale below). Pinned here,
+# as the ARG's own default, so this is the ONLY place that needs bumping for a CVE fix — CI and
+# the Makefile no longer pass --build-arg CDBASE, so there's nothing else to keep in sync.
+ARG CDBASE_SHELL=alpine:3.21
 ARG PULUMIBASE=pulumi/pulumi-base:${PULUMI_VERSION}
 ARG CD_VERSION=0.0.1
 ARG PROVIDER_VERSION=0.0.1
@@ -138,11 +137,20 @@ WORKDIR /app
 COPY --link --from=build-base /out/cd ./
 ENTRYPOINT [ "/app/cd" ]
 
-# aws and all need CDBASE=alpine:3.21 (see the ARG comment above); jq isn't in the scratch
-# default, so it's installed here rather than in cd-base, where it would break gcp/azure builds
-# (RUN needs a shell, which scratch doesn't have).
-FROM cd-base AS aws
+# Same as cd-base, but on a shell-having base: aws and all run as an AWS CodeBuild build
+# container, which needs a shell just to provision at all (scratch fails PROVISIONING with
+# SINGLE_BUILD_CONTAINER_DEAD), and CD code that shells out to build customer images (the Docker
+# Hub mirror setup in provider/defangaws/aws/codebuild.go) needs jq/awk.
+FROM ${CDBASE_SHELL} AS cd-base-shell
+COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
+ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
+WORKDIR /app
+COPY --link --from=build-base /out/cd ./
+ENTRYPOINT [ "/app/cd" ]
 RUN apk add --no-cache jq
+
+FROM cd-base-shell AS aws
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
@@ -154,8 +162,7 @@ FROM cd-base AS azure
 COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-azure-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
-FROM cd-base AS all
-RUN apk add --no-cache jq
+FROM cd-base-shell AS all
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/plugins
