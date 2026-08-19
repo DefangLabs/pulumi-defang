@@ -35,8 +35,15 @@ type BuildInfra struct {
 // presigned URL and rewrites build.context to "gs://<bucket>/uploads/<digest>.tar.gz"
 // before CD ever runs. Returns "" when the config is unset or not a gs:// URL,
 // e.g. when the Pulumi program is driven directly instead of by `defang up`.
+//
+// This is GCP-specific: Cloud Build needs an explicit bucket-scoped IAM grant to
+// read the source object, so the build SA must be told the bucket's name (below).
+// AWS's CodeBuild grants wildcard S3 read instead, and Azure's ACR Task consumes a
+// CLI-issued SAS URL that's self-authorizing — neither needs to resolve a bucket/
+// container name, so this stays local to the GCP package rather than living in
+// provider/common.
 func cdSourceBucket(ctx *pulumi.Context) string {
-	stateURL := common.StateUrl.Get(ctx)
+	stateURL := common.Defang.String("stateUrl", "").Get(ctx)
 	if stateURL == "" {
 		return ""
 	}

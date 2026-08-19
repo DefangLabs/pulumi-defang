@@ -437,38 +437,12 @@ func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 	assert.Equal(t, "roles/storage.objectViewer", viewer.inputs.Get("role").AsString())
 }
 
-// TestConstructProjectWithLocalBuildContextUploadsToSharedBucket covers the
-// direct-Pulumi path (no `defang up`): a local build context is archived and
-// uploaded into the configured shared bucket rather than a freshly created one.
-func TestConstructProjectWithLocalBuildContextUploadsToSharedBucket(t *testing.T) {
-	mock, records := collectResources()
-	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
-
-	_, err := server.Construct(p.ConstructRequest{
-		Urn:    testutil.GcpURN("Project"),
-		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
-		Inputs: testutil.ServicesMap(map[string]property.Value{
-			"app": property.New(property.NewMap(map[string]property.Value{
-				"build": property.New(property.NewMap(map[string]property.Value{
-					"context": property.New("./app"),
-				})),
-			})),
-		}),
-	})
-
-	require.NoError(t, err)
-
-	assert.Equal(t, 0, countType(*records, "gcp:storage/bucket:Bucket"))
-	obj := findTypeWhere(*records, "gcp:storage/bucketObject:BucketObject", func(_ property.Map) bool {
-		return true
-	})
-	require.NotNil(t, obj, "expected the local build context to be uploaded")
-	assert.Equal(t, "defang-cd-test", obj.inputs.Get("bucket").AsString())
-}
-
-// TestConstructProjectWithLocalBuildContextRequiresBucket asserts a clear error
-// when a local build context has nowhere to be uploaded to.
-func TestConstructProjectWithLocalBuildContextRequiresBucket(t *testing.T) {
+// TestConstructProjectWithLocalBuildContextErrors asserts a clear error when a
+// service's build context isn't already a gs:// URI. Only `defang up` invokes
+// CD, and it always resolves the context to a gs:// URI in the shared bucket
+// beforehand, so a local path (from a direct-Pulumi caller, or a `compose config`
+// dry run that never invokes CD) is not a supported flow.
+func TestConstructProjectWithLocalBuildContextErrors(t *testing.T) {
 	mock, _ := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -484,7 +458,7 @@ func TestConstructProjectWithLocalBuildContextRequiresBucket(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "defang:stateUrl")
+	assert.Contains(t, err.Error(), "gs://")
 }
 
 func TestConstructProjectWithoutBuildSkipsBuildInfra(t *testing.T) {
@@ -1169,7 +1143,7 @@ func TestConstructProjectAllResourcesAreChildren(t *testing.T) {
 				"worker": testutil.ServiceWithImage("myapp:worker"),
 				"builder": property.New(property.NewMap(map[string]property.Value{
 					"build": property.New(property.NewMap(map[string]property.Value{
-						"context": property.New("./app"),
+						"context": property.New("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 					})),
 				})),
 				"db": property.New(property.NewMap(map[string]property.Value{

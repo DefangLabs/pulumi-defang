@@ -13,16 +13,14 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
 )
 
 var errNoRemoteRepoConfigured = errors.New("no remote repository configured for registry")
 var errMultiPlatformUnsupported = errors.New("multi-platform builds are unsupported on GCP Cloud Build")
-var errNoSourceBucket = errors.New(
-	"a local build context needs a GCS bucket to upload to: " +
-		"set the defang:stateUrl config to gs://<bucket>, or use a gs:// build context",
+var errBuildContextNotGCS = errors.New(
+	"build context must be a gs:// URI; only `defang up` deploys are supported on GCP",
 )
 
 // Based on Cloud Run error:
@@ -227,7 +225,7 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 	}).(pulumi.StringOutput)
 }
 
-// resolveSourceURI ensures the build context is available at a GCS URI.
+// resolveSourceURI asserts that the build context is already a GCS URI.
 //
 // Every `defang up` deploy arrives here with a gs:// URI already: the CLI archives
 // the build context, uploads it to the shared Defang CD bucket with a presigned URL,
@@ -235,30 +233,13 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 // runs. Those are passed through untouched.
 //
 // A local path only reaches here when the Pulumi program is driven directly (not by
-// `defang up`). In that case the directory is archived and uploaded into the same
-// shared CD bucket, which must be configured via the defang:stateUrl config.
-func resolveSourceURI(
-	ctx *pulumi.Context,
-	serviceName string,
-	build *compose.BuildConfig,
-	infra *BuildInfra,
-	opts ...pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
-	ps, ok := build.Context.(pulumi.String)
-	if ok && !strings.HasPrefix(string(ps), "gs://") {
-		if infra.SourceBucket == "" {
-			return pulumi.StringOutput{}, fmt.Errorf("%w: service %s has build context %q",
-				errNoSourceBucket, serviceName, string(ps))
-		}
-		obj, err := storage.NewBucketObject(ctx, serviceName+"-context", &storage.BucketObjectArgs{
-			Bucket: pulumi.String(infra.SourceBucket),
-			Name:   pulumi.String(fmt.Sprintf("uploads/%s/%s-context.zip", ctx.Project(), serviceName)),
-			Source: pulumi.NewFileArchive(string(ps)),
-		}, opts...)
-		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
-		}
-		return pulumi.Sprintf("gs://%s/%s", infra.SourceBucket, obj.Name), nil
+// `defang up`) or via `compose config` dry runs (which never invoke CD). Neither is
+// a supported way to build on GCP, so it's a hard error rather than an upload-on-the-
+// fly fallback: there is no real caller to preserve that behavior for.
+func resolveSourceURI(serviceName string, build *compose.BuildConfig) (pulumi.StringOutput, error) {
+	if ps, ok := build.Context.(pulumi.String); ok && !strings.HasPrefix(string(ps), "gs://") {
+		return pulumi.StringOutput{}, fmt.Errorf("%w: service %s has build context %q",
+			errBuildContextNotGCS, serviceName, string(ps))
 	}
 	// Already a GCS URI (or an unresolved output) — use as-is.
 	return build.Context.ToStringOutput(), nil
@@ -277,7 +258,7 @@ func buildServiceImage(
 	steps := generateBuildSteps(svc.Build, dest)
 	shmBytes := svc.Build.GetShmSizeBytes()
 
-	sourceURI, err := resolveSourceURI(ctx, serviceName, svc.Build, infra, opts...)
+	sourceURI, err := resolveSourceURI(serviceName, svc.Build)
 	if err != nil {
 		return pulumi.StringOutput{}, err
 	}

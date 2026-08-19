@@ -90,8 +90,4 @@ var (
 	Defang  = NewRecipe("defang")
 	Prefix  = Defang.String("prefix", "Defang")
 	Version = Defang.String("version", "Defang")
-	// StateUrl is the URL of the object store the Defang CD uses for state and
-	// for the build contexts the CLI pre-uploads (set from DEFANG_STATE_URL):
-	// s3://<bucket> on AWS, gs://<bucket> on GCP, azblob://<container> on Azure.
-	StateUrl = Defang.String("stateUrl", "")
 )
