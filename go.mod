@@ -5,7 +5,7 @@ go 1.25.11
 replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 
 require (
-	cloud.google.com/go/cloudbuild v1.29.0
+	cloud.google.com/go/cloudbuild v1.32.0
 	cloud.google.com/go/longrunning v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
