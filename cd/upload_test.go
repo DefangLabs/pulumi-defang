@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -83,6 +84,45 @@ func TestUploadEventsSendsPayload(t *testing.T) {
 	evts, ok := got["events"].([]any)
 	if !ok || len(evts) != 1 {
 		t.Errorf("expected 1 event, got %v", got)
+	}
+}
+
+func TestUploadEventsSurvivesCanceledContext(t *testing.T) {
+	// Regression test for https://github.com/DefangLabs/pulumi-defang/issues/103:
+	// SIGINT/SIGTERM/timeout cancel the run's ctx right before the final
+	// upload starts, which used to abort the upload before anything was sent.
+	var called atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Store(true)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // simulate SIGINT/SIGTERM/timeout firing before the final upload
+
+	uploadEvents(ctx, srv.URL, []events.EngineEvent{{}})
+
+	if !called.Load() {
+		t.Error("expected the upload to still be sent after ctx was canceled")
+	}
+}
+
+func TestDetachUploadContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if ctx.Err() == nil {
+		t.Fatal("test setup: parent ctx should be canceled")
+	}
+
+	detached, cancelDetached := detachUploadContext(ctx)
+	defer cancelDetached()
+
+	if err := detached.Err(); err != nil {
+		t.Errorf("expected detached context to not be canceled, got %v", err)
+	}
+	if _, ok := detached.Deadline(); !ok {
+		t.Error("expected detached context to carry its own deadline")
 	}
 }
 
