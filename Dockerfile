@@ -7,6 +7,7 @@ ARG GOVERSION=1.25
 ARG PULUMI_VERSION=latest
 ARG BUILDBASE=golang:${GOVERSION}-alpine
 ARG CDBASE=scratch
+ARG CDBASE_AWS=alpine:3.21
 ARG PULUMIBASE=pulumi/pulumi-base:${PULUMI_VERSION}
 ARG CD_VERSION=0.0.1
 ARG PROVIDER_VERSION=0.0.1
@@ -132,7 +133,22 @@ WORKDIR /app
 COPY --link --from=build-base /out/cd ./
 ENTRYPOINT [ "/app/cd" ]
 
-FROM cd-base AS aws
+# AWS (and 'all', which bundles AWS support) gets its own base: CodeBuild runs the CD image as
+# its own build container and needs a shell to provision at all (scratch's
+# SINGLE_BUILD_CONTAINER_DEAD), and CD code that shells out to build customer images (the Docker
+# Hub mirror setup in provider/defangaws/aws/codebuild.go) needs jq/awk. GCP and Azure just run
+# this image's own ENTRYPOINT and stay on ${CDBASE}.
+FROM ${CDBASE_AWS} AS cd-base-aws
+RUN apk add --no-cache jq
+COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
+ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
+WORKDIR /tmp
+WORKDIR /app
+COPY --link --from=build-base /out/cd ./
+ENTRYPOINT [ "/app/cd" ]
+
+FROM cd-base-aws AS aws
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
@@ -144,7 +160,7 @@ FROM cd-base AS azure
 COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-azure-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
-FROM cd-base AS all
+FROM cd-base-aws AS all
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/plugins
