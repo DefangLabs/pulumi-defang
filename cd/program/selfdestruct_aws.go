@@ -138,9 +138,9 @@ func codebuildProjectFromBuildArn(buildArn string) (name, arn string, _ error) {
 }
 
 // awsSelfDestructInput renders the codebuild:StartBuild request the schedule
-// fires — the same overrides AwsCodeBuild.Run passes, with args ["down"].
-// Universal-target inputs use the target API's own wire shape, which for
-// CodeBuild is camelCase JSON.
+// fires — the same overrides AwsCodeBuild.Run passes, with args ["down"]. See
+// startBuildInput for why the fields are PascalCase rather than CodeBuild's
+// own camelCase wire shape.
 func awsSelfDestructInput(projectName, image string, environ []string) (string, error) {
 	env := SelfDestructEnv(environ)
 	envOverrides := make([]startBuildEnvVar, 0, len(env))
@@ -166,18 +166,23 @@ func awsSelfDestructInput(projectName, image string, environ []string) (string, 
 }
 
 // startBuildInput is the subset of the CodeBuild StartBuild request the
-// schedule sends (universal-target inputs use the target API's own camelCase
-// wire shape; see codebuild.StartBuildInput in the AWS SDK for the full set).
+// schedule sends. EventBridge Scheduler's universal target (unlike
+// CodeBuild's own StartBuild wire API, which is camelCase) requires the
+// AWS SDK request-shape PascalCase names — confirmed by AWS's own universal
+// target examples (e.g. SQS's "QueueUrl", "MessageBody") and by the
+// ValidationException this produced with the old camelCase tags:
+// "Request payload is missing the following field(s): ProjectName."
+// See codebuild.StartBuildInput in the AWS SDK for the full parameter set.
 type startBuildInput struct {
-	ProjectName                      string             `json:"projectName"`
-	ImageOverride                    string             `json:"imageOverride"`
-	BuildspecOverride                string             `json:"buildspecOverride"`
-	EnvironmentVariablesOverride     []startBuildEnvVar `json:"environmentVariablesOverride"`
-	ImagePullCredentialsTypeOverride string             `json:"imagePullCredentialsTypeOverride,omitempty"`
+	ProjectName                      string             `json:"ProjectName"`
+	ImageOverride                    string             `json:"ImageOverride"`
+	BuildspecOverride                string             `json:"BuildspecOverride"`
+	EnvironmentVariablesOverride     []startBuildEnvVar `json:"EnvironmentVariablesOverride"`
+	ImagePullCredentialsTypeOverride string             `json:"ImagePullCredentialsTypeOverride,omitempty"`
 }
 
 type startBuildEnvVar struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-	Type  string `json:"type"`
+	Name  string `json:"Name"`
+	Value string `json:"Value"`
+	Type  string `json:"Type"`
 }
