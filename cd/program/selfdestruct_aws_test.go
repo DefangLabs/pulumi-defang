@@ -38,6 +38,36 @@ func TestAwsSelfDestructInput(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// encoding/json matches keys case-insensitively on unmarshal, so decoding
+	// into a struct tagged with the PascalCase names (below) would still pass
+	// even if the produced JSON regressed to camelCase. Assert the raw keys
+	// too, since that casing is exactly what EventBridge Scheduler's
+	// universal target requires (see startBuildInput's doc comment).
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(got), &raw); err != nil {
+		t.Fatal(err)
+	}
+	wantKeys := []string{
+		"ProjectName", "ImageOverride", "BuildspecOverride",
+		"EnvironmentVariablesOverride", "ImagePullCredentialsTypeOverride",
+	}
+	for _, key := range wantKeys {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("missing exact key %q in %s", key, got)
+		}
+	}
+	var rawEnv []map[string]json.RawMessage
+	if err := json.Unmarshal(raw["EnvironmentVariablesOverride"], &rawEnv); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range rawEnv {
+		for _, key := range []string{"Name", "Value", "Type"} {
+			if _, ok := e[key]; !ok {
+				t.Errorf("missing exact env key %q in %v", key, e)
+			}
+		}
+	}
+
 	var input struct {
 		ProjectName       string `json:"ProjectName"`
 		ImageOverride     string `json:"ImageOverride"`
