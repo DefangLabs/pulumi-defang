@@ -45,7 +45,7 @@ jobs:
       - run: COVER=1 make test
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.11.4
           args: --timeout=5m --config=.golangci.yaml ./provider/...
@@ -166,12 +166,12 @@ jobs:
         uses: ./.github/actions/setup-go
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GHCR
         # Fork-PR tokens can't write org packages; forks build without pushing.
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -191,7 +191,7 @@ jobs:
 
       - name: Build and push image to GHCR
         id: build-push
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: . # build context must be repo root to include generated Go SDK
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
@@ -204,7 +204,7 @@ jobs:
       # pushes — PR runs would otherwise have every contributor overwrite the staging config.
       - name: Set cd_image_ configs in Defang
         if: github.event_name == 'push'
-        uses: DefangLabs/defang-github-action@482e8e65caf00bc48ad2044d0e41cde178b3e2b6 # v2.3.0
+        uses: DefangLabs/defang-github-action@310e2861f679b9c2e662fab544ebe3f64d6d5e2b # v2.4.1
         with:
           project: ecs
           stack: awsstagingoidc
