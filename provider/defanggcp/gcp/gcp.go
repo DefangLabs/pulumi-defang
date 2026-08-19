@@ -123,7 +123,13 @@ func BuildGlobalConfig(
 	}
 
 	// Allow SSH ingress to all instances in the VPC (required for GCP Console SSH).
-	if _, err := compute.NewFirewall(ctx, projectName+"-allow-ssh", &compute.FirewallArgs{
+	// Logical name deliberately omits projectName: Pulumi's default resource ID
+	// already prefixes it with <pulumi-project>-<stack>, which includes
+	// projectName, so repeating it here risked exceeding GCP's 63-char resource
+	// ID limit (observed: "...-allow-icmp-<hash>" at 64 chars, one over, while
+	// the one-shorter "...-allow-ssh-<hash>" landed at exactly 63 and happened
+	// to still pass). Same fix as the wildcard-cert name below.
+	if _, err := compute.NewFirewall(ctx, "allow-ssh", &compute.FirewallArgs{
 		Network:      vpc.ID(),
 		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 		Allows: compute.FirewallAllowArray{
@@ -138,7 +144,7 @@ func BuildGlobalConfig(
 	}
 
 	// Allow ICMP ping to all instances in the VPC.
-	if _, err := compute.NewFirewall(ctx, projectName+"-allow-icmp", &compute.FirewallArgs{
+	if _, err := compute.NewFirewall(ctx, "allow-icmp", &compute.FirewallArgs{
 		Network:      vpc.ID(),
 		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 		Allows: compute.FirewallAllowArray{
