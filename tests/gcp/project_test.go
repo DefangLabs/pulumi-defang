@@ -136,6 +136,10 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 	})
 	require.NotNil(t, ssh, "expected an SSH firewall rule")
 	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
+	// Logical name must not re-embed the project name: Pulumi's default resource
+	// ID already prefixes <pulumi-project>-<stack>, which includes it, and
+	// doing so again pushed the physical name over GCP's 63-char limit.
+	assert.Equal(t, "allow-ssh", ssh.name)
 
 	// ICMP firewall rule
 	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
@@ -144,6 +148,7 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 	})
 	require.NotNil(t, icmp, "expected an ICMP firewall rule")
 	assert.Equal(t, "INGRESS", icmp.inputs.Get("direction").AsString())
+	assert.Equal(t, "allow-icmp", icmp.name)
 }
 
 func TestConstructProjectAlwaysCreatesPrivateDNSZone(t *testing.T) {
