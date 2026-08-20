@@ -92,6 +92,13 @@ func cdMain(ctx context.Context, args ...string) error {
 	case client.CdCommandDestroy, client.CdCommandDown, client.CdCommandRefresh, client.CdCommandCancel, client.CdCommandOutputs:
 		stack, err = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
 		if err != nil {
+			// A scheduled GCP cleanup retry whose stack has since been removed
+			// has nothing left to do, and must retire its job here: failing
+			// instead would leave the job firing every 2 hours for ever, since
+			// no later run can get past this point either.
+			if auto.IsSelectStack404Error(err) && scheduledCleanupJob() != "" {
+				return finishGcpCleanupForMissingStack(ctx)
+			}
 			return pulumiErr(err)
 		}
 	case client.CdCommandList:
@@ -221,6 +228,15 @@ func cdMain(ctx context.Context, args ...string) error {
 		if pulumiDebug {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
 		}
+		// A scheduled GCP cleanup retry must not destroy a deployment that
+		// arrived after it was scheduled, so check what the stack holds BEFORE
+		// destroying anything (see cleanup_gcp.go). Ordinary downs proceed.
+		if proceed, err := guardScheduledCleanup(ctx, stack); err != nil {
+			return err
+		} else if !proceed {
+			return nil
+		}
+
 		_, err = stack.Destroy(ctx, destroyOpts...)
 		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
 		destroyErr := err

@@ -35,18 +35,41 @@ import (
 // network, subnet, MIG instance templates, and Service Networking connection,
 // then schedules its own delayed teardown of the physical subnet and network.
 // This implementation instead removes those four retains: the destroy runs with
-// ContinueOnError and deletes everything it can. If the only resources still
-// standing are the ones known to wait on that window, the `down` reports
-// success and schedules itself to run again. Pulumi then performs the remaining
-// deletes from live state, in its own dependency order: no orphaned resources
-// and no hand-rolled teardown here.
+// ContinueOnError and deletes everything it can. When the only resources left
+// are the ones known to wait on that window AND the destroy failed for that
+// reason, the `down` reports success and schedules a Cloud Scheduler job to run
+// `down` again. Pulumi then performs the remaining deletes from live state, in
+// its own dependency order: no orphaned resources and no hand-rolled teardown.
 //
-// The scheduled run carries cleanupJobEnvVar so that, once its destroy
-// finally succeeds, it can delete the scheduler job that started it.
+// CAVEAT (issue 183 discussion): for the Service Networking connection this
+// premise does not hold. MVP retains it citing
+// hashicorp/terraform-provider-google#16275, where the provider cannot delete
+// the connection at all — a 5.x regression (removePeering -> deleteConnection),
+// closed as a duplicate of #16944 whose resolution was to add an *abandon*
+// deletion_policy rather than a working delete. So on any stack with managed
+// Postgres or Redis, the retry here cannot succeed and will abandon the VPC at
+// cleanupDeadline. That is why this branch is a draft.
+//
+// Safety rules that follow from the schedule being a pointer at a project/stack
+// rather than at a deployment:
+//
+//   - A scheduled run verifies the stack still holds ONLY what its job was
+//     scheduled for BEFORE destroying anything. Otherwise a redeploy landing in
+//     the retry window would be destroyed by the retry. The recorded URNs travel
+//     in cleanupURNsEnvVar for exactly this check.
+//   - A missing stack means someone else finished the job. That is success:
+//     retire the job, destroy nothing.
+//   - Every failure path of a scheduled run is bounded by cleanupDeadline, and
+//     reaching it is reported as a failure, because the resources are then
+//     abandoned.
 
 // cleanupJobEnvVar names the scheduler job in the environment of the run it
-// schedules, so a successful retry can delete the job.
+// schedules, so a run started by a job can retire it.
 const cleanupJobEnvVar = "CLEAN_UP_JOB_NAME"
+
+// cleanupURNsEnvVar carries the URNs the job was scheduled to finish deleting,
+// comma-separated. A scheduled run refuses to destroy anything outside this set.
+const cleanupURNsEnvVar = "CLEAN_UP_URNS"
 
 // cleanupJobTimeFormat stamps the job name with its creation time, which bounds
 // how long the retries go on for.
@@ -57,30 +80,35 @@ const cleanupJobTimeFormat = "20060102150405"
 // retry that is still too early simply tries again.
 const cleanupRetryDelay = 1*time.Hour + 59*time.Minute
 
-// cleanupDeadline bounds the retries. Past this the job deletes itself and says
-// so, rather than firing every 2 hours for ever: a delete still failing a day
-// later is stuck on something the window does not explain (for instance
-// hashicorp/terraform-provider-google#19908), and needs a human.
+// cleanupDeadline bounds the retries. A delete still failing a day later is
+// stuck on something the window does not explain (for instance
+// hashicorp/terraform-provider-google#19908), so the job retires and the run
+// fails rather than firing every 2 hours for ever.
 const cleanupDeadline = 24 * time.Hour
 
-// pendingTeardownTypes are the resource types whose delete is expected to fail
-// until GCP releases the subnet's IP addresses. A destroy that leaves only
-// these behind has done everything it can for now.
-//
-// The VPC and its subnet are the resources actually blocked. The other two hold
-// a reference to the subnet and so can be caught by the same window: the
-// servicenetworking connection races the Cloud SQL instance delete, and an
-// instance template races its MIG's asynchronous deletion.
 // Pulumi type tokens, as they appear in a checkpoint.
 const (
 	typeNetwork          = "gcp:compute/network:Network"
 	typeSubnetwork       = "gcp:compute/subnetwork:Subnetwork"
 	typeSvcConnection    = "gcp:servicenetworking/connection:Connection"
 	typeInstanceTemplate = "gcp:compute/instanceTemplate:InstanceTemplate"
-	typeStack            = "pulumi:pulumi:Stack"
-	prefixProviders      = "pulumi:providers:"
+	typeGlobalAddress    = "gcp:compute/globalAddress:GlobalAddress"
 )
 
+// peeringAddressSuffix identifies the VPC peering address by its logical name
+// (see createVPCPeeringInfra). The type alone is not enough: the project's
+// public IP is a GlobalAddress too, and must never be classified as pending.
+const peeringAddressSuffix = "-peering-ip"
+
+// pendingTeardownTypes are the resource types whose delete is expected to fail
+// until GCP releases the subnet's IP addresses.
+//
+// The VPC and its subnet are what is actually blocked. The rest are caught by
+// the same window because they hold a reference to it: the servicenetworking
+// connection races the Cloud SQL instance delete, and an instance template races
+// its MIG's asynchronous deletion. The peering address is here because the
+// connection depends on it, so ContinueOnError skips the address when the
+// connection delete fails.
 var pendingTeardownTypes = map[string]bool{
 	typeNetwork:          true,
 	typeSubnetwork:       true,
@@ -88,58 +116,189 @@ var pendingTeardownTypes = map[string]bool{
 	typeInstanceTemplate: true,
 }
 
-// deployment is the part of a stack export the retry logic reads.
-type deployment struct {
-	Resources []struct {
-		Type string `json:"type"`
-		URN  string `json:"urn"`
-	} `json:"resources"`
+// inUseErrorMarkers identify a delete that failed because GCP still considers
+// the resource in use. The state says what survived; only the error says why,
+// and without that a permission failure or an API outage would be converted
+// into a "successful" down.
+var inUseErrorMarkers = []string{
+	// The subnet/network delete while Cloud Run still holds the IPs.
+	"resourceInUseByAnotherResource",
+	// The servicenetworking connection while Cloud SQL is still going.
+	"still using this connection",
+	// The instance template while its MIG is still being deleted.
+	"is already being used by",
 }
 
-// remainingTypes lists the resource types still in the stack's state, ignoring
-// the stack itself and its providers, which are not cloud resources.
-func remainingTypes(export []byte) ([]string, error) {
+// stateResource is the part of a checkpoint entry the classification reads.
+type stateResource struct {
+	URN string `json:"urn"`
+	// Type is the Pulumi type token.
+	Type string `json:"type"`
+	// Custom is false for the stack and for component resources, which are
+	// bookkeeping rather than cloud resources.
+	Custom bool `json:"custom"`
+}
+
+type deployment struct {
+	Resources []stateResource `json:"resources"`
+}
+
+// providerTypePrefix marks a provider resource. Providers are custom:true but
+// are not cloud resources, and Pulumi deletes them last — so a failed resource
+// delete leaves its provider behind too.
+const providerTypePrefix = "pulumi:providers:"
+
+// remainingResources lists the cloud resources still in the stack's state.
+//
+// Two kinds of entry are excluded, both verified against a checkpoint in the CD
+// bucket rather than assumed:
+//
+//   - The stack and component resources, which are custom:false. A component
+//     necessarily outlives its children, because Pulumi deletes children first,
+//     so defang-gcp:index:Project is still present precisely when one of its
+//     children failed to delete — it is the parent of both the network and the
+//     subnet. Counting it would reject the only case this feature handles.
+//   - Providers, which are custom:true despite not being cloud resources.
+//     Counting them would reject every partial teardown just as thoroughly.
+func remainingResources(export []byte) ([]stateResource, error) {
 	var d deployment
 	if err := json.Unmarshal(export, &d); err != nil {
 		return nil, fmt.Errorf("failed to read the stack state: %w", err)
 	}
-	var types []string
+	var out []stateResource
 	for _, res := range d.Resources {
-		if res.Type == typeStack || strings.HasPrefix(res.Type, prefixProviders) {
-			continue
+		if res.Custom && !strings.HasPrefix(res.Type, providerTypePrefix) {
+			out = append(out, res)
 		}
-		types = append(types, res.Type)
 	}
-	return types, nil
+	return out, nil
 }
 
-// onlyPendingTeardown reports whether every resource left in the state is one
-// that waits on the IP-release window. An empty list means the destroy finished,
-// which is not a pending teardown.
-//
-// This reads the state rather than matching on the destroy's error text: the
-// state is what Pulumi will act on when the retry runs, and an error string is
-// not a contract.
-func onlyPendingTeardown(types []string) bool {
-	if len(types) == 0 {
+// isPendingTeardown reports whether one resource is expected to be waiting on
+// the IP-release window.
+func isPendingTeardown(res stateResource) bool {
+	if pendingTeardownTypes[res.Type] {
+		return true
+	}
+	// The peering address, but never the project's public address.
+	return res.Type == typeGlobalAddress && strings.HasSuffix(res.URN, peeringAddressSuffix)
+}
+
+// onlyPendingTeardown reports whether every cloud resource left in the state is
+// one that waits on the IP-release window. An empty list means the destroy
+// finished, which is not a pending teardown.
+func onlyPendingTeardown(resources []stateResource) bool {
+	if len(resources) == 0 {
 		return false
 	}
-	for _, t := range types {
-		if !pendingTeardownTypes[t] {
+	for _, res := range resources {
+		if !isPendingTeardown(res) {
 			return false
 		}
 	}
 	return true
 }
 
+// isInUseFailure reports whether the destroy failed because GCP still considers
+// something in use, rather than for an unrelated reason.
+func isInUseFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, marker := range inUseErrorMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// urnSet parses the recorded URN list.
+func urnSet(csv string) map[string]bool {
+	out := map[string]bool{}
+	for _, urn := range strings.Split(csv, ",") {
+		if urn = strings.TrimSpace(urn); urn != "" {
+			out[urn] = true
+		}
+	}
+	return out
+}
+
+// unexpectedURNs returns the resources present in state that the job was not
+// scheduled to delete. A non-empty result means the stack no longer holds only
+// the leftovers this job was created for — most likely a new deployment — and
+// the retry must not touch it.
+func unexpectedURNs(resources []stateResource, expected map[string]bool) []string {
+	var out []string
+	for _, res := range resources {
+		if !expected[res.URN] {
+			out = append(out, res.URN)
+		}
+	}
+	return out
+}
+
+// scheduledCleanupJob returns the job that started this run, or "" for an
+// ordinary run.
+func scheduledCleanupJob() string { return os.Getenv(cleanupJobEnvVar) }
+
+// guardScheduledCleanup runs before a scheduled retry destroys anything.
+//
+// It reports whether the destroy may proceed. When it may not, the job has been
+// retired and the run is finished: either someone else completed the teardown,
+// or a new deployment now occupies this project/stack and must not be destroyed.
+func guardScheduledCleanup(ctx context.Context, stack auto.Stack) (proceed bool, err error) {
+	jobID := scheduledCleanupJob()
+	if jobID == "" || gcpProjectFromEnv() == "" {
+		return true, nil // an ordinary `down`, not a retry
+	}
+
+	export, err := stack.Export(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to read the stack state before the retry: %w", err)
+	}
+	resources, err := remainingResources(export.Deployment)
+	if err != nil {
+		return false, err
+	}
+
+	if len(resources) == 0 {
+		warn(" ** Nothing left to delete; retiring the retry job", jobID)
+		return false, retireCleanupJob(ctx, jobID)
+	}
+
+	expected := urnSet(os.Getenv(cleanupURNsEnvVar))
+	if unexpected := unexpectedURNs(resources, expected); len(unexpected) > 0 {
+		// Destroying here would delete a deployment this job knows nothing
+		// about. Stand down instead, and let its own lifecycle manage it.
+		warn(" ** This stack now holds resources the retry was not scheduled for, so it has been redeployed:")
+		for _, urn := range unexpected {
+			warn("      ", urn)
+		}
+		warn(" ** Not destroying anything; retiring the retry job", jobID)
+		return false, retireCleanupJob(ctx, jobID)
+	}
+	return true, nil
+}
+
 // handleGcpPendingTeardown decides what a GCP destroy failure means.
 //
 // It returns nil when the failure is only the IP-release window, having made
 // sure a retry is scheduled — the `down` then reports success, because
-// everything that could be deleted was. It returns destroyErr unchanged for
-// any other failure, and for a non-GCP run.
+// everything that could be deleted was. Any other failure, and any failure past
+// the deadline, is returned so the caller fails.
 func handleGcpPendingTeardown(ctx context.Context, stack auto.Stack, projectName, stackName string, destroyErr error) error {
 	if destroyErr == nil || gcpProjectFromEnv() == "" {
+		return destroyErr
+	}
+	// Whatever the failure is, a scheduled run past its deadline must stop
+	// rerunning; otherwise its cron fires every 2 hours for ever.
+	if expired, err := retireExpiredCleanupJob(ctx); expired {
+		return errors.Join(destroyErr, err)
+	}
+
+	if !isInUseFailure(destroyErr) {
 		return destroyErr
 	}
 
@@ -148,64 +307,85 @@ func handleGcpPendingTeardown(ctx context.Context, stack auto.Stack, projectName
 		warn(" ** Could not read the stack state to classify the destroy failure:", err)
 		return destroyErr
 	}
-	types, err := remainingTypes(export.Deployment)
+	resources, err := remainingResources(export.Deployment)
 	if err != nil {
 		warn(" **", err)
 		return destroyErr
 	}
-	if !onlyPendingTeardown(types) {
+	if !onlyPendingTeardown(resources) {
 		return destroyErr
 	}
 
 	warn(" ** The VPC cannot be deleted yet: GCP holds the subnet's IP addresses for 1-2 hours after Cloud Run releases them.")
-	if err := ensureGcpCleanupScheduled(ctx, projectName, stackName); err != nil {
-		// Without a retry the VPC would leak silently, so this is the failure
-		// worth surfacing — not the destroy error it replaces.
+	if scheduledCleanupJob() != "" {
+		warn(" ** Leaving the retry job in place; it will try again within 2 hours.")
+		return nil
+	}
+	if err := scheduleGcpCleanup(ctx, projectName, stackName, resources); err != nil {
+		// Without a retry the VPC would leak silently, which is the whole bug
+		// this exists to fix — so surface the original failure.
 		warn(" ** Failed to schedule the retry:", err)
 		return destroyErr
 	}
 	return nil
 }
 
-// ensureGcpCleanupScheduled schedules the retry, unless this run is already a
-// scheduled retry — in which case its own cron fires again, so long as the
-// deadline has not passed.
-func ensureGcpCleanupScheduled(ctx context.Context, projectName, stackName string) error {
-	jobID := os.Getenv(cleanupJobEnvVar)
+// retireExpiredCleanupJob deletes the job of the current run when it is past
+// cleanupDeadline. It reports whether the deadline had passed, so the caller
+// fails the run: the resources are abandoned at that point and only the exit
+// status will show it.
+func retireExpiredCleanupJob(ctx context.Context) (bool, error) {
+	jobID := scheduledCleanupJob()
 	if jobID == "" {
-		return scheduleGcpCleanup(ctx, projectName, stackName)
+		return false, nil
 	}
-
 	createdAt, err := cleanupJobCreatedAt(jobID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if age := time.Since(createdAt); age > cleanupDeadline {
-		warn(fmt.Sprintf(" ** The VPC has resisted deletion for %s, which the IP-release window does not explain.", age.Round(time.Hour)))
-		warn(" ** Giving up and removing the retry job; the VPC needs deleting by hand in the GCP console.")
-		return deleteGcpCleanupJob(ctx, jobID)
+	age := time.Since(createdAt)
+	if age <= cleanupDeadline {
+		return false, nil
 	}
-	warn(" ** Leaving the retry job in place; it will try again within 2 hours.")
-	return nil
+	warn(fmt.Sprintf(" ** These resources have resisted deletion for %s, which the 1-2 hour IP-release window does not explain.", age.Round(time.Hour)))
+	warn(" ** Giving up: retiring the retry job. They need deleting by hand in the GCP console.")
+	return true, retireCleanupJob(ctx, jobID)
 }
 
-// finishGcpCleanup runs after a destroy that succeeded. When this run was a
-// scheduled retry, the job that started it has done its work and is removed.
+// finishGcpCleanup runs after a destroy that succeeded, retiring the job that
+// started it.
 func finishGcpCleanup(ctx context.Context) {
-	jobID := os.Getenv(cleanupJobEnvVar)
+	jobID := scheduledCleanupJob()
 	if jobID == "" || gcpProjectFromEnv() == "" {
 		return
 	}
-	if err := deleteGcpCleanupJob(ctx, jobID); err != nil {
-		// The job is idempotent, so a leftover only costs one more no-op run.
-		warn(" ** Failed to remove the retry job", jobID, "-", err)
+	if err := retireCleanupJob(ctx, jobID); err != nil {
+		// The stack is gone now, so a surviving job cannot be retired by a
+		// later run of this code path — say so loudly rather than implying it
+		// will sort itself out.
+		warn(" ** The VPC is deleted, but the retry job", jobID, "could not be removed:", err)
+		warn(" ** It will keep firing every 2 hours until deleted by hand:", jobID)
 		return
 	}
-	warn(" ** VPC deleted; removed the retry job", jobID)
+	warn(" ** VPC deleted; retired the retry job", jobID)
 }
 
-// scheduleGcpCleanup creates the Cloud Scheduler job that re-runs this `down`.
-func scheduleGcpCleanup(ctx context.Context, projectName, stackName string) error {
+// finishGcpCleanupForMissingStack retires the job when the stack it was
+// scheduled against no longer exists, which means the teardown is done. Without
+// this the run would fail at stack selection before any retirement logic and the
+// cron would fire for ever.
+func finishGcpCleanupForMissingStack(ctx context.Context) error {
+	jobID := scheduledCleanupJob()
+	if jobID == "" || gcpProjectFromEnv() == "" {
+		return nil
+	}
+	warn(" ** The stack no longer exists, so the teardown is complete; retiring the retry job", jobID)
+	return retireCleanupJob(ctx, jobID)
+}
+
+// scheduleGcpCleanup creates the Cloud Scheduler job that re-runs this `down`,
+// recording the URNs it is expected to finish deleting.
+func scheduleGcpCleanup(ctx context.Context, projectName, stackName string, remaining []stateResource) error {
 	gcpProject := gcpProjectFromEnv()
 	region := gcpRegionFromEnv()
 	if region == "" {
@@ -227,7 +407,7 @@ func scheduleGcpCleanup(ctx context.Context, projectName, stackName string) erro
 
 	now := time.Now()
 	jobID := cleanupJobID(projectName, stackName, now)
-	body, err := gcpCleanupBuild(cdImage, gcpProject, saEmail, stackName, jobID, os.Environ())
+	body, err := gcpCleanupBuild(cdImage, gcpProject, saEmail, stackName, jobID, remaining, os.Environ())
 	if err != nil {
 		return err
 	}
@@ -243,7 +423,7 @@ func scheduleGcpCleanup(ctx context.Context, projectName, stackName string) erro
 		Parent: parent,
 		Job: &schedulerpb.Job{
 			Name:        name,
-			Description: "Defang retry of `cd down` to delete the VPC once GCP releases the subnet IPs; deletes itself once it succeeds",
+			Description: "Defang retry of `cd down` to delete the VPC once GCP releases the subnet IPs; retires itself once it succeeds",
 			Schedule:    cleanupCron(now),
 			TimeZone:    "Etc/UTC",
 			Target: &schedulerpb.Job_HttpTarget{
@@ -270,10 +450,11 @@ func scheduleGcpCleanup(ctx context.Context, projectName, stackName string) erro
 
 // gcpCleanupBuild renders the builds.create request body that re-runs this CD
 // image with `down` — the same shape as gcpSelfDestructBuild in cd/program,
-// plus the job name so the retry can delete the job that started it.
-func gcpCleanupBuild(cdImage, gcpProject, saEmail, stackName, jobID string, environ []string) ([]byte, error) {
+// plus the job name and the URNs the retry is allowed to delete.
+func gcpCleanupBuild(cdImage, gcpProject, saEmail, stackName, jobID string, remaining []stateResource, environ []string) ([]byte, error) {
 	env := program.SelfDestructEnv(environ)
 	env[cleanupJobEnvVar] = jobID
+	env[cleanupURNsEnvVar] = joinURNs(remaining)
 	envList := make([]string, 0, len(env))
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		envList = append(envList, k+"="+env[k])
@@ -294,6 +475,17 @@ func gcpCleanupBuild(cdImage, gcpProject, saEmail, stackName, jobID string, envi
 		"serviceAccount": fmt.Sprintf("projects/%s/serviceAccounts/%s", gcpProject, saEmail),
 	}
 	return json.Marshal(build)
+}
+
+// joinURNs renders the URNs for cleanupURNsEnvVar, sorted so the value is
+// stable for a given state.
+func joinURNs(resources []stateResource) string {
+	urns := make([]string, 0, len(resources))
+	for _, res := range resources {
+		urns = append(urns, res.URN)
+	}
+	slices.Sort(urns)
+	return strings.Join(urns, ",")
 }
 
 // cleanupJobID names the retry job for one stack. The trailing timestamp keeps
@@ -320,7 +512,7 @@ func cleanupCron(now time.Time) string {
 	return fmt.Sprintf("%d %d-23/2 * * *", first.Minute(), first.Hour()%2)
 }
 
-func deleteGcpCleanupJob(ctx context.Context, jobID string) error {
+func retireCleanupJob(ctx context.Context, jobID string) error {
 	region := gcpRegionFromEnv()
 	if region == "" {
 		return errors.New("missing required environment variable: GCLOUD_REGION")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,118 +10,6 @@ import (
 
 	"github.com/DefangLabs/pulumi-defang/cd/program"
 )
-
-// onlyPendingTeardown decides whether a failed destroy is reported as a success.
-// Over-matching would hide a real failure behind a scheduled retry, so the
-// must-not-match cases matter as much as the must-match ones.
-func TestOnlyPendingTeardown(t *testing.T) {
-	tests := []struct {
-		name  string
-		types []string
-		want  bool
-	}{
-		{
-			name:  "the VPC and subnet waiting on the IP release",
-			types: []string{typeNetwork, typeSubnetwork},
-			want:  true,
-		},
-		{
-			name: "everything that can be caught by the same window",
-			types: []string{
-				typeNetwork,
-				typeSubnetwork,
-				typeSvcConnection,
-				"gcp:compute/instanceTemplate:InstanceTemplate",
-			},
-			want: true,
-		},
-		{
-			// A destroy that finished leaves nothing; treating that as pending
-			// would schedule a retry with nothing to do.
-			name:  "nothing left",
-			types: nil,
-			want:  false,
-		},
-		{
-			// A live Cloud Run service means the destroy failed for a reason
-			// the IP-release window does not explain.
-			name:  "an unrelated resource is still standing",
-			types: []string{typeNetwork, "gcp:cloudrunv2/service:Service"},
-			want:  false,
-		},
-		{
-			// A stuck database is a real failure and must surface, even though
-			// it would also block the network.
-			name:  "a Cloud SQL instance survived",
-			types: []string{"gcp:sql/databaseInstance:DatabaseInstance", typeNetwork},
-			want:  false,
-		},
-		{
-			name:  "only an unrelated resource",
-			types: []string{"gcp:artifactregistry/repository:Repository"},
-			want:  false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := onlyPendingTeardown(tt.types); got != tt.want {
-				t.Errorf("onlyPendingTeardown(%v) = %v, want %v", tt.types, got, tt.want)
-			}
-		})
-	}
-}
-
-// The stack and its providers are not cloud resources, so they must not make a
-// finished destroy look like a pending teardown.
-func TestRemainingTypesIgnoresStackAndProviders(t *testing.T) {
-	// Shape and type tokens taken from a real checkpoint in the CD bucket.
-	const export = `{
-	  "resources": [
-	    {"type": "pulumi:pulumi:Stack",            "urn": "urn:pulumi:preview::myproj::pulumi:pulumi:Stack::myproj-preview"},
-	    {"type": "pulumi:providers:gcp",           "urn": "urn:pulumi:preview::myproj::pulumi:providers:gcp::default"},
-	    {"type": "pulumi:providers:defang-gcp",    "urn": "urn:pulumi:preview::myproj::pulumi:providers:defang-gcp::default"},
-	    {"type": "gcp:compute/network:Network",    "urn": "urn:pulumi:preview::myproj::gcp:compute/network:Network::myproj-vpc"},
-	    {"type": "gcp:compute/subnetwork:Subnetwork", "urn": "urn:pulumi:preview::myproj::gcp:compute/subnetwork:Subnetwork::myproj-subnet"}
-	  ]
-	}`
-	got, err := remainingTypes([]byte(export))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "gcp:compute/network:Network,gcp:compute/subnetwork:Subnetwork"
-	if strings.Join(got, ",") != want {
-		t.Errorf("remainingTypes = %v, want %q", got, want)
-	}
-	if !onlyPendingTeardown(got) {
-		t.Error("a state holding only the VPC and subnet must classify as a pending teardown")
-	}
-}
-
-// A destroy that fully succeeded leaves only the stack and providers, and must
-// not be classified as pending.
-func TestRemainingTypesEmptyAfterFullDestroy(t *testing.T) {
-	const export = `{"resources": [
-	  {"type": "pulumi:pulumi:Stack", "urn": "urn:pulumi:preview::myproj::pulumi:pulumi:Stack::myproj-preview"},
-	  {"type": "pulumi:providers:gcp", "urn": "urn:pulumi:preview::myproj::pulumi:providers:gcp::default"}
-	]}`
-	got, err := remainingTypes([]byte(export))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 0 {
-		t.Errorf("remainingTypes = %v, want empty", got)
-	}
-	if onlyPendingTeardown(got) {
-		t.Error("a finished destroy must not classify as a pending teardown")
-	}
-}
-
-// A state that cannot be read must not be mistaken for a pending teardown.
-func TestRemainingTypesRejectsGarbage(t *testing.T) {
-	if _, err := remainingTypes([]byte("not json")); err == nil {
-		t.Error("expected an error for unparseable state")
-	}
-}
 
 func TestCleanupJobIDRoundTrip(t *testing.T) {
 	now := time.Date(2026, 8, 19, 14, 30, 45, 0, time.UTC)
@@ -198,7 +87,7 @@ func TestGcpCleanupBuildRerunsDown(t *testing.T) {
 		"DEFANG_STATES_UPLOAD_URL=https://presigned", // dropped: expires before the retry fires
 		"PATH=/usr/bin",                              // dropped
 	}
-	body, err := gcpCleanupBuild("us-docker.pkg.dev/defang/cd:v2", "my-gcp-project", "cd@my-gcp-project.iam.gserviceaccount.com", "preview", "defang-cleanup-myproj-preview-20260819143045", environ)
+	body, err := gcpCleanupBuild("us-docker.pkg.dev/defang/cd:v2", "my-gcp-project", "cd@my-gcp-project.iam.gserviceaccount.com", "preview", "defang-cleanup-myproj-preview-20260819143045", nil, environ)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +119,7 @@ func TestGcpCleanupBuildRerunsDown(t *testing.T) {
 		t.Errorf("args = %v, want [down]", step.Args)
 	}
 	// The job name must reach the retry, or a successful retry cannot retire it.
-	want := "CLEAN_UP_JOB_NAME=defang-cleanup-myproj-preview-20260819143045," +
+	want := "CLEAN_UP_JOB_NAME=defang-cleanup-myproj-preview-20260819143045,CLEAN_UP_URNS=," +
 		"GCLOUD_PROJECT=my-gcp-project,PROJECT=myproj,STACK=preview"
 	if got := strings.Join(step.Env, ","); got != want {
 		t.Errorf("env = %q, want %q", got, want)
@@ -271,5 +160,187 @@ func TestGcpProjectFromEnv(t *testing.T) {
 	t.Setenv("GCLOUD_PROJECT", "current-name")
 	if got := gcpProjectFromEnv(); got != "current-name" {
 		t.Errorf("gcpProjectFromEnv() = %q, want GCLOUD_PROJECT to win", got)
+	}
+}
+
+// --- classification -------------------------------------------------------
+
+// realCheckpoint mirrors the shape of a checkpoint in the CD bucket: the stack
+// and the Project component are custom:false, and the VPC/subnet are children of
+// the component. Taken from gs://defang-cd-.../html-css-js/newprovidergcp.json.bak
+const realCheckpoint = `{"resources": [
+  {"type": "pulumi:pulumi:Stack",        "custom": false, "urn": "urn:pulumi:np::html-css-js::pulumi:pulumi:Stack::html-css-js-np"},
+  {"type": "pulumi:providers:gcp",       "custom": true,  "urn": "urn:pulumi:np::html-css-js::pulumi:providers:gcp::default"},
+  {"type": "defang-gcp:index:Project",   "custom": false, "urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project::html-css-js"},
+  {"type": "gcp:compute/network:Network","custom": true,  "urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project$gcp:compute/network:Network::html-css-js-vpc"},
+  {"type": "gcp:compute/subnetwork:Subnetwork","custom": true,"urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::html-css-js-subnet"}
+]}`
+
+// The Project component is custom:false and is the PARENT of the VPC, so it is
+// still in state exactly when a child failed to delete. Counting it would reject
+// the only case this feature exists for — the bug that made the first version of
+// this inert.
+func TestRemainingResourcesIgnoresComponentsAndStack(t *testing.T) {
+	got, err := remainingResources([]byte(realCheckpoint))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Providers are custom:true but are not cloud resources; an earlier version
+	// of this test stripped them with a helper, which hid that the production
+	// path did not, leaving the feature inert.
+	for _, res := range got {
+		switch {
+		case res.Type == "defang-gcp:index:Project", res.Type == typeStackForTest:
+			t.Errorf("non-custom resource %q must be ignored", res.Type)
+		case strings.HasPrefix(res.Type, "pulumi:providers:"):
+			t.Errorf("provider %q must be ignored", res.Type)
+		}
+	}
+	if want := 2; len(got) != want {
+		t.Errorf("remainingResources returned %d resources, want %d: %+v", len(got), want, got)
+	}
+	if !onlyPendingTeardown(got) {
+		t.Error("a state holding only the VPC and subnet must classify as a pending teardown")
+	}
+}
+
+const typeStackForTest = "pulumi:pulumi:Stack"
+
+func res(t, urn string) stateResource { return stateResource{Type: t, URN: urn, Custom: true} }
+
+func TestOnlyPendingTeardown(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []stateResource
+		want bool
+	}{
+		{"the VPC and subnet", []stateResource{res(typeNetwork, "urn::a-vpc"), res(typeSubnetwork, "urn::a-subnet")}, true},
+		{"everything the window can catch", []stateResource{
+			res(typeNetwork, "urn::a-vpc"),
+			res(typeSubnetwork, "urn::a-subnet"),
+			res(typeSvcConnection, "urn::a-svc-conn"),
+			res(typeInstanceTemplate, "urn::a-instance-template"),
+			// The connection's dependency, skipped when the connection fails.
+			res(typeGlobalAddress, "urn::a-peering-ip"),
+		}, true},
+		// A finished destroy leaves nothing; a retry would have nothing to do.
+		{"nothing left", nil, false},
+		// The project's public address is the same type as the peering address
+		// and must never be treated as pending.
+		{"the public IP address", []stateResource{res(typeNetwork, "urn::a-vpc"), res(typeGlobalAddress, "urn::a-ip")}, false},
+		// Real failures that must still fail the down, even though they would
+		// also block the network.
+		{"a live Cloud Run service", []stateResource{res(typeNetwork, "urn::a-vpc"), res("gcp:cloudrunv2/service:Service", "urn::a-svc")}, false},
+		{"a surviving Cloud SQL instance", []stateResource{res("gcp:sql/databaseInstance:DatabaseInstance", "urn::a-db"), res(typeNetwork, "urn::a-vpc")}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := onlyPendingTeardown(tt.in); got != tt.want {
+				t.Errorf("onlyPendingTeardown = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// State says WHAT survived; only the error says WHY. Without this a permission
+// failure or an API outage would be converted into a successful down.
+func TestIsInUseFailure(t *testing.T) {
+	yes := []string{
+		"error: deleting urn:...: googleapi: Error 400: resourceInUseByAnotherResource",
+		"Failed to delete connection; Producer services (e.g. CloudSQL) are still using this connection.",
+		"The instance_template resource 'x' is already being used by 'y'",
+	}
+	for _, msg := range yes {
+		if !isInUseFailure(errors.New(msg)) {
+			t.Errorf("isInUseFailure(%q) = false, want true", msg)
+		}
+	}
+	no := []string{
+		"error: googleapi: Error 403: Permission denied on resource",
+		"error: Quota exceeded for quota metric 'Queries'",
+		"error: rpc error: code = Unavailable desc = the service is currently unavailable",
+	}
+	for _, msg := range no {
+		if isInUseFailure(errors.New(msg)) {
+			t.Errorf("isInUseFailure(%q) = true, want false", msg)
+		}
+	}
+	if isInUseFailure(nil) {
+		t.Error("isInUseFailure(nil) = true, want false")
+	}
+}
+
+// --- the replacement-deployment guard ------------------------------------
+
+// The schedule points at a project/stack, not at a deployment. If a redeploy
+// lands in the retry window, the retry must NOT destroy it.
+func TestUnexpectedURNsDetectsARedeploy(t *testing.T) {
+	const vpc = "urn:pulumi:np::p::defang-gcp:index:Project$gcp:compute/network:Network::p-vpc"
+	const subnet = "urn:pulumi:np::p::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::p-subnet"
+	expected := urnSet(vpc + "," + subnet)
+
+	// The leftovers the job was scheduled for: nothing unexpected.
+	same := []stateResource{res(typeNetwork, vpc), res(typeSubnetwork, subnet)}
+	if got := unexpectedURNs(same, expected); len(got) != 0 {
+		t.Errorf("unexpectedURNs = %v, want none", got)
+	}
+
+	// A redeploy adds a service; the retry must stand down.
+	redeployed := append(same, res("gcp:cloudrunv2/service:Service",
+		"urn:pulumi:np::p::defang-gcp:index:Project$gcp:cloudrunv2/service:Service::p-web"))
+	got := unexpectedURNs(redeployed, expected)
+	if len(got) != 1 || !strings.HasSuffix(got[0], "p-web") {
+		t.Errorf("unexpectedURNs = %v, want the new service", got)
+	}
+
+	// A fresh deployment reusing the same names still differs by URN only if
+	// the stack differs; the same-URN case is covered by the type check above.
+	// An empty recorded set must treat everything as unexpected, so a job
+	// scheduled without URNs can never destroy anything.
+	if got := unexpectedURNs(same, urnSet("")); len(got) != 2 {
+		t.Errorf("unexpectedURNs with no recorded URNs = %v, want all resources", got)
+	}
+}
+
+func TestJoinURNsIsSortedAndRoundTrips(t *testing.T) {
+	in := []stateResource{res(typeSubnetwork, "urn::b"), res(typeNetwork, "urn::a")}
+	csv := joinURNs(in)
+	if csv != "urn::a,urn::b" {
+		t.Errorf("joinURNs = %q, want sorted", csv)
+	}
+	set := urnSet(csv)
+	if !set["urn::a"] || !set["urn::b"] || len(set) != 2 {
+		t.Errorf("urnSet(%q) = %v", csv, set)
+	}
+}
+
+// The recorded URNs must reach the retry, or its guard has nothing to compare
+// against and it refuses to destroy anything.
+func TestGcpCleanupBuildCarriesJobAndURNs(t *testing.T) {
+	remaining := []stateResource{res(typeNetwork, "urn::p-vpc"), res(typeSubnetwork, "urn::p-subnet")}
+	body, err := gcpCleanupBuild("img", "proj", "sa@proj.iam.gserviceaccount.com", "preview",
+		"defang-cleanup-p-preview-20260819143045", remaining,
+		[]string{"PROJECT=p", "STACK=preview", "GCLOUD_PROJECT=proj", "PATH=/usr/bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var build struct {
+		Steps []struct {
+			Args []string `json:"args"`
+			Env  []string `json:"env"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(body, &build); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(build.Steps[0].Args, " ") != "down" {
+		t.Errorf("args = %v, want [down]", build.Steps[0].Args)
+	}
+	env := strings.Join(build.Steps[0].Env, "\n")
+	if !strings.Contains(env, "CLEAN_UP_JOB_NAME=defang-cleanup-p-preview-20260819143045") {
+		t.Errorf("job name missing from env:\n%s", env)
+	}
+	if !strings.Contains(env, "CLEAN_UP_URNS=urn::p-subnet,urn::p-vpc") {
+		t.Errorf("recorded URNs missing from env:\n%s", env)
 	}
 }
