@@ -220,11 +220,12 @@ func createInstanceTemplate(
 		}).(pulumi.StringMapOutput)
 	}
 
-	// Deleted normally, as the legacy CD did. A template cannot be deleted while
-	// a MIG still references it and MIG deletion is asynchronous, so the delete
-	// can lose that race — but retaining the template would keep it holding the
-	// subnet, and so block the VPC delete for ever. The CD schedules a retry on
-	// that failure instead; see cd/cleanup_gcp.go.
+	// The legacy CD retained instance templates because a template cannot be
+	// deleted while a MIG still references it and MIG deletion is asynchronous.
+	// This implementation instead lets that delete race fail: retaining the
+	// template would keep it holding the subnet and block the VPC delete forever,
+	// while the CD's scheduled Pulumi retry can complete both deletes later. See
+	// cd/cleanup_gcp.go.
 	templateOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
 	templateOpts = append(templateOpts, opts...)
 	if sa.Account != nil {

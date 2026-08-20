@@ -52,7 +52,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
 ## Missing commands (from old GCP code)
 
-- [x] `cleanup` — done differently, and deliberately not as a command. Old GCP had `Cleanup()` + `scheduleCleanUp()`, which re-implemented the VPC teardown itself. Here `cd/cleanup_gcp.go` classifies the destroy failure instead and schedules a retry of `down`, so Pulumi performs the remaining deletes from live state in its own dependency order. See issue 183.
+- [x] `cleanup` — done differently, and deliberately not as a command. Old GCP retained the VPC, subnet, instance templates, and Service Networking connection, then used `Cleanup()` + `scheduleCleanUp()` to tear the physical VPC down later. Here `cd/cleanup_gcp.go` removes those four retains, classifies the destroy failure, and schedules a retry of `down`, so Pulumi performs the remaining deletes from live state in its own dependency order. See issue 183.
 
 ## Missing GCP-specific config
 

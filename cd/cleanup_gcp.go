@@ -31,12 +31,15 @@ import (
 // so retrying inside the destroy cannot help:
 // https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc
 //
-// Rather than retain those resources — which orphans them, and is what issue
-// 183 was raised for — the destroy runs with ContinueOnError and deletes
-// everything it can. If the only resources still standing are the ones known to
-// wait on that window, the `down` reports success and schedules itself to run
-// again. Pulumi then performs the remaining deletes itself, in its own
-// dependency order, from live state: no orphans, and no teardown logic here.
+// Both this repo and the old MVP CD hit that same constraint. MVP retains the
+// network, subnet, MIG instance templates, and Service Networking connection,
+// then schedules its own delayed teardown of the physical subnet and network.
+// This implementation instead removes those four retains: the destroy runs with
+// ContinueOnError and deletes everything it can. If the only resources still
+// standing are the ones known to wait on that window, the `down` reports
+// success and schedules itself to run again. Pulumi then performs the remaining
+// deletes from live state, in its own dependency order: no orphaned resources
+// and no hand-rolled teardown here.
 //
 // The scheduled run carries cleanupJobEnvVar so that, once its destroy
 // finally succeeds, it can delete the scheduler job that started it.

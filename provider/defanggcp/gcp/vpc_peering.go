@@ -35,12 +35,13 @@ func createVPCPeeringInfra(
 		return nil, err
 	}
 
-	// Deleted normally, as the legacy CD did. The connection delete fails while
-	// a producer service still uses it (upstream
-	// hashicorp/terraform-provider-google#19908), which here is a race against
-	// the Cloud SQL instance delete rather than a permanent state. Retaining it
-	// would instead block the VPC delete for ever, so the CD schedules a retry
-	// on that failure — see cd/cleanup_gcp.go.
+	// The legacy CD retained this connection because its delete fails while a
+	// producer service still uses it (upstream
+	// hashicorp/terraform-provider-google#19908). Here that is a race against the
+	// Cloud SQL instance delete rather than a permanent state, so retaining the
+	// connection would instead block the VPC delete forever. Let the delete fail
+	// and have the CD's scheduled Pulumi retry complete it later; see
+	// cd/cleanup_gcp.go.
 	serviceConn, err := servicenetworking.NewConnection(ctx, projectName+"-svc-conn",
 		&servicenetworking.ConnectionArgs{
 			Network:               vpcId,
