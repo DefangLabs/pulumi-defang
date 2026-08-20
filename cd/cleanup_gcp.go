@@ -41,11 +41,18 @@ import (
 // retrying inside the destroy would help:
 // https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc
 //
-// So the provider marks the network and subnet RetainOnDelete
-// (provider/defanggcp/gcp/gcp.go) to keep the destroy from failing on them,
-// and the destroy schedules this command to delete them once the window has
-// passed. Without it the leaked networks exhaust the project's NETWORKS quota
-// (30 per project), which is what issue 183 was raised for.
+// Both this repo and the old MVP CD hit that same constraint; they differ only
+// in how they absorb it. MVP does not retain: it attempts the delete, the
+// delete fails, and its destroy() downgrades the error to a warning and
+// returns nothing (pulumi/cd/gcp/gcpcd/down.go), so the `down` still exits 0
+// and the failure is invisible — its cron then mops up. This CD instead
+// propagates a destroy error (see pulumiErr in cd_main.go), so the same failure
+// would be a visibly broken `down`. Hence RetainOnDelete on the network and
+// subnet (provider/defanggcp/gcp/gcp.go): do not attempt what cannot succeed.
+//
+// Either way the deferred clean-up is required, and it was the piece missing
+// here — so the retained networks accumulated until they exhausted the
+// project's NETWORKS quota (30 per project), which is what issue 183 is about.
 const cdCommandCleanup = client.CdCommand("cleanup")
 
 // cleanupJobTimeFormat stamps the scheduler job name with its own creation
@@ -55,6 +62,11 @@ const cleanupJobTimeFormat = "20060102150405"
 // cleanupJobEnvVar names the scheduler job in the environment of the build it
 // schedules, so the run can delete the job that started it.
 const cleanupJobEnvVar = "CLEAN_UP_JOB_NAME"
+
+// deleteConcurrency bounds the parallel deletes. The template and router lists
+// are project-wide and a matching stack can hold many, so the fan-out needs a
+// ceiling to stay within the Compute API's rate limits.
+const deleteConcurrency = 8
 
 // cleanupFirstRunDelay delays the first fire to the end of the 1-2h window GCP
 // needs to release the subnet's IP addresses (see cdCommandCleanup). It also
@@ -325,14 +337,7 @@ func networkFromStateBackup(ctx context.Context, gcs *storage.Client, bucket, ob
 	if err != nil {
 		return "", fmt.Errorf("failed to list the generations of gs://%s/%s: %w", bucket, object, err)
 	}
-	// Newest first, so the first match is the most recent checkpoint that still
-	// holds the network.
-	slices.SortFunc(generations, func(a, b objectGeneration) int { return cmp.Compare(b.generation, a.generation) })
-
-	for _, gen := range generations {
-		if gen.created.After(before) {
-			continue
-		}
+	for _, gen := range candidateGenerations(generations, before) {
 		state, err := readStateFile(ctx, gcs, bucket, object, gen.generation)
 		if err != nil {
 			return "", err
@@ -349,6 +354,27 @@ func networkFromStateBackup(ctx context.Context, gcs *storage.Client, bucket, ob
 type objectGeneration struct {
 	generation int64
 	created    time.Time
+}
+
+// candidateGenerations orders the generations newest first and drops any created
+// at or after `before` (the cleanup job's own creation time).
+//
+// The filter is what keeps this safe rather than merely correct: a generation
+// written after the job was scheduled belongs to a LATER deploy, whose network
+// is live. Reading one would hand back a network still in use and the teardown
+// would delete it. Only older checkpoints describe the stack this job was
+// scheduled to clean up.
+func candidateGenerations(generations []objectGeneration, before time.Time) []objectGeneration {
+	out := make([]objectGeneration, 0, len(generations))
+	for _, gen := range generations {
+		// Not After: a generation stamped exactly at the cut-off is not older
+		// than the job, so it cannot be assumed to predate it.
+		if gen.created.Before(before) {
+			out = append(out, gen)
+		}
+	}
+	slices.SortFunc(out, func(a, b objectGeneration) int { return cmp.Compare(b.generation, a.generation) })
+	return out
 }
 
 func objectGenerations(ctx context.Context, gcs *storage.Client, bucket, object string) ([]objectGeneration, error) {
@@ -452,10 +478,13 @@ func deleteGcpNetwork(ctx context.Context, gcpProject, region, networkID string)
 // the network, either directly or through one of its subnets. Templates are a
 // global resource, so the whole project is listed and filtered.
 //
-// Matching the subnet matters more than matching the network: a project-scoped
-// template sets only Subnetwork and leaves Network empty (see the network
-// interface built in provider/defanggcp/gcp/compute.go), so a network-only
-// filter would never match the templates that actually block the delete.
+// A template is matched on either field. The code only ever sets Subnetwork
+// (see the network interface built in provider/defanggcp/gcp/compute.go), but
+// GCP fills Network in from it, so reading either one back normally works —
+// verified against live templates in defang-playground-dev, which were created
+// with Subnetwork alone and report both. Matching only Network would leave the
+// whole teardown resting on that server-side normalisation, and a template we
+// fail to spot blocks the network delete for ever, so match both.
 func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string, subnets []subnetwork) error {
 	templates, err := compute.NewInstanceTemplatesRESTClient(ctx)
 	if err != nil {
@@ -463,7 +492,9 @@ func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string, 
 	}
 	defer templates.Close()
 
-	grp := new(errgroup.Group)
+	grp, grpCtx := errgroup.WithContext(ctx)
+	grp.SetLimit(deleteConcurrency)
+	var listErr error
 	it := templates.List(ctx, &computepb.ListInstanceTemplatesRequest{Project: gcpProject})
 	for {
 		tmpl, err := it.Next()
@@ -471,14 +502,17 @@ func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string, 
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to list instance templates: %w", err)
+			// Break rather than return: the deletes already started must still
+			// be waited on, or they run unsupervised while the process exits.
+			listErr = fmt.Errorf("failed to list instance templates: %w", err)
+			break
 		}
 		if tmpl.GetProperties() == nil || !usesNetwork(tmpl.GetProperties().GetNetworkInterfaces(), networkID, subnets) {
 			continue
 		}
 		tmplName := tmpl.GetName()
 		grp.Go(func() error {
-			op, err := templates.Delete(ctx, &computepb.DeleteInstanceTemplateRequest{
+			op, err := templates.Delete(grpCtx, &computepb.DeleteInstanceTemplateRequest{
 				Project:          gcpProject,
 				InstanceTemplate: tmplName,
 			})
@@ -488,13 +522,13 @@ func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string, 
 				}
 				return fmt.Errorf("failed to delete instance template %s: %w", tmplName, err)
 			}
-			if err := op.Wait(ctx); err != nil {
+			if err := op.Wait(grpCtx); err != nil {
 				return fmt.Errorf("failed to wait for the delete of instance template %s: %w", tmplName, err)
 			}
 			return nil
 		})
 	}
-	return grp.Wait()
+	return errors.Join(grp.Wait(), listErr)
 }
 
 // usesNetwork reports whether any interface holds the network directly or sits
@@ -555,7 +589,9 @@ func deleteRouters(ctx context.Context, gcpProject, region, networkID string) er
 	}
 	defer routers.Close()
 
-	grp := new(errgroup.Group)
+	grp, grpCtx := errgroup.WithContext(ctx)
+	grp.SetLimit(deleteConcurrency)
+	var listErr error
 	it := routers.List(ctx, &computepb.ListRoutersRequest{Project: gcpProject, Region: region})
 	for {
 		router, err := it.Next()
@@ -563,14 +599,15 @@ func deleteRouters(ctx context.Context, gcpProject, region, networkID string) er
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to list routers: %w", err)
+			listErr = fmt.Errorf("failed to list routers: %w", err)
+			break
 		}
 		if !referencesNetwork(router.GetNetwork(), networkID) {
 			continue
 		}
 		routerName := router.GetName()
 		grp.Go(func() error {
-			op, err := routers.Delete(ctx, &computepb.DeleteRouterRequest{
+			op, err := routers.Delete(grpCtx, &computepb.DeleteRouterRequest{
 				Project: gcpProject,
 				Region:  region,
 				Router:  routerName,
@@ -581,13 +618,13 @@ func deleteRouters(ctx context.Context, gcpProject, region, networkID string) er
 				}
 				return fmt.Errorf("failed to delete router %s: %w", routerName, err)
 			}
-			if err := op.Wait(ctx); err != nil {
+			if err := op.Wait(grpCtx); err != nil {
 				return fmt.Errorf("failed to wait for the delete of router %s: %w", routerName, err)
 			}
 			return nil
 		})
 	}
-	return grp.Wait()
+	return errors.Join(grp.Wait(), listErr)
 }
 
 // subnetwork is one of the network's subnets: its name, to delete it, and its
@@ -636,11 +673,12 @@ func deleteSubnetworks(ctx context.Context, gcpProject, region string, list []su
 	}
 	defer subnets.Close()
 
-	grp := new(errgroup.Group)
+	grp, grpCtx := errgroup.WithContext(ctx)
+	grp.SetLimit(deleteConcurrency)
 	for _, subnet := range list {
 		subnetName := subnet.name
 		grp.Go(func() error {
-			op, err := subnets.Delete(ctx, &computepb.DeleteSubnetworkRequest{
+			op, err := subnets.Delete(grpCtx, &computepb.DeleteSubnetworkRequest{
 				Project:    gcpProject,
 				Region:     region,
 				Subnetwork: subnetName,
@@ -651,7 +689,7 @@ func deleteSubnetworks(ctx context.Context, gcpProject, region string, list []su
 				}
 				return fmt.Errorf("failed to delete subnet %s: %w", subnetName, err)
 			}
-			if err := op.Wait(ctx); err != nil {
+			if err := op.Wait(grpCtx); err != nil {
 				return fmt.Errorf("failed to wait for the delete of subnet %s: %w", subnetName, err)
 			}
 			return nil

@@ -29,13 +29,17 @@ func TestCleanupJobIDRoundTrip(t *testing.T) {
 	}
 }
 
-// The timestamp must be read as UTC: parsing it in the local zone would shift
-// the cut-off and skip state generations that predate the job.
+// The timestamp must be read as UTC, because it is written as UTC. Parsing it
+// in the local zone would shift the cut-off by the offset and could admit a
+// newer deploy's state generation. Assert the zone directly: setting TZ here
+// would not help, as Go resolves time.Local once per process.
 func TestCleanupJobCreatedAtIsUTC(t *testing.T) {
-	t.Setenv("TZ", "America/Vancouver")
 	got, err := cleanupJobCreatedAt("defang-cleanup-p-s-20260819143045")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got.Location() != time.UTC {
+		t.Errorf("location = %s, want UTC", got.Location())
 	}
 	if want := time.Date(2026, 8, 19, 14, 30, 45, 0, time.UTC); !got.Equal(want) {
 		t.Errorf("createdAt = %s, want %s", got, want)
@@ -228,10 +232,10 @@ func TestReferencesNetwork(t *testing.T) {
 	}
 }
 
-// A project-scoped instance template sets only Subnetwork and leaves Network
-// empty (see compute.go), so matching on the network alone misses exactly the
-// templates that block the network delete. Without the subnet arm of this
-// filter the cleanup fails on every retry, for ever.
+// The provider sets only Subnetwork on a template's interface (compute.go), and
+// GCP fills Network in from it. Both arms of the filter are therefore exercised
+// by real data, and a template missed by both blocks the network delete for
+// ever — so pin the behaviour of each, including that neither arm over-matches.
 func TestUsesNetworkMatchesSubnetOnlyInterface(t *testing.T) {
 	const networkID = "projects/my-gcp-project/global/networks/myproj-vpc"
 	subnets := []subnetwork{
@@ -292,6 +296,47 @@ func TestNoNetworkInStateIsIdentifiable(t *testing.T) {
 	}
 	if errors.Is(errors.New("delete blocked by a dependent resource"), errNoNetworkInState) {
 		t.Error("an unrelated error must not match errNoNetworkInState")
+	}
+}
+
+// The cut-off is the safety property of the whole feature: a generation written
+// after the job was scheduled belongs to a LATER deploy whose network is live,
+// so reading it would make the teardown delete a network still in use.
+func TestCandidateGenerations(t *testing.T) {
+	before := time.Date(2026, 8, 19, 14, 30, 45, 0, time.UTC)
+	generations := []objectGeneration{
+		{generation: 100, created: before.Add(-2 * time.Hour)},
+		{generation: 300, created: before.Add(10 * time.Minute)}, // a later deploy
+		{generation: 200, created: before.Add(-1 * time.Hour)},
+		{generation: 250, created: before}, // exactly at the cut-off
+	}
+
+	got := candidateGenerations(generations, before)
+
+	ids := make([]int64, 0, len(got))
+	for _, gen := range got {
+		ids = append(ids, gen.generation)
+	}
+	// Newest first, and neither the later deploy nor the boundary generation.
+	if len(ids) != 2 || ids[0] != 200 || ids[1] != 100 {
+		t.Errorf("generations = %v, want [200 100]", ids)
+	}
+	for _, gen := range got {
+		if !gen.created.Before(before) {
+			t.Errorf("generation %d created %s is not before the cut-off %s", gen.generation, gen.created, before)
+		}
+	}
+}
+
+func TestCandidateGenerationsEmpty(t *testing.T) {
+	before := time.Date(2026, 8, 19, 14, 30, 45, 0, time.UTC)
+	if got := candidateGenerations(nil, before); len(got) != 0 {
+		t.Errorf("candidateGenerations(nil) = %v, want empty", got)
+	}
+	// Every generation newer than the job: nothing is safe to read.
+	newer := []objectGeneration{{generation: 1, created: before.Add(time.Minute)}}
+	if got := candidateGenerations(newer, before); len(got) != 0 {
+		t.Errorf("candidateGenerations(newer) = %v, want empty", got)
 	}
 }
 
