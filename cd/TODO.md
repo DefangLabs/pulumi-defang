@@ -52,7 +52,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
 ## Missing commands (from old GCP code)
 
-- [x] `cleanup` — done in `cleanup_gcp.go` as `scheduleGcpCleanup` (old GCP `scheduleCleanUp()`) and `cleanupGCP` (old GCP `Cleanup()`). A GCP `down` schedules a Cloud Scheduler job that re-runs this image with `cleanup`, which deletes the retained VPC and then itself. It also removes the referencing resources this repo retains but old GCP did not (instance templates, the servicenetworking peering) — see issue 183.
+- [x] `cleanup` — done in `cleanup_gcp.go` as `scheduleGcpCleanup` (old GCP `scheduleCleanUp()`) and `cleanupGCP` (old GCP `Cleanup()`). A GCP `down` schedules a Cloud Scheduler job that re-runs this image with `cleanup`, which deletes the retained VPC and then itself. Both implementations retain the VPC, subnet, instance templates, and Service Networking connection; this cleanup additionally removes the retained referencing resources explicitly before deleting the network — see issue 183.
 
 ## Missing GCP-specific config
 

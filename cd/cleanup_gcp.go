@@ -41,14 +41,13 @@ import (
 // retrying inside the destroy would help:
 // https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc
 //
-// Both this repo and the old MVP CD hit that same constraint; they differ only
-// in how they absorb it. MVP does not retain: it attempts the delete, the
-// delete fails, and its destroy() downgrades the error to a warning and
-// returns nothing (pulumi/cd/gcp/gcpcd/down.go), so the `down` still exits 0
-// and the failure is invisible — its cron then mops up. This CD instead
-// propagates a destroy error (see pulumiErr in cd_main.go), so the same failure
-// would be a visibly broken `down`. Hence RetainOnDelete on the network and
-// subnet (provider/defanggcp/gcp/gcp.go): do not attempt what cannot succeed.
+// Both this repo and the old MVP CD hit that same constraint and retain the
+// network and subnet so Pulumi removes them from state without attempting a
+// delete that cannot yet succeed. MVP also retains the MIG instance templates
+// and the Service Networking connection. Its delayed cleanup complements those
+// retains by deleting the physical subnet and network later. This CD preserves
+// that two-phase lifecycle: RetainOnDelete during the destroy, followed by the
+// scheduled cleanup once GCP has released the subnet.
 //
 // Either way the deferred clean-up is required, and it was the piece missing
 // here — so the retained networks accumulated until they exhausted the
