@@ -23,6 +23,8 @@ func (m *module) Construct(ctx *pulumi.Context, name, typ, urn string) (r pulumi
 	switch typ {
 	case "defang-gcp:index:Build":
 		r = &Build{}
+	case "defang-gcp:index:PeeringCleanup":
+		r = &PeeringCleanup{}
 	case "defang-gcp:index:Postgres":
 		r = &Postgres{}
 	case "defang-gcp:index:Project":
