@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/compute/apiv1/computepb"
 	"github.com/DefangLabs/pulumi-defang/cd/program"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestCleanupJobIDRoundTrip(t *testing.T) {
@@ -223,6 +225,51 @@ func TestReferencesNetwork(t *testing.T) {
 		if got := referencesNetwork(tt.selfLink, networkID); got != tt.want {
 			t.Errorf("referencesNetwork(%q) = %v, want %v", tt.selfLink, got, tt.want)
 		}
+	}
+}
+
+// A project-scoped instance template sets only Subnetwork and leaves Network
+// empty (see compute.go), so matching on the network alone misses exactly the
+// templates that block the network delete. Without the subnet arm of this
+// filter the cleanup fails on every retry, for ever.
+func TestUsesNetworkMatchesSubnetOnlyInterface(t *testing.T) {
+	const networkID = "projects/my-gcp-project/global/networks/myproj-vpc"
+	subnets := []subnetwork{
+		{name: "myproj-subnet", id: "projects/my-gcp-project/regions/us-central1/subnetworks/myproj-subnet"},
+	}
+	subnetOnly := []*computepb.NetworkInterface{{
+		Subnetwork: proto.String("https://www.googleapis.com/compute/v1/projects/my-gcp-project/regions/us-central1/subnetworks/myproj-subnet"),
+	}}
+	if !usesNetwork(subnetOnly, networkID, subnets) {
+		t.Error("a subnetwork-only interface in the network's subnet must match")
+	}
+
+	networkOnly := []*computepb.NetworkInterface{{
+		Network: proto.String("https://www.googleapis.com/compute/v1/projects/my-gcp-project/global/networks/myproj-vpc"),
+	}}
+	if !usesNetwork(networkOnly, networkID, subnets) {
+		t.Error("a network-only interface must match")
+	}
+
+	// The standalone path puts templates on the default network; those belong
+	// to no stack of ours and must be left alone.
+	other := []*computepb.NetworkInterface{{
+		Network: proto.String("https://www.googleapis.com/compute/v1/projects/my-gcp-project/global/networks/default"),
+	}}
+	if usesNetwork(other, networkID, subnets) {
+		t.Error("an interface on another network must not match")
+	}
+
+	// A subnet of a different network must not drag the template in.
+	otherSubnet := []*computepb.NetworkInterface{{
+		Subnetwork: proto.String("https://www.googleapis.com/compute/v1/projects/my-gcp-project/regions/us-central1/subnetworks/someone-else"),
+	}}
+	if usesNetwork(otherSubnet, networkID, subnets) {
+		t.Error("an interface in an unrelated subnet must not match")
+	}
+
+	if usesNetwork(nil, networkID, subnets) {
+		t.Error("no interfaces must not match")
 	}
 }
 

@@ -411,7 +411,15 @@ func deleteGcpNetwork(ctx context.Context, gcpProject, region, networkID string)
 
 	name := path.Base(networkID)
 
-	if err := deleteInstanceTemplates(ctx, gcpProject, networkID); err != nil {
+	// List the subnets up front: the instance templates are matched on their
+	// subnetwork, not their network (see deleteInstanceTemplates), and the same
+	// list is what gets deleted below.
+	subnets, err := listSubnetworks(ctx, gcpProject, region, networkID)
+	if err != nil {
+		return err
+	}
+
+	if err := deleteInstanceTemplates(ctx, gcpProject, networkID, subnets); err != nil {
 		return err
 	}
 	if err := removeNetworkPeerings(ctx, networks, gcpProject, name); err != nil {
@@ -420,7 +428,7 @@ func deleteGcpNetwork(ctx context.Context, gcpProject, region, networkID string)
 	if err := deleteRouters(ctx, gcpProject, region, networkID); err != nil {
 		return err
 	}
-	if err := deleteSubnetworks(ctx, gcpProject, region, networkID); err != nil {
+	if err := deleteSubnetworks(ctx, gcpProject, region, subnets); err != nil {
 		return err
 	}
 
@@ -440,9 +448,15 @@ func deleteGcpNetwork(ctx context.Context, gcpProject, region, networkID string)
 	return nil
 }
 
-// deleteInstanceTemplates deletes the retained MIG instance templates whose
-// network interfaces point at the network. Templates are a global resource.
-func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string) error {
+// deleteInstanceTemplates deletes the retained MIG instance templates that hold
+// the network, either directly or through one of its subnets. Templates are a
+// global resource, so the whole project is listed and filtered.
+//
+// Matching the subnet matters more than matching the network: a project-scoped
+// template sets only Subnetwork and leaves Network empty (see the network
+// interface built in provider/defanggcp/gcp/compute.go), so a network-only
+// filter would never match the templates that actually block the delete.
+func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string, subnets []subnetwork) error {
 	templates, err := compute.NewInstanceTemplatesRESTClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create instance templates client: %w", err)
@@ -459,7 +473,7 @@ func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string) 
 		if err != nil {
 			return fmt.Errorf("failed to list instance templates: %w", err)
 		}
-		if tmpl.GetProperties() == nil || !usesNetwork(tmpl.GetProperties().GetNetworkInterfaces(), networkID) {
+		if tmpl.GetProperties() == nil || !usesNetwork(tmpl.GetProperties().GetNetworkInterfaces(), networkID, subnets) {
 			continue
 		}
 		tmplName := tmpl.GetName()
@@ -483,10 +497,17 @@ func deleteInstanceTemplates(ctx context.Context, gcpProject, networkID string) 
 	return grp.Wait()
 }
 
-func usesNetwork(interfaces []*computepb.NetworkInterface, networkID string) bool {
+// usesNetwork reports whether any interface holds the network directly or sits
+// in one of its subnets.
+func usesNetwork(interfaces []*computepb.NetworkInterface, networkID string, subnets []subnetwork) bool {
 	for _, ni := range interfaces {
 		if referencesNetwork(ni.GetNetwork(), networkID) {
 			return true
+		}
+		for _, subnet := range subnets {
+			if referencesNetwork(ni.GetSubnetwork(), subnet.id) {
+				return true
+			}
 		}
 	}
 	return false
@@ -569,8 +590,46 @@ func deleteRouters(ctx context.Context, gcpProject, region, networkID string) er
 	return grp.Wait()
 }
 
-// deleteSubnetworks deletes the retained subnets of the network in the region.
-func deleteSubnetworks(ctx context.Context, gcpProject, region, networkID string) error {
+// subnetwork is one of the network's subnets: its name, to delete it, and its
+// id in the "projects/P/regions/R/subnetworks/N" form, to match references to
+// it.
+type subnetwork struct {
+	name string
+	id   string
+}
+
+// listSubnetworks returns the subnets of the network in the region. This
+// includes the retained shared subnet and the load balancer's proxy-only
+// subnet.
+func listSubnetworks(ctx context.Context, gcpProject, region, networkID string) ([]subnetwork, error) {
+	subnets, err := compute.NewSubnetworksRESTClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subnetworks client: %w", err)
+	}
+	defer subnets.Close()
+
+	var out []subnetwork
+	it := subnets.List(ctx, &computepb.ListSubnetworksRequest{Project: gcpProject, Region: region})
+	for {
+		subnet, err := it.Next()
+		if errors.Is(err, iterator.Done) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to list subnetworks: %w", err)
+		}
+		if !referencesNetwork(subnet.GetNetwork(), networkID) {
+			continue
+		}
+		out = append(out, subnetwork{
+			name: subnet.GetName(),
+			id:   fmt.Sprintf("projects/%s/regions/%s/subnetworks/%s", gcpProject, region, subnet.GetName()),
+		})
+	}
+}
+
+// deleteSubnetworks deletes the network's subnets.
+func deleteSubnetworks(ctx context.Context, gcpProject, region string, list []subnetwork) error {
 	subnets, err := compute.NewSubnetworksRESTClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create subnetworks client: %w", err)
@@ -578,19 +637,8 @@ func deleteSubnetworks(ctx context.Context, gcpProject, region, networkID string
 	defer subnets.Close()
 
 	grp := new(errgroup.Group)
-	it := subnets.List(ctx, &computepb.ListSubnetworksRequest{Project: gcpProject, Region: region})
-	for {
-		subnet, err := it.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to list subnetworks: %w", err)
-		}
-		if !referencesNetwork(subnet.GetNetwork(), networkID) {
-			continue
-		}
-		subnetName := subnet.GetName()
+	for _, subnet := range list {
+		subnetName := subnet.name
 		grp.Go(func() error {
 			op, err := subnets.Delete(ctx, &computepb.DeleteSubnetworkRequest{
 				Project:    gcpProject,
