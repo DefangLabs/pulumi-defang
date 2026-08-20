@@ -123,9 +123,9 @@ func CreateCloudSQL(
 	}).(pulumi.StringOutput)
 
 	instanceOpts := opts
-	if infra != nil && infra.ServiceConnection != nil {
+	if infra != nil && infra.ServiceNetworking != nil {
 		instanceOpts = append([]pulumi.ResourceOption{
-			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
+			pulumi.DependsOn([]pulumi.Resource{infra.ServiceNetworking}),
 		}, opts...)
 	}
 
@@ -136,7 +136,7 @@ func CreateCloudSQL(
 
 	_, onlyPrivateIP := svc.Networks["private"]
 	var privateNetwork pulumi.StringPtrInput
-	if infra != nil && infra.ServiceConnection != nil {
+	if infra != nil && infra.ServiceNetworking != nil {
 		privateNetwork = infra.VpcId.ApplyT(func(v string) *string { return &v }).(pulumi.StringPtrOutput)
 	}
 

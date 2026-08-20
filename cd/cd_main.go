@@ -230,9 +230,8 @@ func cdMain(ctx context.Context, args ...string) error {
 		}
 		// A scheduled GCP cleanup retry must not destroy a deployment that
 		// arrived after it was scheduled, so check what the stack holds BEFORE
-		// destroying anything, and only then clear what Pulumi cannot delete
-		// itself (see cleanup_gcp.go). Ordinary downs proceed.
-		if proceed, err := prepareScheduledCleanup(ctx, stack); err != nil {
+		// destroying anything (see cleanup_gcp.go). Ordinary downs proceed.
+		if proceed, err := guardScheduledCleanup(ctx, stack); err != nil {
 			return err
 		} else if !proceed {
 			return nil

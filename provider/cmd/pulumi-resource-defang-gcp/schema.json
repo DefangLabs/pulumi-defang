@@ -466,6 +466,41 @@
         "steps"
       ]
     },
+    "defang-gcp:index:PeeringCleanup": {
+      "description": "Removes the VPC network peering left behind by an abandoned Service Networking connection. Creating it does nothing; deleting it calls compute.networks.removePeering, which is the only delete GCP honours while the service producer is still releasing its resources.",
+      "properties": {
+        "network": {
+          "type": "string",
+          "description": "The VPC to remove peerings from: a name, an id or a self-link.",
+          "replaceOnChanges": true
+        },
+        "projectId": {
+          "type": "string",
+          "description": "The GCP project that holds the network.",
+          "replaceOnChanges": true
+        }
+      },
+      "required": [
+        "projectId",
+        "network"
+      ],
+      "inputProperties": {
+        "network": {
+          "type": "string",
+          "description": "The VPC to remove peerings from: a name, an id or a self-link.",
+          "replaceOnChanges": true
+        },
+        "projectId": {
+          "type": "string",
+          "description": "The GCP project that holds the network.",
+          "replaceOnChanges": true
+        }
+      },
+      "requiredInputs": [
+        "projectId",
+        "network"
+      ]
+    },
     "defang-gcp:index:Postgres": {
       "properties": {
         "endpoint": {

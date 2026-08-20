@@ -1,6 +1,8 @@
 package gcp
 
 import (
+	"fmt"
+
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/servicenetworking"
@@ -17,14 +19,25 @@ func needsVpcPeering(services map[string]compose.ServiceConfig) bool {
 	return false
 }
 
+// peeringCleanupResource is the Pulumi resource state for the
+// defang-gcp:defanggcp:PeeringCleanup custom resource. It has no outputs: the
+// resource exists only for what its delete does.
+type peeringCleanupResource struct {
+	pulumi.CustomResourceState
+}
+
 // createVPCPeeringInfra allocates a private IP range and creates a service networking
 // connection for Cloud SQL private IP access.
+//
+// It returns the peering-cleanup resource rather than the connection, because that
+// is what the managed instances must depend on — see PeeringCleanup.
 func createVPCPeeringInfra(
 	ctx *pulumi.Context,
 	projectName string,
+	gcpProject string,
 	vpcId pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
-) (*servicenetworking.Connection, error) {
+) (pulumi.Resource, error) {
 	privateIpAlloc, err := compute.NewGlobalAddress(ctx, projectName+"-peering-ip", &compute.GlobalAddressArgs{
 		Purpose:      pulumi.String("VPC_PEERING"),
 		AddressType:  pulumi.String("INTERNAL"),
@@ -46,9 +59,9 @@ func createVPCPeeringInfra(
 	//
 	// ABANDON makes the destroy skip the API call entirely, which is what lets
 	// Pulumi delete the rest of the VPC. What it leaves behind is the network
-	// peering, and that still holds the reserved range above — so the CD removes
-	// the peering out of band before its retry destroy. See
-	// clearAbandonedPeerings in cd/cleanup_gcp.go.
+	// peering, and that still holds the reserved range above — so the
+	// PeeringCleanup resource below removes it, with the Compute API call that
+	// Google's own console uses.
 	//
 	// The field is Optional+Computed and not ForceNew upstream, so setting it on
 	// an existing connection updates in place and never replaces the peering.
@@ -64,5 +77,28 @@ func createVPCPeeringInfra(
 	if err != nil {
 		return nil, err
 	}
-	return serviceConn, nil
+
+	// Deleting this removes the peering the abandoned connection leaves behind.
+	// It depends on the connection, so Pulumi deletes it first — and the managed
+	// instances depend on it in turn (SharedInfra.ServiceNetworking), which puts
+	// the whole teardown in the only order GCP accepts: instances, peering,
+	// reserved range, subnet, VPC.
+	cleanupOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
+	cleanupOpts = append(cleanupOpts, opts...)
+	cleanupOpts = append(cleanupOpts, pulumi.DependsOn([]pulumi.Resource{serviceConn}))
+
+	var cleanup peeringCleanupResource
+	if err := ctx.RegisterResource(
+		"defang-gcp:defanggcp:PeeringCleanup",
+		projectName+"-svc-conn-peering",
+		pulumi.Map{
+			"projectId": pulumi.String(gcpProject),
+			"network":   vpcId,
+		},
+		&cleanup,
+		cleanupOpts...,
+	); err != nil {
+		return nil, fmt.Errorf("creating PeeringCleanup resource: %w", err)
+	}
+	return &cleanup, nil
 }

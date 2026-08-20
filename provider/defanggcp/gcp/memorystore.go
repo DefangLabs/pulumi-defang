@@ -62,9 +62,9 @@ func CreateMemoryStore(
 	}
 
 	instanceOpts := opts
-	if infra != nil && infra.ServiceConnection != nil {
+	if infra != nil && infra.ServiceNetworking != nil {
 		instanceOpts = append([]pulumi.ResourceOption{
-			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
+			pulumi.DependsOn([]pulumi.Resource{infra.ServiceNetworking}),
 		}, opts...)
 	}
 

@@ -12,7 +12,6 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/servicenetworking"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -20,17 +19,21 @@ var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert author
 
 // SharedInfra holds project-level GCP resources shared across all services.
 type SharedInfra struct {
-	Region            string
-	GcpProject        string // GCP project ID, used for IAM bindings
-	Domain            string // delegate domain (e.g. "example.com"); empty when not configured
-	VpcId             pulumi.StringOutput
-	SubnetId          pulumi.StringOutput
-	PublicIP          *compute.GlobalAddress
-	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
-	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
-	ProxySubnetId     string
-	BuildInfra        *BuildInfra                             // non-nil when at least one service has a build config
-	ServiceConnection *servicenetworking.Connection           // non-nil when any service uses managed Postgres or Redis
+	Region         string
+	GcpProject     string // GCP project ID, used for IAM bindings
+	Domain         string // delegate domain (e.g. "example.com"); empty when not configured
+	VpcId          pulumi.StringOutput
+	SubnetId       pulumi.StringOutput
+	PublicIP       *compute.GlobalAddress
+	WildcardCertId pulumi.StringInput // non-nil when a domain is configured
+	PublicZoneId   pulumi.StringInput // managed zone name; non-nil when a domain is configured
+	ProxySubnetId  string
+	BuildInfra     *BuildInfra // non-nil when at least one service has a build config
+	// ServiceNetworking is the private-services-access chain for managed Postgres
+	// and Redis: non-nil when any service uses them. It holds the peering-cleanup
+	// resource rather than the connection itself, so that instances depending on
+	// it are deleted before the peering is removed — see PeeringCleanup.
+	ServiceNetworking pulumi.Resource
 	PrivateZone       pulumi.StringOutput                     // managed zone name for the private google.internal. zone
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
@@ -228,11 +231,11 @@ func buildOptionalInfra(
 	}
 
 	if needsVpcPeering(services) {
-		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
+		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.GcpProject, cfg.VpcId, opts...)
 		if err != nil {
 			return err
 		}
-		cfg.ServiceConnection = serviceConn
+		cfg.ServiceNetworking = serviceConn
 	}
 	return nil
 }
