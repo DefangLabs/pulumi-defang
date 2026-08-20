@@ -11,6 +11,7 @@ replace (
 )
 
 require (
+	cloud.google.com/go/compute v1.63.0
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/scheduler v1.16.0
 	cloud.google.com/go/storage v1.64.0

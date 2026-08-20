@@ -172,7 +172,8 @@ const realCheckpoint = `{"resources": [
   {"type": "pulumi:pulumi:Stack",        "custom": false, "urn": "urn:pulumi:np::html-css-js::pulumi:pulumi:Stack::html-css-js-np"},
   {"type": "pulumi:providers:gcp",       "custom": true,  "urn": "urn:pulumi:np::html-css-js::pulumi:providers:gcp::default"},
   {"type": "defang-gcp:index:Project",   "custom": false, "urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project::html-css-js"},
-  {"type": "gcp:compute/network:Network","custom": true,  "urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project$gcp:compute/network:Network::html-css-js-vpc"},
+  {"type": "gcp:compute/network:Network","custom": true,  "urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project$gcp:compute/network:Network::html-css-js-vpc",
+   "id": "projects/defang-playground-dev/global/networks/html-css-js-vpc-e99e23a"},
   {"type": "gcp:compute/subnetwork:Subnetwork","custom": true,"urn": "urn:pulumi:np::html-css-js::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::html-css-js-subnet"}
 ]}`
 
@@ -237,6 +238,40 @@ func TestOnlyPendingTeardown(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := onlyPendingTeardown(tt.in); got != tt.want {
 				t.Errorf("onlyPendingTeardown = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// The peering the abandoned connection leaves behind is removed by name, and the
+// only place the VPC's real name appears is the network's provider id. Getting
+// this wrong makes clearAbandonedPeerings a silent no-op, which the GCP calls
+// themselves cannot be unit-tested to catch.
+func TestNetworkNameFromState(t *testing.T) {
+	fromRealCheckpoint, err := remainingResources([]byte(realCheckpoint))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withID := func(typ, id string) stateResource {
+		r := res(typ, "urn::a-vpc")
+		r.ID = id
+		return r
+	}
+	tests := []struct {
+		name string
+		in   []stateResource
+		want string
+	}{
+		{"a real checkpoint", fromRealCheckpoint, "html-css-js-vpc-e99e23a"},
+		{"a bare name", []stateResource{withID(typeNetwork, "some-vpc")}, "some-vpc"},
+		// Nothing to remove a peering from, and nothing to guess at either.
+		{"no network in state", []stateResource{withID(typeSubnetwork, "projects/p/regions/r/subnetworks/s")}, ""},
+		{"a network with no id", []stateResource{res(typeNetwork, "urn::a-vpc")}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := networkNameFromState(tt.in); got != tt.want {
+				t.Errorf("networkNameFromState = %q, want %q", got, tt.want)
 			}
 		})
 	}

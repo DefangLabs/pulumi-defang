@@ -35,24 +35,29 @@ func createVPCPeeringInfra(
 		return nil, err
 	}
 
-	// The legacy CD retains this connection, citing
-	// hashicorp/terraform-provider-google#16275: the provider cannot delete a
-	// service networking connection at all. That is a 5.x regression
-	// (removePeering -> deleteConnection) which fails even once the dependent
-	// Cloud SQL instances are gone; it was closed as a duplicate of #16944,
-	// whose resolution added an *abandon* deletion_policy rather than a working
-	// delete.
+	// The provider cannot delete a service networking connection at all:
+	// hashicorp/terraform-provider-google#16275 is a 5.x regression
+	// (removePeering -> deleteConnection) that fails even once the dependent
+	// Cloud SQL instances are gone. It was closed as a duplicate of #16944,
+	// whose resolution — merged 2024-01-09 and still the current behaviour —
+	// added this *abandon* deletion policy instead of a working delete. So
+	// ABANDON is upstream's own answer here, not a workaround invented for this
+	// repo, and a plain delete would fail for ever.
 	//
-	// Deleting it normally here is therefore NOT yet justified: the CD's
-	// scheduled retry cannot succeed either, and would abandon the VPC at its
-	// deadline. Retaining it does block the VPC delete, so neither option is
-	// good — see issue 183. If this stays unretained, DeletionPolicy: ABANDON
-	// plus an out-of-band removePeering is the honest expression of it.
+	// ABANDON makes the destroy skip the API call entirely, which is what lets
+	// Pulumi delete the rest of the VPC. What it leaves behind is the network
+	// peering, and that still holds the reserved range above — so the CD removes
+	// the peering out of band before its retry destroy. See
+	// clearAbandonedPeerings in cd/cleanup_gcp.go.
+	//
+	// The field is Optional+Computed and not ForceNew upstream, so setting it on
+	// an existing connection updates in place and never replaces the peering.
 	serviceConn, err := servicenetworking.NewConnection(ctx, projectName+"-svc-conn",
 		&servicenetworking.ConnectionArgs{
 			Network:               vpcId,
 			Service:               pulumi.String("servicenetworking.googleapis.com"),
 			ReservedPeeringRanges: pulumi.StringArray{privateIpAlloc.Name},
+			DeletionPolicy:        pulumi.String("ABANDON"),
 		},
 		opts...,
 	)

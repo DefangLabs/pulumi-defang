@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	compute "cloud.google.com/go/compute/apiv1"
+	"cloud.google.com/go/compute/apiv1/computepb"
 	"cloud.google.com/go/compute/metadata"
 	scheduler "cloud.google.com/go/scheduler/apiv1"
 	"cloud.google.com/go/scheduler/apiv1/schedulerpb"
@@ -41,14 +43,23 @@ import (
 // `down` again. Pulumi then performs the remaining deletes from live state, in
 // its own dependency order: no orphaned resources and no hand-rolled teardown.
 //
-// CAVEAT (issue 183 discussion): for the Service Networking connection this
-// premise does not hold. MVP retains it citing
-// hashicorp/terraform-provider-google#16275, where the provider cannot delete
-// the connection at all — a 5.x regression (removePeering -> deleteConnection),
-// closed as a duplicate of #16944 whose resolution was to add an *abandon*
-// deletion_policy rather than a working delete. So on any stack with managed
-// Postgres or Redis, the retry here cannot succeed and will abandon the VPC at
-// cleanupDeadline. That is why this branch is a draft.
+// One resource is exempt from that premise, because Pulumi genuinely cannot
+// delete it: the Service Networking connection. The provider's delete is broken
+// upstream (hashicorp/terraform-provider-google#16275, a 5.x regression from
+// removePeering to deleteConnection, closed as a duplicate of #16944 whose
+// resolution added an *abandon* deletion policy rather than a working delete),
+// so a retry would fail for ever on any stack with managed Postgres or Redis.
+// The program therefore abandons it (DeletionPolicy: ABANDON in
+// createVPCPeeringInfra) and this file removes the peering it leaves behind,
+// out of band, before the retry destroy — see clearAbandonedPeerings. That is
+// one API call, rather than a hand-written teardown of the whole VPC.
+//
+// KNOWN GAP: all of this only applies to a state written by this version of the
+// provider. RetainOnDelete is recorded per resource in the checkpoint and
+// `pulumi destroy` does not re-run the program (see optdestroy.RunProgram), so a
+// stack whose state still carries the old retains destroys "successfully" and
+// leaks its VPC exactly as before, with no failure for this code to classify.
+// Those stacks need one sweep by hand, or an `up` on this version first.
 //
 // Safety rules that follow from the schedule being a pointer at a project/stack
 // rather than at a deployment:
@@ -104,11 +115,15 @@ const peeringAddressSuffix = "-peering-ip"
 // until GCP releases the subnet's IP addresses.
 //
 // The VPC and its subnet are what is actually blocked. The rest are caught by
-// the same window because they hold a reference to it: the servicenetworking
-// connection races the Cloud SQL instance delete, and an instance template races
-// its MIG's asynchronous deletion. The peering address is here because the
-// connection depends on it, so ContinueOnError skips the address when the
-// connection delete fails.
+// the same window because they hold a reference to it: an instance template
+// races its MIG's asynchronous deletion, and the peering address is held by the
+// peering the abandoned connection leaves behind (clearAbandonedPeerings
+// releases it before the retry).
+//
+// The connection itself is listed only for a state written before the abandon
+// policy shipped, where its delete cannot succeed at all: classifying it as
+// pending means such a stack gets the retries and then a clear message at the
+// deadline, rather than a bare provider error.
 var pendingTeardownTypes = map[string]bool{
 	typeNetwork:          true,
 	typeSubnetwork:       true,
@@ -121,9 +136,10 @@ var pendingTeardownTypes = map[string]bool{
 // and without that a permission failure or an API outage would be converted
 // into a "successful" down.
 var inUseErrorMarkers = []string{
-	// The subnet/network delete while Cloud Run still holds the IPs.
+	// The subnet/network delete while Cloud Run still holds the IPs, and the
+	// peering address while the abandoned peering still holds its range.
 	"resourceInUseByAnotherResource",
-	// The servicenetworking connection while Cloud SQL is still going.
+	// The connection of a state that predates the abandon policy.
 	"still using this connection",
 	// The instance template while its MIG is still being deleted.
 	"is already being used by",
@@ -134,6 +150,9 @@ type stateResource struct {
 	URN string `json:"urn"`
 	// Type is the Pulumi type token.
 	Type string `json:"type"`
+	// ID is the provider id, which is where the VPC's name comes from when its
+	// peering has to be removed out of band.
+	ID string `json:"id"`
 	// Custom is false for the stack and for component resources, which are
 	// bookkeeping rather than cloud resources.
 	Custom bool `json:"custom"`
@@ -243,12 +262,83 @@ func unexpectedURNs(resources []stateResource, expected map[string]bool) []strin
 // ordinary run.
 func scheduledCleanupJob() string { return os.Getenv(cleanupJobEnvVar) }
 
-// guardScheduledCleanup runs before a scheduled retry destroys anything.
+// networkNameFromState finds the VPC's name in the live state.
 //
-// It reports whether the destroy may proceed. When it may not, the job has been
-// retired and the run is finished: either someone else completed the teardown,
-// or a new deployment now occupies this project/stack and must not be destroyed.
-func guardScheduledCleanup(ctx context.Context, stack auto.Stack) (proceed bool, err error) {
+// The id of a gcp:compute/network:Network is
+// projects/<project>/global/networks/<name>; a bare name is accepted too, so a
+// different id shape cannot silently turn this into a no-op.
+func networkNameFromState(resources []stateResource) string {
+	for _, res := range resources {
+		if res.Type == typeNetwork && res.ID != "" {
+			return res.ID[strings.LastIndex(res.ID, "/")+1:]
+		}
+	}
+	return ""
+}
+
+// clearAbandonedPeerings removes the network peerings that the destroy left
+// behind, so the retry's deletes can get past them.
+//
+// The Service Networking connection is abandoned rather than deleted, because
+// the provider cannot delete one (see createVPCPeeringInfra). Abandoning it
+// leaves its peering on the VPC, and that peering holds the reserved range — so
+// both the peering address and the network itself would keep failing to delete
+// for ever. Nothing else ever peers with this VPC, so every peering on it is one
+// to remove.
+//
+// Failures here are reported and not returned: the retry destroy then fails the
+// way it did before, and the job fires again.
+func clearAbandonedPeerings(ctx context.Context, resources []stateResource) {
+	network := networkNameFromState(resources)
+	if network == "" {
+		return // no network left in state, so no peering of ours survives
+	}
+	gcpProject := gcpProjectFromEnv()
+
+	client, err := compute.NewNetworksRESTClient(ctx)
+	if err != nil {
+		warn(" ** Could not reach the compute API to remove the VPC peering:", err)
+		return
+	}
+	defer client.Close()
+
+	net, err := client.Get(ctx, &computepb.GetNetworkRequest{Project: gcpProject, Network: network})
+	if err != nil {
+		if !isNotFound(err) {
+			warn(" ** Could not read the VPC", network, "to remove its peerings:", err)
+		}
+		return
+	}
+	for _, peering := range net.GetPeerings() {
+		name := peering.GetName()
+		op, err := client.RemovePeering(ctx, &computepb.RemovePeeringNetworkRequest{
+			Project: gcpProject,
+			Network: network,
+			NetworksRemovePeeringRequestResource: &computepb.NetworksRemovePeeringRequest{
+				Name: &name,
+			},
+		})
+		if err == nil {
+			err = op.Wait(ctx)
+		}
+		if err != nil {
+			if !isNotFound(err) {
+				warn(" ** Could not remove the peering", name, "from the VPC", network, ":", err)
+			}
+			continue
+		}
+		warn(" ** Removed the abandoned peering", name, "from the VPC", network)
+	}
+}
+
+// prepareScheduledCleanup runs before a scheduled retry destroys anything: it
+// decides whether the destroy may proceed at all, and then clears what Pulumi
+// cannot delete itself.
+//
+// When the destroy may not proceed, the job has been retired and the run is
+// finished: either someone else completed the teardown, or a new deployment now
+// occupies this project/stack and must not be destroyed.
+func prepareScheduledCleanup(ctx context.Context, stack auto.Stack) (proceed bool, err error) {
 	jobID := scheduledCleanupJob()
 	if jobID == "" || gcpProjectFromEnv() == "" {
 		return true, nil // an ordinary `down`, not a retry
@@ -279,6 +369,10 @@ func guardScheduledCleanup(ctx context.Context, stack auto.Stack) (proceed bool,
 		warn(" ** Not destroying anything; retiring the retry job", jobID)
 		return false, retireCleanupJob(ctx, jobID)
 	}
+
+	// Only now that the state is known to hold nothing but this job's leftovers
+	// is it safe to touch the VPC's peerings.
+	clearAbandonedPeerings(ctx, resources)
 	return true, nil
 }
 
