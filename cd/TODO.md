@@ -52,7 +52,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
 ## Missing commands (from old GCP code)
 
-- [ ] `cleanup` — old GCP had `Cleanup()` + `scheduleCleanUp()` that created a Cloud Build cron job to clean VPC resources after destroy
+- [x] `cleanup` — done: `cleanup_gcp.go` ports `Cleanup()` + `scheduleCleanUp()`. A GCP `down` schedules a Cloud Scheduler job that re-runs this image with `cleanup`, which deletes the retained VPC and then itself. It also removes the referencing resources this repo retains but old GCP did not (instance templates, the servicenetworking peering) — see issue 183.
 
 ## Missing GCP-specific config
 
@@ -60,7 +60,7 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 
 ## Missing env vars (from old GCP code)
 
-- [x] `DEFANG_CD_IMAGE` — no longer unused: `config.go` reads it into `defang:cdImage`. The consumer (GCP cleanup cron) is still missing — tracked under `cleanup` above.
+- [x] `DEFANG_CD_IMAGE` — no longer unused: `config.go` reads it into `defang:cdImage`, and `cleanup_gcp.go` re-runs that image from the GCP cleanup cron.
 
 ---
 

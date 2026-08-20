@@ -99,6 +99,14 @@ func BuildGlobalConfig(
 	region := GcpRegion(ctx)
 	gcpProject := config.GetProject(ctx)
 
+	// RetainOnDelete on the network and its subnet is deliberate: Cloud Run
+	// attaches with Direct VPC egress (see buildVpcAccess), and GCP holds the
+	// subnet's IP addresses for 1-2 hours after the service is gone. Deleting
+	// them inline therefore fails with resourceInUseByAnotherResource, and a
+	// retry cannot help because the wait is documented GCP behaviour:
+	// https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc
+	// The `cleanup` CD command deletes them after the window instead — do not
+	// drop these without removing that (see cd/cleanup_gcp.go).
 	vpc, err := compute.NewNetwork(ctx, projectName+"-vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
 	}, append(opts, pulumi.RetainOnDelete(true))...)

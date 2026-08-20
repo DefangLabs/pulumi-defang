@@ -101,6 +101,10 @@ func cdMain(ctx context.Context, args ...string) error {
 		// No Pulumi stack: only starts a regular down execution on the
 		// shared CD job (Azure self-destruct; see triggerdown.go).
 		return triggerDown(ctx)
+	case cdCommandCleanup:
+		// No Pulumi stack: the stack is already gone, and the network to
+		// delete is read from the state backup (GCP; see cleanup_gcp.go).
+		return cleanupGCP(ctx, projectName, stackName)
 	default:
 		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
 	}
@@ -223,6 +227,18 @@ func cdMain(ctx context.Context, args ...string) error {
 		}
 		_, err = stack.Destroy(ctx, destroyOpts...)
 		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
+		// The GCP provider retains the VPC and its subnet on delete, because
+		// GCP needs 1-2 hours to release the subnet's IPs after Cloud Run
+		// lets go of them; schedule a later run to delete them once that
+		// window has passed (see cleanup_gcp.go). A targeted destroy keeps the
+		// stack, so there is nothing to clean up yet. This is best effort: a
+		// missing cleanup job must not fail the down.
+		if len(pulumiTargets) == 0 && gcpProjectFromEnv() != "" {
+			if err := scheduleGcpCleanup(ctx, projectName, stackName); err != nil {
+				warn(" ** Failed to schedule the cleanup of the retained VPC:", err)
+				warn(" ** You may need to delete the VPC by hand in the GCP console")
+			}
+		}
 		if err != nil {
 			return pulumiErr(err)
 		}
