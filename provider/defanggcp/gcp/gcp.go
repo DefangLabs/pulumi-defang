@@ -99,9 +99,14 @@ func BuildGlobalConfig(
 	region := GcpRegion(ctx)
 	gcpProject := config.GetProject(ctx)
 
+	// The network and subnet are deleted normally, as the legacy CD did. GCP
+	// refuses the subnet delete for 1-2 hours after Cloud Run releases its
+	// Direct VPC egress IPs, so a `down` cannot finish the job; the CD detects
+	// that specific failure and schedules a retry rather than retaining these.
+	// See cd/cleanup_gcp.go and issue 183.
 	vpc, err := compute.NewNetwork(ctx, projectName+"-vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
-	}, append(opts, pulumi.RetainOnDelete(true))...)
+	}, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +115,7 @@ func BuildGlobalConfig(
 		IpCidrRange: pulumi.String("10.0.0.0/16"),
 		Region:      pulumi.String(region),
 		Network:     vpc.ID(),
-	}, append(opts, pulumi.RetainOnDelete(true))...)
+	}, opts...)
 	if err != nil {
 		return nil, err
 	}

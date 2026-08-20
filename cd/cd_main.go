@@ -223,8 +223,22 @@ func cdMain(ctx context.Context, args ...string) error {
 		}
 		_, err = stack.Destroy(ctx, destroyOpts...)
 		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
+		destroyErr := err
+		// On GCP a full destroy can legitimately not finish: GCP holds the
+		// subnet's IP addresses for 1-2 hours after Cloud Run releases them.
+		// If that is all that is left, schedule a retry and report success
+		// rather than failing (see cleanup_gcp.go). A targeted destroy leaves
+		// resources behind by design, so it is not classifiable this way.
+		if len(pulumiTargets) == 0 {
+			err = handleGcpPendingTeardown(ctx, stack, projectName, stackName, err)
+		}
 		if err != nil {
 			return pulumiErr(err)
+		}
+		// Only a destroy that actually succeeded retires the retry job; a
+		// pending teardown has just scheduled or kept one.
+		if destroyErr == nil {
+			finishGcpCleanup(ctx)
 		}
 
 	case client.CdCommandRefresh:
