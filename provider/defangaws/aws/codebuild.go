@@ -2,7 +2,9 @@ package aws
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -14,6 +16,49 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
+
+var (
+	errCodeBuildS3NoObjectKey = errors.New("CodeBuild S3 source URL has no object key")
+	errCodeBuildNotS3URL      = errors.New("CodeBuild source must be an S3 URL")
+	errCodeBuildS3Incomplete  = errors.New("CodeBuild source must include an S3 bucket and object key")
+)
+
+func normalizeCodeBuildS3Location(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing CodeBuild source URL: %w", err)
+	}
+
+	object := strings.TrimPrefix(u.EscapedPath(), "/")
+	var bucket string
+	switch u.Scheme {
+	case "s3":
+		bucket = u.Host
+	case "http", "https":
+		host := u.Hostname()
+		if before, _, ok := strings.Cut(host, ".s3."); ok {
+			// Virtual-hosted style: https://bucket.s3.region.amazonaws.com/key.
+			bucket = before
+		} else if before, _, ok := strings.Cut(host, ".s3-"); ok {
+			// Legacy virtual-hosted style: https://bucket.s3-region.amazonaws.com/key.
+			bucket = before
+		} else if strings.HasPrefix(host, "s3.") || strings.HasPrefix(host, "s3-") {
+			// Path style: https://s3.region.amazonaws.com/bucket/key.
+			var found bool
+			bucket, object, found = strings.Cut(object, "/")
+			if !found {
+				return "", fmt.Errorf("%w: %q", errCodeBuildS3NoObjectKey, rawURL)
+			}
+		}
+	default:
+		return "", fmt.Errorf("%w: got %q", errCodeBuildNotS3URL, rawURL)
+	}
+
+	if bucket == "" || object == "" {
+		return "", fmt.Errorf("%w: got %q", errCodeBuildS3Incomplete, rawURL)
+	}
+	return bucket + "/" + object, nil
+}
 
 // codeBuildResult holds the outputs of creating a CodeBuild project.
 type codeBuildResult struct {
@@ -216,8 +261,15 @@ func getBuildSpec(build compose.BuildConfig, destination string) (string, error)
 		cacheArgs = append(cacheArgs, "--cache-to="+c)
 	}
 
-	preBuildCommands := make([]string, 0, 12)
+	preBuildCommands := make([]string, 0, 13)
 	preBuildCommands = append(preBuildCommands,
+		// CodeBuild's S3 source only auto-extracts .zip; the CLI uploads the
+		// build context as a .tar.gz (same format for every provider -- GCP's
+		// Cloud Build extracts that natively, CodeBuild does not), so a
+		// non-zip source lands here as a single untouched archive file with
+		// no Dockerfile anywhere. Extract it ourselves; a no-op if the source
+		// was already a zip (nothing named *.tar.gz to find).
+		`archive=$(ls *.tar.gz 2>/dev/null | head -n1); if [ -n "$archive" ]; then tar xzf "$archive"; fi`,
 		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com", //nolint:lll
 		"aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws",
 	)
@@ -332,11 +384,13 @@ func createCodeBuildProject(
 		})
 	}
 
-	// Context must be an S3 URL
+	// CodeBuild expects S3 sources as bucket/key, while the CLI supplies either
+	// an s3:// URL or the query-free HTTPS URL returned by S3's presigner.
 	sourceType := "S3"
-	sourceLocation := pulumix.Apply(pulumix.Output[string](build.Context.ToStringOutput()), func(s string) string {
-		return strings.TrimPrefix(s, "s3://")
-	})
+	sourceLocation := pulumix.ApplyErr(
+		pulumix.Output[string](build.Context.ToStringOutput()),
+		normalizeCodeBuildS3Location,
+	)
 
 	project, err := codebuild.NewProject(ctx, name, &codebuild.ProjectArgs{
 		Description: pulumi.Sprintf("Build image for %s", name),

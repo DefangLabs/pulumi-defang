@@ -1,7 +1,12 @@
 package aws
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,6 +34,27 @@ func buildSpecCommands(t *testing.T, build compose.BuildConfig) []string {
 	return append(parsed.Phases.PreBuild.Commands, parsed.Phases.Build.Commands...)
 }
 
+func TestNormalizeCodeBuildS3Location(t *testing.T) {
+	tests := map[string]string{
+		"s3://bucket/uploads/context.tar.gz":                                     "bucket/uploads/context.tar.gz",
+		"https://bucket.s3.amazonaws.com/uploads/context.tar.gz?signature=value": "bucket/uploads/context.tar.gz",
+		"https://bucket.s3.us-west-2.amazonaws.com/uploads/context.tar.gz":       "bucket/uploads/context.tar.gz",
+		"https://s3.us-west-2.amazonaws.com/bucket/uploads/context.tar.gz":       "bucket/uploads/context.tar.gz",
+	}
+	for input, expected := range tests {
+		t.Run(input, func(t *testing.T) {
+			actual, err := normalizeCodeBuildS3Location(input)
+			require.NoError(t, err)
+			assert.Equal(t, expected, actual)
+		})
+	}
+}
+
+func TestNormalizeCodeBuildS3LocationRejectsInvalidURL(t *testing.T) {
+	_, err := normalizeCodeBuildS3Location("https://example.com/context.tar.gz")
+	require.Error(t, err)
+}
+
 func TestGetBuildSpecDefault(t *testing.T) {
 	cmds := buildSpecCommands(t, compose.BuildConfig{Context: pulumi.String("s3://bucket/ctx")})
 	joined := strings.Join(cmds, "\n")
@@ -37,6 +63,68 @@ func TestGetBuildSpecDefault(t *testing.T) {
 	assert.NotContains(t, joined, "--cache-to")
 	assert.Contains(t, joined,
 		"docker buildx build -t 123.dkr.ecr.us-test-2.amazonaws.com/repo:latest -f Dockerfile --push $CODEBUILD_SRC_DIR")
+}
+
+// CodeBuild's S3 source only auto-extracts .zip; the CLI uploads the build
+// context as .tar.gz for every non-Railpack build on every provider (GCP's
+// Cloud Build extracts that natively, CodeBuild does not). A live smoketest
+// (defang-mvp#3181) hit this for real: the build phase failed with
+// "open Dockerfile: no such file or directory" because $CODEBUILD_SRC_DIR
+// held the untouched archive, not its contents.
+func TestGetBuildSpecExtractsArchiveBeforeAnythingElse(t *testing.T) {
+	cmds := buildSpecCommands(t, compose.BuildConfig{Context: pulumi.String("s3://bucket/ctx")})
+	require.NotEmpty(t, cmds)
+	assert.Contains(t, cmds[0], "tar xzf",
+		"extraction must be the first pre_build command, before anything else needs the source tree")
+}
+
+// Runs the actual generated extraction command (not just asserting on the
+// spec text) against a real tarball, and confirms it's a safe no-op for a
+// zip-sourced build (CodeBuild already extracted that itself, so there's
+// nothing named *.tar.gz to find).
+func TestBuildSpecExtractionCommandExtractsRealArchive(t *testing.T) {
+	cmds := buildSpecCommands(t, compose.BuildConfig{Context: pulumi.String("s3://bucket/ctx")})
+	extractCmd := cmds[0]
+
+	t.Run("extracts a tar.gz source", func(t *testing.T) {
+		dir := t.TempDir()
+		writeTestTarGz(t, filepath.Join(dir, "abc123.tar.gz"), map[string]string{"Dockerfile": "FROM scratch\n"})
+
+		cmd := exec.CommandContext(t.Context(), "bash", "-c", extractCmd) //nolint:gosec // G204: test-authored command
+		cmd.Dir = dir
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+
+		//nolint:gosec // G304: test-authored path in t.TempDir()
+		content, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+		require.NoError(t, err)
+		assert.Equal(t, "FROM scratch\n", string(content))
+	})
+
+	t.Run("no-op when there is nothing to extract", func(t *testing.T) {
+		dir := t.TempDir()
+		cmd := exec.CommandContext(t.Context(), "bash", "-c", extractCmd) //nolint:gosec // G204: test-authored command
+		cmd.Dir = dir
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "output: %s", output)
+	})
+}
+
+func writeTestTarGz(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+	f, err := os.Create(path) //nolint:gosec // G304: test-authored path in t.TempDir()
+	require.NoError(t, err)
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	for name, content := range files {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Size: int64(len(content)), Mode: 0o644}))
+		_, err := tw.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	// Close in dependency order: tar writer flushes into gzip, gzip flushes into the file.
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+	require.NoError(t, f.Close())
 }
 
 func TestGetBuildSpecPlatformsAndCache(t *testing.T) {

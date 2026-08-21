@@ -16,7 +16,7 @@ func targetGroupName(
 	service string, port int, appProtocol compose.PortAppProtocol, listener compose.PortListenerProtocol,
 ) string {
 	suffix := fmt.Sprintf("-%d", port)
-	if appProtocol != "" && appProtocol != "http" {
+	if appProtocol != "" && appProtocol != compose.PortAppProtocolHTTP {
 		suffix += string(appProtocol)
 	}
 	// HTTPS is the default listener, so only non-default listeners get a suffix
