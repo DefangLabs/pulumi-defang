@@ -7,6 +7,7 @@ import (
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	providergcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp/gcp"
 	defanggcp "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp"
 	gcpcompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
@@ -32,7 +33,20 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, etag), pulumi.Providers(gcpProvider))
+	args := toGCPArgs(cf, etag)
+	// Resolve each BYOD hostname to an existing public Cloud DNS zone and thread the
+	// zone names into the provider, so it writes the records into the customer's own
+	// zone and issues a DNS-authorized cert there. Hostnames with no zone still get
+	// a cert, authorized by the load balancer instead.
+	if zones := findByodZonesGCP(ctx, cf, gcpProvider); len(zones) > 0 {
+		zoneMap := pulumi.StringMap{}
+		for hostname, zone := range zones {
+			zoneMap[hostname] = pulumi.String(zone)
+		}
+		args.DnsZones = zoneMap
+	}
+
+	project, err := defanggcp.NewProject(ctx, cf.Name, args, pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -67,6 +81,61 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 		}
 	}
 	return project.Endpoints, project.LoadBalancerDns, nil
+}
+
+// findByodZonesGCP resolves every BYOD hostname the project asks for — each
+// service's `domainname` plus its default-network aliases — to the name of an
+// existing public Cloud DNS managed zone in the deploy project. Hostnames with no
+// matching zone are absent from the result and take the
+// load-balancer-authorized certificate path instead.
+//
+// The lookup runs here rather than in the CLI (as AWS does in
+// ByocAws.UpdateServiceInfo) because the CD task executes inside the customer's
+// cloud with the deploy identity: it already has DNS read permission and knows
+// its project, so `defang compose up` needs no extra client-side role. On GCP the
+// CLI never populated ServiceInfo.ZoneId at all, so there was nothing to move.
+//
+// A failed lookup is a warning, not an error. The services still deploy, and
+// their certs fall back to load balancer authorization, which is what the legacy
+// GCP CD used for every BYOD domain.
+func findByodZonesGCP(pctx *pulumi.Context, cf *compose.Project, provider pulumi.ProviderResource) map[string]string {
+	// Per hostname, not per service: a service's domainname and its aliases need
+	// not live in the same zone.
+	var hostnames []string
+	for _, svc := range cf.Services {
+		if !svc.HasIngressPorts() {
+			continue
+		}
+		hostnames = append(hostnames, common.ByodHostnames(svc)...)
+	}
+	if len(hostnames) == 0 {
+		return nil
+	}
+
+	// One listing answers every hostname (see FindZones).
+	zones, err := providergcp.FindZones(pctx, config.GetProject(pctx), hostnames, pulumi.Provider(provider))
+	if err != nil {
+		_ = pctx.Log.Warn(fmt.Sprintf(
+			"BYOD DNS: zone lookup failed (%v); custom hostnames fall back to load balancer "+
+				"authorized certificates", err), nil)
+		return nil
+	}
+	// No zone for a hostname is a normal answer, not a failure. Unlike AWS and
+	// Azure, GCP does not drop the hostname's certificate here — it issues one with
+	// load balancer authorization, so the actionable hint is about DNS rather than
+	// about `defang cert gen`.
+	for _, hostname := range hostnames {
+		if _, ok := zones[common.NormalizeDNS(hostname)]; !ok {
+			_ = pctx.Log.Warn(fmt.Sprintf(
+				"BYOD DNS: no public Cloud DNS zone in this project hosts %s; its certificate will use "+
+					"load balancer authorization and activates once %s resolves to this deployment's load "+
+					"balancer IP address.", hostname, hostname), nil)
+		}
+	}
+	if len(zones) == 0 {
+		return nil
+	}
+	return zones
 }
 
 func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {
