@@ -101,7 +101,7 @@ func buildProject(
 	}
 	config.Etag = args.Etag
 
-	if err := providergcp.EnableGcpAPIs(ctx, config.GcpProject, childOpts...); err != nil {
+	if err := providergcp.EnableGcpAPIs(ctx, childOpts...); err != nil {
 		return nil, err
 	}
 

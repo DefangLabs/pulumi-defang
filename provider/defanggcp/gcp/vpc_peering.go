@@ -21,11 +21,14 @@ func needsVpcPeering(services map[string]compose.ServiceConfig) bool {
 // connection for Cloud SQL private IP access.
 func createVPCPeeringInfra(
 	ctx *pulumi.Context,
-	projectName string,
 	vpcId pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
 ) (*servicenetworking.Connection, error) {
-	privateIpAlloc, err := compute.NewGlobalAddress(ctx, projectName+"-peering-ip", &compute.GlobalAddressArgs{
+	// Logical names below deliberately omit projectName: Pulumi's default resource
+	// ID already prefixes it with <pulumi-project>-<stack>, which includes
+	// projectName, so repeating it here risked exceeding GCP's 63-char resource
+	// ID limit.
+	privateIpAlloc, err := compute.NewGlobalAddress(ctx, "peering-ip", &compute.GlobalAddressArgs{
 		Purpose:      pulumi.String("VPC_PEERING"),
 		AddressType:  pulumi.String("INTERNAL"),
 		PrefixLength: pulumi.Int(16),
@@ -35,7 +38,7 @@ func createVPCPeeringInfra(
 		return nil, err
 	}
 
-	serviceConn, err := servicenetworking.NewConnection(ctx, projectName+"-svc-conn",
+	serviceConn, err := servicenetworking.NewConnection(ctx, "svc-conn",
 		&servicenetworking.ConnectionArgs{
 			Network:               vpcId,
 			Service:               pulumi.String("servicenetworking.googleapis.com"),

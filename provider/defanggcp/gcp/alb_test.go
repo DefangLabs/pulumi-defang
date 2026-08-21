@@ -14,6 +14,7 @@ type albResource struct {
 	name   string
 	typeof string
 	inputs resource.PropertyMap
+	parent string
 }
 
 type albMocks struct {
@@ -21,7 +22,13 @@ type albMocks struct {
 }
 
 func (m *albMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
-	m.resources = append(m.resources, albResource{name: args.Name, typeof: args.TypeToken, inputs: args.Inputs})
+	var parent string
+	if args.RegisterRPC != nil {
+		parent = args.RegisterRPC.GetParent()
+	}
+	m.resources = append(m.resources, albResource{
+		name: args.Name, typeof: args.TypeToken, inputs: args.Inputs, parent: parent,
+	})
 	return args.Name + "_id", args.Inputs, nil
 }
 
@@ -100,6 +107,82 @@ func TestCreateLoadBalancersMIGMultipleIngressPortsReturnsActionableError(t *tes
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "service api has multiple ingress ports")
 	require.Contains(t, err.Error(), "use at most one ingress port")
+}
+
+// createInternalLoadBalancer's host-mode branch (a single non-ingress TCP
+// port, e.g. a Redis-like service on 6379) never forwarded opts to any of
+// the resources it creates. Live smoketest result (defang-mvp#3181): every
+// one of them tried to use the ambient default "gcp" provider instead of the
+// explicit one this stack configures, and defang-playground-dev disables
+// that default -- "Default provider for 'gcp' disabled ... must use an
+// explicit provider." This exercises the exact failing shape and asserts
+// opts (here, an explicit Parent) actually reaches each resource.
+func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		mig, err := testMIG(ctx, "smokeworker")
+		if err != nil {
+			return err
+		}
+		parent, err := compute.NewNetwork(ctx, "test-parent", &compute.NetworkArgs{})
+		if err != nil {
+			return err
+		}
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{{
+			Name:          "smokeworker",
+			InstanceGroup: mig,
+			PrivateFqdn:   "smokeworker.google.internal",
+			Config: testServiceConfig([]compose.ServicePortConfig{
+				{Target: 6379, Mode: compose.PortModeHost},
+			}),
+		}}, testInfra(ctx), pulumi.Parent(parent))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	for _, typ := range []string{
+		"gcp:compute/address:Address",
+		"gcp:compute/firewall:Firewall",
+		"gcp:compute/healthCheck:HealthCheck",
+		"gcp:compute/regionBackendService:RegionBackendService",
+		"gcp:compute/forwardingRule:ForwardingRule",
+	} {
+		found := false
+		for _, r := range mocks.resources {
+			if r.typeof == typ {
+				found = true
+				// Pulumi always assigns *some* parent (the implicit stack
+				// pseudo-resource when none is given), so a plain non-empty
+				// check would pass even with opts dropped -- assert it's
+				// specifically our explicit parent.
+				require.Contains(t, r.parent, "test-parent",
+					"%s %q has parent %q, not the explicit one from opts -- opts not propagated", typ, r.name, r.parent)
+			}
+		}
+		require.True(t, found, "no resource of type %s was created", typ)
+	}
+
+	// Two firewalls exist for one host-mode service (traffic + health-check
+	// source ranges): a live smoketest hit "Duplicate resource URN" because
+	// both used the bare service name. Pulumi's mocks don't enforce URN
+	// uniqueness themselves, so check it explicitly.
+	seen := map[string]bool{}
+	for _, r := range mocks.resources {
+		key := r.typeof + "::" + r.name
+		require.False(t, seen[key], "duplicate resource: type=%s name=%q", r.typeof, r.name)
+		seen[key] = true
+	}
+
+	// A live smoketest hit "smokeworkerhost-6379-backend-service" (68 chars,
+	// over GCP's 63-char limit) from a missing separator plus a redundant
+	// "-backend-service" type suffix. Assert the fixed, protocol-qualified
+	// name (protocol matters: two protocols chunking to the same port set
+	// would otherwise collide on one logical name).
+	for _, typ := range []string{
+		"gcp:compute/regionBackendService:RegionBackendService",
+		"gcp:compute/forwardingRule:ForwardingRule",
+	} {
+		requireResource(t, mocks.resources, typ, "smokeworker-tcp-6379")
+	}
 }
 
 func testInfra(ctx *pulumi.Context) *SharedInfra {

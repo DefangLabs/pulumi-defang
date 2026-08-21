@@ -71,6 +71,11 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 	return nil
 }
 
+// defaultAutonamingSuffix is the "${project}-${stack}-${name}-${hex(7)}" tail
+// shared by most autonaming pattern overrides below; a prefix (bare, or
+// lowercased) is prepended where one is still wanted.
+const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
+
 func setDefaultStackConfig(prefix string, config configMap) {
 	// defang:prefix holds the bare prefix (e.g. "Defang"); its consumers
 	// (common.Prefix, e.g. ProjectResourceGroupName) append their own "-"
@@ -82,7 +87,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 	}
 	lowerPrefix := strings.ToLower(prefix)
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
-		"pattern": prefix + "${project}-${stack}-${name}-${hex(7)}",
+		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
 			"aws": map[string]any{
 				"resources": map[string]any{
@@ -91,9 +96,9 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
 					// full prefix already disambiguates it; no need to repeat it here.
 					"aws:ecs/service:Service":                 map[string]string{"pattern": "${name}-${hex(7)}"},
-					"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
-					"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
-					"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}"}, // lowercase
+					"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}, // lowercase
+					"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}, // lowercase
+					"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}, // lowercase
 				},
 			},
 			"azure-native": map[string]any{
@@ -123,7 +128,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 			// (lowercase only, max 63 chars). The default prefix may contain capitals
 			// (e.g. "Defang-"), so force the entire pattern to use the lowercased prefix.
 			"gcp": map[string]any{
-				"pattern": lowerPrefix + "${project}-${stack}-${name}-${hex(7)}", // TODO: sanitize project name
+				"pattern": lowerPrefix + defaultAutonamingSuffix, // TODO: sanitize project name
 				"resources": map[string]any{
 					// Service account ID must be between 6 and 30 characters.
 					// Service account ID must start with a lower case letter, followed by one or more lower case alphanumerical characters that can be separated by hyphens.
@@ -131,10 +136,36 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// Cloud Run service name max 49 chars (^[a-z][a-z0-9-]{0,47}[a-z0-9]$).
 					// Default prefix-project-stack pattern overflows on longer inputs;
 					// drop the prefix to mirror old cloudrunServiceName (49 char budget).
-					"gcp:cloudrunv2/service:Service": map[string]string{"pattern": "${project}-${stack}-${name}-${hex(7)}"}, // TODO: sanitize project name
+					"gcp:cloudrunv2/service:Service": map[string]string{"pattern": defaultAutonamingSuffix}, // TODO: sanitize project name
 					// Memorystore Redis instance ID max 40 chars (^[a-z][a-z0-9-]{0,38}[a-z0-9]$).
 					// Drop the prefix to mirror old redisInstanceName (40 char budget).
 					"gcp:redis/instance:Instance": map[string]string{"pattern": "${project}-${name}-${hex(7)}"}, // TODO: sanitize project name
+					// Compute Engine resource names (health check, firewall, MIG, instance
+					// template) are capped at 63 chars, same regex as above. Their logical
+					// ${name} already includes the compose service name (and for the health
+					// check/firewall, the port and a "-mig-hc" role suffix), so the full
+					// default pattern (prefix-project-stack-name-hex7) overflows well before
+					// arbitrary-length service names would on their own -- surfaced live via
+					// defang-mvp#3181 against pulumi-defang#358. Drop just the prefix, same
+					// rationale as CloudRunService above.
+					"gcp:compute/healthCheck:HealthCheck": map[string]string{
+						"pattern": defaultAutonamingSuffix,
+					},
+					"gcp:compute/firewall:Firewall": map[string]string{
+						"pattern": defaultAutonamingSuffix,
+					},
+					"gcp:compute/regionInstanceGroupManager:RegionInstanceGroupManager": map[string]string{
+						"pattern": defaultAutonamingSuffix,
+					},
+					"gcp:compute/instanceTemplate:InstanceTemplate": map[string]string{
+						"pattern": defaultAutonamingSuffix,
+					},
+					"gcp:compute/regionBackendService:RegionBackendService": map[string]string{
+						"pattern": defaultAutonamingSuffix,
+					},
+					"gcp:compute/forwardingRule:ForwardingRule": map[string]string{
+						"pattern": defaultAutonamingSuffix,
+					},
 				},
 			},
 		},
