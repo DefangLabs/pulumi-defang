@@ -29,6 +29,19 @@ func createECRRepo(
 		return nil, fmt.Errorf("creating ECR repository: %w", err)
 	}
 
+	// Without this the repository keeps every image ever pushed: the raw ECR
+	// resource has no default lifecycle policy of any kind.
+	policy, err := buildLifecyclePolicy(keepBuildImages)
+	if err != nil {
+		return nil, fmt.Errorf("building ECR lifecycle policy: %w", err)
+	}
+	if _, err := ecr.NewLifecyclePolicy(ctx, name+"-lifecycle", &ecr.LifecyclePolicyArgs{
+		Repository: repo.Name,
+		Policy:     pulumi.String(policy),
+	}, common.MergeOptions(opts, pulumi.Parent(repo))...); err != nil {
+		return nil, fmt.Errorf("creating ECR lifecycle policy: %w", err)
+	}
+
 	return &ecrResult{
 		repository: repo,
 		repoURL:    pulumix.Output[string](repo.RepositoryUrl),
@@ -69,6 +82,23 @@ func createEcrPullThroughCache(
 	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ECR pull-through cache rule %q: %w", name, err)
+	}
+
+	// ECR creates the cache repositories itself on the first pull, so there is no
+	// repository resource here to attach a lifecycle policy to and the repos it
+	// creates have none. A creation template is the only mechanism that reaches
+	// them (DefangLabs/defang-mvp#1056).
+	cachePolicy, err := cacheLifecyclePolicy(keepCacheImages)
+	if err != nil {
+		return nil, fmt.Errorf("building ECR cache lifecycle policy: %w", err)
+	}
+	if _, err := ecr.NewRepositoryCreationTemplate(ctx, name+"-cache-template", &ecr.RepositoryCreationTemplateArgs{
+		Prefix:          rule.EcrRepositoryPrefix,
+		AppliedFors:     pulumi.StringArray{pulumi.String("PULL_THROUGH_CACHE")},
+		Description:     pulumi.Sprintf("Retention for %s pull-through cache repos", name),
+		LifecyclePolicy: pulumi.String(cachePolicy),
+	}, common.MergeOptions(opts, pulumi.Parent(rule))...); err != nil {
+		return nil, fmt.Errorf("creating ECR repository creation template %q: %w", name, err)
 	}
 
 	// Build the full ECR mirror URL prefix: {registryId}.dkr.ecr.{region}.amazonaws.com/{prefix}
