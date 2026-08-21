@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -23,6 +24,13 @@ var (
 	errCodeBuildS3Incomplete  = errors.New("CodeBuild source must include an S3 bucket and object key")
 )
 
+// s3HostPattern matches real AWS S3 HTTPS endpoint hostnames -- both
+// virtual-hosted ("bucket.s3[-.]<region>.amazonaws.com") and path-style
+// ("s3[-.]<region>.amazonaws.com") -- anchored on both ends so a lookalike
+// like "bucket.s3.evil.example" or "s3.evil.example" cannot be mistaken for
+// one (a naive substring/prefix check on the hostname would accept both).
+var s3HostPattern = regexp.MustCompile(`^(?:(?P<bucket>[^.]+)\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$`)
+
 func normalizeCodeBuildS3Location(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -35,14 +43,11 @@ func normalizeCodeBuildS3Location(rawURL string) (string, error) {
 	case "s3":
 		bucket = u.Host
 	case "http", "https":
-		host := u.Hostname()
-		if before, _, ok := strings.Cut(host, ".s3."); ok {
-			// Virtual-hosted style: https://bucket.s3.region.amazonaws.com/key.
-			bucket = before
-		} else if before, _, ok := strings.Cut(host, ".s3-"); ok {
-			// Legacy virtual-hosted style: https://bucket.s3-region.amazonaws.com/key.
-			bucket = before
-		} else if strings.HasPrefix(host, "s3.") || strings.HasPrefix(host, "s3-") {
+		m := s3HostPattern.FindStringSubmatch(u.Hostname())
+		if m == nil {
+			return "", fmt.Errorf("%w: got %q", errCodeBuildNotS3URL, rawURL)
+		}
+		if bucket = m[s3HostPattern.SubexpIndex("bucket")]; bucket == "" {
 			// Path style: https://s3.region.amazonaws.com/bucket/key.
 			var found bool
 			bucket, object, found = strings.Cut(object, "/")
@@ -268,8 +273,12 @@ func getBuildSpec(build compose.BuildConfig, destination string) (string, error)
 		// Cloud Build extracts that natively, CodeBuild does not), so a
 		// non-zip source lands here as a single untouched archive file with
 		// no Dockerfile anywhere. Extract it ourselves; a no-op if the source
-		// was already a zip (nothing named *.tar.gz to find).
-		`archive=$(ls *.tar.gz 2>/dev/null | head -n1); if [ -n "$archive" ]; then tar xzf "$archive"; fi`,
+		// was already a zip (nothing named *.tar.gz to find). Remove the
+		// archive afterward (matching the legacy TS CD's behavior) so a
+		// Dockerfile that COPYs the whole build context doesn't also pick up
+		// its own multi-megabyte source tarball.
+		`archive=$(ls *.tar.gz 2>/dev/null | head -n1); ` +
+			`if [ -n "$archive" ]; then tar xzf "$archive" && rm "$archive"; fi`,
 		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com", //nolint:lll
 		"aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws",
 	)

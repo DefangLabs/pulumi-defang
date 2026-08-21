@@ -51,8 +51,21 @@ func TestNormalizeCodeBuildS3Location(t *testing.T) {
 }
 
 func TestNormalizeCodeBuildS3LocationRejectsInvalidURL(t *testing.T) {
-	_, err := normalizeCodeBuildS3Location("https://example.com/context.tar.gz")
-	require.Error(t, err)
+	tests := []string{
+		"https://example.com/context.tar.gz",
+		// Lookalike hosts: a naive substring/prefix check on the hostname
+		// (".s3." anywhere, or a "s3." prefix) would accept these as if they
+		// were real S3 endpoints.
+		"https://bucket.s3.evil.example/context.tar.gz",
+		"https://s3.evil.example/bucket/context.tar.gz",
+		"https://bucket.s3.amazonaws.com.evil.example/context.tar.gz",
+	}
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			_, err := normalizeCodeBuildS3Location(input)
+			require.Error(t, err)
+		})
+	}
 }
 
 func TestGetBuildSpecDefault(t *testing.T) {
@@ -86,9 +99,10 @@ func TestBuildSpecExtractionCommandExtractsRealArchive(t *testing.T) {
 	cmds := buildSpecCommands(t, compose.BuildConfig{Context: pulumi.String("s3://bucket/ctx")})
 	extractCmd := cmds[0]
 
-	t.Run("extracts a tar.gz source", func(t *testing.T) {
+	t.Run("extracts a tar.gz source and removes the archive", func(t *testing.T) {
 		dir := t.TempDir()
-		writeTestTarGz(t, filepath.Join(dir, "abc123.tar.gz"), map[string]string{"Dockerfile": "FROM scratch\n"})
+		archivePath := filepath.Join(dir, "abc123.tar.gz")
+		writeTestTarGz(t, archivePath, map[string]string{"Dockerfile": "FROM scratch\n"})
 
 		cmd := exec.CommandContext(t.Context(), "bash", "-c", extractCmd) //nolint:gosec // G204: test-authored command
 		cmd.Dir = dir
@@ -99,6 +113,11 @@ func TestBuildSpecExtractionCommandExtractsRealArchive(t *testing.T) {
 		content, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
 		require.NoError(t, err)
 		assert.Equal(t, "FROM scratch\n", string(content))
+
+		// Not removing it risks a naive `COPY . .` Dockerfile picking up its
+		// own multi-megabyte source tarball as part of the image.
+		_, err = os.Stat(archivePath)
+		assert.True(t, os.IsNotExist(err), "archive should be removed after extraction")
 	})
 
 	t.Run("no-op when there is nothing to extract", func(t *testing.T) {
