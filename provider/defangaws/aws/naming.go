@@ -3,6 +3,7 @@ package aws
 import (
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
@@ -15,6 +16,25 @@ const tgMaxNameLen = 32
 func targetGroupName(
 	service string, port int, appProtocol compose.PortAppProtocol, listener compose.PortListenerProtocol,
 ) string {
+	suffix := targetGroupNameSuffix(port, appProtocol, listener)
+	return common.BoundedName(service, suffix, tgMaxNameLen-autonamingSuffixLen)
+}
+
+// legacyTargetGroupName returns the pre-hash logical name for Pulumi aliases.
+func legacyTargetGroupName(
+	service string, port int, appProtocol compose.PortAppProtocol, listener compose.PortListenerProtocol,
+) string {
+	suffix := targetGroupNameSuffix(port, appProtocol, listener)
+	maxService := tgMaxNameLen - autonamingSuffixLen - len(suffix)
+	if len(service) > maxService {
+		service = service[:maxService]
+	}
+	return service + suffix
+}
+
+func targetGroupNameSuffix(
+	port int, appProtocol compose.PortAppProtocol, listener compose.PortListenerProtocol,
+) string {
 	suffix := fmt.Sprintf("-%d", port)
 	if appProtocol != "" && appProtocol != "http" {
 		suffix += string(appProtocol)
@@ -24,11 +44,5 @@ func targetGroupName(
 	if listener != compose.PortListenerDefault && listener != compose.PortListenerHTTPS {
 		suffix += "-" + string(listener)
 	}
-
-	maxService := tgMaxNameLen - autonamingSuffixLen - len(suffix)
-	if len(service) > maxService {
-		service = service[:maxService]
-	}
-
-	return service + suffix
+	return suffix
 }

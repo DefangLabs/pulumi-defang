@@ -74,9 +74,9 @@ type ProjectOutputs struct {
 }
 
 // serviceTypes summarises which kinds of services are present in a project.
-// pgServiceName / redisServiceName hold the first (alphabetically) service of each
-// kind, used as Pulumi logical names for project-shared DNS zones. Empty when
-// that kind has no services.
+// pgServiceName / redisServiceName hold the first (alphabetically) service of
+// each kind. They determine whether project-shared DNS is needed and provide
+// aliases for its historical service-derived logical names.
 type serviceTypes struct {
 	hasBuild         bool
 	hasLLM           bool
