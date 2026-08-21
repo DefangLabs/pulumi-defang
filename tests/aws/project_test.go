@@ -194,7 +194,7 @@ func TestConstructAwsProjectAllResourcesAreChildren(t *testing.T) {
 				"worker": testutil.ServiceWithImage("myapp:worker"),
 				"builder": property.New(property.NewMap(map[string]property.Value{
 					"build": property.New(property.NewMap(map[string]property.Value{
-						"context": property.New("./app"),
+						"context": property.New("s3://bucket/uploads/digest.tar.gz"),
 					})),
 				})),
 				"db": property.New(property.NewMap(map[string]property.Value{
