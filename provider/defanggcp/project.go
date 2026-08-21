@@ -26,6 +26,17 @@ type ProjectInputs struct {
 	// provider injects it as a DEFANG_ETAG env var on every Cloud Run service
 	// container so application logs can be correlated with a specific deployment.
 	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
+	// DnsZones maps a BYOD hostname — any service's `domainname` or default-network
+	// alias — to the name of the existing public Cloud DNS managed zone that hosts
+	// it. The CD program resolves this before the deploy (cd/program/gcp.go
+	// findByodZones) because only the deploy identity can list the project's zones.
+	//
+	// A hostname present here gets its records written into that zone and a
+	// DNS-authorized managed certificate. A hostname absent from it still gets a
+	// certificate, authorized by the load balancer instead — that is the path for a
+	// domain whose DNS is managed outside the deploy project. See
+	// docs/byod-dns-zones.md.
+	DnsZones map[string]string `pulumi:"dnsZones,optional" yaml:"dnsZones,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -100,6 +111,7 @@ func buildProject(
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
 	config.Etag = args.Etag
+	config.DnsZones = args.DnsZones
 
 	if err := providergcp.EnableGcpAPIs(ctx, config.GcpProject, childOpts...); err != nil {
 		return nil, err
