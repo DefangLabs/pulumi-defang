@@ -157,7 +157,11 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	privateZone, err := dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
+	// Logical name deliberately omits projectName, same as the firewalls above and
+	// public-dns below: Pulumi's default resource ID already prefixes it with
+	// <pulumi-project>-<stack>, which includes projectName, so repeating it here
+	// risked exceeding GCP's 63-char resource ID limit.
+	privateZone, err := dns.NewManagedZone(ctx, "private-dns", &dns.ManagedZoneArgs{
 		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
 		DnsName:     pulumi.String("google.internal."),
 		Visibility:  pulumi.String("private"),
