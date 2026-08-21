@@ -41,8 +41,10 @@ type SharedInfra struct {
 	Etag string
 }
 
-// EnableGcpAPIs enables the GCP APIs required by the project.
-func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.ResourceOption) error {
+// EnableGcpAPIs enables the GCP APIs required by the project. Project is
+// deliberately left unset on each Service: it falls back to the provider's
+// configured project when omitted.
+func EnableGcpAPIs(ctx *pulumi.Context, opts ...pulumi.ResourceOption) error {
 	apis := []string{
 		"storage.googleapis.com",              // Cloud Storage API
 		"artifactregistry.googleapis.com",     // Artifact Registry API
@@ -63,7 +65,6 @@ func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.Resour
 	opts = append(opts, pulumi.RetainOnDelete(true))
 	for _, api := range apis {
 		if _, err := projects.NewService(ctx, api, &projects.ServiceArgs{
-			Project: pulumi.String(gcpProject),
 			Service: pulumi.String(api),
 		}, opts...); err != nil {
 			return fmt.Errorf("failed to enable API %s: %w", api, err)
@@ -99,14 +100,18 @@ func BuildGlobalConfig(
 	region := GcpRegion(ctx)
 	gcpProject := config.GetProject(ctx)
 
-	vpc, err := compute.NewNetwork(ctx, projectName+"-vpc", &compute.NetworkArgs{
+	// Logical names below deliberately omit projectName, same as the firewalls and
+	// private-dns zone further down: Pulumi's default resource ID already prefixes
+	// it with <pulumi-project>-<stack>, which includes projectName, so repeating it
+	// here risked exceeding GCP's 63-char resource ID limit.
+	vpc, err := compute.NewNetwork(ctx, "vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
 	}, append(opts, pulumi.RetainOnDelete(true))...)
 	if err != nil {
 		return nil, err
 	}
 
-	subnet, err := compute.NewSubnetwork(ctx, projectName+"-subnet", &compute.SubnetworkArgs{
+	subnet, err := compute.NewSubnetwork(ctx, "subnet", &compute.SubnetworkArgs{
 		IpCidrRange: pulumi.String("10.0.0.0/16"),
 		Region:      pulumi.String(region),
 		Network:     vpc.ID(),
@@ -115,7 +120,7 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	publicIP, err := compute.NewGlobalAddress(ctx, projectName+"-ip", &compute.GlobalAddressArgs{
+	publicIP, err := compute.NewGlobalAddress(ctx, "ip", &compute.GlobalAddressArgs{
 		AddressType: pulumi.String("EXTERNAL"),
 	}, opts...)
 	if err != nil {
@@ -123,7 +128,13 @@ func BuildGlobalConfig(
 	}
 
 	// Allow SSH ingress to all instances in the VPC (required for GCP Console SSH).
-	if _, err := compute.NewFirewall(ctx, projectName+"-allow-ssh", &compute.FirewallArgs{
+	// Logical name deliberately omits projectName: Pulumi's default resource ID
+	// already prefixes it with <pulumi-project>-<stack>, which includes
+	// projectName, so repeating it here risked exceeding GCP's 63-char resource
+	// ID limit (observed: "...-allow-icmp-<hash>" at 64 chars, one over, while
+	// the one-shorter "...-allow-ssh-<hash>" landed at exactly 63 and happened
+	// to still pass). Same fix as the wildcard-cert name below.
+	if _, err := compute.NewFirewall(ctx, "allow-ssh", &compute.FirewallArgs{
 		Network:      vpc.ID(),
 		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 		Allows: compute.FirewallAllowArray{
@@ -138,7 +149,7 @@ func BuildGlobalConfig(
 	}
 
 	// Allow ICMP ping to all instances in the VPC.
-	if _, err := compute.NewFirewall(ctx, projectName+"-allow-icmp", &compute.FirewallArgs{
+	if _, err := compute.NewFirewall(ctx, "allow-icmp", &compute.FirewallArgs{
 		Network:      vpc.ID(),
 		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 		Allows: compute.FirewallAllowArray{
@@ -151,7 +162,11 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	privateZone, err := dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
+	// Logical name deliberately omits projectName, same as the firewalls above and
+	// public-dns below: Pulumi's default resource ID already prefixes it with
+	// <pulumi-project>-<stack>, which includes projectName, so repeating it here
+	// risked exceeding GCP's 63-char resource ID limit.
+	privateZone, err := dns.NewManagedZone(ctx, "private-dns", &dns.ManagedZoneArgs{
 		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
 		DnsName:     pulumi.String("google.internal."),
 		Visibility:  pulumi.String("private"),
@@ -217,7 +232,7 @@ func buildOptionalInfra(
 	}
 
 	if needsVpcPeering(services) {
-		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
+		serviceConn, err := createVPCPeeringInfra(ctx, cfg.VpcId, opts...)
 		if err != nil {
 			return err
 		}
