@@ -139,7 +139,10 @@ func CreateComputeEngine(
 	if len(zoneNames) < len(zones.Names) {
 		migArgs.DistributionPolicyZones = pulumi.ToStringArray(zoneNames)
 	}
-	instanceGroup, err := compute.NewRegionInstanceGroupManager(ctx, serviceName+"-instance-group",
+	// No "-instance-group" suffix: the type token (RegionInstanceGroupManager)
+	// already says what this is, matching the bare-name convention used for
+	// its sibling resources (Address, HealthCheck, Firewall) in this file.
+	instanceGroup, err := compute.NewRegionInstanceGroupManager(ctx, serviceName,
 		migArgs, parentOpt, pulumi.DependsOn([]pulumi.Resource{instanceTemplate}))
 	if err != nil {
 		return nil, fmt.Errorf("creating instance group for %s: %w", serviceName, err)
@@ -257,7 +260,13 @@ func createInstanceTemplate(
 	if sa.Account != nil {
 		templateOpts = append(templateOpts, pulumi.DependsOnInputs(iamDeps))
 	}
-	tmpl, err := compute.NewInstanceTemplate(ctx, serviceName+"-instance-template",
+	// "-tmpl", not "-instance-template": autonaming's pattern for this resource
+	// type is "${project}-${stack}-${name}-${hex(7)}" (cd/config.go), and a
+	// longer logical name here left no headroom for longer project/stack
+	// names before hitting GCP Compute's 63-char physical-name limit -- a live
+	// smoketest (defang-mvp#3181) hit exactly that with project "html-css-js"
+	// and stack "newprovidergcp".
+	tmpl, err := compute.NewInstanceTemplate(ctx, serviceName+"-tmpl",
 		&compute.InstanceTemplateArgs{
 			MachineType: pulumi.String(machineType),
 			Scheduling: &compute.InstanceTemplateSchedulingArgs{
@@ -296,6 +305,7 @@ func createMIGAutoHealing(
 		return nil, nil //nolint:nilnil
 	}
 
+	hcName := serviceName + "-" + strconv.Itoa(*healthCheckPort) + "-mig-hc"
 	hcArgs := &compute.HealthCheckArgs{
 		CheckIntervalSec:   pulumi.Int(30),
 		TimeoutSec:         pulumi.Int(30),
@@ -312,14 +322,16 @@ func createMIGAutoHealing(
 		}
 	}
 
-	hcName := serviceName + "-" + strconv.Itoa(*healthCheckPort) + "-mig-hc"
 	healthCheck, err := compute.NewHealthCheck(ctx, hcName, hcArgs, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating health check for %s: %w", serviceName, err)
 	}
 
+	// No "-fw" suffix: the GCP console's own type column already says
+	// "Firewall rule", and sharing the health check's logical name is fine --
+	// Pulumi's URN disambiguates by resource type, not name alone.
 	portStr := strconv.Itoa(*healthCheckPort)
-	if _, err := compute.NewFirewall(ctx, serviceName+"-mig-hc-fw", &compute.FirewallArgs{
+	if _, err := compute.NewFirewall(ctx, hcName, &compute.FirewallArgs{
 		Network: network,
 		// https://cloud.google.com/load-balancing/docs/health-checks#firewall_rules
 		SourceRanges: pulumi.StringArray{
@@ -633,7 +645,12 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	if len(refs) == 0 {
 		return "", "", ""
 	}
-	scriptPath := "/opt/defang/" + unit + "-secrets.sh"
+	// /run, not /opt: Container-Optimized OS mounts its root filesystem
+	// read-only, so cloud-init's write_files fails with EROFS creating any
+	// directory under /opt -- surfaced live via defang-mvp#3181 (real GCE
+	// boot: "OSError: [Errno 30] Read-only file system: '/opt/defang'").
+	// /run is tmpfs, always writable, and already used for the env file below.
+	scriptPath := "/run/defang/" + unit + "-secrets.sh"
 	envFile := "/run/defang/" + unit + ".env"
 
 	// Fail fast: a fetch that errors out (or yields an empty token) must fail
@@ -647,13 +664,18 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	s.WriteString("set -euo pipefail\n")
 	s.WriteString("umask 077\n")
 	s.WriteString("mkdir -p /run/defang\n")
+	// Google APIs pretty-print JSON by default (a space after the colon, e.g.
+	// `"data": "..."`), so the extraction must tolerate optional whitespace
+	// there -- a bare `":"` pattern never matches a real response and every
+	// secret-backed boot would fail fetching. See
+	// https://cloud.google.com/apis/docs/system-parameters (prettyPrint).
 	s.WriteString(`tok=$(curl -fsS -H "Metadata-Flavor: Google" ` +
 		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token ` +
-		`| grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)` + "\n")
+		`| grep -o '"access_token": *"[^"]*"' | cut -d'"' -f4)` + "\n")
 	s.WriteString(`[ -n "$tok" ] || { echo "defang: empty metadata token" >&2; exit 1; }` + "\n")
 	fmt.Fprintf(&s, `sm() { curl -fsS -H "Authorization: Bearer $tok" `+
 		`"https://secretmanager.googleapis.com/v1/projects/%s/secrets/$1/versions/latest:access" `+
-		`| grep -o '"data":"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
+		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
 	s.WriteString("{\n")
 	for _, r := range refs {
 		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n",

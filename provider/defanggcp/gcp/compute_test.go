@@ -1,15 +1,46 @@
 package gcp
 
 import (
+	"encoding/base64"
+	"errors"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// namedResourceMocks records the Pulumi logical name of every resource it
+// creates, keyed by Pulumi type token. Physical naming (length, case,
+// project/stack scoping) is Pulumi autonaming's job, configured in
+// cd/config.go -- these resources deliberately don't override Name.
+type namedResourceMocks struct {
+	mu    sync.Mutex
+	names map[string]string
+}
+
+func (m *namedResourceMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	outputs := args.Inputs.Copy()
+	m.mu.Lock()
+	if m.names == nil {
+		m.names = map[string]string{}
+	}
+	m.names[args.TypeToken] = args.Name
+	m.mu.Unlock()
+	if _, ok := outputs["selfLink"]; !ok {
+		outputs["selfLink"] = resource.NewStringProperty("https://compute.googleapis.com/" + args.Name)
+	}
+	return args.Name + "_id", outputs, nil
+}
+
+func (m *namedResourceMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
 
 // getCloudInitConfig must inject the Defang runtime env vars into the
 // `docker run` command, mirroring the Cloud Run path. DEFANG_SERVICE is always
@@ -244,9 +275,9 @@ func TestSecretFetchScript(t *testing.T) {
 	}
 	wf, pre, flag := secretFetchScript("my-proj", "svc", refs)
 
-	assert.Equal(t, "ExecStartPre=/opt/defang/svc-secrets.sh", pre)
+	assert.Equal(t, "ExecStartPre=/run/defang/svc-secrets.sh", pre)
 	assert.Equal(t, "--env-file /run/defang/svc.env", flag)
-	assert.Contains(t, wf, "path: /opt/defang/svc-secrets.sh")
+	assert.Contains(t, wf, "path: /run/defang/svc-secrets.sh")
 	assert.Contains(t, wf, `permissions: "0700"`)
 	assert.Contains(t, wf, "metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
 	assert.Contains(t, wf, "https://secretmanager.googleapis.com/v1/projects/my-proj/secrets/")
@@ -267,6 +298,74 @@ func TestSecretFetchScript(t *testing.T) {
 	assert.Empty(t, wf2)
 	assert.Empty(t, pre2)
 	assert.Empty(t, flag2)
+}
+
+// Google's REST APIs pretty-print JSON by default (a space after every colon,
+// e.g. `"data": "..."`), unlike the metadata server's own minified responses.
+// The generated script's extraction must handle both, or every secret-backed
+// Compute Engine boot fails fetching. This runs the actual generated sm()
+// function against a realistic pretty-printed response instead of asserting
+// on the script text.
+func TestSecretFetchScriptExtractsPrettyPrintedJSON(t *testing.T) {
+	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
+
+	// Reconstruct the raw script from the write_files `content: |` block
+	// (each line indented 6 spaces further, see secretFetchScript).
+	var raw []string
+	inContent := false
+	for _, line := range strings.Split(wf, "\n") {
+		if strings.Contains(line, "content: |") {
+			inContent = true
+			continue
+		}
+		if inContent {
+			raw = append(raw, strings.TrimPrefix(line, "      "))
+		}
+	}
+	require.NotEmpty(t, raw)
+
+	// Keep everything through the sm() definition. Drop the /run write (no
+	// permission to create it in a test sandbox) and stop before the block
+	// that would actually invoke it against the real envFile.
+	var setup []string
+	for _, line := range raw {
+		if strings.Contains(line, "mkdir -p /run/defang") {
+			continue
+		}
+		setup = append(setup, line)
+		if strings.HasPrefix(line, "sm() {") {
+			break
+		}
+	}
+	require.Contains(t, setup[len(setup)-1], "sm() {")
+
+	const secretValue = "s3cr3t"
+	encoded := base64.StdEncoding.EncodeToString([]byte(secretValue))
+	script := `
+curl() {
+  case "$*" in
+  *metadata.google.internal*) echo '{
+  "access_token": "test-token",
+  "expires_in": 3599
+}' ;;
+  *secretmanager.googleapis.com*) echo '{
+  "name": "projects/p/secrets/my-secret/versions/1",
+  "payload": {
+    "data": "` + encoded + `"
+  }
+}' ;;
+  esac
+}
+export -f curl
+` + strings.Join(setup, "\n") + "\nsm 'my-secret'\n"
+	//nolint:gosec // G204: script is test-authored, not external input
+	out, err := exec.CommandContext(t.Context(), "bash", "-c", script).Output()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		t.Fatalf("script failed: %v\nstderr: %s", err, ee.Stderr)
+	}
+	require.NoError(t, err)
+	assert.Equal(t, secretValue, strings.TrimSpace(string(out)))
 }
 
 // getCloudInitConfig must boot-fetch secret env (not inline it) while still
@@ -299,7 +398,7 @@ func TestGetCloudInitConfigSecrets(t *testing.T) {
 	require.NoError(t, err)
 	wg.Wait()
 
-	assert.Contains(t, cloudInit, "ExecStartPre=/opt/defang/api-secrets.sh")
+	assert.Contains(t, cloudInit, "ExecStartPre=/run/defang/api-secrets.sh")
 	assert.Contains(t, cloudInit, "--env-file /run/defang/api.env")
 	assert.Contains(t, cloudInit, "https://secretmanager.googleapis.com/v1/projects/gcp-proj/secrets/")
 	assert.Contains(t, cloudInit, `v=$(sm 'Defang_proj_stack_SECRET_ENV')`)
@@ -309,4 +408,59 @@ func TestGetCloudInitConfigSecrets(t *testing.T) {
 	assert.NotContains(t, cloudInit, `-e "SECRET_ENV`)
 	// no leftover format artifacts
 	assert.NotContains(t, cloudInit, "%!")
+}
+
+// A long compose service name combined with a configured autonaming pattern
+// used to push the health check and firewall physical names over GCP's
+// 63-char RFC1035 limit (Pulumi's autoname appends <project>-<stack>-<name>
+// plus a random suffix). gcpComputeName caps them explicitly instead.
+// The MIG health check's firewall shares its logical name rather than
+// appending a "-fw" suffix: the GCP console's own type column already
+// identifies it as a firewall rule, so a type-naming suffix is redundant.
+// Physical naming (length, case, project/stack scoping) is Pulumi
+// autonaming's job, configured via the per-resource-type overrides in
+// cd/config.go -- not asserted here.
+func TestCreateMIGAutoHealingFirewallSharesHealthCheckName(t *testing.T) {
+	mocks := &namedResourceMocks{}
+	port := 6379
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := createMIGAutoHealing(
+			ctx, "smokeworker", "smokeworker", &port, false, pulumi.String("projects/p/global/networks/vpc"))
+		return err
+	}, pulumi.WithMocks("pulumi-project", "dev", mocks))
+	require.NoError(t, err)
+
+	hcName := mocks.names["gcp:compute/healthCheck:HealthCheck"]
+	fwName := mocks.names["gcp:compute/firewall:Firewall"]
+	assert.Equal(t, "smokeworker-6379-mig-hc", hcName)
+	assert.Equal(t, hcName, fwName, "firewall should share the health check's logical name, not append -fw")
+}
+
+// A live smoketest (defang-mvp#3181) hit GCP's 63-char compute resource name
+// limit: autonaming's pattern for InstanceTemplate is
+// "${project}-${stack}-${name}-${hex(7)}" (cd/config.go), and with the
+// logical name "smokeworker-instance-template" plus a realistic
+// project/stack ("html-css-js"/"newprovidergcp"), the physical name came to
+// 64 chars -- one over the limit. Assert the shorter "-tmpl" suffix instead
+// of re-deriving the exact character budget here (that belongs to
+// autonaming's own pattern, not this package).
+func TestCreateInstanceTemplateUsesShortSuffix(t *testing.T) {
+	mocks := &namedResourceMocks{}
+
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := createInstanceTemplate(
+			ctx, "smokeworker", "smokeworker", "e2-small", "debian-cloud/debian-12",
+			pulumi.String("#!/bin/sh\n"),
+			&ServiceIdentity{Email: pulumi.String("test@example.com")},
+			nil,
+			testInfra(ctx),
+			pulumi.ResourceArrayOutput{},
+		)
+		return err
+	}, pulumi.WithMocks("pulumi-project", "dev", mocks))
+	require.NoError(t, err)
+
+	tmplName := mocks.names["gcp:compute/instanceTemplate:InstanceTemplate"]
+	assert.Equal(t, "smokeworker-tmpl", tmplName)
 }
