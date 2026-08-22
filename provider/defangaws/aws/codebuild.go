@@ -30,7 +30,14 @@ var (
 // ("s3[-.]<region>.amazonaws.com") -- anchored on both ends so a lookalike
 // like "bucket.s3.evil.example" or "s3.evil.example" cannot be mistaken for
 // one (a naive substring/prefix check on the hostname would accept both).
-var s3HostPattern = regexp.MustCompile(`^(?:(?P<bucket>[^.]+)\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$`)
+//
+// The optional "dualstack" label covers the IPv6 dual-stack endpoints
+// ("s3.dualstack.<region>.amazonaws.com" and its virtual-hosted form), which
+// the AWS SDK emits when it is configured with AWS_USE_DUALSTACK_ENDPOINT --
+// without it a dual-stack presigned context URL would fail this check and
+// surface as a confusing "must be an S3 URL" error at project-creation time.
+var s3HostPattern = regexp.MustCompile(
+	`^(?:(?P<bucket>[^.]+)\.)?s3(?:\.dualstack)?(?:[.-][a-z0-9-]+)?\.amazonaws\.com$`)
 
 func normalizeCodeBuildS3Location(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)

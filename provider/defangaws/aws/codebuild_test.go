@@ -48,6 +48,10 @@ func TestNormalizeCodeBuildS3Location(t *testing.T) {
 		"https://bucket.s3.amazonaws.com/uploads/context.tar.gz?signature=value": "bucket/uploads/context.tar.gz",
 		"https://bucket.s3.us-west-2.amazonaws.com/uploads/context.tar.gz":       "bucket/uploads/context.tar.gz",
 		"https://s3.us-west-2.amazonaws.com/bucket/uploads/context.tar.gz":       "bucket/uploads/context.tar.gz",
+		// IPv6 dual-stack endpoints, in both virtual-hosted and path style. The
+		// SDK emits these when AWS_USE_DUALSTACK_ENDPOINT is set.
+		"https://bucket.s3.dualstack.us-west-2.amazonaws.com/uploads/context.tar.gz": "bucket/uploads/context.tar.gz",
+		"https://s3.dualstack.us-west-2.amazonaws.com/bucket/uploads/context.tar.gz": "bucket/uploads/context.tar.gz",
 	}
 	for input, expected := range tests {
 		t.Run(input, func(t *testing.T) {
@@ -67,6 +71,9 @@ func TestNormalizeCodeBuildS3LocationRejectsInvalidURL(t *testing.T) {
 		"https://bucket.s3.evil.example/context.tar.gz",
 		"https://s3.evil.example/bucket/context.tar.gz",
 		"https://bucket.s3.amazonaws.com.evil.example/context.tar.gz",
+		// The dual-stack label must not become an escape hatch for lookalikes.
+		"https://s3.dualstack.evil.example/bucket/context.tar.gz",
+		"https://bucket.s3.dualstack.us-west-2.amazonaws.com.evil.example/context.tar.gz",
 	}
 	for _, input := range tests {
 		t.Run(input, func(t *testing.T) {
