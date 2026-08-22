@@ -155,7 +155,8 @@ func createTgLrPair(
 
 	// Only create TG/LR for http, http2, grpc (matches TS createTgLrPair)
 	appProto := port.GetAppProtocol()
-	if appProto != "http" && appProto != "http2" && appProto != "grpc" {
+	if appProto != compose.PortAppProtocolHTTP &&
+		appProto != compose.PortAppProtocolHTTP2 && appProto != compose.PortAppProtocolGRPC {
 		return nil, nil, nil // skip
 	}
 
