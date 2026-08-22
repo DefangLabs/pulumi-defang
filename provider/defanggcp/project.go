@@ -120,9 +120,10 @@ func buildProject(
 	if common.IsProjectUsingLLM(args.Services) {
 		// FIXME: create dependency between this NewService and the services that need this API
 		_, err := projects.NewService(ctx, projectName+"-defang-llm", &projects.ServiceArgs{
-			Project: pulumi.StringPtr(config.GcpProject),
-			Service: pulumi.String("aiplatform.googleapis.com"),
-		}, append(childOpts, pulumi.RetainOnDelete(true))...) // Do not try disabling on compose down
+			Project:          pulumi.StringPtr(config.GcpProject),
+			Service:          pulumi.String("aiplatform.googleapis.com"),
+			DisableOnDestroy: pulumi.Bool(false), // do not try disabling on compose down
+		}, childOpts...)
 		if err != nil {
 			return nil, err
 		}

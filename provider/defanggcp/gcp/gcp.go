@@ -62,10 +62,14 @@ func EnableGcpAPIs(ctx *pulumi.Context, opts ...pulumi.ResourceOption) error {
 		"firestore.googleapis.com",            // For Firestore MongoDB
 	}
 
-	opts = append(opts, pulumi.RetainOnDelete(true))
+	// DisableOnDestroy false, not RetainOnDelete. Both stop `down` from disabling an API that
+	// the rest of the project may depend on, but this one is the provider's own switch: Pulumi
+	// still drops the resource from state on destroy, so a later `up` re-adopts it cleanly.
+	// RetainOnDelete would leave state entries no `down` can ever clear.
 	for _, api := range apis {
 		if _, err := projects.NewService(ctx, api, &projects.ServiceArgs{
-			Service: pulumi.String(api),
+			Service:          pulumi.String(api),
+			DisableOnDestroy: pulumi.Bool(false),
 		}, opts...); err != nil {
 			return fmt.Errorf("failed to enable API %s: %w", api, err)
 		}

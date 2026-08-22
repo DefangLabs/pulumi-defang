@@ -170,9 +170,12 @@ func CreateCloudSQL(
 			Name:           pg.Username,
 			Instance:       instance.Name,
 			Password:       pg.Password,
-			Type:           pulumi.String("BUILT_IN"),
+			Type: pulumi.String("BUILT_IN"),
+			// ABANDON alone: deleting the instance removes its users anyway, so the API call is
+			// pointless, but Pulumi should still drop this from state. A RetainOnDelete on top
+			// would only leave an entry no `down` can clear.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, append(opts, pulumi.RetainOnDelete(true))...)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL user: %w", err)
 		}
@@ -185,9 +188,10 @@ func CreateCloudSQL(
 	if rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
 			Name:           pg.DBName,
-			Instance:       instance.Name,
+			Instance: instance.Name,
+			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, append(opts, pulumi.RetainOnDelete(true))...)
+		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL database: %w", err)
 		}
