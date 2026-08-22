@@ -62,10 +62,11 @@ func EnableGcpAPIs(ctx *pulumi.Context, opts ...pulumi.ResourceOption) error {
 		"firestore.googleapis.com",            // For Firestore MongoDB
 	}
 
-	// DisableOnDestroy false, not RetainOnDelete. Both stop `down` from disabling an API that
-	// the rest of the project may depend on, but this one is the provider's own switch: Pulumi
-	// still drops the resource from state on destroy, so a later `up` re-adopts it cleanly.
-	// RetainOnDelete would leave state entries no `down` can ever clear.
+	// DisableOnDestroy false, not RetainOnDelete. Both leave the API enabled after a `down`, and
+	// both drop the resource from Pulumi state: RetainOnDelete by skipping the provider's delete
+	// call outright, this by telling the provider not to disable. The difference is that this is
+	// the provider's own switch for exactly this intent, which keeps RetainOnDelete reserved for
+	// the one case that warrants it — a recipe deliberately keeping a non-defang resource.
 	for _, api := range apis {
 		if _, err := projects.NewService(ctx, api, &projects.ServiceArgs{
 			Service:          pulumi.String(api),

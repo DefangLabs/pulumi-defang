@@ -171,9 +171,9 @@ func CreateCloudSQL(
 			Instance:       instance.Name,
 			Password:       pg.Password,
 			Type: pulumi.String("BUILT_IN"),
-			// ABANDON alone: deleting the instance removes its users anyway, so the API call is
-			// pointless, but Pulumi should still drop this from state. A RetainOnDelete on top
-			// would only leave an entry no `down` can clear.
+			// ABANDON alone. Deleting the instance removes its users, so there is nothing here to
+			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
+			// redundant with the deletion policy, which already suppresses the API call.
 			DeletionPolicy: pulumi.String("ABANDON"),
 		}, opts...)
 		if err != nil {

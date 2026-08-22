@@ -122,7 +122,7 @@ func buildProject(
 		_, err := projects.NewService(ctx, projectName+"-defang-llm", &projects.ServiceArgs{
 			Project:          pulumi.StringPtr(config.GcpProject),
 			Service:          pulumi.String("aiplatform.googleapis.com"),
-			DisableOnDestroy: pulumi.Bool(false), // do not try disabling on compose down
+			DisableOnDestroy: pulumi.Bool(false), // do not try disabling on compose down; see EnableGcpAPIs
 		}, childOpts...)
 		if err != nil {
 			return nil, err
