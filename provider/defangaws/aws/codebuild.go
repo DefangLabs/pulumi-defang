@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
+	"regexp"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -23,6 +25,20 @@ var (
 	errCodeBuildS3Incomplete  = errors.New("CodeBuild source must include an S3 bucket and object key")
 )
 
+// s3HostPattern matches real AWS S3 HTTPS endpoint hostnames -- both
+// virtual-hosted ("bucket.s3[-.]<region>.amazonaws.com") and path-style
+// ("s3[-.]<region>.amazonaws.com") -- anchored on both ends so a lookalike
+// like "bucket.s3.evil.example" or "s3.evil.example" cannot be mistaken for
+// one (a naive substring/prefix check on the hostname would accept both).
+//
+// The optional "dualstack" label covers the IPv6 dual-stack endpoints
+// ("s3.dualstack.<region>.amazonaws.com" and its virtual-hosted form), which
+// the AWS SDK emits when it is configured with AWS_USE_DUALSTACK_ENDPOINT --
+// without it a dual-stack presigned context URL would fail this check and
+// surface as a confusing "must be an S3 URL" error at project-creation time.
+var s3HostPattern = regexp.MustCompile(
+	`^(?:(?P<bucket>[^.]+)\.)?s3(?:\.dualstack)?(?:[.-][a-z0-9-]+)?\.amazonaws\.com$`)
+
 func normalizeCodeBuildS3Location(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -35,14 +51,11 @@ func normalizeCodeBuildS3Location(rawURL string) (string, error) {
 	case "s3":
 		bucket = u.Host
 	case "http", "https":
-		host := u.Hostname()
-		if before, _, ok := strings.Cut(host, ".s3."); ok {
-			// Virtual-hosted style: https://bucket.s3.region.amazonaws.com/key.
-			bucket = before
-		} else if before, _, ok := strings.Cut(host, ".s3-"); ok {
-			// Legacy virtual-hosted style: https://bucket.s3-region.amazonaws.com/key.
-			bucket = before
-		} else if strings.HasPrefix(host, "s3.") || strings.HasPrefix(host, "s3-") {
+		m := s3HostPattern.FindStringSubmatch(u.Hostname())
+		if m == nil {
+			return "", fmt.Errorf("%w: got %q", errCodeBuildNotS3URL, rawURL)
+		}
+		if bucket = m[s3HostPattern.SubexpIndex("bucket")]; bucket == "" {
 			// Path style: https://s3.region.amazonaws.com/bucket/key.
 			var found bool
 			bucket, object, found = strings.Cut(object, "/")
@@ -58,6 +71,32 @@ func normalizeCodeBuildS3Location(rawURL string) (string, error) {
 		return "", fmt.Errorf("%w: got %q", errCodeBuildS3Incomplete, rawURL)
 	}
 	return bucket + "/" + object, nil
+}
+
+// codeBuildExtractArchiveCommand returns the pre_build shell command that extracts the
+// uploaded build context, or "" if the context is a .zip -- CodeBuild's S3 source only
+// auto-extracts .zip, so a .zip context arrives in $CODEBUILD_SRC_DIR already extracted
+// and there is nothing to do.
+//
+// The CLI uploads the build context as .tar.gz (or .tgz) for every non-Railpack build on
+// every provider (GCP's Cloud Build extracts that natively, CodeBuild does not), so a
+// non-zip source otherwise lands here as a single untouched archive file with no Dockerfile
+// anywhere. CodeBuild downloads a non-zip S3 source into $CODEBUILD_SRC_DIR under the same
+// filename as the object key, so that name is known up front from the source URL -- extract
+// that exact file rather than glob-discovering it (matches the legacy TS CD's use of the
+// known contextFile path). The archive is removed afterward so a Dockerfile that COPYs the
+// whole build context doesn't also pick up its own multi-megabyte source tarball.
+func codeBuildExtractArchiveCommand(contextURL string) (string, error) {
+	loc, err := normalizeCodeBuildS3Location(contextURL)
+	if err != nil {
+		return "", err
+	}
+	archive := path.Base(loc)
+	if !strings.HasSuffix(archive, ".tar.gz") && !strings.HasSuffix(archive, ".tgz") {
+		return "", nil
+	}
+	quoted := "'" + strings.ReplaceAll(archive, "'", `'\''`) + "'"
+	return fmt.Sprintf("tar xzf %s && rm %s", quoted, quoted), nil
 }
 
 // codeBuildResult holds the outputs of creating a CodeBuild project.
@@ -228,9 +267,16 @@ func getSetupMirrorSteps(mirrors []string) ([]string, error) {
 }
 
 // getBuildSpec generates the CodeBuild buildspec YAML for a Docker image build.
+// contextURL is the same S3 location used as the CodeBuild project's source, so the
+// generated extraction step can name the archive exactly rather than glob-discovering it.
 // Matches TS getBuildSpec: pre_build sets up mirrors and buildx, build runs docker buildx build --push.
-func getBuildSpec(build compose.BuildConfig, destination string) (string, error) {
+func getBuildSpec(build compose.BuildConfig, destination, contextURL string) (string, error) {
 	dockerfile := build.GetDockerfile()
+
+	extractArchiveCmd, err := codeBuildExtractArchiveCommand(contextURL)
+	if err != nil {
+		return "", err
+	}
 
 	// Build args in deterministic order (matches TS: Object.keys(buildArgs).sort())
 	var buildArgsStr string
@@ -262,14 +308,10 @@ func getBuildSpec(build compose.BuildConfig, destination string) (string, error)
 	}
 
 	preBuildCommands := make([]string, 0, 13)
+	if extractArchiveCmd != "" {
+		preBuildCommands = append(preBuildCommands, extractArchiveCmd)
+	}
 	preBuildCommands = append(preBuildCommands,
-		// CodeBuild's S3 source only auto-extracts .zip; the CLI uploads the
-		// build context as a .tar.gz (same format for every provider -- GCP's
-		// Cloud Build extracts that natively, CodeBuild does not), so a
-		// non-zip source lands here as a single untouched archive file with
-		// no Dockerfile anywhere. Extract it ourselves; a no-op if the source
-		// was already a zip (nothing named *.tar.gz to find).
-		`archive=$(ls *.tar.gz 2>/dev/null | head -n1); if [ -n "$archive" ]; then tar xzf "$archive"; fi`,
 		"aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com", //nolint:lll
 		"aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws",
 	)
@@ -365,9 +407,12 @@ func createCodeBuildProject(
 		return url + ":latest"
 	})
 
-	// The buildspec needs the destination at apply time
-	buildspecOutput := pulumix.ApplyErr(destination, func(dest string) (string, error) {
-		return getBuildSpec(build, dest)
+	contextOutput := pulumix.Output[string](build.Context.ToStringOutput())
+
+	// The buildspec needs the destination and the resolved build-context URL (so its
+	// extraction step can name the uploaded archive exactly) at apply time.
+	buildspecOutput := pulumix.Apply2Err(destination, contextOutput, func(dest, contextURL string) (string, error) {
+		return getBuildSpec(build, dest, contextURL)
 	})
 
 	// Build environment variables (build args become env vars)
@@ -387,10 +432,7 @@ func createCodeBuildProject(
 	// CodeBuild expects S3 sources as bucket/key, while the CLI supplies either
 	// an s3:// URL or the query-free HTTPS URL returned by S3's presigner.
 	sourceType := "S3"
-	sourceLocation := pulumix.ApplyErr(
-		pulumix.Output[string](build.Context.ToStringOutput()),
-		normalizeCodeBuildS3Location,
-	)
+	sourceLocation := pulumix.ApplyErr(contextOutput, normalizeCodeBuildS3Location)
 
 	project, err := codebuild.NewProject(ctx, name, &codebuild.ProjectArgs{
 		Description: pulumi.Sprintf("Build image for %s", name),
