@@ -256,7 +256,12 @@ func createInstanceTemplate(
 
 	templateOpts := make([]pulumi.ResourceOption, 0, len(opts)+2)
 	templateOpts = append(templateOpts, opts...)
-	templateOpts = append(templateOpts, pulumi.RetainOnDelete(true))
+	// Deliberately NOT RetainOnDelete. The legacy CD retained this to dodge "The
+	// instance_template resource is already being used by", which the delete half of a
+	// replacement can raise while the MIG still points at the old template. That traded one
+	// error for two leaks: a template per redeploy, and a template left holding the subnet on
+	// teardown, which then blocks the subnet and the VPC (issue #183) with nothing left in state
+	// to delete it. If the replace error comes back, fix the ordering rather than the symptom.
 	if sa.Account != nil {
 		templateOpts = append(templateOpts, pulumi.DependsOnInputs(iamDeps))
 	}

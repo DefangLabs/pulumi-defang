@@ -38,13 +38,26 @@ func createVPCPeeringInfra(
 		return nil, err
 	}
 
+	// DeletionPolicy ABANDON, and deliberately NOT RetainOnDelete. The provider's delete calls
+	// servicenetworking deleteConnection, which cannot be relied on: GCP requires every service
+	// instance to be gone first and producer-side cleanup lags the instance delete by up to 4
+	// days for Cloud SQL, and hashicorp/terraform-provider-google#18834 (still open) records that
+	// the call fails even after that, because Google's own console removes the peering through
+	// the Compute API instead. ABANDON skips the doomed call; the CLI's cleanup tool
+	// (DefangLabs/defang#2157) then calls compute.networks.removePeering, which releases the
+	// reserved range so the subnet and the VPC can go. RetainOnDelete would instead drop the
+	// connection from the Pulumi state while leaving the whole VPC standing (issue #183).
+	//
+	// The field is Optional+Computed and not ForceNew, so it updates in place on an existing
+	// stack and never replaces the peering.
 	serviceConn, err := servicenetworking.NewConnection(ctx, "svc-conn",
 		&servicenetworking.ConnectionArgs{
 			Network:               vpcId,
 			Service:               pulumi.String("servicenetworking.googleapis.com"),
 			ReservedPeeringRanges: pulumi.StringArray{privateIpAlloc.Name},
+			DeletionPolicy:        pulumi.String("ABANDON"),
 		},
-		append(opts, pulumi.RetainOnDelete(true))...,
+		opts...,
 	)
 	if err != nil {
 		return nil, err
