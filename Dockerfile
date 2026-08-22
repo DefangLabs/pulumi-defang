@@ -123,6 +123,15 @@ ARG PROVIDER_VERSION
 COPY --link --from=build-azure /out/pulumi-resource-defang-azure /tmp/
 RUN pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
 
+# An empty, world-writable /tmp to copy into the scratch image below. Pulumi needs /tmp for its
+# workspace temp files, and scratch has no filesystem at all. `WORKDIR /tmp` used to stand in for
+# this, but whether WORKDIR materialises a directory in the exported image is builder-specific:
+# BuildKit does, buildah/podman does not, and the resulting image fails at runtime with
+# "unable to create tmp directory for workspace: stat /tmp: no such file or directory" only once
+# it is actually deployed. Copying an explicit directory works the same way everywhere.
+FROM --platform=${BUILDPLATFORM} ${BUILDBASE} AS tmpdir
+RUN mkdir -m 1777 /empty-tmp
+
 # Final minimal image — no OS, no language runtimes
 FROM ${CDBASE} AS cd-base
 # CA certs for HTTPS
@@ -130,8 +139,7 @@ COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Pulumi CLI only (no language runtimes)
 COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
-# /tmp is required by Pulumi for workspace temp files; scratch has no filesystem.
-WORKDIR /tmp
+COPY --link --from=tmpdir /empty-tmp /tmp
 # App
 WORKDIR /app
 COPY --link --from=build-base /out/cd ./
