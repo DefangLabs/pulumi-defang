@@ -654,8 +654,19 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	// directory under /opt -- surfaced live via defang-mvp#3181 (real GCE
 	// boot: "OSError: [Errno 30] Read-only file system: '/opt/defang'").
 	// /run is tmpfs, always writable, and already used for the env file below.
+	//
+	// tmpfs does not cost us the script across reboots: COS runs write_files
+	// and runcmd on EVERY boot (they are once-per-instance on other distros),
+	// because its /etc and /var/lib/cloud are stateless tmpfs too -- which is
+	// also why the systemd units below survive only by being rewritten. See
+	// https://cloud.google.com/container-optimized-os/docs/how-to/create-configure-instance
 	scriptPath := "/run/defang/" + unit + "-secrets.sh"
 	envFile := "/run/defang/" + unit + ".env"
+
+	// Bound both requests. The units that run this as ExecStartPre are
+	// Type=oneshot, which disables systemd's default start timeout, so an
+	// unbounded curl could stall a boot indefinitely on a network stall.
+	const curlOpts = `-fsS --connect-timeout 5 --max-time 30`
 
 	// Fail fast: a fetch that errors out (or yields an empty token) must fail
 	// ExecStartPre so the unit does not start the container with an empty
@@ -673,13 +684,13 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	// there -- a bare `":"` pattern never matches a real response and every
 	// secret-backed boot would fail fetching. See
 	// https://cloud.google.com/apis/docs/system-parameters (prettyPrint).
-	s.WriteString(`tok=$(curl -fsS -H "Metadata-Flavor: Google" ` +
-		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token ` +
-		`| grep -o '"access_token": *"[^"]*"' | cut -d'"' -f4)` + "\n")
+	fmt.Fprintf(&s, `tok=$(curl %s -H "Metadata-Flavor: Google" `+
+		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token `+
+		`| grep -o '"access_token": *"[^"]*"' | cut -d'"' -f4)`+"\n", curlOpts)
 	s.WriteString(`[ -n "$tok" ] || { echo "defang: empty metadata token" >&2; exit 1; }` + "\n")
-	fmt.Fprintf(&s, `sm() { curl -fsS -H "Authorization: Bearer $tok" `+
+	fmt.Fprintf(&s, `sm() { curl %s -H "Authorization: Bearer $tok" `+
 		`"https://secretmanager.googleapis.com/v1/projects/%s/secrets/$1/versions/latest:access" `+
-		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
+		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", curlOpts, gcpProject)
 	s.WriteString("{\n")
 	for _, r := range refs {
 		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n",

@@ -292,6 +292,10 @@ func TestSecretFetchScript(t *testing.T) {
 	assert.Contains(t, wf, "set -euo pipefail")
 	assert.Contains(t, wf, `[ -n "$tok" ]`)
 	assert.Contains(t, wf, "curl -fsS")
+	// Both requests must be bounded: ExecStartPre runs in Type=oneshot units,
+	// which have no default systemd start timeout, so an unbounded curl would
+	// stall the boot indefinitely.
+	assert.Equal(t, 2, strings.Count(wf, "--connect-timeout 5 --max-time 30"))
 
 	// no refs -> no output
 	wf2, pre2, flag2 := secretFetchScript("p", "svc", nil)
