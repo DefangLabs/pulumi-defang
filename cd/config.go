@@ -143,8 +143,8 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// Compute Engine resource names (health check, firewall, MIG, instance
 					// template) are capped at 63 chars, same regex as above. Their logical
 					// ${name} already includes the compose service name (and for the health
-					// check/firewall, the port and a "-mig-hc" role suffix), so the full
-					// default pattern (prefix-project-stack-name-hex7) overflows well before
+					// check/firewall, the probed port), so the full default pattern
+					// (prefix-project-stack-name-hex7) overflows well before
 					// arbitrary-length service names would on their own -- surfaced live via
 					// defang-mvp#3181 against pulumi-defang#358. Drop just the prefix, same
 					// rationale as CloudRunService above.

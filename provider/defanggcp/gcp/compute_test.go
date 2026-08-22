@@ -433,7 +433,7 @@ func TestCreateMIGAutoHealingFirewallSharesHealthCheckName(t *testing.T) {
 
 	hcName := mocks.names["gcp:compute/healthCheck:HealthCheck"]
 	fwName := mocks.names["gcp:compute/firewall:Firewall"]
-	assert.Equal(t, "smokeworker-6379-mig-hc", hcName)
+	assert.Equal(t, "smokeworker-6379", hcName)
 	assert.Equal(t, hcName, fwName, "firewall should share the health check's logical name, not append -fw")
 }
 
@@ -442,10 +442,10 @@ func TestCreateMIGAutoHealingFirewallSharesHealthCheckName(t *testing.T) {
 // "${project}-${stack}-${name}-${hex(7)}" (cd/config.go), and with the
 // logical name "smokeworker-instance-template" plus a realistic
 // project/stack ("html-css-js"/"newprovidergcp"), the physical name came to
-// 64 chars -- one over the limit. Assert the shorter "-tmpl" suffix instead
-// of re-deriving the exact character budget here (that belongs to
-// autonaming's own pattern, not this package).
-func TestCreateInstanceTemplateUsesShortSuffix(t *testing.T) {
+// 64 chars -- one over the limit. Assert the bare service name instead of
+// re-deriving the exact character budget here (that belongs to autonaming's
+// own pattern, not this package).
+func TestCreateInstanceTemplateUsesBareServiceName(t *testing.T) {
 	mocks := &namedResourceMocks{}
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -462,5 +462,5 @@ func TestCreateInstanceTemplateUsesShortSuffix(t *testing.T) {
 	require.NoError(t, err)
 
 	tmplName := mocks.names["gcp:compute/instanceTemplate:InstanceTemplate"]
-	assert.Equal(t, "smokeworker-tmpl", tmplName)
+	assert.Equal(t, "smokeworker", tmplName)
 }

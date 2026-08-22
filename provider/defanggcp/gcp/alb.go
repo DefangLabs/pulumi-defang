@@ -160,10 +160,13 @@ func createInternalLoadBalancer(
 		// Logical names below deliberately omit projectName: Pulumi's default
 		// resource ID already prefixes it with <pulumi-project>-<stack>, which
 		// includes projectName, so repeating it here risked exceeding GCP's
-		// 63-char resource ID limit.
+		// 63-char resource ID limit. They also carry no role suffix: the type
+		// token (dns:RecordSet) already says what they are, and every branch
+		// below is mutually exclusive, so a service gets at most one private
+		// record set here.
 		switch {
 		case service.Config.Postgres != nil:
-			if _, err := dns.NewRecordSet(ctx, service.Name+"-private-db-dns", &dns.RecordSetArgs{
+			if _, err := dns.NewRecordSet(ctx, service.Name, &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
@@ -174,7 +177,7 @@ func createInternalLoadBalancer(
 			}
 			continue
 		case service.Config.Redis != nil:
-			if _, err := dns.NewRecordSet(ctx, service.Name+"-private-redis-dns", &dns.RecordSetArgs{
+			if _, err := dns.NewRecordSet(ctx, service.Name, &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
@@ -499,7 +502,7 @@ func createInternalLoadBalancer(
 					}
 				}
 
-				if _, err := dns.NewRecordSet(ctx, service.Name+"-private-lb-dns", &dns.RecordSetArgs{
+				if _, err := dns.NewRecordSet(ctx, service.Name, &dns.RecordSetArgs{
 					Name:        pulumi.String(internalServiceDns(service.Name)),
 					Type:        pulumi.String("A"),
 					Ttl:         pulumi.Int(60),
@@ -579,7 +582,7 @@ func createInternalLoadBalancer(
 			return err
 		}
 		for _, serviceName := range internalAlbServices {
-			if _, err := dns.NewRecordSet(ctx, serviceName+"-private-lb-dns", &dns.RecordSetArgs{
+			if _, err := dns.NewRecordSet(ctx, serviceName, &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(serviceName)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),

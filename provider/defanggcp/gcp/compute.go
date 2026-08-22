@@ -260,13 +260,14 @@ func createInstanceTemplate(
 	if sa.Account != nil {
 		templateOpts = append(templateOpts, pulumi.DependsOnInputs(iamDeps))
 	}
-	// "-tmpl", not "-instance-template": autonaming's pattern for this resource
-	// type is "${project}-${stack}-${name}-${hex(7)}" (cd/config.go), and a
-	// longer logical name here left no headroom for longer project/stack
-	// names before hitting GCP Compute's 63-char physical-name limit -- a live
-	// smoketest (defang-mvp#3181) hit exactly that with project "html-css-js"
-	// and stack "newprovidergcp".
-	tmpl, err := compute.NewInstanceTemplate(ctx, serviceName+"-tmpl",
+	// No "-instance-template" suffix: the type token (InstanceTemplate) already
+	// says what this is, matching the bare-name convention used for its sibling
+	// resources in this file. It also keeps headroom under GCP Compute's 63-char
+	// physical-name limit, since autonaming's pattern for this type is
+	// "${project}-${stack}-${name}-${hex(7)}" (cd/config.go) -- a live smoketest
+	// (defang-mvp#3181) overflowed it with project "html-css-js" and stack
+	// "newprovidergcp".
+	tmpl, err := compute.NewInstanceTemplate(ctx, serviceName,
 		&compute.InstanceTemplateArgs{
 			MachineType: pulumi.String(machineType),
 			Scheduling: &compute.InstanceTemplateSchedulingArgs{
@@ -305,7 +306,10 @@ func createMIGAutoHealing(
 		return nil, nil //nolint:nilnil
 	}
 
-	hcName := serviceName + "-" + strconv.Itoa(*healthCheckPort) + "-mig-hc"
+	// No "-mig-hc" suffix: the type tokens (HealthCheck, Firewall) already say
+	// what these are. The probed port stays in the name because a service can be
+	// probed on a port it does not expose (the 8080 sidecar case below).
+	hcName := serviceName + "-" + strconv.Itoa(*healthCheckPort)
 	hcArgs := &compute.HealthCheckArgs{
 		CheckIntervalSec:   pulumi.Int(30),
 		TimeoutSec:         pulumi.Int(30),
