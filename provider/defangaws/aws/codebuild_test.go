@@ -48,6 +48,11 @@ func TestNormalizeCodeBuildS3Location(t *testing.T) {
 		"https://bucket.s3.amazonaws.com/uploads/context.tar.gz?signature=value": "bucket/uploads/context.tar.gz",
 		"https://bucket.s3.us-west-2.amazonaws.com/uploads/context.tar.gz":       "bucket/uploads/context.tar.gz",
 		"https://s3.us-west-2.amazonaws.com/bucket/uploads/context.tar.gz":       "bucket/uploads/context.tar.gz",
+		// Legacy dash form of the regional endpoint, in both styles.
+		"https://bucket.s3-us-west-2.amazonaws.com/uploads/context.tar.gz": "bucket/uploads/context.tar.gz",
+		"https://s3-us-west-2.amazonaws.com/bucket/uploads/context.tar.gz": "bucket/uploads/context.tar.gz",
+		// The legacy global endpoint, path style.
+		"https://s3.amazonaws.com/bucket/uploads/context.tar.gz": "bucket/uploads/context.tar.gz",
 		// IPv6 dual-stack endpoints, in both virtual-hosted and path style. The
 		// SDK emits these when AWS_USE_DUALSTACK_ENDPOINT is set.
 		"https://bucket.s3.dualstack.us-west-2.amazonaws.com/uploads/context.tar.gz": "bucket/uploads/context.tar.gz",
@@ -74,6 +79,11 @@ func TestNormalizeCodeBuildS3LocationRejectsInvalidURL(t *testing.T) {
 		// The dual-stack label must not become an escape hatch for lookalikes.
 		"https://s3.dualstack.evil.example/bucket/context.tar.gz",
 		"https://bucket.s3.dualstack.us-west-2.amazonaws.com.evil.example/context.tar.gz",
+		// Dual-stack endpoints are always regional -- there is no global
+		// "s3.dualstack.amazonaws.com", so "dualstack" must never be read as
+		// the region itself, in either addressing style.
+		"https://s3.dualstack.amazonaws.com/bucket/context.tar.gz",
+		"https://bucket.s3.dualstack.amazonaws.com/context.tar.gz",
 	}
 	for _, input := range tests {
 		t.Run(input, func(t *testing.T) {
