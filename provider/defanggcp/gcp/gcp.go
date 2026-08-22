@@ -219,7 +219,7 @@ func buildOptionalInfra(
 	}
 
 	if externalRegistries := collectExternalRegistries(services); len(externalRegistries) > 0 {
-		repos, err := createRemoteRepos(ctx, externalRegistries, opts...)
+		repos, err := createRemoteRepos(ctx, projectName, externalRegistries, opts...)
 		if err != nil {
 			return err
 		}

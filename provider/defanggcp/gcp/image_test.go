@@ -103,7 +103,7 @@ func TestIsCloudRunSupportedRegistry(t *testing.T) {
 		{"us-central1-docker.pkg.dev", true},
 		{"europe-west1-docker.pkg.dev", true},
 		{"quay.io", false},
-		{"ghcr.io", false},
+		{ghcrRegistry, false},
 		{"registry.example.com", false},
 		{"my-registry.io", false},
 	}
@@ -125,17 +125,30 @@ func TestSanitizeRepoName(t *testing.T) {
 		{"UPPER.CASE.IO", "upper-case-io"},
 		{"-leading-dash", "leading-dash"},
 		{"trailing-dash-", "trailing-dash"},
-		// 64-char input should be trimmed to 63
-		{
-			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
-			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			assert.Equal(t, tt.want, sanitizeRepoName(tt.input))
 		})
 	}
+}
+
+func TestSanitizeRepoNameShortensWithHashSuffix(t *testing.T) {
+	prefix := strings.Repeat("a", artifactRegistryRepositoryIDMaxLength)
+	long1 := prefix + "1"
+	long2 := prefix + "2"
+
+	id1 := sanitizeRepoName(long1)
+	id2 := sanitizeRepoName(long2)
+
+	require.LessOrEqual(t, len(id1), artifactRegistryRepositoryIDMaxLength)
+	require.LessOrEqual(t, len(id2), artifactRegistryRepositoryIDMaxLength)
+	assert.Equal(t, id1, sanitizeRepoName(long1), "repository IDs must be deterministic")
+	assert.NotEqual(t, id1, id2, "distinct names sharing a long prefix must not collide")
+}
+
+func TestSanitizeRepoNameNeverReturnsEmpty(t *testing.T) {
+	assert.Regexp(t, `^repo-[0-9a-f]{8}$`, sanitizeRepoName("..."))
 }
 
 func TestGetServiceImage(t *testing.T) {
@@ -191,11 +204,11 @@ func TestGetServiceImage(t *testing.T) {
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/quay-io/prometheus/node-exporter:v1.8.0",
 		},
 		{
-			name:  "ghcr.io image rewritten to artifact registry",
-			svc:   compose.ServiceConfig{Image: pulumi.String("ghcr.io/owner/image:sha-abc123")},
+			name:  ghcrRegistry + " image rewritten to artifact registry",
+			svc:   compose.ServiceConfig{Image: pulumi.String(ghcrRegistry + "/owner/image:sha-abc123")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
-				"ghcr.io": {RepositoryId: pulumi.String("ghcr-io").ToStringOutput()},
+				ghcrRegistry: {RepositoryId: pulumi.String("ghcr-io").ToStringOutput()},
 			},
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/ghcr-io/owner/image:sha-abc123",
 		},

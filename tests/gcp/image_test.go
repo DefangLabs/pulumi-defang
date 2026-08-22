@@ -23,7 +23,10 @@ import (
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
-const gcpARRepositoryType = "gcp:artifactregistry/repository:Repository"
+const (
+	gcpARRepositoryType = "gcp:artifactregistry/repository:Repository"
+	remoteRepoPrefix    = "defang-name-stack-"
+)
 
 // isRemoteRepo returns true if the AR repository record represents a
 // REMOTE_REPOSITORY (pull-through cache), not a regular push repository.
@@ -67,8 +70,8 @@ func TestExternalRegistryRemoteRepoHasCorrectConfig(t *testing.T) {
 
 	repo := findTypeWhere(*records, gcpARRepositoryType, isRemoteRepo)
 	require.NotNil(t, repo, "expected an AR remote repo")
-	assert.Equal(t, "ghcr-io", repo.inputs.Get("repositoryId").AsString(),
-		"repo ID should be sanitized registry name")
+	assert.Equal(t, remoteRepoPrefix+"ghcr-io", repo.inputs.Get("repositoryId").AsString(),
+		"repo ID should include the project and stack-scoped naming prefix")
 	assert.Equal(t, "REMOTE_REPOSITORY", repo.inputs.Get("mode").AsString())
 
 	uri := repo.inputs.
@@ -148,10 +151,10 @@ func TestMultipleExternalRegistriesCreateSeparateRemoteRepos(t *testing.T) {
 		"two services from different external registries should create two remote repos")
 
 	ghcrRepo := findTypeWhere(*records, gcpARRepositoryType, func(m property.Map) bool {
-		return isRemoteRepo(m) && m.Get("repositoryId").AsString() == "ghcr-io"
+		return isRemoteRepo(m) && m.Get("repositoryId").AsString() == remoteRepoPrefix+"ghcr-io"
 	})
 	quayRepo := findTypeWhere(*records, gcpARRepositoryType, func(m property.Map) bool {
-		return isRemoteRepo(m) && m.Get("repositoryId").AsString() == "quay-io"
+		return isRemoteRepo(m) && m.Get("repositoryId").AsString() == remoteRepoPrefix+"quay-io"
 	})
 	assert.NotNil(t, ghcrRepo, "expected remote repo for ghcr.io")
 	assert.NotNil(t, quayRepo, "expected remote repo for quay.io")

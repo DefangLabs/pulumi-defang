@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"crypto/sha1" //nolint:gosec
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -40,16 +41,34 @@ func isCloudRunSupportedRegistry(registry string) bool {
 
 var nonLowerAlphaNumericOrDashRe = regexp.MustCompile(`[^a-z0-9-]`)
 
+const (
+	artifactRegistryRepositoryIDMaxLength  = 63
+	artifactRegistryRepositoryIDHashLength = 8
+)
+
 // sanitizeRepoName produces a valid Artifact Registry repository ID:
-// lowercase alphanumeric + hyphens, max 63 characters.
+// lowercase alphanumeric + hyphens, max 63 characters. Names longer than the
+// limit are truncated with a hash of the full original name appended, so two
+// names that share a long prefix still get distinct, bounded IDs.
 func sanitizeRepoName(name string) string {
+	original := name
 	name = strings.ToLower(name)
 	name = nonLowerAlphaNumericOrDashRe.ReplaceAllLiteralString(name, "-")
 	name = strings.Trim(name, "-")
-	if len(name) > 63 {
-		name = name[:63] // FIXME: this could lead to collisions
+	if name == "" {
+		return "repo-" + repositoryIDHash(original)
 	}
-	return strings.TrimRight(name, "-")
+	if len(name) > artifactRegistryRepositoryIDMaxLength {
+		suffix := "-" + repositoryIDHash(original)
+		maxPrefixLength := artifactRegistryRepositoryIDMaxLength - len(suffix)
+		name = strings.TrimRight(name[:maxPrefixLength], "-") + suffix
+	}
+	return name
+}
+
+func repositoryIDHash(name string) string {
+	digest := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(digest[:])[:artifactRegistryRepositoryIDHashLength]
 }
 
 // gcpBuildResource is the Pulumi resource state for the defang-gcp:defanggcp:Build custom resource.
