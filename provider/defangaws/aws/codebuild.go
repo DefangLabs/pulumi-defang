@@ -60,8 +60,9 @@ func parseS3Host(host string) (string, bool) {
 		s3 -= 2 // s3.dualstack.<region>
 	case s3 >= 1 && labels[s3-1] == "s3" && labels[s3] != "dualstack":
 		s3-- // s3.<region>
-	case labels[s3] == "s3" || strings.HasPrefix(labels[s3], "s3-"):
-		// s3 (legacy global) or s3-<region> (legacy regional).
+	case labels[s3] == "s3" || len(labels[s3]) > len("s3-") && strings.HasPrefix(labels[s3], "s3-"):
+		// s3 (legacy global) or s3-<region> (legacy regional); the dash form
+		// needs a region after the dash, so a bare "s3-" is not an endpoint.
 	default:
 		return "", false
 	}

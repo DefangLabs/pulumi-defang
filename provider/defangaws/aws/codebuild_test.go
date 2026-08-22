@@ -84,6 +84,10 @@ func TestNormalizeCodeBuildS3LocationRejectsInvalidURL(t *testing.T) {
 		// the region itself, in either addressing style.
 		"https://s3.dualstack.amazonaws.com/bucket/context.tar.gz",
 		"https://bucket.s3.dualstack.amazonaws.com/context.tar.gz",
+		// The legacy dash form needs a region after the dash: a bare "s3-"
+		// is not an endpoint, in either addressing style.
+		"https://s3-.amazonaws.com/bucket/context.tar.gz",
+		"https://bucket.s3-.amazonaws.com/context.tar.gz",
 	}
 	for _, input := range tests {
 		t.Run(input, func(t *testing.T) {
