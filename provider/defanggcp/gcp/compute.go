@@ -256,6 +256,12 @@ func createInstanceTemplate(
 
 	templateOpts := make([]pulumi.ResourceOption, 0, len(opts)+2)
 	templateOpts = append(templateOpts, opts...)
+	// Unlike the VPC and the subnet, this retain stays. Changing an instance template is a
+	// replacement, and the delete of the old one fails with "The instance_template resource is
+	// already being used by" while its MIG still points at it, so without the retain every
+	// redeploy of a Compute Engine service fails. The cost is a template left holding the subnet
+	// on teardown, which the CLI's cleanup tool deletes (DefangLabs/defang#2157, the
+	// "instance-template" category, which it removes before the subnet).
 	templateOpts = append(templateOpts, pulumi.RetainOnDelete(true))
 	if sa.Account != nil {
 		templateOpts = append(templateOpts, pulumi.DependsOnInputs(iamDeps))

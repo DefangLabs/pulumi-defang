@@ -104,9 +104,16 @@ func BuildGlobalConfig(
 	// private-dns zone further down: Pulumi's default resource ID already prefixes
 	// it with <pulumi-project>-<stack>, which includes projectName, so repeating it
 	// here risked exceeding GCP's 63-char resource ID limit.
+	// Deliberately NOT RetainOnDelete, even though GCP holds the subnet's IP addresses for 1-2
+	// hours after the last Cloud Run service using them is deleted (Direct VPC egress; see
+	// buildVpcAccess in cloudrun.go), so a `down` inside that window fails to delete the subnet
+	// and, behind it, the VPC. Retaining hid that failure but dropped both resources from the
+	// Pulumi state, which left the VPC orphaned with nothing left to delete it: the project then
+	// ran into its NETWORKS quota (issue #183). Letting the destroy fail is what puts the CLI's
+	// cleanup tool (DefangLabs/defang#2157) in front of the user.
 	vpc, err := compute.NewNetwork(ctx, "vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
-	}, append(opts, pulumi.RetainOnDelete(true))...)
+	}, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +122,7 @@ func BuildGlobalConfig(
 		IpCidrRange: pulumi.String("10.0.0.0/16"),
 		Region:      pulumi.String(region),
 		Network:     vpc.ID(),
-	}, append(opts, pulumi.RetainOnDelete(true))...)
+	}, opts...)
 	if err != nil {
 		return nil, err
 	}
