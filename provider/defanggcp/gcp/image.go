@@ -47,9 +47,9 @@ const (
 )
 
 // sanitizeRepoName produces a valid Artifact Registry repository ID:
-// lowercase alphanumeric + hyphens, max 63 characters. Long names are simply
-// truncated; two names that share a 63-char prefix can collide, but that's an
-// acceptable tradeoff for keeping this straightforward.
+// lowercase alphanumeric + hyphens, max 63 characters. Names longer than the
+// limit are truncated with a hash of the full original name appended, so two
+// names that share a long prefix still get distinct, bounded IDs.
 func sanitizeRepoName(name string) string {
 	original := name
 	name = strings.ToLower(name)
@@ -59,7 +59,9 @@ func sanitizeRepoName(name string) string {
 		return "repo-" + repositoryIDHash(original)
 	}
 	if len(name) > artifactRegistryRepositoryIDMaxLength {
-		name = strings.TrimRight(name[:artifactRegistryRepositoryIDMaxLength], "-")
+		suffix := "-" + repositoryIDHash(original)
+		maxPrefixLength := artifactRegistryRepositoryIDMaxLength - len(suffix)
+		name = strings.TrimRight(name[:maxPrefixLength], "-") + suffix
 	}
 	return name
 }

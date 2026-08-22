@@ -133,14 +133,18 @@ func TestSanitizeRepoName(t *testing.T) {
 	}
 }
 
-func TestSanitizeRepoNameShortensByTruncating(t *testing.T) {
-	long := strings.Repeat("a", artifactRegistryRepositoryIDMaxLength) + "1"
+func TestSanitizeRepoNameShortensWithHashSuffix(t *testing.T) {
+	prefix := strings.Repeat("a", artifactRegistryRepositoryIDMaxLength)
+	long1 := prefix + "1"
+	long2 := prefix + "2"
 
-	id := sanitizeRepoName(long)
+	id1 := sanitizeRepoName(long1)
+	id2 := sanitizeRepoName(long2)
 
-	require.Len(t, id, artifactRegistryRepositoryIDMaxLength)
-	assert.Equal(t, id, sanitizeRepoName(long), "repository IDs must be deterministic")
-	assert.Equal(t, strings.Repeat("a", artifactRegistryRepositoryIDMaxLength), id)
+	require.LessOrEqual(t, len(id1), artifactRegistryRepositoryIDMaxLength)
+	require.LessOrEqual(t, len(id2), artifactRegistryRepositoryIDMaxLength)
+	assert.Equal(t, id1, sanitizeRepoName(long1), "repository IDs must be deterministic")
+	assert.NotEqual(t, id1, id2, "distinct names sharing a long prefix must not collide")
 }
 
 func TestSanitizeRepoNameNeverReturnsEmpty(t *testing.T) {

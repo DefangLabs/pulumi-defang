@@ -115,10 +115,13 @@ func TestArtifactRegistryRepositoryIDCustomLongNamesAreTruncated(t *testing.T) {
 	commonPrefix := strings.Repeat("long", 20)
 
 	firstID := repositoryIDForTest(t, "dev", "compose-project", commonPrefix+"first", config)
+	secondID := repositoryIDForTest(t, "dev", "compose-project", commonPrefix+"second", config)
 
-	require.Len(t, firstID, artifactRegistryRepositoryIDMaxLength)
+	require.LessOrEqual(t, len(firstID), artifactRegistryRepositoryIDMaxLength)
+	require.LessOrEqual(t, len(secondID), artifactRegistryRepositoryIDMaxLength)
 	assert.Equal(t, firstID, repositoryIDForTest(t, "dev", "compose-project", commonPrefix+"first", config),
 		"repository IDs must be deterministic")
+	assert.NotEqual(t, firstID, secondID, "distinct names sharing a long prefix must not collide")
 }
 
 func TestCreateRemoteReposKeepsLogicalNameAndDoesNotRetain(t *testing.T) {
