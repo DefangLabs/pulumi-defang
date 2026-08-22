@@ -31,7 +31,7 @@ func Test_setDefaultStackConfig(t *testing.T) {
 	if !ok {
 		t.Fatal("pattern is not a string")
 	}
-	if pattern != "TestPrefix-${project}-${stack}-${name}-${hex(7)}" {
+	if pattern != "TestPrefix-"+defaultAutonamingSuffix {
 		t.Errorf("unexpected pattern: %s", pattern)
 	}
 
@@ -50,11 +50,44 @@ func Test_setDefaultStackConfigEmptyPrefix(t *testing.T) {
 	autonamingMap := autonaming.Value.(map[string]any)
 	pattern := autonamingMap["pattern"].(string)
 	// With empty prefix, pattern should not have a leading prefix-
-	if pattern != "${project}-${stack}-${name}-${hex(7)}" {
+	if pattern != defaultAutonamingSuffix {
 		t.Errorf("unexpected pattern with empty prefix: %s", pattern)
 	}
 	if got := config["defang:prefix"].Value; got != "" {
 		t.Errorf("unexpected defang:prefix with empty prefix: %q", got)
+	}
+}
+
+// Test_setDefaultStackConfigGCPComputeOverrides guards against the health
+// check naming bug surfaced live via defang-mvp#3181 against
+// pulumi-defang#358: the default "gcp" pattern's lowerPrefix only applies to
+// resources with no more specific override, and GCP Compute Engine resources
+// (health check, firewall, MIG, instance template) need the "Defang-" prefix
+// dropped entirely to stay within the 63-char limit -- see setDefaultStackConfig.
+func Test_setDefaultStackConfigGCPComputeOverrides(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("Defang", config)
+
+	autonamingMap := config["pulumi:autonaming"].Value.(map[string]any)
+	providers := autonamingMap["providers"].(map[string]any)
+	gcp := providers["gcp"].(map[string]any)
+	resources := gcp["resources"].(map[string]any)
+
+	for _, resourceType := range []string{
+		"gcp:compute/healthCheck:HealthCheck",
+		"gcp:compute/firewall:Firewall",
+		"gcp:compute/regionInstanceGroupManager:RegionInstanceGroupManager",
+		"gcp:compute/instanceTemplate:InstanceTemplate",
+		"gcp:compute/regionBackendService:RegionBackendService",
+		"gcp:compute/forwardingRule:ForwardingRule",
+	} {
+		override, ok := resources[resourceType].(map[string]string)
+		if !ok {
+			t.Fatalf("missing override for %s", resourceType)
+		}
+		if override["pattern"] != defaultAutonamingSuffix {
+			t.Errorf("%s: pattern = %q, want %q", resourceType, override["pattern"], defaultAutonamingSuffix)
+		}
 	}
 }
 

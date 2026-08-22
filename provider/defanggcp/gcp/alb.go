@@ -47,7 +47,7 @@ func CreateLoadBalancers(
 	config *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) error {
-	if err := createInternalLoadBalancer(ctx, projectName, config, services, opts...); err != nil {
+	if err := createInternalLoadBalancer(ctx, config, services, opts...); err != nil {
 		return err
 	}
 
@@ -118,7 +118,11 @@ func createExternalLoadBalancers(
 	}
 
 	if config.WildcardCertId != nil {
-		if _, err := certificatemanager.NewCertificateMapEntry(ctx, projectName+"-cert-map-entry",
+		// Logical name deliberately omits projectName, same as the VPC/firewalls in
+		// gcp.go: Pulumi's default resource ID already prefixes it with
+		// <pulumi-project>-<stack>, which includes projectName, so repeating it here
+		// risked exceeding GCP's 63-char resource ID limit.
+		if _, err := certificatemanager.NewCertificateMapEntry(ctx, "cert-map-entry",
 			&certificatemanager.CertificateMapEntryArgs{
 				Map:          certMap.Name,
 				Certificates: pulumi.StringArray{config.WildcardCertId},
@@ -128,22 +132,21 @@ func createExternalLoadBalancers(
 		}
 	}
 
-	urlMap, err := buildURLMap(ctx, projectName, ingressEntries, config.Region, opts...)
+	urlMap, err := buildURLMap(ctx, ingressEntries, config.Region, opts...)
 	if err != nil {
 		return err
 	}
 
-	if err := createHTTPSForwardingRule(ctx, projectName, config.PublicIP, urlMap, certMap, opts...); err != nil {
+	if err := createHTTPSForwardingRule(ctx, config.PublicIP, urlMap, certMap, opts...); err != nil {
 		return err
 	}
 
-	return createHTTPRedirectForwardingRule(ctx, projectName, config.PublicIP, opts...)
+	return createHTTPRedirectForwardingRule(ctx, config.PublicIP, opts...)
 }
 
 //nolint:funlen,maintidx
 func createInternalLoadBalancer(
 	ctx *pulumi.Context,
-	projectName string,
 	config *SharedInfra,
 	services []LBServiceEntry,
 	opts ...pulumi.ResourceOption,
@@ -154,9 +157,16 @@ func createInternalLoadBalancer(
 	var privatePathMatchers compute.RegionUrlMapPathMatcherArray
 	for _, service := range services {
 		// Managed services: always create private DNS regardless of ports.
+		// Logical names below deliberately omit projectName: Pulumi's default
+		// resource ID already prefixes it with <pulumi-project>-<stack>, which
+		// includes projectName, so repeating it here risked exceeding GCP's
+		// 63-char resource ID limit. They also carry no role suffix: the type
+		// token (dns:RecordSet) already says what they are, and every branch
+		// below is mutually exclusive, so a service gets at most one private
+		// record set here.
 		switch {
 		case service.Config.Postgres != nil:
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-db-dns", &dns.RecordSetArgs{
+			if _, err := dns.NewRecordSet(ctx, service.Name, &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
@@ -167,7 +177,7 @@ func createInternalLoadBalancer(
 			}
 			continue
 		case service.Config.Redis != nil:
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-redis-dns", &dns.RecordSetArgs{
+			if _, err := dns.NewRecordSet(ctx, service.Name, &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
@@ -194,6 +204,7 @@ func createInternalLoadBalancer(
 						Service: pulumi.StringPtrInput(service.CloudRunService.Name),
 					},
 				},
+				opts...,
 			)
 			if err != nil {
 				return err
@@ -212,6 +223,7 @@ func createInternalLoadBalancer(
 						},
 					},
 				},
+				opts...,
 			)
 			if err != nil {
 				return err
@@ -264,6 +276,7 @@ func createInternalLoadBalancer(
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
+					opts...,
 				)
 				if err != nil {
 					return err
@@ -279,7 +292,7 @@ func createInternalLoadBalancer(
 							RequestPath: pulumi.String(healthCheckPath),
 						},
 					},
-					pulumi.DependsOn([]pulumi.Resource{firewall}),
+					append(opts, pulumi.DependsOn([]pulumi.Resource{firewall}))...,
 				)
 				if err != nil {
 					return err
@@ -298,6 +311,7 @@ func createInternalLoadBalancer(
 						HealthChecks: healthCheck.ID(),
 						PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", portProto, port.Target)), // Matching compute.go
 					},
+					opts...,
 				)
 				if err != nil {
 					return err
@@ -330,6 +344,7 @@ func createInternalLoadBalancer(
 						Region:      pulumi.String(config.Region),
 						Purpose:     pulumi.String("SHARED_LOADBALANCER_VIP"),
 					},
+					opts...,
 				)
 				if err != nil {
 					return err
@@ -371,13 +386,18 @@ func createInternalLoadBalancer(
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
+					opts...,
 				)
 				if err != nil {
 					return err
 				}
 
+				// "-hc" distinguishes this from trafficFirewall above: both are
+				// gcp:compute/firewall:Firewall for the same service, so they can't
+				// share trafficFirewall's bare service.Name -- Pulumi rejects that
+				// as a duplicate URN (same type + name + parent).
 				healthCheckFirewall, err := compute.NewFirewall(ctx,
-					service.Name,
+					service.Name+"-hc",
 					&compute.FirewallArgs{
 						Network: config.VpcId,
 						// Fixed health check IP ranges for internal passthrough NLB:
@@ -395,6 +415,7 @@ func createInternalLoadBalancer(
 						},
 						Direction: pulumi.String("INGRESS"),
 					},
+					opts...,
 				)
 				if err != nil {
 					return err
@@ -412,7 +433,7 @@ func createInternalLoadBalancer(
 							Port: pulumi.Int(*tcpHealthCheckPort),
 						},
 					},
-					pulumi.DependsOn([]pulumi.Resource{healthCheckFirewall}),
+					append(opts, pulumi.DependsOn([]pulumi.Resource{healthCheckFirewall}))...,
 				)
 				if err != nil {
 					return err
@@ -426,9 +447,16 @@ func createInternalLoadBalancer(
 					// https://cloud.google.com/load-balancing/docs/forwarding-rule-concepts#port_specifications
 					for ports := range slices.Chunk(allPorts, 5) {
 						portsName := strings.Trim(strings.ReplaceAll(fmt.Sprint(ports), " ", "-"), "[]")
+						// No "-backend-service"/"-forwarding-rule" suffix (the type token
+						// already says what each is); protocol is included since two
+						// protocols can chunk to the same port set, which would otherwise
+						// collide on a shared logical name (a live smoketest, defang-mvp#3181,
+						// hit this bug's sibling missing-separator variant: "smokeworkerhost-
+						// 6379-backend-service", also 68 chars -- one more reason to keep it
+						// short instead of just re-adding a "-" before "host").
+						name := fmt.Sprintf("%s-%s-%s", service.Name, strings.ToLower(string(protocol)), portsName)
 
-						backendService, err := compute.NewRegionBackendService(ctx,
-							service.Name+fmt.Sprintf("host-%v-backend-service", portsName),
+						backendService, err := compute.NewRegionBackendService(ctx, name,
 							&compute.RegionBackendServiceArgs{
 								Region:              pulumi.String(config.Region),
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
@@ -443,6 +471,7 @@ func createInternalLoadBalancer(
 								ConnectionDrainingTimeoutSec: pulumi.Int(0), // Make configurable?
 								HealthChecks:                 healthCheck.ID(),
 							},
+							opts...,
 						)
 						if err != nil {
 							return err
@@ -453,8 +482,7 @@ func createInternalLoadBalancer(
 							portsInput = append(portsInput, pulumi.String(strconv.FormatUint(uint64(port), 10)))
 						}
 						// Create a forwarding rule
-						_, err = compute.NewForwardingRule(ctx,
-							service.Name+fmt.Sprintf("host-%v-forwarding-rule", portsName),
+						_, err = compute.NewForwardingRule(ctx, name,
 							&compute.ForwardingRuleArgs{
 								LoadBalancingScheme: pulumi.String("INTERNAL"),
 								IpProtocol:          pulumi.String(strings.ToUpper(string(protocol))),
@@ -466,6 +494,7 @@ func createInternalLoadBalancer(
 								// Multiple forwarding rules share the same IP so internal DNS works.
 								IpAddress: internalNlbIP.Address,
 							},
+							opts...,
 						)
 						if err != nil {
 							return err
@@ -473,13 +502,13 @@ func createInternalLoadBalancer(
 					}
 				}
 
-				if _, err := dns.NewRecordSet(ctx, projectName+"-"+service.Name+"-private-lb-dns", &dns.RecordSetArgs{
+				if _, err := dns.NewRecordSet(ctx, service.Name, &dns.RecordSetArgs{
 					Name:        pulumi.String(internalServiceDns(service.Name)),
 					Type:        pulumi.String("A"),
 					Ttl:         pulumi.Int(60),
 					ManagedZone: config.PrivateZone,
 					Rrdatas:     pulumi.StringArray{internalNlbIP.Address},
-				}, pulumi.DependsOn([]pulumi.Resource{trafficFirewall})); err != nil {
+				}, append(opts, pulumi.DependsOn([]pulumi.Resource{trafficFirewall}))...); err != nil {
 					return err
 				}
 			}
@@ -504,6 +533,7 @@ func createInternalLoadBalancer(
 					Role:        pulumi.String("ACTIVE"),
 					Network:     config.VpcId,
 				},
+				opts...,
 			)
 		}
 		if err != nil {
@@ -518,6 +548,7 @@ func createInternalLoadBalancer(
 				HostRules:      privateHostRules,
 				PathMatchers:   privatePathMatchers,
 			},
+			opts...,
 		)
 		if err != nil {
 			return err
@@ -529,7 +560,7 @@ func createInternalLoadBalancer(
 				Region: pulumi.String(config.Region),
 				UrlMap: privateUrlMap.SelfLink,
 			},
-			pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
+			append(opts, pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}))...,
 		)
 		if err != nil {
 			return err
@@ -545,19 +576,19 @@ func createInternalLoadBalancer(
 				PortRange:           pulumi.String("80"),
 				LoadBalancingScheme: pulumi.String("INTERNAL_MANAGED"),
 			},
-			pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}),
+			append(opts, pulumi.DependsOn([]pulumi.Resource{regionalManagedProxySubnet}))...,
 		)
 		if err != nil {
 			return err
 		}
 		for _, serviceName := range internalAlbServices {
-			if _, err := dns.NewRecordSet(ctx, projectName+"-"+serviceName+"-private-lb-dns", &dns.RecordSetArgs{
+			if _, err := dns.NewRecordSet(ctx, serviceName, &dns.RecordSetArgs{
 				Name:        pulumi.String(internalServiceDns(serviceName)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
 				ManagedZone: config.PrivateZone,
 				Rrdatas:     pulumi.StringArray{forwardingRule.IpAddress},
-			}); err != nil {
+			}, opts...); err != nil {
 				return err
 			}
 		}
@@ -589,12 +620,15 @@ func newCertMap(
 	args := &certificatemanager.CertificateMapResourceArgs{
 		Description: pulumi.String(projectName + " public load balancer certificate map"),
 	}
-	return certificatemanager.NewCertificateMapResource(ctx, projectName+"-cert-map", args, opts...)
+	// Logical name deliberately omits projectName: Pulumi's default resource ID
+	// already prefixes it with <pulumi-project>-<stack>, which includes
+	// projectName, so repeating it here risked exceeding GCP's 63-char resource
+	// ID limit.
+	return certificatemanager.NewCertificateMapResource(ctx, "cert-map", args, opts...)
 }
 
 func buildURLMap(
 	ctx *pulumi.Context,
-	projectName string,
 	entries []LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
@@ -622,7 +656,11 @@ func buildURLMap(
 		}
 	}
 
-	return compute.NewURLMap(ctx, projectName+"-urlmap", &compute.URLMapArgs{
+	// Logical name deliberately omits projectName: Pulumi's default resource ID
+	// already prefixes it with <pulumi-project>-<stack>, which includes
+	// projectName, so repeating it here risked exceeding GCP's 63-char resource
+	// ID limit.
+	return compute.NewURLMap(ctx, "urlmap", &compute.URLMapArgs{
 		DefaultService: firstBackendID,
 		HostRules:      hostRules,
 		PathMatchers:   pathMatchers,
@@ -754,9 +792,12 @@ func migBackend(entry LBServiceEntry) *compute.BackendServiceBackendArgs {
 	return backend
 }
 
+// Logical names in createHTTPSForwardingRule and createHTTPRedirectForwardingRule
+// deliberately omit projectName: Pulumi's default resource ID already prefixes it
+// with <pulumi-project>-<stack>, which includes projectName, so repeating it here
+// risked exceeding GCP's 63-char resource ID limit.
 func createHTTPSForwardingRule(
 	ctx *pulumi.Context,
-	projectName string,
 	publicIP *compute.GlobalAddress,
 	urlMap *compute.URLMap,
 	certMap *certificatemanager.CertificateMapResource,
@@ -766,7 +807,7 @@ func createHTTPSForwardingRule(
 		return fmt.Sprintf("//certificatemanager.googleapis.com/%v", id), nil
 	}).(pulumi.StringOutput)
 
-	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, projectName+"-https-proxy",
+	httpsProxy, err := compute.NewTargetHttpsProxy(ctx, "https-proxy",
 		&compute.TargetHttpsProxyArgs{
 			UrlMap:         urlMap.SelfLink,
 			CertificateMap: certMapRef,
@@ -775,7 +816,7 @@ func createHTTPSForwardingRule(
 		return err
 	}
 
-	_, err = compute.NewGlobalForwardingRule(ctx, projectName+"-https-rule",
+	_, err = compute.NewGlobalForwardingRule(ctx, "https-rule",
 		&compute.GlobalForwardingRuleArgs{
 			Target:              httpsProxy.SelfLink,
 			IpAddress:           publicIP.Address,
@@ -787,11 +828,10 @@ func createHTTPSForwardingRule(
 
 func createHTTPRedirectForwardingRule(
 	ctx *pulumi.Context,
-	projectName string,
 	publicIP *compute.GlobalAddress,
 	opts ...pulumi.ResourceOption,
 ) error {
-	redirectMap, err := compute.NewURLMap(ctx, projectName+"-http-urlmap",
+	redirectMap, err := compute.NewURLMap(ctx, "http-urlmap",
 		&compute.URLMapArgs{
 			DefaultUrlRedirect: &compute.URLMapDefaultUrlRedirectArgs{
 				HttpsRedirect:        pulumi.Bool(true),
@@ -803,13 +843,13 @@ func createHTTPRedirectForwardingRule(
 		return err
 	}
 
-	httpProxy, err := compute.NewTargetHttpProxy(ctx, projectName+"-http-proxy",
+	httpProxy, err := compute.NewTargetHttpProxy(ctx, "http-proxy",
 		&compute.TargetHttpProxyArgs{UrlMap: redirectMap.ID()}, opts...)
 	if err != nil {
 		return err
 	}
 
-	_, err = compute.NewGlobalForwardingRule(ctx, projectName+"-http-rule",
+	_, err = compute.NewGlobalForwardingRule(ctx, "http-rule",
 		&compute.GlobalForwardingRuleArgs{
 			IpAddress:           publicIP.Address,
 			IpProtocol:          pulumi.String("TCP"),

@@ -9,6 +9,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/secretmanager"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -39,6 +40,7 @@ type ComputeEngineArgs struct {
 // run on Cloud Run (e.g. background workers with no listening port).
 func CreateComputeEngine(
 	ctx *pulumi.Context,
+	configProvider compose.ConfigProvider,
 	serviceName string,
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
@@ -58,24 +60,21 @@ func CreateComputeEngine(
 		}, gcpConfig, parentOpt)
 	}
 
-	namedPorts := make(compute.RegionInstanceGroupManagerNamedPortArray, len(svc.Ports))
-	var healthCheckPort *int
-	for i, port := range svc.Ports {
-		proto := port.GetProtocol()
-		namedPorts[i] = &compute.RegionInstanceGroupManagerNamedPortArgs{
-			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
-			Port: pulumi.Int(port.Target),
-		}
-		if proto == "tcp" {
-			p := int(port.Target)
-			healthCheckPort = &p
-		}
+	// Classify each container's env into inline values and native secret refs,
+	// then grant the instance SA access to every referenced secret. Bare ${VAR}
+	// / null "KEY:" values are boot-fetched (see secretFetchScript) rather than
+	// embedded in instance metadata.
+	mainPlan := classifyComputeSecretEnv(ctx, configProvider, svc.Environment)
+	sidecarPlans := make(map[string]containerSecretPlan, len(args.Sidecars))
+	for name, sc := range args.Sidecars {
+		sidecarPlans[name] = classifyComputeSecretEnv(ctx, configProvider, sc.Environment)
 	}
-	addHealthCheckSidecar := healthCheckPort == nil
-	if addHealthCheckSidecar {
-		p := 8080
-		healthCheckPort = &p
+	secretMembers, err := grantSecretAccess(ctx, serviceName, args.SA, mainPlan, sidecarPlans, parentOpt)
+	if err != nil {
+		return nil, err
 	}
+
+	namedPorts, healthCheckPort, addHealthCheckSidecar := computeNamedPorts(svc)
 
 	// DEFANG_FQDN: custom domain, else public FQDN (ingress), else the private
 	// FQDN (<label>.google.internal) for internal services — the private zone is
@@ -83,11 +82,16 @@ func CreateComputeEngine(
 	fqdn := common.ServiceFQDN(serviceName, svc, gcpConfig.Domain, "google.internal")
 	cloudInit := getCloudInitConfig(
 		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, gcpConfig.ProjectName, gcpConfig.Stack, fqdn,
-		addHealthCheckSidecar, args.Sidecars)
+		gcpConfig.GcpProject, addHealthCheckSidecar, args.Sidecars, mainPlan, sidecarPlans)
 
+	// The instance template must depend on the secret IAM bindings so instances
+	// don't boot (and run the fetch script) before they can read the secrets.
 	templateOpts := []pulumi.ResourceOption{parentOpt}
-	if len(args.PolicyDeps) > 0 {
-		templateOpts = append(templateOpts, pulumi.DependsOn(args.PolicyDeps))
+	templateDeps := make([]pulumi.Resource, 0, len(args.PolicyDeps)+len(secretMembers))
+	templateDeps = append(templateDeps, args.PolicyDeps...)
+	templateDeps = append(templateDeps, secretMembers...)
+	if len(templateDeps) > 0 {
+		templateOpts = append(templateOpts, pulumi.DependsOn(templateDeps))
 	}
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, getComputeBootImage(svc), cloudInit,
@@ -135,13 +139,43 @@ func CreateComputeEngine(
 	if len(zoneNames) < len(zones.Names) {
 		migArgs.DistributionPolicyZones = pulumi.ToStringArray(zoneNames)
 	}
-	instanceGroup, err := compute.NewRegionInstanceGroupManager(ctx, serviceName+"-instance-group",
+	// No "-instance-group" suffix: the type token (RegionInstanceGroupManager)
+	// already says what this is, matching the bare-name convention used for
+	// its sibling resources (Address, HealthCheck, Firewall) in this file.
+	instanceGroup, err := compute.NewRegionInstanceGroupManager(ctx, serviceName,
 		migArgs, parentOpt, pulumi.DependsOn([]pulumi.Resource{instanceTemplate}))
 	if err != nil {
 		return nil, fmt.Errorf("creating instance group for %s: %w", serviceName, err)
 	}
 
 	return &ComputeEngineResult{InstanceGroup: instanceGroup}, nil
+}
+
+// computeNamedPorts builds the MIG named-port array from the service's ports and
+// determines the health-check port. Services with no TCP port get a dedicated
+// HTTP health-check sidecar on 8080 so the MIG auto-healer can probe liveness.
+func computeNamedPorts(svc compose.ServiceConfig) (
+	compute.RegionInstanceGroupManagerNamedPortArray, *int, bool,
+) {
+	namedPorts := make(compute.RegionInstanceGroupManagerNamedPortArray, len(svc.Ports))
+	var healthCheckPort *int
+	for i, port := range svc.Ports {
+		proto := port.GetProtocol()
+		namedPorts[i] = &compute.RegionInstanceGroupManagerNamedPortArgs{
+			Name: pulumi.String(fmt.Sprintf("port-%s-%d", proto, port.Target)),
+			Port: pulumi.Int(port.Target),
+		}
+		if proto == "tcp" {
+			p := int(port.Target)
+			healthCheckPort = &p
+		}
+	}
+	addHealthCheckSidecar := healthCheckPort == nil
+	if addHealthCheckSidecar {
+		p := 8080
+		healthCheckPort = &p
+	}
+	return namedPorts, healthCheckPort, addHealthCheckSidecar
 }
 
 // networkID returns the network to attach instances and firewalls to: the
@@ -226,7 +260,14 @@ func createInstanceTemplate(
 	if sa.Account != nil {
 		templateOpts = append(templateOpts, pulumi.DependsOnInputs(iamDeps))
 	}
-	tmpl, err := compute.NewInstanceTemplate(ctx, serviceName+"-instance-template",
+	// No "-instance-template" suffix: the type token (InstanceTemplate) already
+	// says what this is, matching the bare-name convention used for its sibling
+	// resources in this file. It also keeps headroom under GCP Compute's 63-char
+	// physical-name limit, since autonaming's pattern for this type is
+	// "${project}-${stack}-${name}-${hex(7)}" (cd/config.go) -- a live smoketest
+	// (defang-mvp#3181) overflowed it with project "html-css-js" and stack
+	// "newprovidergcp".
+	tmpl, err := compute.NewInstanceTemplate(ctx, serviceName,
 		&compute.InstanceTemplateArgs{
 			MachineType: pulumi.String(machineType),
 			Scheduling: &compute.InstanceTemplateSchedulingArgs{
@@ -265,6 +306,10 @@ func createMIGAutoHealing(
 		return nil, nil //nolint:nilnil
 	}
 
+	// No "-mig-hc" suffix: the type tokens (HealthCheck, Firewall) already say
+	// what these are. The probed port stays in the name because a service can be
+	// probed on a port it does not expose (the 8080 sidecar case below).
+	hcName := serviceName + "-" + strconv.Itoa(*healthCheckPort)
 	hcArgs := &compute.HealthCheckArgs{
 		CheckIntervalSec:   pulumi.Int(30),
 		TimeoutSec:         pulumi.Int(30),
@@ -281,14 +326,16 @@ func createMIGAutoHealing(
 		}
 	}
 
-	hcName := serviceName + "-" + strconv.Itoa(*healthCheckPort) + "-mig-hc"
 	healthCheck, err := compute.NewHealthCheck(ctx, hcName, hcArgs, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating health check for %s: %w", serviceName, err)
 	}
 
+	// No "-fw" suffix: the GCP console's own type column already says
+	// "Firewall rule", and sharing the health check's logical name is fine --
+	// Pulumi's URN disambiguates by resource type, not name alone.
 	portStr := strconv.Itoa(*healthCheckPort)
-	if _, err := compute.NewFirewall(ctx, serviceName+"-mig-hc-fw", &compute.FirewallArgs{
+	if _, err := compute.NewFirewall(ctx, hcName, &compute.FirewallArgs{
 		Network: network,
 		// https://cloud.google.com/load-balancing/docs/health-checks#firewall_rules
 		SourceRanges: pulumi.StringArray{
@@ -338,6 +385,52 @@ func buildMIGUpdatePolicy(numZones, targetSize int) *compute.RegionInstanceGroup
 	policy.MaxSurgeFixed = pulumi.Int(batchSize)
 	policy.MaxUnavailableFixed = pulumi.Int(batchSize)
 	return policy
+}
+
+// grantSecretAccess grants the instance service account
+// roles/secretmanager.secretAccessor on every Secret Manager secret referenced
+// (as a bare ${VAR} or null "KEY:") by the main container or any sidecar, so the
+// boot-time fetch script can read them. Secret IDs are deduped across
+// containers. Returns the created members for use as instance-template
+// dependencies.
+func grantSecretAccess(
+	ctx *pulumi.Context,
+	serviceName string,
+	sa *ServiceIdentity,
+	mainPlan containerSecretPlan,
+	sidecarPlans map[string]containerSecretPlan,
+	parentOpt pulumi.ResourceOrInvokeOption,
+) ([]pulumi.Resource, error) {
+	seen := make(map[string]struct{})
+	var ids []string
+	collect := func(plan containerSecretPlan) {
+		for _, r := range plan.secretRefs {
+			if _, ok := seen[r.secretID]; !ok {
+				seen[r.secretID] = struct{}{}
+				ids = append(ids, r.secretID)
+			}
+		}
+	}
+	collect(mainPlan)
+	for _, plan := range common.Sorted(sidecarPlans) {
+		collect(plan)
+	}
+
+	var members []pulumi.Resource
+	for _, sid := range ids {
+		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
+		member, err := secretmanager.NewSecretIamMember(ctx, serviceName+"-secret-"+sid,
+			&secretmanager.SecretIamMemberArgs{
+				SecretId: pulumi.String(sid),
+				Role:     pulumi.String("roles/secretmanager.secretAccessor"),
+				Member:   pulumi.Sprintf("serviceAccount:%v", sa.Email),
+			}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("granting secret access for %s: %w", sid, err)
+		}
+		members = append(members, member)
+	}
+	return members, nil
 }
 
 // AddRolesToServiceAccount grants IAM roles to a service account at the project level.
@@ -492,6 +585,131 @@ func dockerRunFlags(
 	return params, command
 }
 
+// computeSecretEnv maps a container env var to the Secret Manager secret ID
+// whose latest version supplies its value. The value is fetched at container
+// start (see secretFetchScript) instead of being embedded in instance metadata,
+// which is readable unauthenticated from the instance.
+type computeSecretEnv struct {
+	envKey   string
+	secretID string
+}
+
+// containerSecretPlan is the per-container result of classifyComputeSecretEnv:
+// the env values inlined into `docker run -e` and the ones boot-fetched from
+// Secret Manager.
+type containerSecretPlan struct {
+	inline     compose.Environment
+	secretRefs []computeSecretEnv
+}
+
+// classifyComputeSecretEnv splits a container's environment into values inlined
+// into the `docker run` command (static literals and dynamic Outputs) and
+// native secret references (bare ${VAR} or null "KEY:") that are boot-fetched
+// from Secret Manager. Interpolated values (mixed literal + ${VAR}) stay on the
+// inline path for now; resolving them without leaking plaintext into instance
+// metadata needs deploy-time derived configs — see issue 293. With no config
+// provider (e.g. standalone with no secrets), everything is inlined.
+func classifyComputeSecretEnv(
+	ctx *pulumi.Context, cp compose.ConfigProvider, env compose.Environment,
+) containerSecretPlan {
+	if cp == nil {
+		return containerSecretPlan{inline: env}
+	}
+	plan := containerSecretPlan{inline: make(compose.Environment, len(env))}
+	// Iterate sorted so the generated fetch script and IAM bindings are stable.
+	for k, v := range common.Sorted(env) {
+		if configKey := compose.GetConfigName2(k, v); configKey != "" {
+			if secretID, err := cp.GetSecretRef(ctx, configKey); err == nil && secretID != "" {
+				plan.secretRefs = append(plan.secretRefs, computeSecretEnv{envKey: k, secretID: secretID})
+				continue
+			}
+			// Couldn't resolve a ref: fall through and inline (matches the
+			// pre-secrets behavior rather than dropping the variable).
+		}
+		plan.inline[k] = v
+	}
+	return plan
+}
+
+// secretFetchScript returns the cloud-init write_files block for the boot-time
+// secret fetch script, the systemd ExecStartPre line that runs it, and the
+// `docker run --env-file` flag that injects the fetched values. All three are
+// empty when there are no secret refs.
+//
+// The script reads the instance service account's OAuth token from the metadata
+// server and fetches each secret's latest version from the Secret Manager REST
+// API — no gcloud (absent on Container-Optimized OS) required. Values land in a
+// tmpfs file (0600, /run) that never touches disk or instance metadata.
+//
+// NOTE: docker --env-file is line-oriented, so a secret whose value contains a
+// newline (e.g. a PEM key) cannot be injected this way. Such values need a
+// per-secret file mount; tracked as a follow-up.
+// Returns (write_files block, ExecStartPre line, docker --env-file flag).
+func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string, string, string) {
+	if len(refs) == 0 {
+		return "", "", ""
+	}
+	// /run, not /opt: Container-Optimized OS mounts its root filesystem
+	// read-only, so cloud-init's write_files fails with EROFS creating any
+	// directory under /opt -- surfaced live via defang-mvp#3181 (real GCE
+	// boot: "OSError: [Errno 30] Read-only file system: '/opt/defang'").
+	// /run is tmpfs, always writable, and already used for the env file below.
+	//
+	// tmpfs does not cost us the script across reboots: COS runs write_files
+	// and runcmd on EVERY boot (they are once-per-instance on other distros),
+	// because its /etc and /var/lib/cloud are stateless tmpfs too -- which is
+	// also why the systemd units below survive only by being rewritten. See
+	// https://cloud.google.com/container-optimized-os/docs/how-to/create-configure-instance
+	scriptPath := "/run/defang/" + unit + "-secrets.sh"
+	envFile := "/run/defang/" + unit + ".env"
+
+	// Bound both requests. The units that run this as ExecStartPre are
+	// Type=oneshot, which disables systemd's default start timeout, so an
+	// unbounded curl could stall a boot indefinitely on a network stall.
+	const curlOpts = `-fsS --connect-timeout 5 --max-time 30`
+
+	// Fail fast: a fetch that errors out (or yields an empty token) must fail
+	// ExecStartPre so the unit does not start the container with an empty
+	// secret value — a silent empty credential is far harder to diagnose than
+	// a unit that refuses to start. `curl -f` turns HTTP errors into non-zero
+	// exits and `grep` exits 1 when the expected field is absent (e.g. an
+	// error payload), so with pipefail every failure mode is caught.
+	var s strings.Builder
+	s.WriteString("#!/bin/bash\n")
+	s.WriteString("set -euo pipefail\n")
+	s.WriteString("umask 077\n")
+	s.WriteString("mkdir -p /run/defang\n")
+	// Google APIs pretty-print JSON by default (a space after the colon, e.g.
+	// `"data": "..."`), so the extraction must tolerate optional whitespace
+	// there -- a bare `":"` pattern never matches a real response and every
+	// secret-backed boot would fail fetching. See
+	// https://cloud.google.com/apis/docs/system-parameters (prettyPrint).
+	fmt.Fprintf(&s, `tok=$(curl %s -H "Metadata-Flavor: Google" `+
+		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token `+
+		`| grep -o '"access_token": *"[^"]*"' | cut -d'"' -f4)`+"\n", curlOpts)
+	s.WriteString(`[ -n "$tok" ] || { echo "defang: empty metadata token" >&2; exit 1; }` + "\n")
+	fmt.Fprintf(&s, `sm() { curl %s -H "Authorization: Bearer $tok" `+
+		`"https://secretmanager.googleapis.com/v1/projects/%s/secrets/$1/versions/latest:access" `+
+		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", curlOpts, gcpProject)
+	s.WriteString("{\n")
+	for _, r := range refs {
+		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n",
+			r.secretID, r.secretID)
+		fmt.Fprintf(&s, "printf '%%s=%%s\\n' '%s' \"$v\"\n", r.envKey)
+	}
+	fmt.Fprintf(&s, "} > %s\n", envFile)
+
+	// Indent the script body under the write_files `content: |` block (6 spaces).
+	var wf strings.Builder
+	fmt.Fprintf(&wf, "\n  - path: %s\n    permissions: \"0700\"\n    owner: root\n    content: |\n", scriptPath)
+	for _, line := range strings.Split(strings.TrimRight(s.String(), "\n"), "\n") {
+		wf.WriteString("      ")
+		wf.WriteString(line)
+		wf.WriteString("\n")
+	}
+	return wf.String(), "ExecStartPre=" + scriptPath, "--env-file " + envFile
+}
+
 // flattenEnvFlags renders `-e "K=V"` docker flags for the given static env
 // pairs followed by the service's compose environment. Dynamic (Output)
 // values are threaded through a Sprintf so they resolve at apply time.
@@ -531,6 +749,25 @@ func stopGraceSeconds(svc compose.ServiceConfig) int {
 	return 30
 }
 
+// buildUnitDependencies renders the [Unit] ordering directives for the main
+// service: it always waits on gcr-online + docker, and additionally requires and
+// orders After each same-instance sidecar named in depends_on (cross-instance
+// dependencies aren't enforceable from a single unit).
+func buildUnitDependencies(
+	serviceName string, svc compose.ServiceConfig, sidecars map[string]compose.ServiceConfig,
+) string {
+	var dependencies strings.Builder
+	dependencies.WriteString("Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket")
+	for name := range common.Sorted(svc.DependsOn) {
+		if _, ok := sidecars[name]; !ok {
+			continue // only same-instance sidecar dependencies are enforceable here
+		}
+		unit := sidecarUnitName(serviceName, name)
+		fmt.Fprintf(&dependencies, "\n      Requires=%s.service\n      After=%s.service", unit, unit)
+	}
+	return dependencies.String()
+}
+
 // getCloudInitConfig generates a cloud-init YAML string for running a container on
 // Container-Optimized OS using systemd. For portless services it adds an HTTP health
 // check sidecar so the MIG auto-healer can probe container liveness. User-defined
@@ -541,14 +778,26 @@ func getCloudInitConfig(
 	image pulumi.StringInput,
 	svc compose.ServiceConfig,
 	region, etag, projectName, stack, fqdn string,
+	gcpProject string,
 	addHealthCheckSidecar bool,
 	sidecars map[string]compose.ServiceConfig,
+	mainPlan containerSecretPlan,
+	sidecarPlans map[string]containerSecretPlan,
 ) pulumi.StringOutput {
 	var buf strings.Builder
 	buf.WriteString("#cloud-config\n\nwrite_files:")
 
 	containerName := svc.GetContainerName(serviceName)
 	params, command := dockerRunFlags(svc, sidecars)
+
+	// Secret env vars are boot-fetched into a tmpfs env-file rather than embedded
+	// in instance metadata. The fetch script is written first so it precedes the
+	// service unit in write_files.
+	secretWriteFile, secretExecPre, secretEnvFileFlag := secretFetchScript(gcpProject, serviceName, mainPlan.secretRefs)
+	if secretEnvFileFlag != "" {
+		params = append(params, secretEnvFileFlag)
+	}
+	buf.WriteString(escapePercent(secretWriteFile))
 
 	// Defang-injected runtime vars, mirroring the Cloud Run path (buildEnvVars).
 	staticEnv := [][2]string{{"DEFANG_SERVICE", serviceName}}
@@ -558,17 +807,9 @@ func getCloudInitConfig(
 	if fqdn != "" {
 		staticEnv = append(staticEnv, [2]string{"DEFANG_FQDN", fqdn})
 	}
-	envFlags := flattenEnvFlags(staticEnv, svc.Environment)
+	envFlags := flattenEnvFlags(staticEnv, mainPlan.inline)
 
-	var dependencies strings.Builder
-	dependencies.WriteString("Wants=gcr-online.target docker.socket\n      After=gcr-online.target docker.socket")
-	for name := range common.Sorted(svc.DependsOn) {
-		if _, ok := sidecars[name]; !ok {
-			continue // only same-instance sidecar dependencies are enforceable here
-		}
-		unit := sidecarUnitName(serviceName, name)
-		fmt.Fprintf(&dependencies, "\n      Requires=%s.service\n      After=%s.service", unit, unit)
-	}
+	dependencies := buildUnitDependencies(serviceName, svc, sidecars)
 
 	runcmds := make([]string, 0, 5+4+2*len(sidecars)+2)
 	runcmds = append(runcmds,
@@ -589,7 +830,7 @@ func getCloudInitConfig(
 	}
 	for name, sc := range common.Sorted(sidecars) {
 		var unitText pulumi.StringInput
-		unitText, runcmds = buildSidecarUnit(serviceName, name, region, sc, sidecars, runcmds)
+		unitText, runcmds = buildSidecarUnit(serviceName, name, region, gcpProject, sc, sidecars, sidecarPlans[name], runcmds)
 		extraUnitsFmt.WriteString("%s")
 		extraUnitsArgs = append(extraUnitsArgs, unitText)
 	}
@@ -613,6 +854,7 @@ func getCloudInitConfig(
       Restart=always
       RestartSec=30
       Environment="HOME=/home/container-user"
+      %[9]s
       ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries %[5]s-docker.pkg.dev
       ExecStart=/usr/bin/docker run --pull=always --rm --name=%[7]s %[3]s %%s%%s %[4]s
       ExecStop=/usr/bin/docker stop -t %[6]d %[7]s
@@ -626,13 +868,14 @@ runcmd:
   - %[8]s
 `,
 		serviceName,
-		escapePercent(dependencies.String()),
+		escapePercent(dependencies),
 		escapePercent(strings.Join(params, " ")),
 		escapePercent(strings.Join(command, " ")),
 		region,
 		stopGraceSeconds(svc),
 		containerName,
-		escapePercent(strings.Join(runcmds, "\n  - ")))
+		escapePercent(strings.Join(runcmds, "\n  - ")),
+		escapePercent(secretExecPre))
 
 	// buf now contains exactly three %s placeholders (env flags, image, and
 	// extra units — the Inputs that may resolve at apply time); all other
@@ -677,15 +920,22 @@ func sidecarUnitName(serviceName, sidecarName string) string {
 // --volumes-from keeps working across restarts; a run-once sidecar (restart: "no")
 // becomes a oneshot unit the main service can order After=.
 func buildSidecarUnit(
-	serviceName, sidecarName, region string,
+	serviceName, sidecarName, region, gcpProject string,
 	sc compose.ServiceConfig,
 	sidecars map[string]compose.ServiceConfig,
+	plan containerSecretPlan,
 	runcmds []string,
 ) (pulumi.StringInput, []string) {
 	unit := sidecarUnitName(serviceName, sidecarName)
 	containerName := sc.GetContainerName(sidecarName)
 	params, command := dockerRunFlags(sc, sidecars)
-	envFlags := flattenEnvFlags(nil, sc.Environment)
+
+	// Boot-fetch this sidecar's secret env into its own tmpfs env-file.
+	secretWriteFile, secretExecPre, secretEnvFileFlag := secretFetchScript(gcpProject, unit, plan.secretRefs)
+	if secretEnvFileFlag != "" {
+		params = append(params, secretEnvFileFlag)
+	}
+	envFlags := flattenEnvFlags(nil, plan.inline)
 
 	var serviceSection string
 	if sc.Restart == "no" {
@@ -695,7 +945,10 @@ func buildSidecarUnit(
 			stopGraceSeconds(sc), containerName)
 	}
 
-	units := pulumi.Sprintf(`
+	// %[11]s (secret fetch script write_files entry) and %[12]s (its
+	// ExecStartPre) are passed as Sprintf argument values, so any '%' in the
+	// script survives literally without escaping.
+	units := pulumi.Sprintf(`%[11]s
   - path: /etc/systemd/system/%[1]s.service
     permissions: "0644"
     owner: root
@@ -709,6 +962,7 @@ func buildSidecarUnit(
       [Service]
       %[4]s
       Environment="HOME=/home/container-user"
+      %[12]s
       ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries %[5]s-docker.pkg.dev
       ExecStartPre=-/usr/bin/docker rm -f %[6]s
       ExecStart=/usr/bin/docker run --pull=always --name=%[6]s %[7]s %[8]s%[9]s %[10]s
@@ -727,7 +981,9 @@ func buildSidecarUnit(
 		strings.Join(params, " "),
 		envFlags,
 		sc.Image, // validated non-nil in createService; may resolve at apply time
-		strings.Join(command, " "))
+		strings.Join(command, " "),
+		secretWriteFile,
+		secretExecPre)
 
 	runcmds = append(runcmds,
 		fmt.Sprintf("systemctl enable %s.service", unit),
