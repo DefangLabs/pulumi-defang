@@ -668,7 +668,7 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	scriptPath := "/run/defang/" + unit + "-secrets.sh"
 	envFile := "/run/defang/" + unit + ".env"
 
-	// Bound both requests. The units that run this as ExecStartPre are
+	// Bound each request. The units that run this as ExecStartPre are
 	// Type=oneshot, which disables systemd's default start timeout, so an
 	// unbounded curl could stall a boot indefinitely on a network stall.
 	const curlOpts = `-fsS --connect-timeout 5 --max-time 30`
@@ -684,18 +684,35 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 	s.WriteString("set -euo pipefail\n")
 	s.WriteString("umask 077\n")
 	s.WriteString("mkdir -p /run/defang\n")
+	// The instance template depends on the per-secret secretAccessor IAM
+	// binding, so provisioning is ordered correctly, but IAM propagation can
+	// still lag several minutes behind that ordering: an instance that boots
+	// inside that window gets a 403 from Secret Manager, and a bare metadata
+	// server hiccup has the same shape. curl_retry gives both requests 5
+	// attempts with exponential backoff (2/4/8/16s, ~30s total) before giving
+	// up -- each attempt is still bounded by curlOpts above, so this cannot
+	// stall a boot indefinitely.
+	fmt.Fprintf(&s, "curl_retry() {\n"+
+		"  local attempt=1 max=5 delay=2\n"+
+		"  while ! curl %s \"$@\"; do\n"+
+		"    [ \"$attempt\" -ge \"$max\" ] && return 1\n"+
+		"    sleep \"$delay\"\n"+
+		"    delay=$((delay * 2))\n"+
+		"    attempt=$((attempt + 1))\n"+
+		"  done\n"+
+		"}\n", curlOpts)
 	// Google APIs pretty-print JSON by default (a space after the colon, e.g.
 	// `"data": "..."`), so the extraction must tolerate optional whitespace
 	// there -- a bare `":"` pattern never matches a real response and every
 	// secret-backed boot would fail fetching. See
 	// https://cloud.google.com/apis/docs/system-parameters (prettyPrint).
-	fmt.Fprintf(&s, `tok=$(curl %s -H "Metadata-Flavor: Google" `+
-		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token `+
-		`| grep -o '"access_token": *"[^"]*"' | cut -d'"' -f4)`+"\n", curlOpts)
+	s.WriteString(`tok=$(curl_retry -H "Metadata-Flavor: Google" ` +
+		`http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token ` +
+		`| grep -o '"access_token": *"[^"]*"' | cut -d'"' -f4)` + "\n")
 	s.WriteString(`[ -n "$tok" ] || { echo "defang: empty metadata token" >&2; exit 1; }` + "\n")
-	fmt.Fprintf(&s, `sm() { curl %s -H "Authorization: Bearer $tok" `+
+	fmt.Fprintf(&s, `sm() { curl_retry -H "Authorization: Bearer $tok" `+
 		`"https://secretmanager.googleapis.com/v1/projects/%s/secrets/$1/versions/latest:access" `+
-		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", curlOpts, gcpProject)
+		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
 	s.WriteString("{\n")
 	for _, r := range refs {
 		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n",

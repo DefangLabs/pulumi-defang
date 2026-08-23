@@ -292,10 +292,12 @@ func TestSecretFetchScript(t *testing.T) {
 	assert.Contains(t, wf, "set -euo pipefail")
 	assert.Contains(t, wf, `[ -n "$tok" ]`)
 	assert.Contains(t, wf, "curl -fsS")
-	// Both requests must be bounded: ExecStartPre runs in Type=oneshot units,
-	// which have no default systemd start timeout, so an unbounded curl would
-	// stall the boot indefinitely.
-	assert.Equal(t, 2, strings.Count(wf, "--connect-timeout 5 --max-time 30"))
+	// Both requests share one curl_retry helper, so the per-attempt bound
+	// (ExecStartPre runs in Type=oneshot units, which have no default systemd
+	// start timeout -- an unbounded curl would stall the boot indefinitely)
+	// appears once, in the helper's definition, not once per call site.
+	assert.Equal(t, 1, strings.Count(wf, "--connect-timeout 5 --max-time 30"))
+	assert.Equal(t, 2, strings.Count(wf, "curl_retry -H"))
 
 	// no refs -> no output
 	wf2, pre2, flag2 := secretFetchScript("p", "svc", nil)
@@ -312,21 +314,7 @@ func TestSecretFetchScript(t *testing.T) {
 // on the script text.
 func TestSecretFetchScriptExtractsPrettyPrintedJSON(t *testing.T) {
 	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
-
-	// Reconstruct the raw script from the write_files `content: |` block
-	// (each line indented 6 spaces further, see secretFetchScript).
-	var raw []string
-	inContent := false
-	for _, line := range strings.Split(wf, "\n") {
-		if strings.Contains(line, "content: |") {
-			inContent = true
-			continue
-		}
-		if inContent {
-			raw = append(raw, strings.TrimPrefix(line, "      "))
-		}
-	}
-	require.NotEmpty(t, raw)
+	raw := rawScriptLines(t, wf)
 
 	// Keep everything through the sm() definition. Drop the /run write (no
 	// permission to create it in a test sandbox) and stop before the block
@@ -370,6 +358,119 @@ export -f curl
 	}
 	require.NoError(t, err)
 	assert.Equal(t, secretValue, strings.TrimSpace(string(out)))
+}
+
+// rawScriptLines reconstructs the raw bash script from a write_files
+// `content: |` block (each line indented 6 spaces further, see
+// secretFetchScript), so tests can run the actual generated script instead of
+// asserting on its text.
+func rawScriptLines(t *testing.T, wf string) []string {
+	t.Helper()
+	var raw []string
+	inContent := false
+	for _, line := range strings.Split(wf, "\n") {
+		if strings.Contains(line, "content: |") {
+			inContent = true
+			continue
+		}
+		if inContent {
+			raw = append(raw, strings.TrimPrefix(line, "      "))
+		}
+	}
+	require.NotEmpty(t, raw)
+	return raw
+}
+
+// curlRetrySetup returns the script lines through the closing brace of the
+// generated curl_retry() definition, dropping the /run write (no permission
+// to create it in a test sandbox).
+func curlRetrySetup(t *testing.T, wf string) []string {
+	t.Helper()
+	raw := rawScriptLines(t, wf)
+	var setup []string
+	inFunc := false
+	for _, line := range raw {
+		if strings.Contains(line, "mkdir -p /run/defang") {
+			continue
+		}
+		setup = append(setup, line)
+		if strings.Contains(line, "curl_retry() {") {
+			inFunc = true
+			continue
+		}
+		if inFunc && strings.TrimSpace(line) == "}" {
+			return setup
+		}
+	}
+	t.Fatal("curl_retry() definition not found in generated script")
+	return nil
+}
+
+// curl_retry must retry a failing request with backoff before giving up. This
+// runs the actual generated retry loop against a curl stub that fails twice
+// then succeeds, and a no-op sleep stub so the test doesn't block on the real
+// ~30s of backoff -- it asserts on attempt count and behavior, not timing.
+func TestSecretFetchScriptRetriesOnTransientFailure(t *testing.T) {
+	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
+	setup := curlRetrySetup(t, wf)
+
+	script := `
+n=0
+sleeps=0
+curl() {
+  n=$((n+1))
+  [ "$n" -lt 3 ] && return 22
+  echo ok
+}
+export -f curl
+sleep() { sleeps=$((sleeps+1)); }
+export -f sleep
+` + strings.Join(setup, "\n") + `
+curl_retry -H test http://example.invalid || rc=$?
+echo "rc=${rc:-0} n=$n sleeps=$sleeps"
+`
+	//nolint:gosec // G204: script is test-authored, not external input
+	out, err := exec.CommandContext(t.Context(), "bash", "-c", script).Output()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		t.Fatalf("script failed: %v\nstderr: %s", err, ee.Stderr)
+	}
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	// Succeeds on the 3rd attempt, after 2 backoff sleeps. curl_retry's own
+	// stdout (the stubbed "ok" from the successful attempt) precedes this.
+	assert.Equal(t, "rc=0 n=3 sleeps=2", lines[len(lines)-1])
+}
+
+// Once curl_retry's attempts are exhausted it must give up rather than retry
+// forever, returning failure so the caller's existing fail-fast handling
+// (non-zero exit, stderr message, ExecStartPre failure) still applies.
+func TestSecretFetchScriptGivesUpAfterMaxAttempts(t *testing.T) {
+	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
+	setup := curlRetrySetup(t, wf)
+
+	script := `
+n=0
+curl() {
+  n=$((n+1))
+  return 22
+}
+export -f curl
+sleep() { :; }
+export -f sleep
+` + strings.Join(setup, "\n") + `
+curl_retry -H test http://example.invalid || rc=$?
+echo "rc=${rc:-0} n=$n"
+`
+	//nolint:gosec // G204: script is test-authored, not external input
+	out, err := exec.CommandContext(t.Context(), "bash", "-c", script).Output()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		t.Fatalf("script failed: %v\nstderr: %s", err, ee.Stderr)
+	}
+	require.NoError(t, err)
+	// 5 attempts total, then gives up -- never retries forever.
+	assert.Equal(t, "rc=1 n=5", strings.TrimSpace(string(out)))
 }
 
 // getCloudInitConfig must boot-fetch secret env (not inline it) while still
