@@ -501,10 +501,15 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.Ing
 			break // TODO: support more than one ingress port
 		}
 	}
-	return &app.IngressArgs{
+	ingress := &app.IngressArgs{
 		External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
 		TargetPort: pulumi.Int(ingressPort.Target),
 	}
+	if ingressPort.AppProtocol == compose.PortAppProtocolGRPC ||
+		ingressPort.AppProtocol == compose.PortAppProtocolHTTP2 {
+		ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodHttp2))
+	}
+	return ingress
 }
 
 // buildProbes returns the liveness probe(s) for a Container App.
