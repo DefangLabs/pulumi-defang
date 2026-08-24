@@ -505,8 +505,8 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.Ing
 		External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
 		TargetPort: pulumi.Int(ingressPort.Target),
 	}
-	switch ingressPort.AppProtocol {
-	case compose.PortAppProtocolGRPC, compose.PortAppProtocolHTTP2:
+	if ingressPort.AppProtocol == compose.PortAppProtocolGRPC ||
+		ingressPort.AppProtocol == compose.PortAppProtocolHTTP2 {
 		ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodHttp2))
 	}
 	return ingress
