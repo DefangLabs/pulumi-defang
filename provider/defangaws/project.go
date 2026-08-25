@@ -120,7 +120,11 @@ func (*Project) Construct(
 		return nil, err
 	}
 
-	result, err := buildProject(ctx, name, inputs, pulumi.Parent(comp))
+	// The engine gives Construct the plugin identity for our own package;
+	// children do not inherit it, so carry it to the Build registration.
+	pluginID := common.PluginIdentityFrom(Version, opts)
+
+	result, err := buildProject(ctx, name, inputs, pluginID, pulumi.Parent(comp))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AWS resources: %w", err)
@@ -169,6 +173,7 @@ func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
 	args ProjectInputs,
+	pluginID common.PluginIdentity,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*projectResult, error) {
 	awsConfig := (*provideraws.AWSConfig)(args.AWS)
@@ -241,7 +246,8 @@ func buildProject(
 
 		waitForHealthy := waitForSteady[svcName] || args.WaitForSteadyState
 		endpoint, dependency, svcComp, datastoreID, err := newService(
-			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps, parentOpt)
+			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps,
+			pluginID, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
@@ -316,6 +322,7 @@ func newService(
 	sidecars map[string]compose.ServiceConfig,
 	waitForSteadyState bool,
 	deps []pulumi.Resource,
+	pluginID common.PluginIdentity,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (pulumi.StringOutput, pulumi.Resource, *ServiceOutputs, pulumi.StringInput, error) {
 	var endpoint pulumi.StringOutput
@@ -355,7 +362,7 @@ func newService(
 		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, parentOpt); regErr != nil {
 			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
 		}
-		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pulumi.Parent(svcComp))
+		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pluginID, pulumi.Parent(svcComp))
 		if imgErr != nil {
 			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}

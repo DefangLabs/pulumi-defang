@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws"
 	awsprov "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
@@ -317,4 +319,38 @@ func TestConstructAwsProjectDuplicatePoliciesDeduped(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, count, "duplicate x-defang-policies entries must be deduped")
+}
+
+// TestConstructAwsProjectBuildCarriesPluginIdentity asserts that the Build
+// resource the provider registers for itself tells the engine both where to
+// fetch the plugin from and which version of it to use. Registrations that go
+// through a generated SDK get both for free; the ones we make with a raw
+// ctx.RegisterResource do not, and omitting them strands the stack on destroy.
+// See common.PluginIdentityFrom.
+func TestConstructAwsProjectBuildCarriesPluginIdentity(t *testing.T) {
+	// Pin a version the way the linker does for a release build, so the
+	// assertion covers the version as well as the URL.
+	prev := defangaws.Version
+	defangaws.Version = "9.9.9"
+	t.Cleanup(func() { defangaws.Version = prev })
+
+	mock, tracker := testutil.NewPluginTracker()
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"builder": property.New(property.NewMap(map[string]property.Value{
+					"build": property.New(property.NewMap(map[string]property.Value{
+						"context": property.New("s3://bucket/uploads/digest.tar.gz"),
+					})),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
 }

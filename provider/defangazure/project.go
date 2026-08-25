@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
@@ -222,6 +223,7 @@ func createServiceResources(
 	serviceIds pulumi.StringMap,
 	llmModels map[string]string,
 	dnsZones map[string]string,
+	pluginID common.PluginIdentity,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	comp := &serviceComponent{}
@@ -271,7 +273,7 @@ func createServiceResources(
 		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, childOpts...); err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
-		imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, pulumi.Parent(svcComp))
+		imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, pluginID, pulumi.Parent(svcComp))
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
@@ -522,6 +524,10 @@ func (*Project) Construct(
 	parentOpt := pulumi.Parent(comp)
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
+	// The engine gives Construct the plugin identity for our own package;
+	// children do not inherit it, so carry it to the Build registration.
+	pluginID := common.PluginIdentityFrom(Version, opts)
+
 	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, parentOpt)
 	if err != nil {
 		return nil, err
@@ -547,7 +553,8 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones,
+			pluginID, childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -559,7 +566,8 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones,
+			pluginID, childOpts,
 		)
 		if err != nil {
 			return nil, err

@@ -1,6 +1,8 @@
 package defangaws
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
@@ -43,7 +45,7 @@ func Provider() p.Provider {
 			Publisher:         "Defang",
 			LogoURL:           "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
 			License:           "Apache-2.0",
-			PluginDownloadURL: "github://api.github.com/DefangLabs/pulumi-defang",
+			PluginDownloadURL: common.PluginDownloadURL,
 			LanguageMap: map[string]any{
 				// pkg/v3/codegen/dotnet (CSharpPackageInfo) moved out of pulumi/pulumi
 				// after pkg v3.227; inline the equivalent schema JSON instead of

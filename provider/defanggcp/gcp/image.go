@@ -145,10 +145,11 @@ func GetServiceImage(
 	svc compose.ServiceConfig,
 	repos map[string]*artifactregistry.Repository,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {
-		return buildServiceImage(ctx, serviceName, svc, infra, opts...)
+		return buildServiceImage(ctx, serviceName, svc, infra, pluginID, opts...)
 	}
 	if svc.Image == nil {
 		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
@@ -271,6 +272,7 @@ func buildServiceImage(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	dest := pulumi.Sprintf("%s/%s:latest", infra.RepositoryURL, serviceName)
@@ -309,7 +311,7 @@ func buildServiceImage(
 			"diskSizeGb":     pulumi.Int(cloudBuildDiskSizeGb(shmBytes)),
 		},
 		&buildRes,
-		buildOpts...,
+		pluginID.ResourceOptions(buildOpts...)...,
 	); err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating Build resource for %s: %w", serviceName, err)
 	}

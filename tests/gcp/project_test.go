@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	defanggcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
@@ -1310,4 +1311,39 @@ func TestConstructGcpProjectDuplicatePoliciesDeduped(t *testing.T) {
 		return m.Get("role").AsString() == "roles/run.developer"
 	})
 	assert.Equal(t, 1, members, "duplicate x-defang-policies entries must be deduped")
+}
+
+// TestConstructGcpProjectBuildCarriesPluginIdentity asserts that the Build
+// resource the provider registers for itself tells the engine both where to
+// fetch the plugin from and which version of it to use. Registrations that go
+// through a generated SDK get both for free; the ones we make with a raw
+// ctx.RegisterResource do not, and omitting them strands the stack on destroy.
+// See common.PluginIdentityFrom.
+func TestConstructGcpProjectBuildCarriesPluginIdentity(t *testing.T) {
+	// Pin a version the way the linker does for a release build, so the
+	// assertion covers the version as well as the URL.
+	prev := defanggcp.Version
+	defanggcp.Version = "9.9.9"
+	t.Cleanup(func() { defanggcp.Version = prev })
+
+	mock, tracker := testutil.NewPluginTracker()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"builder": property.New(property.NewMap(map[string]property.Value{
+					"build": property.New(property.NewMap(map[string]property.Value{
+						"context": property.New("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
+					})),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
 }
