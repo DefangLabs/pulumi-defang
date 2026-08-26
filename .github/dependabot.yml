@@ -25,6 +25,8 @@ updates:
       - "/cd"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       # azure-native is the only Pulumi SDK we use that ships as many
       # independently-versioned subpackages (app/v3, network/v3,
@@ -51,3 +53,5 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
