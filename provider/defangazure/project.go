@@ -273,7 +273,8 @@ func createServiceResources(
 		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, childOpts...); err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
-		imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, pluginID, pulumi.Parent(svcComp))
+		imageURI, err := providerazure.GetServiceImage(
+			ctx, svcName, svc, infra.BuildInfra, infra, pluginID, pulumi.Parent(svcComp))
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
