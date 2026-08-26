@@ -41,7 +41,7 @@ require (
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.34.1
 	github.com/pulumi/pulumi-go-provider v1.5.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.1
-	github.com/pulumi/pulumi/pkg/v3 v3.257.0
+	github.com/pulumi/pulumi/pkg/v3 v3.258.0
 	github.com/pulumi/pulumi/sdk/v3 v3.259.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.293.0
@@ -168,8 +168,8 @@ require (
 	github.com/zalando/go-keyring v0.2.8 // indirect
 	github.com/zclconf/go-cty v1.16.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.64.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.64.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.65.0 // indirect
+	go.opentelemetry.io/collector/pdata v1.65.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
