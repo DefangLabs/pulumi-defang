@@ -155,6 +155,7 @@ func buildServiceImage(
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
 	sharedInfra *SharedInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
@@ -201,7 +202,7 @@ func buildServiceImage(
 		"contextPath":        svc.Build.Context,
 		"encodedTaskContent": pulumi.String(encodedYAML),
 		"triggers":           pulumi.StringArray{triggerHash},
-	}, &buildResource, buildOpts...)
+	}, &buildResource, pluginID.ResourceOptions(buildOpts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ACRImage Build resource for %s: %w", serviceName, err)
 	}
@@ -218,10 +219,11 @@ func GetServiceImage(
 	svc compose.ServiceConfig,
 	buildInfra *BuildInfra,
 	sharedInfra *SharedInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build != nil && buildInfra != nil {
-		result, err := buildServiceImage(ctx, serviceName, svc, buildInfra, sharedInfra, opts...)
+		result, err := buildServiceImage(ctx, serviceName, svc, buildInfra, sharedInfra, pluginID, opts...)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}

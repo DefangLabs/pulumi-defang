@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
@@ -219,7 +220,7 @@ func TestGetServiceImage(t *testing.T) {
 			var gotImage string
 			var wg sync.WaitGroup
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.repos, tt.infra)
+				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.repos, tt.infra, common.PluginIdentity{})
 				if tt.wantErr {
 					assert.Error(t, err)
 					return nil
@@ -442,7 +443,7 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 			},
 		}
 
-		_, err = buildServiceImage(ctx, "my-svc", svc, infra)
+		_, err = buildServiceImage(ctx, "my-svc", svc, infra, common.PluginIdentity{})
 		return err
 	}, pulumi.WithMocks("proj", "stack", spy))
 

@@ -65,7 +65,11 @@ func (*Project) Construct(
 
 	childOpt := pulumi.Parent(comp)
 
-	result, err := buildProject(ctx, name, inputs, childOpt)
+	// The engine gives Construct the plugin identity for our own package;
+	// children do not inherit it, so carry it to the Build registration.
+	pluginID := common.PluginIdentityFrom(Version, opts)
+
+	result, err := buildProject(ctx, name, inputs, pluginID, childOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP resources: %w", err)
 	}
@@ -91,6 +95,7 @@ func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
 	args ProjectInputs,
+	pluginID common.PluginIdentity,
 	parentOpt pulumi.ResourceOption,
 ) (*projectResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
@@ -141,7 +146,7 @@ func buildProject(
 		}
 
 		endpoint, svcComp, lbEntry, datastoreID, err := buildService(
-			ctx, projectName, configProvider, svcName, svc, config, deps, childOpts)
+			ctx, projectName, configProvider, svcName, svc, config, deps, pluginID, childOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -189,6 +194,7 @@ func buildService(
 	svc compose.ServiceConfig,
 	infra *providergcp.SharedInfra,
 	deps []pulumi.Resource,
+	pluginID common.PluginIdentity,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, pulumi.Resource, *providergcp.LBServiceEntry, pulumi.StringInput, error) {
 	var endpoint pulumi.StringOutput
@@ -235,7 +241,7 @@ func buildService(
 		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcCompTyped, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
-		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.Repos, infra.BuildInfra, svcChildOpts...)
+		image, err := providergcp.GetServiceImage(ctx, svcName, svc, infra.Repos, infra.BuildInfra, pluginID, svcChildOpts...)
 		if err != nil {
 			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}

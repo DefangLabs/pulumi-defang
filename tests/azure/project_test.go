@@ -13,6 +13,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	defangazure "github.com/DefangLabs/pulumi-defang/provider/defangazure"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
@@ -129,4 +131,35 @@ func TestConstructAzureProjectRejectsApplicablePolicies(t *testing.T) {
 	})
 
 	require.ErrorContains(t, err, "x-defang-policies is not supported on Azure")
+}
+
+// TestConstructAzureProjectBuildCarriesPluginIdentity asserts that the Build
+// resource the provider registers for itself tells the engine both where to
+// fetch the plugin from and which version of it to use. Registrations that go
+// through a generated SDK get both for free; the ones we make with a raw
+// ctx.RegisterResource do not, and omitting them strands the stack on destroy.
+// See common.PluginIdentityFrom.
+func TestConstructAzureProjectBuildCarriesPluginIdentity(t *testing.T) {
+	// Pin a version the way the linker does for a release build, so the
+	// assertion covers the version as well as the URL.
+	prev := defangazure.Version
+	defangazure.Version = "9.9.9"
+	t.Cleanup(func() { defangazure.Version = prev })
+
+	mock, tracker := testutil.NewPluginTracker()
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"builder": property.New(property.NewMap(map[string]property.Value{
+				"build": property.New(property.NewMap(map[string]property.Value{
+					"context": property.New("https://acct.blob.core.windows.net/uploads/digest.tar.gz?sig=x"),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
 }

@@ -78,6 +78,7 @@ func buildServiceImage(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
@@ -118,7 +119,7 @@ func buildServiceImage(
 		"region":      pulumi.String(infra.region),
 		"destination": cbResult.destination,
 		"triggers":    pulumi.StringArray{triggerHash},
-	}, &buildResource, opts...)
+	}, &buildResource, pluginID.ResourceOptions(opts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild build resource for %s: %w", serviceName, err)
 	}
@@ -138,10 +139,11 @@ func GetServiceImage(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {
-		result, err := buildServiceImage(ctx, serviceName, svc, infra, opts...)
+		result, err := buildServiceImage(ctx, serviceName, svc, infra, pluginID, opts...)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
