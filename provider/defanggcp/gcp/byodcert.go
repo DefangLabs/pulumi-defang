@@ -111,6 +111,7 @@ func createByodCert(
 			warnf(ctx, "BYOD TLS: no Cloud DNS zone in this project hosts %q, and GCP cannot issue a "+
 				"certificate for a wildcard without one. Create the zone in the deploy project and "+
 				"redeploy, or run `defang cert gen` to issue a certificate via ACME.", hostname)
+			//nolint:nilnil // documented contract: nil cert + nil error means "skip, already warned"
 			return nil, nil
 		}
 		warnf(ctx, "BYOD TLS: no Cloud DNS zone in this project hosts %q, so its certificate uses "+
