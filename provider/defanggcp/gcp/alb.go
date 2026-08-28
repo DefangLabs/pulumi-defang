@@ -665,7 +665,8 @@ func buildURLMap(
 		}
 		name := pathMatcherName(entry.Name)
 		if owner, taken := matcherOwner[name]; taken {
-			return nil, fmt.Errorf("services %q and %q both reduce to load balancer route %q: %w", owner, entry.Name, name, errDuplicateRoute)
+			return nil, fmt.Errorf("services %q and %q both reduce to load balancer route %q: %w",
+				owner, entry.Name, name, errDuplicateRoute)
 		}
 		matcherOwner[name] = entry.Name
 		pathMatchers = append(pathMatchers, matcher)

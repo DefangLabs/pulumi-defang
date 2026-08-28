@@ -262,6 +262,10 @@ func publicDNSNames(resources []albResource) []string {
 	return names
 }
 
+// api's delegate hostname under testInfraWithDomain's "proj.example.com" domain,
+// reused across tests that need a hostname api itself would resolve to.
+const testAPIDelegateHostname = "api.proj.example.com"
+
 // Before #373 a service only got a URL-map host rule when it had a BYOD
 // `domainname`. Every other hostname -- including the "<service>.<domain>" names
 // the provider itself creates DNS records for -- fell through to DefaultService,
@@ -281,7 +285,7 @@ func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t 
 	require.Equal(t, 2, routing.hostRuleCount, "expected one host rule per ingress service")
 
 	// api's names reach api; ui's names reach ui -- not the first backend.
-	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname))
 	require.Equal(t, "api-backend_id", routing.backendFor("api--8080.proj.example.com"))
 	require.Equal(t, "ui-backend_id", routing.backendFor("ui.proj.example.com"))
 	require.Equal(t, "ui-backend_id", routing.backendFor("ui--3000.proj.example.com"))
@@ -307,7 +311,7 @@ func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t 
 func TestCreateLoadBalancersRejectsTwoServicesClaimingOneHostname(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		proxy := testCloudRunEntry(t, ctx, "proxy", 80)
-		proxy.Config.DomainName = "api.proj.example.com" // == api's delegate hostname
+		proxy.Config.DomainName = testAPIDelegateHostname // == api's delegate hostname
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "api", 8080),
 			proxy,
@@ -337,7 +341,7 @@ func TestCreateLoadBalancersDeduplicatesByodMatchingOwnDelegateHostname(t *testi
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		entry := testCloudRunEntry(t, ctx, "api", 80)
-		entry.Config.DomainName = "api.proj.example.com"
+		entry.Config.DomainName = testAPIDelegateHostname
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{entry}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -365,7 +369,7 @@ func TestCreateLoadBalancersKeepsByodAndDelegateHostnamesOnOneService(t *testing
 	routing := requireURLMapRouting(t, mocks.resources)
 	require.Equal(t, 2, routing.hostRuleCount, "BYOD should extend the service's host rule, not add one")
 	require.Equal(t, "api-backend_id", routing.backendFor("shop.example.com"))
-	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname))
 	require.Equal(t, "ui-backend_id", routing.backendFor("ui.proj.example.com"))
 }
 
@@ -405,7 +409,7 @@ func TestCreateLoadBalancersSingleServiceKeepsDefaultServiceAndHostRule(t *testi
 	require.Equal(t, 1, routing.hostRuleCount)
 	require.Equal(t, "api-backend_id", routing.defaultService,
 		"an unmatched Host header still reaches the first ingress service")
-	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname))
 }
 
 // Compute Engine services route through buildMIGLBEntry, a separate code path
@@ -429,7 +433,7 @@ func TestCreateLoadBalancersMIGGetsDelegateHostRules(t *testing.T) {
 	require.Equal(t, 2, routing.hostRuleCount)
 	require.Equal(t, "worker-3000-gce-backend_id", routing.backendFor("worker.proj.example.com"))
 	require.Equal(t, "worker-3000-gce-backend_id", routing.backendFor("worker--3000.proj.example.com"))
-	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname))
 }
 
 // Cloud Run allows several ingress ports; each gets a "--<port>" DNS record, so
@@ -456,7 +460,7 @@ func TestCreateLoadBalancersCloudRunMultipleIngressPortsGetHostRules(t *testing.
 	routing := requireURLMapRouting(t, mocks.resources)
 	require.Equal(t, "ui-backend_id", routing.defaultService)
 	for _, host := range []string{
-		"api.proj.example.com", "api--8080.proj.example.com", "api--9090.proj.example.com",
+		testAPIDelegateHostname, "api--8080.proj.example.com", "api--9090.proj.example.com",
 	} {
 		require.Equal(t, "api-backend_id", routing.backendFor(host))
 	}
