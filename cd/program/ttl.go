@@ -83,6 +83,10 @@ var selfDestructEnvExclude = map[string]bool{
 	"DEFANG_ETAG":           true,
 	"DEFANG_PULUMI_TARGETS": true,
 	"DEFANG_TTL":            true,
+	// A one-off permission to take over another CD's state (see
+	// cd/legacy_state.go). Freezing it into the trigger would carry the
+	// override into every future scheduled run.
+	"DEFANG_ALLOW_LEGACY_STATE_TAKEOVER": true,
 	// Points at a token file that only exists in the current container.
 	"AZURE_FEDERATED_TOKEN_FILE": true,
 	// Credentials must never be frozen into a trigger resource; the scheduled

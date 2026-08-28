@@ -22,17 +22,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/cd/program"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 )
 
-// allowLegacyStateTakeoverEnv opts out of the guard. It is for deliberate,
-// supervised use only: it lets Pulumi replace every resource in the stack.
-const allowLegacyStateTakeoverEnv = "DEFANG_ALLOW_LEGACY_STATE_TAKEOVER"
+// allowTakeoverConfigKey opts out of the guard for one tenant.
+//
+// This is the channel that is reachable through the product: recipes are
+// tenant-scoped in Fabric, and their pulumi_config is free-form, so Defang can
+// unblock a single customer without shipping a CLI or a CD image. It is
+// deliberately NOT settable from the customer's shell — disarming this guard
+// can delete a production database, so it belongs to whoever operates the
+// platform, not to whatever happens to be exported in a terminal.
+const allowTakeoverConfigKey = "defang:allowLegacyStateTakeover"
+
+// allowTakeoverEnv is the break-glass equivalent for a CD run started by hand,
+// which has no recipe to carry config. The CLI does not forward it (the CD's
+// environment is a closed allowlist of key names), and it should not: a
+// checked-in .defang stack file can set any variable in the CLI process, so a
+// forwarded variable could disarm the guard for a project permanently and
+// invisibly.
+const allowTakeoverEnv = "DEFANG_ALLOW_LEGACY_STATE_TAKEOVER"
 
 // migrationRunbook is the blue/green migration guide. A sibling workstream owns
 // the file; keep this path in sync with it.
@@ -60,6 +74,23 @@ var ourPackages = map[string]bool{
 	"defang-azure": true,
 }
 
+// ourTopLevelNames are the names this CD gives the few resources it registers
+// at the top level of the stack, outside the Project component. Their URNs
+// carry a plain cloud package, so the name and the position are the only things
+// that tell them apart from an older CD's leftovers.
+//
+// These are string literals on both sides on purpose. Sharing a constant with
+// the creation sites would look like coupling without being any: a new
+// top-level resource declared with a fresh literal still compiles. What does
+// catch that is TestOurTopLevelNamesCoversRecordedPreviews, which checks this
+// list against the resources a real preview of this CD actually registers.
+var ourTopLevelNames = map[string]bool{
+	"project-pb":            true, // program/{aws,gcp,azure}.go, saveProjectPb*
+	"self-destruct":         true, // program/selfdestruct_{aws,gcp}.go
+	"defang-self-destruct":  true, // program/selfdestruct_azure.go, the trigger job
+	"self-destruct-starter": true, // program/selfdestruct_azure.go, its role assignment
+}
+
 // isOurs reports whether a resource was created by this CD.
 func isOurs(res apitype.ResourceV3) bool {
 	// The qualified type is the full parent chain, "$"-separated, so a match
@@ -70,10 +101,8 @@ func isOurs(res apitype.ResourceV3) bool {
 			return true
 		}
 	}
-	// A handful of resources are registered at the top level, outside the
-	// Project component, so they carry a plain cloud type token. Accept them
-	// only in that position, and only under the names this CD gives them.
-	return isRootChild(res) && program.TopLevelResourceNames[res.URN.Name()]
+	// The top-level resources are accepted by name, and only in that position.
+	return isRootChild(res) && ourTopLevelNames[res.URN.Name()]
 }
 
 // isStructural reports whether a resource says nothing about who owns the
@@ -117,6 +146,37 @@ type stackExporter interface {
 
 var _ stackExporter = (*auto.Stack)(nil)
 
+// takeoverAllowed reports whether this run is a deliberate, authorized takeover.
+// The recipe's config is the channel Defang uses; the environment variable is
+// for a CD started by hand, which has no recipe.
+func takeoverAllowed(recipePulumiConfig string) bool {
+	return recipeAllowsTakeover(recipePulumiConfig) || getenvBool(allowTakeoverEnv)
+}
+
+// recipeAllowsTakeover reads the opt-in key out of the recipe, using the same
+// parser that turns the recipe into stack config. A malformed recipe is not an
+// opt-in; stackConfigJson reports that error a few lines later.
+func recipeAllowsTakeover(recipePulumiConfig string) bool {
+	if recipePulumiConfig == "" {
+		return false
+	}
+	config := configMap{}
+	if err := unmarshalRecipe(recipePulumiConfig, config); err != nil {
+		return false
+	}
+	// The recipe is free-form YAML or JSON, so the value may arrive as a bool
+	// or as a string.
+	switch v := config[allowTakeoverConfigKey].Value.(type) {
+	case bool:
+		return v
+	case string:
+		b, err := strconv.ParseBool(v)
+		return err == nil && b
+	default:
+		return false
+	}
+}
+
 // checkLegacyState reads the stack's current state and refuses to continue if
 // another CD wrote it.
 //
@@ -126,11 +186,11 @@ var _ stackExporter = (*auto.Stack)(nil)
 // exposure from failing open is small: Pulumi has to read the same state to do
 // any work, so a state this cannot read is one the deploy will not get far on
 // either.
-func checkLegacyState(ctx context.Context, stack stackExporter) error {
-	if getenvBool(allowLegacyStateTakeoverEnv) {
-		Println("Warning: " + allowLegacyStateTakeoverEnv + " is set. Skipping the check for a state written by " +
-			"another Defang CD. If this stack belongs to another CD, this deploy will replace every resource in " +
-			"it, including databases.")
+func checkLegacyState(ctx context.Context, stack stackExporter, recipePulumiConfig string) error {
+	if takeoverAllowed(recipePulumiConfig) {
+		Println("Warning: this run is allowed to take over a state written by another Defang CD. " +
+			"If this stack belongs to another CD, this deploy will replace every resource in it, " +
+			"including databases.")
 		return nil
 	}
 
@@ -189,6 +249,7 @@ func (e *legacyStateError) Error() string {
 		"resources and then delete the ones above, including any database. That data would be lost.\n" +
 		"\nTo move this project to this CD, deploy it to a NEW stack and migrate to it. See\n  " +
 		migrationRunbook + "\n" +
-		"\nTo continue anyway and accept the deletion, set " + allowLegacyStateTakeoverEnv + "=1.")
+		"\nIf this stack does belong to this CD and the check is wrong, contact Defang support: a deliberate\n" +
+		"takeover is enabled per tenant with " + allowTakeoverConfigKey + " in the stack's recipe.")
 	return b.String()
 }

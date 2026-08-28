@@ -80,6 +80,13 @@ func cdMain(ctx context.Context, args ...string) error {
 		if err != nil {
 			return pulumiErr(err)
 		}
+		// Refuse to take over a state that a different Defang CD wrote, before
+		// this run touches anything. Only `up` is guarded; see legacy_state.go.
+		if command == client.CdCommandUp {
+			if err := checkLegacyState(ctx, &stack, projectUpdate.Recipe.GetPulumiConfig()); err != nil {
+				return err
+			}
+		}
 		// Set stack-level config (provider settings, defang config)
 		configJson, err := stackConfigJson(projectUpdate.Recipe.GetPulumiConfig())
 		if err != nil {
@@ -103,15 +110,6 @@ func cdMain(ctx context.Context, args ...string) error {
 		return triggerDown(ctx)
 	default:
 		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
-	}
-
-	// Refuse to operate on a state that a different Defang CD wrote. Only the
-	// commands that can change infrastructure are guarded; see legacy_state.go.
-	switch command {
-	case client.CdCommandUp, client.CdCommandRefresh, client.CdCommandDown, client.CdCommandDestroy:
-		if err := checkLegacyState(ctx, &stack); err != nil {
-			return err
-		}
 	}
 
 	// Set workspace env vars
