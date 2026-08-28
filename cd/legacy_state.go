@@ -28,23 +28,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"os"
 	"strings"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 )
 
-// allowTakeoverConfigKey opts out of the guard for one tenant. This is the
-// channel that is reachable through the product: recipes are tenant-scoped in
-// Fabric and their pulumi_config is free-form, so Defang can unblock a single
-// customer without shipping a CLI or a CD image.
+// allowTakeoverConfigKey opts out of the guard. This is the channel that is
+// reachable through the product: the recipe's pulumi_config is free-form and
+// reaches the CD in the `up` payload, so a takeover can be authorized without
+// shipping a CLI or a CD image.
+//
+// The value is the "<project>/<stack>" it applies to, NOT a boolean. A Fabric
+// recipe is keyed by (tenant, mode) — not by stack — so one recipe is shared by
+// every project that tenant deploys in that mode. A boolean would disarm the
+// guard for all of them, including the ones nobody was migrating. Naming the
+// target keeps a tenant-wide setting to a single-stack effect.
 const allowTakeoverConfigKey = "defang:allowLegacyStateTakeover"
 
 // allowTakeoverEnv is the same opt-out for a CD run started by hand, which has
-// no recipe to carry config. The CLI does not forward it and must not: a
-// checked-in .defang stack file can set any variable in the CLI process, so a
-// forwarded variable could disarm this guard for a project invisibly.
+// no recipe to carry config. It takes the same "<project>/<stack>" value, so a
+// stale or committed value cannot disarm the guard for some other stack.
 const allowTakeoverEnv = "DEFANG_ALLOW_LEGACY_STATE_TAKEOVER"
 
 // migrationRunbook is the blue/green migration guide.
@@ -83,9 +88,15 @@ var thisCDPackages = map[string]bool{
 // they were ever re-parented under it, their URNs would carry a defang package
 // and this list, isThisCD's position rule, and their tests would all go away.
 //
-// Nothing in the compiler keeps this in step with cd/program: a new top-level
-// resource declared with a fresh literal still compiles, and would then abort
-// every existing stack's next deploy. The state fixtures cannot catch it
+// NEVER REMOVE AN ENTRY. This is the union of every name this CD has ever
+// used, not the set it uses today: stacks deployed by an older build still hold
+// the old resource, and dropping its name here would abort their next `up` —
+// which is the only operation that would ever have deleted it. Deadlock, for
+// every stack that has one.
+//
+// Adding is just as unforgiving and nothing in the compiler helps: a new
+// top-level resource declared with a fresh literal still compiles, and would
+// abort every existing stack's next deploy. The state fixtures cannot catch it
 // either — they were captured from runs with no TTL and no state URL, so they
 // contain none of these resources. TestThisCDTopLevelNamesCoversEveryRootRegistration
 // reads the registrations back out of the source instead.
@@ -117,7 +128,14 @@ func isStructural(res apitype.ResourceV3) bool {
 	return typ == resource.RootStackType || strings.HasPrefix(string(typ), "pulumi:providers:")
 }
 
+// isRootChild reports whether a resource sits directly under the root stack. A
+// "$" in the qualified type means the resource is a component's child by
+// construction, so it is not at the root even if the snapshot has lost its
+// parent field.
 func isRootChild(res apitype.ResourceV3) bool {
+	if strings.Contains(string(res.URN.QualifiedType()), "$") {
+		return false
+	}
 	return res.Parent == "" || res.Parent.QualifiedType() == resource.RootStackType
 }
 
@@ -149,28 +167,30 @@ type stackExporter interface {
 	Export(context.Context) (apitype.UntypedDeployment, error)
 }
 
-// recipeAllowsTakeover reads the opt-in key out of the recipe, using the same
+// takeoverAllowed reports whether this exact stack has been authorized for a
+// deliberate takeover. Both channels name their target, so an authorization
+// left behind in a shared recipe or a shell cannot free a different stack.
+func takeoverAllowed(recipePulumiConfig, project, stack string) bool {
+	if project == "" || stack == "" {
+		return false // never let a half-built target match a half-built value
+	}
+	target := project + "/" + stack
+	return recipeTakeoverTarget(recipePulumiConfig) == target || os.Getenv(allowTakeoverEnv) == target
+}
+
+// recipeTakeoverTarget reads the opt-in key out of the recipe, using the same
 // parser that turns the recipe into stack config. A malformed recipe is not an
 // opt-in; stackConfigJson reports that error a few lines later.
-func recipeAllowsTakeover(recipePulumiConfig string) bool {
+func recipeTakeoverTarget(recipePulumiConfig string) string {
 	if recipePulumiConfig == "" {
-		return false
+		return ""
 	}
 	config := configMap{}
 	if err := unmarshalRecipe(recipePulumiConfig, config); err != nil {
-		return false
+		return ""
 	}
-	// The recipe is free-form YAML or JSON, so the value may arrive as a bool
-	// or as a string.
-	switch v := config[allowTakeoverConfigKey].Value.(type) {
-	case bool:
-		return v
-	case string:
-		b, err := strconv.ParseBool(v)
-		return err == nil && b
-	default:
-		return false
-	}
+	target, _ := config[allowTakeoverConfigKey].Value.(string)
+	return target
 }
 
 // checkLegacyState reads the stack's current state and refuses to continue if a
@@ -183,16 +203,21 @@ func recipeAllowsTakeover(recipePulumiConfig string) bool {
 // exposure from failing open is small: Pulumi has to read the same state to do
 // any work, so a state this cannot read is one the deploy will not get far on
 // either.
-func checkLegacyState(ctx context.Context, stack stackExporter, recipePulumiConfig string) error {
-	if recipeAllowsTakeover(recipePulumiConfig) || getenvBool(allowTakeoverEnv) {
-		warn("Warning: this run is allowed to take over a state written by another Defang CD. If this stack " +
-			"belongs to another CD, this deploy will replace every resource in it, including databases.")
+func checkLegacyState(ctx context.Context, exporter stackExporter, recipePulumiConfig, projectName, stackName string) error {
+	if takeoverAllowed(recipePulumiConfig, projectName, stackName) {
+		warn("Warning: " + projectName + "/" + stackName + " is allowed to take over a state written by another " +
+			"Defang CD. If this stack belongs to another CD, this deploy will replace every resource in it, " +
+			"including databases.")
 		return nil
 	}
 
-	deployment, err := stack.Export(ctx)
+	deployment, err := exporter.Export(ctx)
 	if err != nil {
-		warn("Skipping the check for another Defang CD's state: could not read the existing state:", err)
+		// Deliberately not logging err. auto.Stack.Export runs `pulumi stack
+		// export --show-secrets`, and on failure the SDK packs the command's
+		// entire stdout into the error, so printing it would put the decrypted
+		// state into the deploy log. Set DEFANG_PULUMI_DEBUG=1 to debug this.
+		warn("Skipping the check for another Defang CD's state: could not read the existing state.")
 		return nil
 	}
 
@@ -216,11 +241,28 @@ func foreignResourcesIn(deployment apitype.UntypedDeployment) ([]resource.URN, e
 	if len(deployment.Deployment) == 0 {
 		return nil, nil
 	}
+	// A shape this cannot read must not decode to "no resources", because here
+	// an empty result means "go ahead and delete everything".
+	if deployment.Version != apitype.DeploymentSchemaVersionCurrent {
+		return nil, fmt.Errorf("unsupported deployment version %d", deployment.Version)
+	}
 	// The exported deployment holds decrypted secrets, so none of it is logged
 	// and nothing but URNs and parents leaves this function.
 	var snapshot apitype.DeploymentV3
 	if err := json.Unmarshal(deployment.Deployment, &snapshot); err != nil {
 		return nil, err
+	}
+	// URN accessors assert on a malformed URN, and the assert panics. A
+	// hand-repaired snapshot is exactly what an operator produces mid-migration,
+	// so check first and let it fail open rather than crash the deploy. The URNs
+	// themselves are not reported, only the position, to keep state out of logs.
+	for i, res := range snapshot.Resources {
+		if !res.URN.IsValid() {
+			return nil, fmt.Errorf("resource %d has an unreadable URN", i)
+		}
+		if res.Parent != "" && !res.Parent.IsValid() {
+			return nil, fmt.Errorf("resource %d has an unreadable parent URN", i)
+		}
 	}
 	return foreignResources(snapshot.Resources), nil
 }
@@ -244,10 +286,11 @@ func (e *legacyStateError) Error() string {
 		fmt.Fprintf(&b, "  %s::%s\n", urn.QualifiedType(), urn.Name())
 	}
 	b.WriteString("\nContinuing would replace all of it: a new set of resources would be created and the ones " +
-		"above deleted, databases and their data included.\n" +
+		"above deleted, databases and their data included. Nothing has been changed.\n" +
 		"\nTo move this project, deploy it to a new stack, then shut this one down. See\n  " +
 		migrationRunbook + "\n" +
-		"\nIf this is wrong, contact Defang support. (Support can allow the takeover with " +
-		allowTakeoverConfigKey + " in this stack's recipe.)")
+		"\nThis stack is not stuck, so do not run `down` or `destroy` on it to clear the error. Those are not " +
+		"blocked, and they delete everything above.\n" +
+		"\nIf this is wrong, contact Defang support.")
 	return b.String()
 }

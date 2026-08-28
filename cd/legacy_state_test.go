@@ -65,7 +65,7 @@ func TestCheckLegacyStateOnRealStates(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
-			err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, tt.fixture)}, "")
+			err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, tt.fixture)}, "", testProjectName, testStackName)
 			foreign := foreignResources(loadFixture(t, tt.fixture))
 			if !tt.block {
 				require.NoError(t, err)
@@ -166,6 +166,12 @@ func TestForeignResourcesDoesNotConfuseDefangMvpWithThisCD(t *testing.T) {
 const (
 	testStackURN = "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp"
 	testProject  = "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test"
+
+	// The project and stack of the run under test, i.e. what PROJECT and STACK
+	// would be. An override has to name exactly this pair.
+	testProjectName = "my-app"
+	testStackName   = "beta"
+	testTarget      = testProjectName + "/" + testStackName
 )
 
 // mkRes builds the two fields the check reads, plus the type token the URN
@@ -328,7 +334,7 @@ func (f fakeStack) Export(context.Context) (apitype.UntypedDeployment, error) {
 }
 
 func TestLegacyStateErrorMessage(t *testing.T) {
-	err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, "")
+	err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, "", testProjectName, testStackName)
 	var legacyErr *legacyStateError
 	require.ErrorAs(t, err, &legacyErr)
 
@@ -339,10 +345,13 @@ func TestLegacyStateErrorMessage(t *testing.T) {
 	require.Contains(t, msg, "deleted")
 	require.Contains(t, msg, "databases")
 	require.Contains(t, msg, migrationRunbook)
-	// It must point at the channel a human can actually use. The env var is not
-	// one: the CD's environment is a closed allowlist of key names, so telling a
-	// customer to export it would be a dead end.
-	require.Contains(t, msg, allowTakeoverConfigKey)
+	// It must say the stack is unchanged and steer the reader away from `down`,
+	// which is not blocked and deletes everything it just listed.
+	require.Contains(t, msg, "Nothing has been changed")
+	require.Contains(t, msg, "`down`")
+	// It must not name either override. Neither is settable by the person
+	// reading this, so both are noise that invites a workaround.
+	require.NotContains(t, msg, allowTakeoverConfigKey)
 	require.NotContains(t, msg, allowTakeoverEnv)
 	// It must name real detected resources, not just a count...
 	require.Contains(t, msg, "gcp:")
@@ -360,25 +369,33 @@ func TestCheckLegacyStateRecipeOverride(t *testing.T) {
 		recipe string
 		allow  bool
 	}{
-		{"stack settings yaml", "config:\n  defang:allowLegacyStateTakeover: true\n", true},
-		{"stack settings string", "config:\n  defang:allowLegacyStateTakeover: \"true\"\n", true},
-		{"flat json", `{"defang:allowLegacyStateTakeover": {"value": "true"}}`, true},
-		{"flat json bool", `{"defang:allowLegacyStateTakeover": true}`, true},
+		{"stack settings yaml", "config:\n  defang:allowLegacyStateTakeover: " + testTarget + "\n", true},
+		{"stack settings quoted", "config:\n  defang:allowLegacyStateTakeover: \"" + testTarget + "\"\n", true},
+		{"flat json", `{"defang:allowLegacyStateTakeover": {"value": "` + testTarget + `"}}`, true},
 
 		{"empty", "", false},
 		{"unrelated config", "config:\n  gcp:region: us-central1\n", false},
-		{"false", "config:\n  defang:allowLegacyStateTakeover: false\n", false},
-		{"zero", `{"defang:allowLegacyStateTakeover": {"value": "0"}}`, false},
 		{"empty string", `{"defang:allowLegacyStateTakeover": {"value": ""}}`, false},
-		{"not a bool", "config:\n  defang:allowLegacyStateTakeover: maybe\n", false},
 		{"nested object", `{"defang:allowLegacyStateTakeover": {"objectValue": {"enabled": true}}}`, false},
 		{"malformed", "config:\n\tthis is not: [valid", false},
-		{"lookalike key", "config:\n  defang:allowlegacystatetakeover: true\n", false},
+		{"lookalike key", "config:\n  defang:allowlegacystatetakeover: " + testTarget + "\n", false},
+
+		// A boolean used to be enough. It must not be, because a recipe is
+		// shared by every project a tenant deploys in that mode.
+		{"bare true", "config:\n  defang:allowLegacyStateTakeover: true\n", false},
+		{"string true", `{"defang:allowLegacyStateTakeover": {"value": "true"}}`, false},
+
+		// The whole point of naming the target: an authorization left in a
+		// shared recipe must not free a stack nobody was migrating.
+		{"another stack, same project", "config:\n  defang:allowLegacyStateTakeover: " + testProjectName + "/prod\n", false},
+		{"another project, same stack", "config:\n  defang:allowLegacyStateTakeover: other/" + testStackName + "\n", false},
+		{"project only", "config:\n  defang:allowLegacyStateTakeover: " + testProjectName + "\n", false},
+		{"trailing slash", "config:\n  defang:allowLegacyStateTakeover: " + testTarget + "/\n", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := checkLegacyState(context.Background(),
-				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, tt.recipe)
+				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, tt.recipe, testProjectName, testStackName)
 			if tt.allow {
 				require.NoError(t, err)
 			} else {
@@ -388,11 +405,58 @@ func TestCheckLegacyStateRecipeOverride(t *testing.T) {
 	}
 }
 
-// The break-glass channel, for a CD run started by hand with no recipe.
+// The break-glass channel, for a CD run started by hand with no recipe. It
+// names its target for the same reason the recipe does.
 func TestCheckLegacyStateEnvOverride(t *testing.T) {
-	t.Setenv(allowTakeoverEnv, "1")
-	require.NoError(t, checkLegacyState(context.Background(),
-		fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, ""))
+	tests := []struct {
+		value string
+		allow bool
+	}{
+		{testTarget, true},
+		{"", false},
+		{"1", false},
+		{"true", false},
+		{testProjectName + "/prod", false},
+		{"other/" + testStackName, false},
+	}
+	for _, tt := range tests {
+		t.Run("value="+tt.value, func(t *testing.T) {
+			t.Setenv(allowTakeoverEnv, tt.value)
+			err := checkLegacyState(context.Background(),
+				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, "", testProjectName, testStackName)
+			if tt.allow {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+// A run with no project or stack name must never match an override, however
+// the value is shaped.
+func TestCheckLegacyStateOverrideNeedsBothNames(t *testing.T) {
+	for _, target := range []string{"/", "my-app/", "/beta", ""} {
+		t.Run("target="+target, func(t *testing.T) {
+			t.Setenv(allowTakeoverEnv, target)
+			require.False(t, takeoverAllowed("", "", testStackName))
+			require.False(t, takeoverAllowed("", testProjectName, ""))
+			require.False(t, takeoverAllowed("", "", ""))
+		})
+	}
+}
+
+// thisCDTopLevelNames is the union of every name this CD has ever used, so
+// dropping one deadlocks every stack that still holds that resource: `up`
+// aborts, and `up` is the only thing that would have deleted it. The drift
+// scanner cannot see this direction -- it only checks current source against
+// the list -- so pin the historical names here.
+func TestThisCDTopLevelNamesNeverShrinks(t *testing.T) {
+	for _, name := range []string{"project-pb", "self-destruct", "defang-self-destruct", "self-destruct-starter"} {
+		require.Truef(t, thisCDTopLevelNames[name],
+			"%q was removed from thisCDTopLevelNames; stacks deployed by an older build still hold it and "+
+				"would abort on their next deploy", name)
+	}
 }
 
 // The env override must not survive into the scheduled self-destruct run: that
@@ -409,11 +473,44 @@ func TestEnvOverrideIsNotFrozenIntoSelfDestruct(t *testing.T) {
 }
 
 // An unreadable state fails open: a second read of the state backend must not
-// become a new way for every deploy to fail.
+// become a new way for every deploy to fail. Nothing here may panic -- the URN
+// accessors assert on a malformed URN, and a failed assert kills the CD.
 func TestCheckLegacyStateFailsOpen(t *testing.T) {
-	require.NoError(t, checkLegacyState(context.Background(),
-		fakeStack{err: errors.New("could not export stack: connection reset")}, ""))
+	tests := []struct {
+		name  string
+		stack fakeStack
+	}{
+		{"backend error", fakeStack{err: errors.New("could not export stack: connection reset")}},
+		{"invalid json", fakeStack{deployment: deploymentOf(`{{{`)}},
+		{"resource with no urn", fakeStack{deployment: deploymentOf(`{"resources":[{}]}`)}},
+		{"null resource", fakeStack{deployment: deploymentOf(`{"resources":[null]}`)}},
+		{"urn is not a urn", fakeStack{deployment: deploymentOf(`{"resources":[{"urn":"not-a-urn"}]}`)}},
+		{"parent is not a urn", fakeStack{deployment: deploymentOf(
+			`{"resources":[{"urn":"urn:pulumi:s::p::aws:rds/instance:Instance::db","parent":"garbage"}]}`)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				require.NoError(t, checkLegacyState(context.Background(), tt.stack, "", testProjectName, testStackName))
+			})
+		})
+	}
+}
 
-	require.NoError(t, checkLegacyState(context.Background(),
-		fakeStack{deployment: apitype.UntypedDeployment{Version: 3, Deployment: json.RawMessage(`{{{`)}}, ""))
+// A deployment shape this cannot read must not decode to "no resources", because
+// an empty result here means "go ahead and delete everything".
+func TestCheckLegacyStateRejectsUnknownDeploymentVersion(t *testing.T) {
+	// A V1/V2-shaped body decodes cleanly into DeploymentV3 as zero resources.
+	legacyShape := apitype.UntypedDeployment{Version: 1, Deployment: json.RawMessage(
+		`{"latest":{"resources":[{"urn":"urn:pulumi:beta::my-app::gcp:sql/databaseInstance:DatabaseInstance::db"}]}}`)}
+	_, err := foreignResourcesIn(legacyShape)
+	require.Error(t, err, "an unreadable version must not look like an empty stack")
+
+	// ...and it fails open rather than aborting the deploy.
+	require.NoError(t, checkLegacyState(context.Background(), fakeStack{deployment: legacyShape}, "",
+		testProjectName, testStackName))
+}
+
+func deploymentOf(body string) apitype.UntypedDeployment {
+	return apitype.UntypedDeployment{Version: apitype.DeploymentSchemaVersionCurrent, Deployment: json.RawMessage(body)}
 }

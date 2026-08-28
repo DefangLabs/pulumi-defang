@@ -85,7 +85,7 @@ func cdMain(ctx context.Context, args ...string) error {
 		// so a blocked run leaves no config behind. Only `up` is guarded; the
 		// reasoning for that is in legacy_state.go.
 		if command == client.CdCommandUp {
-			if err := checkLegacyState(ctx, &stack, projectUpdate.Recipe.GetPulumiConfig()); err != nil {
+			if err := checkLegacyState(ctx, &stack, projectUpdate.Recipe.GetPulumiConfig(), projectName, stackName); err != nil {
 				return err
 			}
 		}

@@ -62,7 +62,29 @@ The check refuses any stack holding resources this CD did not create. If you
 believe your stack does belong to this CD, contact Defang support rather than
 working around it — a wrong deploy here is not reversible.
 
-Support can allow a deliberate takeover for one tenant by setting
-`defang:allowLegacyStateTakeover` in that stack's recipe. It is not settable
-from your shell, on purpose: turning it on means agreeing that every resource in
-the stack, databases included, may be deleted.
+Also do not run `down` or `destroy` to clear the error. Neither is blocked, and
+both delete the resources the error just listed. The stack is not stuck — the
+deploy stopped before it changed anything.
+
+## For Defang operators
+
+A deliberate takeover is authorised with `defang:allowLegacyStateTakeover` in
+the recipe's `pulumi_config`. The value is the `<project>/<stack>` it applies
+to, for example:
+
+```yaml
+config:
+  defang:allowLegacyStateTakeover: acme-shop/prod
+```
+
+The value is a stack name and not `true` on purpose. A recipe is keyed by
+tenant and mode, so one recipe is shared by every project that tenant deploys
+in that mode. `true` would disarm the guard for all of them, including projects
+nobody is migrating. Naming the target keeps a tenant-wide setting to a
+single-stack effect.
+
+Remove the entry once the migration is done. There is no expiry.
+
+`DEFANG_ALLOW_LEGACY_STATE_TAKEOVER` does the same thing, with the same
+`<project>/<stack>` value, for a CD run started by hand — which has no recipe.
+The CLI does not pass it through, so it has no effect on a normal deploy.
