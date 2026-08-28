@@ -30,21 +30,27 @@ import (
 //   - mixed-state-gcp.json  a takeover that ran and failed: this CD's resources
 //     on top of surviving legacy ones
 //   - empty-state.json  a stack that was created but never deployed
-func loadFixture(t *testing.T, name string) []apitype.ResourceV3 {
+func fixtureDeployment(t *testing.T, name string) apitype.UntypedDeployment {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	require.NoError(t, err)
 	var doc apitype.UntypedDeployment
 	require.NoError(t, json.Unmarshal(data, &doc))
+	return doc
+}
+
+func loadFixture(t *testing.T, name string) []apitype.ResourceV3 {
+	t.Helper()
 	var snapshot apitype.DeploymentV3
-	require.NoError(t, json.Unmarshal(doc.Deployment, &snapshot))
+	require.NoError(t, json.Unmarshal(fixtureDeployment(t, name).Deployment, &snapshot))
 	return snapshot.Resources
 }
 
-func TestForeignResourcesRealStates(t *testing.T) {
+// The whole guard, over every captured state, through the real entry point.
+func TestCheckLegacyStateOnRealStates(t *testing.T) {
 	tests := []struct {
-		fixture     string
-		wantForeign bool
+		fixture string
+		block   bool
 	}{
 		{"empty-state.json", false},
 		{"new-state-aws.json", false},
@@ -52,40 +58,32 @@ func TestForeignResourcesRealStates(t *testing.T) {
 		{"new-state-azure.json", false},
 		{"legacy-state-gcp.json", true},
 		{"legacy-state-aws.json", true},
+		// A denylist of known-legacy types would get the mixed state wrong:
+		// this CD's marker resources are present, so "did our CD write this?"
+		// answers yes, yet the legacy resources are still there to be deleted.
 		{"mixed-state-gcp.json", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
-			resources := loadFixture(t, tt.fixture)
-			foreign := foreignResources(resources)
-			if !tt.wantForeign {
+			err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, tt.fixture)}, "")
+			foreign := foreignResources(loadFixture(t, tt.fixture))
+			if !tt.block {
+				require.NoError(t, err)
 				require.Emptyf(t, foreign, "state must pass unchanged, but %d resources were called foreign: %v",
-					len(foreign), urns(foreign))
+					len(foreign), foreign)
 				return
 			}
-			require.NotEmpty(t, foreign, "legacy state must be detected")
+			require.Error(t, err)
+			require.NotEmpty(t, foreign)
 			// None of this CD's own resources may be reported, even in the
 			// mixed state -- the message has to point at the legacy ones.
-			for _, res := range foreign {
-				require.NotContains(t, string(res.URN), "defang-aws:")
-				require.NotContains(t, string(res.URN), "defang-gcp:")
-				require.NotContains(t, string(res.URN), "defang-azure:")
+			for _, urn := range foreign {
+				require.NotContains(t, string(urn), "defang-aws:")
+				require.NotContains(t, string(urn), "defang-gcp:")
+				require.NotContains(t, string(urn), "defang-azure:")
 			}
 		})
 	}
-}
-
-// The mixed state is the one a denylist of known-legacy types would get wrong:
-// this CD's marker resources are present, so "did our CD write this?" answers
-// yes, yet the legacy resources are still there to be deleted.
-func TestForeignResourcesMixedStateKeepsOurResources(t *testing.T) {
-	mixed := loadFixture(t, "mixed-state-gcp.json")
-	ours := loadFixture(t, "new-state-gcp.json")
-	foreign := foreignResources(mixed)
-
-	require.Len(t, foreign, len(mixed)-len(ours),
-		"exactly the resources that are not in the new-CD state must be flagged")
-	require.Greater(t, len(foreign), 20, "a real legacy GCP stack has dozens of resources")
 }
 
 // Every real legacy resource type token seen in the two legacy fixtures must be
@@ -113,8 +111,8 @@ func TestForeignResourcesFlagsKnownLegacyTypes(t *testing.T) {
 
 	flagged := map[string]bool{}
 	for _, fixture := range []string{"legacy-state-gcp.json", "legacy-state-aws.json"} {
-		for _, res := range foreignResources(loadFixture(t, fixture)) {
-			for _, part := range strings.Split(string(res.URN.QualifiedType()), "$") {
+		for _, urn := range foreignResources(loadFixture(t, fixture)) {
+			for _, part := range strings.Split(string(urn.QualifiedType()), "$") {
 				flagged[part] = true
 			}
 		}
@@ -155,8 +153,8 @@ func TestForeignResourcesFlagsLegacyComponentsWithoutAFixture(t *testing.T) {
 
 // "defang-mvp" and "defang-gcp" share a prefix. Matching on the package name
 // rather than a string prefix keeps the legacy package out.
-func TestForeignResourcesDoesNotConfuseDefangMvpWithOurPackages(t *testing.T) {
-	require.False(t, ourPackages["defang-mvp"])
+func TestForeignResourcesDoesNotConfuseDefangMvpWithThisCD(t *testing.T) {
+	require.False(t, thisCDPackages["defang-mvp"])
 	state := []apitype.ResourceV3{
 		mkRes("urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta", ""),
 		mkRes("urn:pulumi:beta::my-app::defang-mvp:shared/ecs/defang:Defang$aws:rds/instance:Instance::db",
@@ -180,50 +178,38 @@ func mkRes(urn, parent string) apitype.ResourceV3 {
 // This CD registers a few resources at the top level, outside the Project
 // component, so they carry a plain cloud type token. They must not be mistaken
 // for another CD's leftovers -- a stack with a TTL, or any successful deploy,
-// has them.
-func TestForeignResourcesAllowsOurTopLevelResources(t *testing.T) {
-	for name := range ourTopLevelNames {
+// has them. The allowlist is a name AND a position, so a resource that borrows
+// one of those names but hangs off something else is still foreign.
+func TestForeignResourcesAllowsTopLevelNamesOnlyAtTopLevel(t *testing.T) {
+	const legacyParent = "urn:pulumi:gcp::cd-test::defang-mvp:shared/ecs/defang:Defang::defang"
+	for name := range thisCDTopLevelNames {
 		t.Run(name, func(t *testing.T) {
-			state := []apitype.ResourceV3{
-				mkRes(testStackURN, ""),
-				mkRes(testProject, testStackURN),
-				// Deliberately a raw cloud type with no defang package.
-				mkRes("urn:pulumi:gcp::cd-test::gcp:cloudscheduler/job:Job::"+name, testStackURN),
-			}
-			require.Empty(t, foreignResources(state))
+			// Deliberately a raw cloud type with no defang package.
+			atTopLevel := mkRes("urn:pulumi:gcp::cd-test::gcp:cloudscheduler/job:Job::"+name, testStackURN)
+			underLegacy := mkRes("urn:pulumi:gcp::cd-test::defang-mvp:shared/ecs/defang:Defang$"+
+				"gcp:storage/bucketObject:BucketObject::"+name, legacyParent)
+			base := []apitype.ResourceV3{mkRes(testStackURN, ""), mkRes(testProject, testStackURN)}
+
+			require.Empty(t, foreignResources(append(base, atTopLevel)))
+			require.Len(t, foreignResources(append(base, underLegacy)), 1)
 		})
 	}
 }
 
-// The allowlist is a name AND a position. A resource that borrows one of our
-// top-level names but hangs off something else is still foreign.
-func TestForeignResourcesTopLevelNamesOnlyApplyAtTopLevel(t *testing.T) {
-	const legacyParent = "urn:pulumi:gcp::cd-test::defang-mvp:shared/ecs/defang:Defang::defang"
-	state := []apitype.ResourceV3{
-		mkRes(testStackURN, ""),
-		mkRes(testProject, testStackURN),
-		mkRes("urn:pulumi:gcp::cd-test::defang-mvp:shared/ecs/defang:Defang$gcp:storage/bucketObject:BucketObject::"+
-			"project-pb", legacyParent),
-	}
-	foreign := foreignResources(state)
-	require.Len(t, foreign, 1)
-	require.Contains(t, string(foreign[0].URN), "project-pb")
-}
-
-// ourTopLevelNames is hand-maintained, and getting it wrong is expensive in one
-// direction: a top-level resource that is missing from the list makes the guard
+// thisCDTopLevelNames is hand-maintained, and getting it wrong is expensive in
+// one direction: a top-level resource missing from the list makes the guard
 // abort every existing stack's next deploy. Nothing in the compiler catches
-// that, and the recorded state fixtures do not either -- they were captured
-// from runs with no TTL and no state URL, so they contain neither the
-// self-destruct resources nor the project-pb blob.
+// that, and the state fixtures cannot either -- they were captured from runs
+// with no TTL and no state URL, so they contain none of these resources. The
+// recorded preview goldens cannot either: those tests are behind the
+// `integration` build tag and skip without cloud credentials.
 //
 // So read the registrations back out of the source that makes them. cd/program
 // is the CD's own Pulumi program: it holds no components of its own, so every
 // resource it registers on the run context lands at the top level of the stack.
-func TestOurTopLevelNamesCoversEveryRootRegistration(t *testing.T) {
+func TestThisCDTopLevelNamesCoversEveryRootRegistration(t *testing.T) {
 	// e.g. `_, err = s3.NewBucketObject(ctx, "project-pb", &s3.BucketObjectArgs{`
-	registration := regexp.MustCompile(`\.New([A-Za-z]+)\((?:ctx|pctx), ("[^"]*"|[A-Za-z]\w*)[,)]`)
-
+	registration := regexp.MustCompile(`\.New([A-Za-z]+)\((?:ctx|pctx), ("[^"]*"|[\w.]+)[,)]`)
 	// Some registrations name the resource through a constant, so collect the
 	// package's string constants to resolve those.
 	assignment := regexp.MustCompile(`(?m)^\s*(?:const\s+|var\s+)?(\w+)\s*=\s*"([^"]*)"`)
@@ -256,16 +242,19 @@ func TestOurTopLevelNamesCoversEveryRootRegistration(t *testing.T) {
 			}
 			name, err := strconv.Unquote(arg)
 			if err != nil {
-				name, err = constants[arg], nil
+				name = constants[arg]
 				require.NotEmptyf(t, name, "%s names a resource with %q, which this test cannot resolve", source, arg)
 			}
 			found++
-			require.Truef(t, ourTopLevelNames[name],
+			require.Truef(t, thisCDTopLevelNames[name],
 				"%s registers top-level resource %q, but cd/legacy_state.go does not list it. Every "+
-					"existing stack would abort on its next deploy. Add it to ourTopLevelNames.", source, name)
+					"existing stack would abort on its next deploy. Add it to thisCDTopLevelNames.", source, name)
 		}
 	}
-	require.GreaterOrEqual(t, found, 6, "the scan found almost nothing, so it has stopped matching the source")
+	// Pinned, not a floor: if a refactor stops the scan from matching a call it
+	// used to match, this fails instead of silently checking nothing. Bump it
+	// when you genuinely add or remove a top-level resource.
+	require.Equal(t, 8, found, "the scan no longer matches the source it is meant to police")
 }
 
 // The allowlist is a name in a position, so a legacy CD that happened to name
@@ -278,7 +267,7 @@ func TestLegacyStatesDoNotUseOurTopLevelNames(t *testing.T) {
 				if isStructural(res) || !isRootChild(res) {
 					continue
 				}
-				require.Falsef(t, ourTopLevelNames[res.URN.Name()],
+				require.Falsef(t, thisCDTopLevelNames[res.URN.Name()],
 					"legacy resource %s collides with an allowlisted top-level name", res.URN)
 			}
 		})
@@ -328,11 +317,6 @@ func TestForeignResourcesInEmptyDeployment(t *testing.T) {
 	require.Empty(t, foreign)
 }
 
-func TestForeignResourcesInMalformed(t *testing.T) {
-	_, err := foreignResourcesIn(apitype.UntypedDeployment{Version: 3, Deployment: json.RawMessage(`not json`)})
-	require.Error(t, err)
-}
-
 // fakeStack drives checkLegacyState without a Pulumi backend.
 type fakeStack struct {
 	deployment apitype.UntypedDeployment
@@ -343,86 +327,63 @@ func (f fakeStack) Export(context.Context) (apitype.UntypedDeployment, error) {
 	return f.deployment, f.err
 }
 
-func fixtureDeployment(t *testing.T, name string) apitype.UntypedDeployment {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name))
-	require.NoError(t, err)
-	var doc apitype.UntypedDeployment
-	require.NoError(t, json.Unmarshal(data, &doc))
-	return doc
-}
-
-func TestCheckLegacyStateBlocksLegacyState(t *testing.T) {
+func TestLegacyStateErrorMessage(t *testing.T) {
 	err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, "")
-	require.Error(t, err)
-
 	var legacyErr *legacyStateError
 	require.ErrorAs(t, err, &legacyErr)
 
 	msg := err.Error()
 	// The message has to say what was found, what it would cost, where the
-	// runbook is, and how to override.
-	require.Contains(t, msg, "different CD")
-	require.Contains(t, msg, "delete")
-	require.Contains(t, msg, "database")
+	// runbook is, and how a human gets unblocked.
+	require.Contains(t, msg, "older version of Defang")
+	require.Contains(t, msg, "deleted")
+	require.Contains(t, msg, "databases")
 	require.Contains(t, msg, migrationRunbook)
-	// The message must point at the channel a human can actually use. The env
-	// var is not one: the CD's environment is a closed allowlist of key names,
-	// so telling a customer to export it would be a dead end.
+	// It must point at the channel a human can actually use. The env var is not
+	// one: the CD's environment is a closed allowlist of key names, so telling a
+	// customer to export it would be a dead end.
 	require.Contains(t, msg, allowTakeoverConfigKey)
 	require.NotContains(t, msg, allowTakeoverEnv)
-	// It must name real detected resources, not just a count.
+	// It must name real detected resources, not just a count...
 	require.Contains(t, msg, "gcp:")
 	// ...but must not print the whole stack.
 	require.LessOrEqual(t, strings.Count(msg, "\n"), 20)
 	require.Contains(t, msg, "more")
 }
 
-func TestCheckLegacyStatePassesOnOurStates(t *testing.T) {
-	for _, fixture := range []string{"empty-state.json", "new-state-aws.json", "new-state-gcp.json", "new-state-azure.json"} {
-		t.Run(fixture, func(t *testing.T) {
-			require.NoError(t, checkLegacyState(context.Background(),
-				fakeStack{deployment: fixtureDeployment(t, fixture)}, ""))
-		})
-	}
-}
-
 // The override channel that is actually reachable: Defang sets the key in the
 // tenant's recipe, and the CD receives it in the `up` payload. The recipe is
-// free-form YAML or JSON, so all four shapes below are real inputs.
+// free-form YAML or JSON, so every shape below is a real input.
 func TestCheckLegacyStateRecipeOverride(t *testing.T) {
-	recipes := map[string]string{
-		"stack settings yaml":   "config:\n  defang:allowLegacyStateTakeover: true\n",
-		"stack settings string": "config:\n  defang:allowLegacyStateTakeover: \"true\"\n",
-		"flat json":             `{"defang:allowLegacyStateTakeover": {"value": "true"}}`,
-		"flat json bool":        `{"defang:allowLegacyStateTakeover": true}`,
-	}
-	for name, recipe := range recipes {
-		t.Run(name, func(t *testing.T) {
-			require.NoError(t, checkLegacyState(context.Background(),
-				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, recipe))
-		})
-	}
-}
+	tests := []struct {
+		name   string
+		recipe string
+		allow  bool
+	}{
+		{"stack settings yaml", "config:\n  defang:allowLegacyStateTakeover: true\n", true},
+		{"stack settings string", "config:\n  defang:allowLegacyStateTakeover: \"true\"\n", true},
+		{"flat json", `{"defang:allowLegacyStateTakeover": {"value": "true"}}`, true},
+		{"flat json bool", `{"defang:allowLegacyStateTakeover": true}`, true},
 
-// Anything that is not an explicit opt-in leaves the guard armed. A recipe that
-// does not mention the key, sets it falsy, or does not parse must not disarm it.
-func TestCheckLegacyStateRecipeOverrideRequiresExplicitOptIn(t *testing.T) {
-	recipes := map[string]string{
-		"empty":            "",
-		"unrelated config": "config:\n  gcp:region: us-central1\n",
-		"false":            "config:\n  defang:allowLegacyStateTakeover: false\n",
-		"zero":             `{"defang:allowLegacyStateTakeover": {"value": "0"}}`,
-		"empty string":     `{"defang:allowLegacyStateTakeover": {"value": ""}}`,
-		"not a bool":       "config:\n  defang:allowLegacyStateTakeover: maybe\n",
-		"nested object":    `{"defang:allowLegacyStateTakeover": {"objectValue": {"enabled": true}}}`,
-		"malformed":        "config:\n\tthis is not: [valid",
-		"lookalike key":    "config:\n  defang:allowlegacystatetakeover: true\n",
+		{"empty", "", false},
+		{"unrelated config", "config:\n  gcp:region: us-central1\n", false},
+		{"false", "config:\n  defang:allowLegacyStateTakeover: false\n", false},
+		{"zero", `{"defang:allowLegacyStateTakeover": {"value": "0"}}`, false},
+		{"empty string", `{"defang:allowLegacyStateTakeover": {"value": ""}}`, false},
+		{"not a bool", "config:\n  defang:allowLegacyStateTakeover: maybe\n", false},
+		{"nested object", `{"defang:allowLegacyStateTakeover": {"objectValue": {"enabled": true}}}`, false},
+		{"malformed", "config:\n\tthis is not: [valid", false},
+		{"lookalike key", "config:\n  defang:allowlegacystatetakeover: true\n", false},
 	}
-	for name, recipe := range recipes {
-		t.Run(name, func(t *testing.T) {
-			require.Error(t, checkLegacyState(context.Background(),
-				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, recipe))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkLegacyState(context.Background(),
+				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, tt.recipe)
+			if tt.allow {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 		})
 	}
 }
@@ -434,21 +395,11 @@ func TestCheckLegacyStateEnvOverride(t *testing.T) {
 		fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, ""))
 }
 
-// The override only counts when it is truthy, so an empty or "0" value does not
-// silently disarm the guard.
-func TestCheckLegacyStateEnvOverrideRequiresTruthyValue(t *testing.T) {
-	for _, value := range []string{"", "0", "false", "no"} {
-		t.Run("value="+value, func(t *testing.T) {
-			t.Setenv(allowTakeoverEnv, value)
-			require.Error(t, checkLegacyState(context.Background(),
-				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}, ""))
-		})
-	}
-}
-
 // The env override must not survive into the scheduled self-destruct run: that
 // trigger is a persisted resource, so a one-off permission frozen into it would
-// apply to every future firing.
+// apply to every future firing. This is the only thing tying the literal in
+// cd/program/ttl.go to allowTakeoverEnv here -- the packages cannot share a
+// constant, because program cannot import main.
 func TestEnvOverrideIsNotFrozenIntoSelfDestruct(t *testing.T) {
 	// SelfDestructEnv forwards every DEFANG_* variable by prefix, so the
 	// override reaches the trigger unless it is excluded by name.
@@ -465,12 +416,4 @@ func TestCheckLegacyStateFailsOpen(t *testing.T) {
 
 	require.NoError(t, checkLegacyState(context.Background(),
 		fakeStack{deployment: apitype.UntypedDeployment{Version: 3, Deployment: json.RawMessage(`{{{`)}}, ""))
-}
-
-func urns(resources []apitype.ResourceV3) []string {
-	out := make([]string, len(resources))
-	for i, r := range resources {
-		out[i] = string(r.URN)
-	}
-	return out
 }

@@ -80,8 +80,10 @@ func cdMain(ctx context.Context, args ...string) error {
 		if err != nil {
 			return pulumiErr(err)
 		}
-		// Refuse to take over a state that a different Defang CD wrote, before
-		// this run touches anything. Only `up` is guarded; see legacy_state.go.
+		// Refuse to take over a state that a different Defang CD wrote. The
+		// stack has been upserted by now, but nothing has been written to it,
+		// so a blocked run leaves no config behind. Only `up` is guarded; the
+		// reasoning for that is in legacy_state.go.
 		if command == client.CdCommandUp {
 			if err := checkLegacyState(ctx, &stack, projectUpdate.Recipe.GetPulumiConfig()); err != nil {
 				return err

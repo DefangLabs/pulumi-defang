@@ -16,7 +16,13 @@ package main
 // The supported way to move between CDs is blue/green: deploy to a NEW stack,
 // move traffic, then tear the old stack down. See docs/legacy-cd-migration.md.
 //
-// This file makes the unsafe path fail loudly instead of silently.
+// Only `up` is guarded, because only `up` applies this CD's desired state to a
+// snapshot it did not write, which is what produces create-everything-then-
+// delete-everything. `down` and `destroy` delete exactly what the caller asked
+// them to, and they are the last step of the migration above, so blocking them
+// would leave the old stack with no supported way down. `preview` is the
+// diagnostic that shows the danger. `refresh`, `outputs`, `list` and `cancel`
+// delete no infrastructure.
 
 import (
 	"context"
@@ -25,38 +31,30 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 )
 
-// allowTakeoverConfigKey opts out of the guard for one tenant.
-//
-// This is the channel that is reachable through the product: recipes are
-// tenant-scoped in Fabric, and their pulumi_config is free-form, so Defang can
-// unblock a single customer without shipping a CLI or a CD image. It is
-// deliberately NOT settable from the customer's shell — disarming this guard
-// can delete a production database, so it belongs to whoever operates the
-// platform, not to whatever happens to be exported in a terminal.
+// allowTakeoverConfigKey opts out of the guard for one tenant. This is the
+// channel that is reachable through the product: recipes are tenant-scoped in
+// Fabric and their pulumi_config is free-form, so Defang can unblock a single
+// customer without shipping a CLI or a CD image.
 const allowTakeoverConfigKey = "defang:allowLegacyStateTakeover"
 
-// allowTakeoverEnv is the break-glass equivalent for a CD run started by hand,
-// which has no recipe to carry config. The CLI does not forward it (the CD's
-// environment is a closed allowlist of key names), and it should not: a
+// allowTakeoverEnv is the same opt-out for a CD run started by hand, which has
+// no recipe to carry config. The CLI does not forward it and must not: a
 // checked-in .defang stack file can set any variable in the CLI process, so a
-// forwarded variable could disarm the guard for a project permanently and
-// invisibly.
+// forwarded variable could disarm this guard for a project invisibly.
 const allowTakeoverEnv = "DEFANG_ALLOW_LEGACY_STATE_TAKEOVER"
 
-// migrationRunbook is the blue/green migration guide. A sibling workstream owns
-// the file; keep this path in sync with it.
+// migrationRunbook is the blue/green migration guide.
 const migrationRunbook = "https://github.com/DefangLabs/pulumi-defang/blob/main/docs/legacy-cd-migration.md"
 
-// maxReportedResources caps how many foreign resources the error lists, so the
-// message stays readable on a stack with hundreds of them.
+// maxReportedResources keeps the message readable on a stack with hundreds of
+// foreign resources.
 const maxReportedResources = 5
 
-// ourPackages are the Pulumi package names of this CD's own components.
+// thisCDPackages are the Pulumi package names of this CD's own components.
 //
 // Every resource this CD creates through its providers is a descendant of a
 // defang-<cloud>:index:Project component, so its URN carries one of these
@@ -68,41 +66,47 @@ const maxReportedResources = 5
 // The older CDs have no equivalent: the TypeScript CD used defang-mvp:* and
 // pulumi-nodejs:dynamic:Resource, and the Go GCP CD registered no components at
 // all — its state is flat gcp:* resources plus cloudbuild:index:CloudBuild.
-var ourPackages = map[string]bool{
+// "Ours" is deliberately not the word here: defang-mvp:* is Defang's too, and
+// it is exactly what this has to exclude.
+var thisCDPackages = map[string]bool{
 	"defang-aws":   true,
 	"defang-gcp":   true,
 	"defang-azure": true,
 }
 
-// ourTopLevelNames are the names this CD gives the few resources it registers
-// at the top level of the stack, outside the Project component. Their URNs
-// carry a plain cloud package, so the name and the position are the only things
-// that tell them apart from an older CD's leftovers.
+// thisCDTopLevelNames are the names this CD gives the few resources it
+// registers at the top level of the stack, outside the Project component. Their
+// URNs carry a plain cloud package, so the name and the position are the only
+// things that tell them apart from an older CD's leftovers.
 //
-// These are string literals on both sides on purpose. Sharing a constant with
-// the creation sites would look like coupling without being any: a new
-// top-level resource declared with a fresh literal still compiles. What does
-// catch that is TestOurTopLevelNamesCoversRecordedPreviews, which checks this
-// list against the resources a real preview of this CD actually registers.
-var ourTopLevelNames = map[string]bool{
+// The list exists only because those resources escape the Project component. If
+// they were ever re-parented under it, their URNs would carry a defang package
+// and this list, isThisCD's position rule, and their tests would all go away.
+//
+// Nothing in the compiler keeps this in step with cd/program: a new top-level
+// resource declared with a fresh literal still compiles, and would then abort
+// every existing stack's next deploy. The state fixtures cannot catch it
+// either — they were captured from runs with no TTL and no state URL, so they
+// contain none of these resources. TestThisCDTopLevelNamesCoversEveryRootRegistration
+// reads the registrations back out of the source instead.
+var thisCDTopLevelNames = map[string]bool{
 	"project-pb":            true, // program/{aws,gcp,azure}.go, saveProjectPb*
 	"self-destruct":         true, // program/selfdestruct_{aws,gcp}.go
 	"defang-self-destruct":  true, // program/selfdestruct_azure.go, the trigger job
 	"self-destruct-starter": true, // program/selfdestruct_azure.go, its role assignment
 }
 
-// isOurs reports whether a resource was created by this CD.
-func isOurs(res apitype.ResourceV3) bool {
+// isThisCD reports whether a resource was created by this CD.
+func isThisCD(res apitype.ResourceV3) bool {
 	// The qualified type is the full parent chain, "$"-separated, so a match
 	// anywhere in it means the resource hangs off one of our components.
 	for _, typ := range strings.Split(string(res.URN.QualifiedType()), "$") {
 		pkg, _, _ := strings.Cut(typ, ":")
-		if ourPackages[pkg] {
+		if thisCDPackages[pkg] {
 			return true
 		}
 	}
-	// The top-level resources are accepted by name, and only in that position.
-	return isRootChild(res) && ourTopLevelNames[res.URN.Name()]
+	return isRootChild(res) && thisCDTopLevelNames[res.URN.Name()]
 }
 
 // isStructural reports whether a resource says nothing about who owns the
@@ -113,13 +117,11 @@ func isStructural(res apitype.ResourceV3) bool {
 	return typ == resource.RootStackType || strings.HasPrefix(string(typ), "pulumi:providers:")
 }
 
-// isRootChild reports whether a resource sits directly under the root stack
-// rather than under some component.
 func isRootChild(res apitype.ResourceV3) bool {
 	return res.Parent == "" || res.Parent.QualifiedType() == resource.RootStackType
 }
 
-// foreignResources returns the resources in a deployment that this CD does not
+// foreignResources returns the URNs in a deployment that this CD does not
 // recognize as its own. An empty result means the state is safe to operate on:
 // either it is empty, or this CD wrote all of it.
 //
@@ -127,13 +129,16 @@ func isRootChild(res apitype.ResourceV3) bool {
 // new type token in an old CD would slip past a denylist; it cannot slip past
 // this. It also catches a half-finished takeover, where our resources and the
 // old CD's resources sit in the same state.
-func foreignResources(resources []apitype.ResourceV3) []apitype.ResourceV3 {
-	var foreign []apitype.ResourceV3
+//
+// It returns URNs, not resources: apitype.ResourceV3 carries decrypted inputs
+// and outputs, and nothing downstream needs them.
+func foreignResources(resources []apitype.ResourceV3) []resource.URN {
+	var foreign []resource.URN
 	for _, res := range resources {
-		if isStructural(res) || isOurs(res) {
+		if isStructural(res) || isThisCD(res) {
 			continue
 		}
-		foreign = append(foreign, res)
+		foreign = append(foreign, res.URN)
 	}
 	return foreign
 }
@@ -142,15 +147,6 @@ func foreignResources(resources []apitype.ResourceV3) []apitype.ResourceV3 {
 // can be tested against a state fixture without a Pulumi backend.
 type stackExporter interface {
 	Export(context.Context) (apitype.UntypedDeployment, error)
-}
-
-var _ stackExporter = (*auto.Stack)(nil)
-
-// takeoverAllowed reports whether this run is a deliberate, authorized takeover.
-// The recipe's config is the channel Defang uses; the environment variable is
-// for a CD started by hand, which has no recipe.
-func takeoverAllowed(recipePulumiConfig string) bool {
-	return recipeAllowsTakeover(recipePulumiConfig) || getenvBool(allowTakeoverEnv)
 }
 
 // recipeAllowsTakeover reads the opt-in key out of the recipe, using the same
@@ -177,8 +173,9 @@ func recipeAllowsTakeover(recipePulumiConfig string) bool {
 	}
 }
 
-// checkLegacyState reads the stack's current state and refuses to continue if
-// another CD wrote it.
+// checkLegacyState reads the stack's current state and refuses to continue if a
+// different CD wrote it. It detects "not this CD" in either direction: a newer
+// CD's state would trip it too.
 //
 // It fails open. If the state cannot be read it warns and returns nil, because
 // making every deploy depend on a second successful read of the state backend
@@ -187,24 +184,21 @@ func recipeAllowsTakeover(recipePulumiConfig string) bool {
 // any work, so a state this cannot read is one the deploy will not get far on
 // either.
 func checkLegacyState(ctx context.Context, stack stackExporter, recipePulumiConfig string) error {
-	if takeoverAllowed(recipePulumiConfig) {
-		Println("Warning: this run is allowed to take over a state written by another Defang CD. " +
-			"If this stack belongs to another CD, this deploy will replace every resource in it, " +
-			"including databases.")
+	if recipeAllowsTakeover(recipePulumiConfig) || getenvBool(allowTakeoverEnv) {
+		warn("Warning: this run is allowed to take over a state written by another Defang CD. If this stack " +
+			"belongs to another CD, this deploy will replace every resource in it, including databases.")
 		return nil
 	}
 
 	deployment, err := stack.Export(ctx)
 	if err != nil {
-		Println("Warning: could not read the existing stack state, so this skipped the check for a state written " +
-			"by another Defang CD: " + err.Error())
+		warn("Skipping the check for another Defang CD's state: could not read the existing state:", err)
 		return nil
 	}
 
 	foreign, err := foreignResourcesIn(deployment)
 	if err != nil {
-		Println("Warning: could not parse the existing stack state, so this skipped the check for a state written " +
-			"by another Defang CD: " + err.Error())
+		warn("Skipping the check for another Defang CD's state: could not parse the existing state:", err)
 		return nil
 	}
 	if len(foreign) == 0 {
@@ -213,15 +207,17 @@ func checkLegacyState(ctx context.Context, stack stackExporter, recipePulumiConf
 	return &legacyStateError{foreign: foreign}
 }
 
-// foreignResourcesIn decodes an exported deployment and returns the resources
-// this CD does not own. A stack that has never been deployed exports a
-// deployment with no resources at all, which yields an empty result.
-func foreignResourcesIn(deployment apitype.UntypedDeployment) ([]apitype.ResourceV3, error) {
+// foreignResourcesIn decodes an exported deployment and returns the URNs this
+// CD does not own. A stack that has never been deployed exports a deployment
+// with no resources at all, which yields an empty result.
+func foreignResourcesIn(deployment apitype.UntypedDeployment) ([]resource.URN, error) {
+	// A stack that does not exist yet exports nothing. Handled here so a first
+	// deploy never prints a parse warning.
 	if len(deployment.Deployment) == 0 {
 		return nil, nil
 	}
-	// Only the URNs and parents are read. The exported deployment holds
-	// decrypted secrets, so none of it is ever logged.
+	// The exported deployment holds decrypted secrets, so none of it is logged
+	// and nothing but URNs and parents leaves this function.
 	var snapshot apitype.DeploymentV3
 	if err := json.Unmarshal(deployment.Deployment, &snapshot); err != nil {
 		return nil, err
@@ -229,27 +225,29 @@ func foreignResourcesIn(deployment apitype.UntypedDeployment) ([]apitype.Resourc
 	return foreignResources(snapshot.Resources), nil
 }
 
-// legacyStateError explains what was found and how to proceed.
+// legacyStateError explains what was found and how to proceed. It reaches the
+// customer through main.go, which prints it and exits 1 — the same exit code as
+// a failed deploy, so nothing downstream can single it out.
 type legacyStateError struct {
-	foreign []apitype.ResourceV3
+	foreign []resource.URN
 }
 
 func (e *legacyStateError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "this stack holds %d resources that this version of the Defang CD does not manage, "+
-		"so it was created by a different CD:\n", len(e.foreign))
-	for i, res := range e.foreign {
+	fmt.Fprintf(&b, "this stack has %d resources that this version of Defang did not create, "+
+		"so an older version of Defang deployed it:\n", len(e.foreign))
+	for i, urn := range e.foreign {
 		if i == maxReportedResources {
 			fmt.Fprintf(&b, "  ...and %d more\n", len(e.foreign)-maxReportedResources)
 			break
 		}
-		fmt.Fprintf(&b, "  %s::%s\n", res.URN.QualifiedType(), res.URN.Name())
+		fmt.Fprintf(&b, "  %s::%s\n", urn.QualifiedType(), urn.Name())
 	}
-	b.WriteString("\nContinuing would replace all of this infrastructure. Pulumi would create a new set of " +
-		"resources and then delete the ones above, including any database. That data would be lost.\n" +
-		"\nTo move this project to this CD, deploy it to a NEW stack and migrate to it. See\n  " +
+	b.WriteString("\nContinuing would replace all of it: a new set of resources would be created and the ones " +
+		"above deleted, databases and their data included.\n" +
+		"\nTo move this project, deploy it to a new stack, then shut this one down. See\n  " +
 		migrationRunbook + "\n" +
-		"\nIf this stack does belong to this CD and the check is wrong, contact Defang support: a deliberate\n" +
-		"takeover is enabled per tenant with " + allowTakeoverConfigKey + " in the stack's recipe.")
+		"\nIf this is wrong, contact Defang support. (Support can allow the takeover with " +
+		allowTakeoverConfigKey + " in this stack's recipe.)")
 	return b.String()
 }
