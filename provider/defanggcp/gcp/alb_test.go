@@ -271,8 +271,8 @@ func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t 
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(ctx, t, "api", 8080),
-			testCloudRunEntry(ctx, t, "ui", 3000),
+			testCloudRunEntry(t, ctx, "api", 8080),
+			testCloudRunEntry(t, ctx, "ui", 3000),
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -298,8 +298,8 @@ func TestCreateLoadBalancersHostRulesCoverEveryPublicDNSRecord(t *testing.T) {
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(ctx, t, "api", 8080),
-			testCloudRunEntry(ctx, t, "ui", 3000),
+			testCloudRunEntry(t, ctx, "api", 8080),
+			testCloudRunEntry(t, ctx, "ui", 3000),
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -318,11 +318,11 @@ func TestCreateLoadBalancersHostRulesCoverEveryPublicDNSRecord(t *testing.T) {
 func TestCreateLoadBalancersKeepsByodAndDelegateHostnamesOnOneService(t *testing.T) {
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		entry := testCloudRunEntry(ctx, t, "api", 8080)
+		entry := testCloudRunEntry(t, ctx, "api", 8080)
 		entry.Config.DomainName = "shop.example.com"
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			entry,
-			testCloudRunEntry(ctx, t, "ui", 3000),
+			testCloudRunEntry(t, ctx, "ui", 3000),
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -340,11 +340,11 @@ func TestCreateLoadBalancersKeepsByodAndDelegateHostnamesOnOneService(t *testing
 func TestCreateLoadBalancersWithoutDelegateDomainEmitsOnlyByodHostRules(t *testing.T) {
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		byod := testCloudRunEntry(ctx, t, "api", 8080)
+		byod := testCloudRunEntry(t, ctx, "api", 8080)
 		byod.Config.DomainName = "shop.example.com"
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			byod,
-			testCloudRunEntry(ctx, t, "ui", 3000), // no domainname, no delegate domain
+			testCloudRunEntry(t, ctx, "ui", 3000), // no domainname, no delegate domain
 		}, testInfra(ctx)) // testInfra leaves Domain empty
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -361,7 +361,7 @@ func TestCreateLoadBalancersSingleServiceKeepsDefaultServiceAndHostRule(t *testi
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(ctx, t, "api", 8080),
+			testCloudRunEntry(t, ctx, "api", 8080),
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -385,7 +385,7 @@ func TestCreateLoadBalancersMIGGetsDelegateHostRules(t *testing.T) {
 		config := testServiceConfig([]compose.ServicePortConfig{{Target: 3000, Mode: compose.PortModeIngress}})
 		config.DomainName = ""
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(ctx, t, "api", 8080),
+			testCloudRunEntry(t, ctx, "api", 8080),
 			{Name: "worker", InstanceGroup: mig, PrivateFqdn: "worker.google.internal", Config: config},
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
@@ -405,7 +405,7 @@ func TestCreateLoadBalancersMIGGetsDelegateHostRules(t *testing.T) {
 func TestCreateLoadBalancersCloudRunMultipleIngressPortsGetHostRules(t *testing.T) {
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		entry := testCloudRunEntry(ctx, t, "api", 8080)
+		entry := testCloudRunEntry(t, ctx, "api", 8080)
 		entry.Config.Ports = append(entry.Config.Ports, compose.ServicePortConfig{
 			Target: 9090, Mode: compose.PortModeIngress,
 		})
@@ -413,7 +413,7 @@ func TestCreateLoadBalancersCloudRunMultipleIngressPortsGetHostRules(t *testing.
 		// that, api's names would resolve correctly through the fallback and this
 		// test would pass even with no host rules at all.
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(ctx, t, "ui", 3000),
+			testCloudRunEntry(t, ctx, "ui", 3000),
 			entry,
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
@@ -436,7 +436,7 @@ func TestCreateLoadBalancersSanitizesPathMatcherName(t *testing.T) {
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(ctx, t, "my_api", 8080),
+			testCloudRunEntry(t, ctx, "my_api", 8080),
 		}, testDelegateInfra(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
@@ -458,7 +458,7 @@ func testDelegateInfra(ctx *pulumi.Context) *SharedInfra {
 	return infra
 }
 
-func testCloudRunEntry(ctx *pulumi.Context, t *testing.T, name string, port int32) LBServiceEntry {
+func testCloudRunEntry(t *testing.T, ctx *pulumi.Context, name string, port int32) LBServiceEntry {
 	t.Helper()
 	service, err := cloudrunv2.NewService(ctx, name+"-cloudrun", &cloudrunv2.ServiceArgs{
 		Location: pulumi.String("us-central1"),
