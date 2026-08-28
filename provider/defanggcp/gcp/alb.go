@@ -25,6 +25,7 @@ var (
 	errNoTCPPort               = errors.New("at least one tcp port is needed for health check")
 	errTooManyPorts            = errors.New("too many ports with protocol")
 	errMultipleIngressPorts    = errors.New("multiple ingress ports are not supported for Compute Engine services")
+	errDuplicateRoute          = errors.New("two services cannot share a load balancer route")
 )
 
 // LBServiceEntry holds the data needed to wire a service into the external load balancer.
@@ -91,8 +92,6 @@ func createExternalLoadBalancers(
 	// Create public DNS A records for each ingress service when a domain is configured.
 	// Mirrors the CD's getDomainAndCerts logic: one record for the main service domain
 	// ({serviceName}.{domain}) and one per ingress port ({serviceName}--{port}.{domain}).
-	// buildURLMap feeds the same delegateHostnames list into each service's host rule,
-	// so every name that resolves here also has a route.
 	if config.Domain != "" {
 		ip := pulumi.StringArray{config.PublicIP.Address}
 		for _, entry := range ingressEntries {
@@ -624,9 +623,9 @@ func newCertMap(
 // "<service>--<port>.<domain>" for each ingress port. Empty when no delegate
 // domain is configured (e.g. the standalone Service path).
 //
-// This is the single source of truth for those names: createExternalLoadBalancers
-// creates a DNS A record per entry, and buildURLMap puts the same list in the
-// service's URL-map host rule.
+// Both callers read from this one list -- createExternalLoadBalancers creates a
+// DNS A record per name, buildURLMap puts the same names in the service's host
+// rule -- so a name that resolves always has a route.
 func delegateHostnames(entry LBServiceEntry, domain string) []string {
 	if domain == "" {
 		return nil
@@ -642,18 +641,6 @@ func delegateHostnames(entry LBServiceEntry, domain string) []string {
 	return hostnames
 }
 
-// lbHostnames returns every hostname that must reach one service's backend: its
-// delegate-domain names plus the bring-your-own-domain names it asks for (its
-// `domainname` and the aliases on its default network, via common.ByodHostnames).
-//
-// Ported from the legacy CD, which packed a service's whole domain list into one
-// host rule rather than emitting a rule per name
-// (defang-mvp/pulumi/cd/gcp/gcpcd/alb.go:118-126 for Cloud Run, :183-186 for MIG,
-// list built in defangservice.go:486-595).
-func lbHostnames(entry LBServiceEntry, domain string) []string {
-	return append(delegateHostnames(entry, domain), common.ByodHostnames(entry.Config)...)
-}
-
 func buildURLMap(
 	ctx *pulumi.Context,
 	entries []LBServiceEntry,
@@ -663,6 +650,8 @@ func buildURLMap(
 	var firstBackendID pulumi.StringPtrInput
 	var hostRules compute.URLMapHostRuleArray
 	var pathMatchers compute.URLMapPathMatcherArray
+	hostOwner := map[string]string{}    // hostname -> service that serves it
+	matcherOwner := map[string]string{} // path matcher name -> service it routes to
 
 	for _, entry := range entries {
 		backendID, matcher, err := buildLBEntry(ctx, entry, config.Region, opts...)
@@ -674,32 +663,45 @@ func buildURLMap(
 		if matcher == nil {
 			continue
 		}
+		name := pathMatcherName(entry.Name)
+		if owner, taken := matcherOwner[name]; taken {
+			return nil, fmt.Errorf("services %q and %q both reduce to load balancer route %q: %w", owner, entry.Name, name, errDuplicateRoute)
+		}
+		matcherOwner[name] = entry.Name
 		pathMatchers = append(pathMatchers, matcher)
+
 		// A path matcher is only reachable through a host rule that names it, so
 		// every hostname pointed at this LB needs to appear in one. Without this,
 		// only BYOD names got a rule and every delegate name fell through to
 		// DefaultService -- i.e. to the first ingress service. See #373.
-		if hosts := lbHostnames(entry, config.Domain); len(hosts) > 0 {
+		hosts := delegateHostnames(entry, config.Domain)
+		// A BYOD domainname can repeat a delegate name; GCP rejects a repeated host.
+		if byod := entry.Config.DomainName; byod != "" && !slices.Contains(hosts, byod) {
+			hosts = append(hosts, byod)
+		}
+		for _, host := range hosts {
+			if owner, taken := hostOwner[host]; taken {
+				return nil, fmt.Errorf("services %q and %q both claim hostname %q: %w", owner, entry.Name, host, errDuplicateRoute)
+			}
+			hostOwner[host] = entry.Name
+		}
+		if len(hosts) > 0 {
 			hostRules = append(hostRules, &compute.URLMapHostRuleArgs{
 				Hosts:       pulumi.ToStringArray(hosts),
-				PathMatcher: pulumi.String(pathMatcherName(entry.Name)),
+				PathMatcher: pulumi.String(name),
 			})
 		}
+
+		// The first ingress service in TopologicalSort order becomes the URL map's
+		// DefaultService: where an unmatched Host header lands, i.e. the bare
+		// project domain or any host pointed at this IP from outside the project.
+		// Same as the legacy CD (gcpcd/alb.go, firstPublicBackendID).
+		// TODO(#373): decide which service should own the bare project domain.
 		if firstBackendID == nil {
 			firstBackendID = backendID.ToStringOutput()
 		}
 	}
 
-	// DefaultService is what an unmatched Host header hits: the first ingress
-	// service in TopologicalSort order. Unchanged from before #373 and from the
-	// legacy CD (defang-mvp/pulumi/cd/gcp/gcpcd/alb.go:203-212, firstPublicBackendID).
-	// It now only catches names nothing else claims -- the bare project domain, and
-	// any host pointed at this IP from outside the project -- because every
-	// service's own names are matched by its host rule above. Which service should
-	// own the bare project domain is a separate open question, tracked in #373 for
-	// AWS and GCP alike; keeping the existing fallback avoids changing that
-	// behavior here.
-	//
 	// Logical name deliberately omits projectName: Pulumi's default resource ID
 	// already prefixes it with <pulumi-project>-<stack>, which includes
 	// projectName, so repeating it here risked exceeding GCP's 63-char resource

@@ -250,7 +250,7 @@ func requireURLMapRouting(t *testing.T, resources []albResource) urlMapRouting {
 
 // publicDNSNames returns the hostnames the provider created public A records for.
 // CreatePublicDNSRecord names the resource "<hostname>_<type>" and normalizes the
-// hostname to FQDN form (gcp.go:352-354), so the trailing dot is stripped here:
+// hostname to FQDN form (CreatePublicDNSRecord), so the trailing dot is stripped:
 // URL-map hosts match the HTTP Host header, which carries no trailing dot.
 func publicDNSNames(resources []albResource) []string {
 	var names []string
@@ -273,7 +273,7 @@ func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t 
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "api", 8080),
 			testCloudRunEntry(t, ctx, "ui", 3000),
-		}, testDelegateInfra(ctx))
+		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
@@ -289,28 +289,63 @@ func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t 
 	// The pre-fix behavior, spelled out so a regression is unmistakable.
 	require.NotEqual(t, routing.defaultService, routing.backendFor("ui.proj.example.com"),
 		"ui.proj.example.com fell through to DefaultService -- the #373 regression is back")
-}
 
-// The DNS records and the host rules are generated from one list
-// (delegateHostnames). This pins that invariant: a name that resolves to the LB's
-// IP must also have a route, or it silently lands on the default backend.
-func TestCreateLoadBalancersHostRulesCoverEveryPublicDNSRecord(t *testing.T) {
-	mocks := &albMocks{}
-	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			testCloudRunEntry(t, ctx, "api", 8080),
-			testCloudRunEntry(t, ctx, "ui", 3000),
-		}, testDelegateInfra(ctx))
-	}, pulumi.WithMocks("proj", "stack", mocks))
-	require.NoError(t, err)
-
-	routing := requireURLMapRouting(t, mocks.resources)
+	// Same invariant from the other end: every name that resolves to the LB's IP
+	// has a route. Both lists come from delegateHostnames, so they cannot drift.
 	dnsNames := publicDNSNames(mocks.resources)
 	require.Len(t, dnsNames, 4, "expected <service>.<domain> and <service>--<port>.<domain> for two services")
 	for _, name := range dnsNames {
 		require.Contains(t, routing.hostToMatcher, name,
 			"DNS record %q resolves to the load balancer but no host rule routes it", name)
 	}
+}
+
+// GCP rejects a URL map that lists one hostname in two host rules, with an error
+// that doesn't name the services involved. Two services can collide on a
+// hostname once delegate names are in the map -- here a BYOD `domainname` that
+// happens to be another service's delegate name.
+func TestCreateLoadBalancersRejectsTwoServicesClaimingOneHostname(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		proxy := testCloudRunEntry(t, ctx, "proxy", 80)
+		proxy.Config.DomainName = "api.proj.example.com" // == api's delegate hostname
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(t, ctx, "api", 8080),
+			proxy,
+		}, testInfraWithDomain(ctx))
+	}, pulumi.WithMocks("proj", "stack", &albMocks{}))
+	require.ErrorIs(t, err, errDuplicateRoute)
+	require.Contains(t, err.Error(), `"api" and "proxy" both claim hostname "api.proj.example.com"`)
+}
+
+// Two service names that differ only in characters pathMatcherName strips (here
+// "_" vs "-") reduce to the same path matcher name. Duplicate path matcher names
+// are rejected by GCP; say which services collided instead.
+func TestCreateLoadBalancersRejectsTwoServicesReducingToOneRoute(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(t, ctx, "my_api", 8080),
+			testCloudRunEntry(t, ctx, "my-api", 9090),
+		}, testInfraWithDomain(ctx))
+	}, pulumi.WithMocks("proj", "stack", &albMocks{}))
+	require.ErrorIs(t, err, errDuplicateRoute)
+	require.Contains(t, err.Error(), `both reduce to load balancer route "my-api"`)
+}
+
+// A `domainname` set to the service's own delegate hostname is a plausible user
+// config. It must not produce the same host twice in one host rule.
+func TestCreateLoadBalancersDeduplicatesByodMatchingOwnDelegateHostname(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		entry := testCloudRunEntry(t, ctx, "api", 80)
+		entry.Config.DomainName = "api.proj.example.com"
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{entry}, testInfraWithDomain(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	urlMap := requireResource(t, mocks.resources, "gcp:compute/uRLMap:URLMap", "urlmap")
+	hosts := urlMap.inputs["hostRules"].ArrayValue()[0].ObjectValue()["hosts"].ArrayValue()
+	require.Len(t, hosts, 2, "expected api.proj.example.com and api--80.proj.example.com, no repeat")
+	requireURLMapRouting(t, mocks.resources) // also asserts no duplicate across rules
 }
 
 // A service can have both: BYOD names must keep working (they did before #373)
@@ -323,7 +358,7 @@ func TestCreateLoadBalancersKeepsByodAndDelegateHostnamesOnOneService(t *testing
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			entry,
 			testCloudRunEntry(t, ctx, "ui", 3000),
-		}, testDelegateInfra(ctx))
+		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
@@ -362,7 +397,7 @@ func TestCreateLoadBalancersSingleServiceKeepsDefaultServiceAndHostRule(t *testi
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "api", 8080),
-		}, testDelegateInfra(ctx))
+		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
@@ -383,11 +418,10 @@ func TestCreateLoadBalancersMIGGetsDelegateHostRules(t *testing.T) {
 			return err
 		}
 		config := testServiceConfig([]compose.ServicePortConfig{{Target: 3000, Mode: compose.PortModeIngress}})
-		config.DomainName = ""
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "api", 8080),
 			{Name: "worker", InstanceGroup: mig, PrivateFqdn: "worker.google.internal", Config: config},
-		}, testDelegateInfra(ctx))
+		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
@@ -415,7 +449,7 @@ func TestCreateLoadBalancersCloudRunMultipleIngressPortsGetHostRules(t *testing.
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "ui", 3000),
 			entry,
-		}, testDelegateInfra(ctx))
+		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
@@ -437,7 +471,7 @@ func TestCreateLoadBalancersSanitizesPathMatcherName(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "my_api", 8080),
-		}, testDelegateInfra(ctx))
+		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
@@ -451,7 +485,7 @@ func TestCreateLoadBalancersSanitizesPathMatcherName(t *testing.T) {
 	}
 }
 
-func testDelegateInfra(ctx *pulumi.Context) *SharedInfra {
+func testInfraWithDomain(ctx *pulumi.Context) *SharedInfra {
 	infra := testInfra(ctx)
 	infra.Domain = "proj.example.com"
 	infra.PublicZoneId = pulumi.String("public-zone")
@@ -466,7 +500,6 @@ func testCloudRunEntry(t *testing.T, ctx *pulumi.Context, name string, port int3
 	})
 	require.NoError(t, err)
 	config := testServiceConfig([]compose.ServicePortConfig{{Target: port, Mode: compose.PortModeIngress}})
-	config.DomainName = "" // delegate-domain only unless a test opts in
 	return LBServiceEntry{Name: name, CloudRunService: service, Config: config}
 }
 
@@ -499,7 +532,6 @@ func testMIG(ctx *pulumi.Context, name string) (*compute.RegionInstanceGroupMana
 
 func testServiceConfig(ports []compose.ServicePortConfig) compose.ServiceConfig {
 	return compose.ServiceConfig{
-		DomainName:  "api.example.com",
 		HealthCheck: &compose.HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:3000/"}},
 		Ports:       ports,
 	}
