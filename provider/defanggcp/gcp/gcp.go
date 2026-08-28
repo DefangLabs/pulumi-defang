@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
@@ -95,11 +96,16 @@ func NewStandaloneGlobalConfig(ctx *pulumi.Context) *SharedInfra {
 // domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 // a public DNS managed zone, a wildcard DNS authorization, and a wildcard certificate
 // are created for that domain.
+//
+// parentOpt is the same parent option as opts[0], typed so it also satisfies
+// pulumi.InvokeOption: the delegate-zone lookup is an invoke, and without the parent
+// it would not inherit the stack's GCP provider (see createWildcardCert).
 func BuildGlobalConfig(
 	ctx *pulumi.Context,
 	projectName string,
 	domain string,
 	services map[string]compose.ServiceConfig,
+	parentOpt pulumi.ResourceOrInvokeOption,
 	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
 	region := GcpRegion(ctx)
@@ -207,7 +213,7 @@ func BuildGlobalConfig(
 
 	if domain != "" {
 		cfg.Domain = domain
-		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
+		if err := createWildcardCert(ctx, projectName, domain, cfg, parentOpt, opts...); err != nil {
 			return nil, err
 		}
 	}
@@ -253,22 +259,101 @@ func buildOptionalInfra(
 	return nil
 }
 
-// createWildcardCert creates a public DNS zone, a wildcard DNS authorization, and a
-// wildcard certificate for the given domain, populating cfg.PublicZoneId and
-// cfg.WildcardCertId.
+// DelegateZoneName returns the Cloud DNS managed-zone name the Defang CLI gives the
+// public delegate zone it pre-creates, and delegates from the parent domain, before
+// the CD task runs.
+//
+// This must stay byte-for-byte identical to the CLI's derivation in
+// defang/src/pkg/cli/client/byoc/gcp/byoc.go PrepareDomainDelegation:
+// "defang-" + dns.SafeLabel(delegateDomain), where the CLI's dns.SafeLabel is the
+// same lowercase-and-dots-to-hyphens function as common.SafeLabel here.
+//
+// Note the legacy CD derives the same name through its own safeZoneName
+// (defang-mvp pulumi/cd/gcp/gcpcd/up.go:405-408), which additionally strips
+// non-alphanumerics and hash-truncates to 63 characters. The CLI does neither, so
+// the two disagree for long or unusual delegate domains. The CLI creates the zone,
+// so the CLI wins; findDelegateZone's dnsName fallback covers the divergence.
+func DelegateZoneName(domain string) string {
+	return "defang-" + common.SafeLabel(common.NormalizeDNS(domain))
+}
+
+// findDelegateZone returns the name of an existing public managed zone in the deploy
+// project that already serves fqdn, or "" when there is none.
+//
+// Ported from the legacy GCP CD's adopt-or-create block
+// (defang-mvp pulumi/cd/gcp/gcpcd/tenant_stack.go:180-190), with one deliberate
+// change: the legacy CD calls dns.LookupManagedZone (a get-by-name) and treats *any*
+// error as "no zone, create one". Listing instead means a "not found" is an empty
+// result rather than an error, so there is no 404 message to pattern-match — and,
+// unlike the legacy behaviour, a permission or throttling failure surfaces as an
+// error instead of silently creating the duplicate zone this function exists to
+// prevent. Cf. the same fail-closed reasoning in defangaws/aws/route53.go:125-161.
+func findDelegateZone(ctx *pulumi.Context, fqdn string, parentOpt pulumi.ResourceOrInvokeOption) (string, error) {
+	zones, err := dns.GetManagedZones(ctx, &dns.GetManagedZonesArgs{}, parentOpt)
+	if err != nil {
+		return "", fmt.Errorf("listing Cloud DNS managed zones for %s: %w", fqdn, err)
+	}
+
+	cliName := DelegateZoneName(fqdn)
+	var byDNSName string
+	for _, zone := range zones.ManagedZones {
+		// Private zones cannot answer a DNS-01 challenge or serve public records.
+		if zone.Name == nil || *zone.Name == "" || zone.Visibility == "private" || zone.DnsName != fqdn+"." {
+			continue
+		}
+		if *zone.Name == cliName {
+			return cliName, nil // the CLI's zone: the one the parent NS records point at
+		}
+		// GCP allows several zones to share a dnsName, which is how the duplicate
+		// arises in the first place. Pick the lowest name so repeated deploys keep
+		// adopting the same zone instead of flapping between them.
+		if byDNSName == "" || *zone.Name < byDNSName {
+			byDNSName = *zone.Name
+		}
+	}
+	return byDNSName, nil
+}
+
+// createWildcardCert adopts or creates the public delegate DNS zone, then adds a
+// wildcard DNS authorization and wildcard certificate for the given domain,
+// populating cfg.PublicZoneId and cfg.WildcardCertId.
 func createWildcardCert(
 	ctx *pulumi.Context,
 	projectName string,
 	domain string,
 	cfg *SharedInfra,
+	parentOpt pulumi.ResourceOrInvokeOption,
 	opts ...pulumi.ResourceOption,
 ) error {
 	fqdn := strings.TrimSuffix(domain, ".")
 
-	zone, err := dns.NewManagedZone(ctx, "public-dns", &dns.ManagedZoneArgs{
-		Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
-		DnsName:     pulumi.String(fqdn + "."),
-	}, opts...)
+	existing, err := findDelegateZone(ctx, fqdn, parentOpt)
+	if err != nil {
+		return err
+	}
+
+	var zone *dns.ManagedZone
+	if existing != "" {
+		// Adopt the zone the CLI already created and delegated. Creating a second
+		// zone for the same dnsName gets a different nameserver set that the parent
+		// does not delegate to, so the DNS-01 challenge records below would land in
+		// a zone nobody resolves and the wildcard cert would never validate.
+		//
+		// Read rather than pulumi.Import: a read resource stays outside this stack's
+		// lifecycle, so `defang down` cannot delete a zone Defang did not create, and
+		// Pulumi never diffs our args against the CLI's (a mismatch on an immutable
+		// field such as dnsName would otherwise propose a replacement — deleting the
+		// delegated zone and issuing new nameservers).
+		zone, err = dns.GetManagedZone(ctx, "public-dns", pulumi.ID(existing), nil, opts...)
+	} else {
+		zone, err = dns.NewManagedZone(ctx, "public-dns", &dns.ManagedZoneArgs{
+			Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
+			DnsName:     pulumi.String(fqdn + "."),
+			// Name it the way the CLI would, so a later `defang compose up` finds
+			// this zone instead of creating a second one alongside it.
+			Name: pulumi.String(DelegateZoneName(fqdn)),
+		}, opts...)
+	}
 	if err != nil {
 		return err
 	}

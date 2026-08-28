@@ -96,11 +96,11 @@ func buildProject(
 	projectName string,
 	args ProjectInputs,
 	pluginID common.PluginIdentity,
-	parentOpt pulumi.ResourceOption,
+	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*projectResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
-	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
+	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, parentOpt, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
