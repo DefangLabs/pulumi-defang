@@ -1,9 +1,11 @@
 package gcp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -183,6 +185,289 @@ func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
 	} {
 		requireResource(t, mocks.resources, typ, "smokeworker-tcp-6379")
 	}
+}
+
+// urlMapRouting is the routing table of the external URL map, decoded from the
+// mocked resource inputs so tests can ask "where does this Host header land?"
+// instead of picking apart nested PropertyValues.
+type urlMapRouting struct {
+	defaultService string
+	hostToMatcher  map[string]string // hostname -> path matcher name
+	matcherService map[string]string // path matcher name -> backend id
+	hostRuleCount  int
+}
+
+// backendFor resolves a Host header the way GCP does: find the host rule listing
+// the hostname, follow it to its path matcher, and take that matcher's default
+// service. Falls back to the URL map's default service when nothing matches --
+// which is exactly the #373 bug, so tests can assert on it directly.
+func (r urlMapRouting) backendFor(hostname string) string {
+	matcher, ok := r.hostToMatcher[hostname]
+	if !ok {
+		return r.defaultService
+	}
+	return r.matcherService[matcher]
+}
+
+func requireURLMapRouting(t *testing.T, resources []albResource) urlMapRouting {
+	t.Helper()
+	urlMap := requireResource(t, resources, "gcp:compute/uRLMap:URLMap", "urlmap")
+	routing := urlMapRouting{
+		hostToMatcher:  map[string]string{},
+		matcherService: map[string]string{},
+	}
+	if v, ok := urlMap.inputs["defaultService"]; ok {
+		routing.defaultService = v.StringValue()
+	}
+	if v, ok := urlMap.inputs["hostRules"]; ok {
+		for _, rule := range v.ArrayValue() {
+			fields := rule.ObjectValue()
+			matcher := fields["pathMatcher"].StringValue()
+			hosts := fields["hosts"].ArrayValue()
+			require.NotEmpty(t, hosts, "host rule for path matcher %q has no hosts; GCP rejects that", matcher)
+			routing.hostRuleCount++
+			for _, host := range hosts {
+				name := host.StringValue()
+				_, dup := routing.hostToMatcher[name]
+				require.False(t, dup, "hostname %q appears in more than one host rule", name)
+				routing.hostToMatcher[name] = matcher
+			}
+		}
+	}
+	if v, ok := urlMap.inputs["pathMatchers"]; ok {
+		for _, matcher := range v.ArrayValue() {
+			fields := matcher.ObjectValue()
+			routing.matcherService[fields["name"].StringValue()] = fields["defaultService"].StringValue()
+		}
+	}
+	// Every host rule must name a path matcher that exists, or GCP rejects the map.
+	for host, matcher := range routing.hostToMatcher {
+		require.Contains(t, routing.matcherService, matcher,
+			"host %q points at path matcher %q, which no path matcher defines", host, matcher)
+	}
+	return routing
+}
+
+// publicDNSNames returns the hostnames the provider created public A records for.
+// CreatePublicDNSRecord names the resource "<hostname>_<type>" and normalizes the
+// hostname to FQDN form (gcp.go:352-354), so the trailing dot is stripped here:
+// URL-map hosts match the HTTP Host header, which carries no trailing dot.
+func publicDNSNames(resources []albResource) []string {
+	var names []string
+	for _, r := range resources {
+		if r.typeof == "gcp:dns/recordSet:RecordSet" && strings.HasSuffix(r.name, "_A") {
+			names = append(names, strings.TrimSuffix(strings.TrimSuffix(r.name, "_A"), "."))
+		}
+	}
+	return names
+}
+
+// Before #373 a service only got a URL-map host rule when it had a BYOD
+// `domainname`. Every other hostname -- including the "<service>.<domain>" names
+// the provider itself creates DNS records for -- fell through to DefaultService,
+// so in a multi-ingress project every name reached the FIRST service. This is the
+// regression test for that: ui's own hostnames must reach ui's backend.
+func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(ctx, t, "api", 8080),
+			testCloudRunEntry(ctx, t, "ui", 3000),
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	require.Equal(t, 2, routing.hostRuleCount, "expected one host rule per ingress service")
+
+	// api's names reach api; ui's names reach ui -- not the first backend.
+	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor("api--8080.proj.example.com"))
+	require.Equal(t, "ui-backend_id", routing.backendFor("ui.proj.example.com"))
+	require.Equal(t, "ui-backend_id", routing.backendFor("ui--3000.proj.example.com"))
+
+	// The pre-fix behavior, spelled out so a regression is unmistakable.
+	require.NotEqual(t, routing.defaultService, routing.backendFor("ui.proj.example.com"),
+		"ui.proj.example.com fell through to DefaultService -- the #373 regression is back")
+}
+
+// The DNS records and the host rules are generated from one list
+// (delegateHostnames). This pins that invariant: a name that resolves to the LB's
+// IP must also have a route, or it silently lands on the default backend.
+func TestCreateLoadBalancersHostRulesCoverEveryPublicDNSRecord(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(ctx, t, "api", 8080),
+			testCloudRunEntry(ctx, t, "ui", 3000),
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	dnsNames := publicDNSNames(mocks.resources)
+	require.Len(t, dnsNames, 4, "expected <service>.<domain> and <service>--<port>.<domain> for two services")
+	for _, name := range dnsNames {
+		require.Contains(t, routing.hostToMatcher, name,
+			"DNS record %q resolves to the load balancer but no host rule routes it", name)
+	}
+}
+
+// A service can have both: BYOD names must keep working (they did before #373)
+// and land on the same backend as the delegate names, in one host rule.
+func TestCreateLoadBalancersKeepsByodAndDelegateHostnamesOnOneService(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		entry := testCloudRunEntry(ctx, t, "api", 8080)
+		entry.Config.DomainName = "shop.example.com"
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			entry,
+			testCloudRunEntry(ctx, t, "ui", 3000),
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	require.Equal(t, 2, routing.hostRuleCount, "BYOD should extend the service's host rule, not add one")
+	require.Equal(t, "api-backend_id", routing.backendFor("shop.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+	require.Equal(t, "ui-backend_id", routing.backendFor("ui.proj.example.com"))
+}
+
+// The standalone Service path has no delegate domain (SharedInfra.Domain == "").
+// A service with no BYOD name then contributes no hostnames, and must not produce
+// a host rule with an empty Hosts array -- GCP rejects that.
+func TestCreateLoadBalancersWithoutDelegateDomainEmitsOnlyByodHostRules(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		byod := testCloudRunEntry(ctx, t, "api", 8080)
+		byod.Config.DomainName = "shop.example.com"
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			byod,
+			testCloudRunEntry(ctx, t, "ui", 3000), // no domainname, no delegate domain
+		}, testInfra(ctx)) // testInfra leaves Domain empty
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	require.Equal(t, 1, routing.hostRuleCount, "only the BYOD service should get a host rule")
+	require.Equal(t, "api-backend_id", routing.backendFor("shop.example.com"))
+	require.Empty(t, publicDNSNames(mocks.resources), "no delegate domain means no public A records")
+}
+
+// A single-service project has nothing to mis-route, but it must not regress:
+// the service still gets its host rule and DefaultService is still populated.
+func TestCreateLoadBalancersSingleServiceKeepsDefaultServiceAndHostRule(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(ctx, t, "api", 8080),
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	require.Equal(t, 1, routing.hostRuleCount)
+	require.Equal(t, "api-backend_id", routing.defaultService,
+		"an unmatched Host header still reaches the first ingress service")
+	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+}
+
+// Compute Engine services route through buildMIGLBEntry, a separate code path
+// that had the same BYOD-only host rule. It must get delegate host rules too.
+func TestCreateLoadBalancersMIGGetsDelegateHostRules(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		mig, err := testMIG(ctx, "worker")
+		if err != nil {
+			return err
+		}
+		config := testServiceConfig([]compose.ServicePortConfig{{Target: 3000, Mode: compose.PortModeIngress}})
+		config.DomainName = ""
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(ctx, t, "api", 8080),
+			{Name: "worker", InstanceGroup: mig, PrivateFqdn: "worker.google.internal", Config: config},
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	require.Equal(t, 2, routing.hostRuleCount)
+	require.Equal(t, "worker-3000-gce-backend_id", routing.backendFor("worker.proj.example.com"))
+	require.Equal(t, "worker-3000-gce-backend_id", routing.backendFor("worker--3000.proj.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor("api.proj.example.com"))
+}
+
+// Cloud Run allows several ingress ports; each gets a "--<port>" DNS record, so
+// each needs a route. They all reach the one Cloud Run backend -- Cloud Run
+// serves a single port -- matching the legacy CD, which put every endpoint name
+// in one host rule.
+func TestCreateLoadBalancersCloudRunMultipleIngressPortsGetHostRules(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		entry := testCloudRunEntry(ctx, t, "api", 8080)
+		entry.Config.Ports = append(entry.Config.Ports, compose.ServicePortConfig{
+			Target: 9090, Mode: compose.PortModeIngress,
+		})
+		// "ui" is listed first so it -- not api -- is the DefaultService. Without
+		// that, api's names would resolve correctly through the fallback and this
+		// test would pass even with no host rules at all.
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(ctx, t, "ui", 3000),
+			entry,
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	require.Equal(t, "ui-backend_id", routing.defaultService)
+	for _, host := range []string{
+		"api.proj.example.com", "api--8080.proj.example.com", "api--9090.proj.example.com",
+	} {
+		require.Equal(t, "api-backend_id", routing.backendFor(host))
+	}
+}
+
+// Path matcher names must match GCP's '[a-z]([-a-z0-9]*[a-z0-9])?' and the host
+// rule has to reference the same sanitized name. The external path used the raw
+// service name, so an underscore (legal in a Compose service name, and mapped to
+// "-" in the hostname by common.ServiceLabel) produced an invalid, mismatched name.
+func TestCreateLoadBalancersSanitizesPathMatcherName(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
+			testCloudRunEntry(ctx, t, "my_api", 8080),
+		}, testDelegateInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	routing := requireURLMapRouting(t, mocks.resources)
+	// The hostname uses ServiceLabel ("_" -> "-"); the Pulumi logical name keeps the
+	// raw service name. requireURLMapRouting already checked the host rule resolves
+	// to a matcher that exists -- which is what breaks when the two disagree.
+	require.Equal(t, "my_api-backend_id", routing.backendFor("my-api.proj.example.com"))
+	for name := range routing.matcherService {
+		require.Regexp(t, `^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`, name)
+	}
+}
+
+func testDelegateInfra(ctx *pulumi.Context) *SharedInfra {
+	infra := testInfra(ctx)
+	infra.Domain = "proj.example.com"
+	infra.PublicZoneId = pulumi.String("public-zone")
+	return infra
+}
+
+func testCloudRunEntry(ctx *pulumi.Context, t *testing.T, name string, port int32) LBServiceEntry {
+	t.Helper()
+	service, err := cloudrunv2.NewService(ctx, name+"-cloudrun", &cloudrunv2.ServiceArgs{
+		Location: pulumi.String("us-central1"),
+		Template: &cloudrunv2.ServiceTemplateArgs{},
+	})
+	require.NoError(t, err)
+	config := testServiceConfig([]compose.ServicePortConfig{{Target: port, Mode: compose.PortModeIngress}})
+	config.DomainName = "" // delegate-domain only unless a test opts in
+	return LBServiceEntry{Name: name, CloudRunService: service, Config: config}
 }
 
 func testInfra(ctx *pulumi.Context) *SharedInfra {
