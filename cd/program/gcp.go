@@ -201,7 +201,7 @@ func saveProjectPbGCP(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Res
 		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
 	}).(pulumi.AssetOutput)
 
-	_, err = storage.NewBucketObject(ctx, "project-pb", &storage.BucketObjectArgs{
+	_, err = storage.NewBucketObject(ctx, ProjectPbName, &storage.BucketObjectArgs{
 		Bucket:      pulumi.String(u.Host),
 		Name:        pulumi.String(projectPbKey(ctx)),
 		Source:      source,

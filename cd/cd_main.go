@@ -105,6 +105,15 @@ func cdMain(ctx context.Context, args ...string) error {
 		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
 	}
 
+	// Refuse to operate on a state that a different Defang CD wrote. Only the
+	// commands that can change infrastructure are guarded; see legacy_state.go.
+	switch command {
+	case client.CdCommandUp, client.CdCommandRefresh, client.CdCommandDown, client.CdCommandDestroy:
+		if err := checkLegacyState(ctx, stack); err != nil {
+			return err
+		}
+	}
+
 	// Set workspace env vars
 	if etag != "" {
 		// USER ends up in Pulumi lock files for debugging; FIXME: this hack doesn't work on linux

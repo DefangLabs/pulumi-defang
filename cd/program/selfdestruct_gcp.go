@@ -60,7 +60,7 @@ func createGCPSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 	_ = pctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` on itself at %s (ttl %s); redeploying extends it",
 		fireAt.UTC().Format(time.RFC3339), ttl), nil)
 
-	_, err = cloudscheduler.NewJob(pctx, "self-destruct", &cloudscheduler.JobArgs{
+	_, err = cloudscheduler.NewJob(pctx, SelfDestructName, &cloudscheduler.JobArgs{
 		Description: pulumi.Sprintf("defang self-destruct for %s/%s", cf.Name, pctx.Stack()),
 		Region:      pulumi.String(gcpconfig.GetRegion(pctx)),
 		Schedule:    pulumi.String(selfDestructCron(fireAt)),

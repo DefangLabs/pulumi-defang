@@ -25,10 +25,10 @@ const (
 	CdResourceGroup = "defang-cd"
 	cdJobName       = "defang-cd"
 
-	// selfDestructJobName is deterministic so every redeploy updates the same
-	// trigger in place (extending the stack's life). It is unique within the
-	// project resource group, which is itself per project/stack.
-	selfDestructJobName = "defang-self-destruct"
+	// selfDestructJobName is unique within the project resource group, which is
+	// itself per project/stack. See SelfDestructJobName in toplevel.go for why
+	// the name is deterministic.
+	selfDestructJobName = SelfDestructJobName
 
 	// The trigger execution only STARTS the down (one ARM call); the down
 	// itself runs in the shared defang-cd job. It must not run the destroy
@@ -103,7 +103,7 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 	// assignment is created now (by the CD's own subscription-wide identity,
 	// which holds User Access Administrator) and used only at fire time, so
 	// AAD propagation delays are moot.
-	_, err = authorization.NewRoleAssignment(pctx, "self-destruct-starter", &authorization.RoleAssignmentArgs{
+	_, err = authorization.NewRoleAssignment(pctx, SelfDestructRoleName, &authorization.RoleAssignmentArgs{
 		PrincipalId:      job.Identity.PrincipalId().Elem(),
 		PrincipalType:    pulumi.String("ServicePrincipal"),
 		RoleDefinitionId: pulumi.String(fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", subscriptionID, contributorRoleDefinitionID)),

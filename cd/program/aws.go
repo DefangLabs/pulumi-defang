@@ -244,7 +244,7 @@ func saveProjectPbAWS(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Res
 		return base64.StdEncoding.EncodeToString(v.([]byte))
 	}).(pulumi.StringOutput)
 
-	_, err = s3.NewBucketObject(ctx, "project-pb", &s3.BucketObjectArgs{
+	_, err = s3.NewBucketObject(ctx, ProjectPbName, &s3.BucketObjectArgs{
 		Bucket:        pulumi.String(u.Host),
 		Key:           pulumi.String(projectPbKey(ctx)),
 		ContentBase64: contentBase64,

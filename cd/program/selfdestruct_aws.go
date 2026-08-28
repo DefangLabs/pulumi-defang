@@ -87,7 +87,7 @@ func createAWSSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 		return err
 	}
 
-	role, err := iam.NewRole(pctx, "self-destruct", &iam.RoleArgs{
+	role, err := iam.NewRole(pctx, SelfDestructName, &iam.RoleArgs{
 		AssumeRolePolicy: pulumi.String(assumeRole),
 		InlinePolicies: iam.RoleInlinePolicyArray{
 			iam.RoleInlinePolicyArgs{
@@ -103,7 +103,7 @@ func createAWSSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.D
 	_ = pctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` on itself at %s (ttl %s); redeploying extends it",
 		fireAt.UTC().Format(time.RFC3339), ttl), nil)
 
-	_, err = scheduler.NewSchedule(pctx, "self-destruct", &scheduler.ScheduleArgs{
+	_, err = scheduler.NewSchedule(pctx, SelfDestructName, &scheduler.ScheduleArgs{
 		Description: pulumi.Sprintf("defang self-destruct for %s/%s", cf.Name, pctx.Stack()),
 		// One-time schedule, evaluated in UTC (the provider default). AWS
 		// rejects a fire time in the past at create — the CLI's minTTL floor

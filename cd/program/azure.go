@@ -435,7 +435,7 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))
 	}).(pulumi.AssetOutput)
 
-	_, err = storage.NewBlob(ctx, "project-pb", &storage.BlobArgs{
+	_, err = storage.NewBlob(ctx, ProjectPbName, &storage.BlobArgs{
 		ResourceGroupName: pulumi.String(cdRG),
 		AccountName:       pulumi.String(account),
 		ContainerName:     pulumi.String(u.Host), // Host is the container in azblob:// URLs
