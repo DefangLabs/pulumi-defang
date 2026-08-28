@@ -72,6 +72,9 @@ func CreateCloudRunService(
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
 		Template:           template,
 	}
+	if scaling := minInstanceScaling(svc); scaling != nil {
+		serviceArgs.Scaling = scaling
+	}
 	if launchStage := LaunchStage.Get(ctx); launchStage != "" {
 		serviceArgs.LaunchStage = pulumi.String(launchStage)
 	}
@@ -83,6 +86,36 @@ func CreateCloudRunService(
 	return &CloudRunResult{
 		Service: crService,
 	}, nil
+}
+
+// minInstanceScaling keeps `deploy.replicas` instances warm, or returns nil to
+// leave the service scaling to zero.
+//
+// `replicas` is a floor, not just a ceiling. The legacy GCP CD kept N instances
+// running for `replicas: N` (defang-mvp pulumi/cd/gcp/gcpcd/cloudrun.go:76-81),
+// and the other providers here still do: AWS ecs.go:970 (DesiredCount) and Azure
+// containerapp.go:306 (MinReplicas), as does this provider's own Compute Engine
+// path, compute.go:134 (TargetSize). Cloud Run had become the only place where
+// `replicas` meant "at most", so a service could sit at zero and cold-start.
+//
+// Two deliberate choices, both matching the legacy CD:
+//
+//   - The floor is set at the SERVICE level, not on the revision template where
+//     MaxInstanceCount lives. Google recommends applying minimum instances at the
+//     service level and warns against combining the two levels. A service-level
+//     minimum is also a pool shared across revisions, so a rolling deploy does not
+//     transiently pay for a warm set per revision.
+//   - It reads Deploy.Replicas directly rather than GetReplicas(), which clamps a
+//     missing or zero value to 1. Only a user who actually asked for replicas gets
+//     a warm instance; everyone else keeps scale-to-zero and its cost profile.
+//     That also leaves `replicas: 0` scaling to zero, which is what #329 wants.
+func minInstanceScaling(svc compose.ServiceConfig) *cloudrunv2.ServiceScalingArgs {
+	if svc.Deploy == nil || svc.Deploy.Replicas == nil || *svc.Deploy.Replicas <= 0 {
+		return nil
+	}
+	return &cloudrunv2.ServiceScalingArgs{
+		MinInstanceCount: pulumi.Int(*svc.Deploy.Replicas),
+	}
 }
 
 // buildEnvVars constructs Cloud Run env vars, using SecretKeyRef for secret references
