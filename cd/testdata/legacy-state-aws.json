@@ -1,0 +1,984 @@
+{
+ "version": 3,
+ "deployment": {
+  "manifest": {
+   "time": "2026-08-28T00:00:00Z",
+   "magic": "fixture",
+   "version": "v3.259.0"
+  },
+  "resources": [
+   {
+    "urn": "urn:pulumi:s***::cd::aws:acm/certificate:Certificate::*.estimate.example.com",
+    "type": "aws:acm/certificate:Certificate",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:acm/certificate:Certificate::acm-cert-example.com",
+    "type": "aws:acm/certificate:Certificate",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:acm/certificate:Certificate::acm-cert-www.example.com",
+    "type": "aws:acm/certificate:Certificate",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:acm/certificateValidation:CertificateValidation::*.estimate.example.comValidation",
+    "type": "aws:acm/certificateValidation:CertificateValidation",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:cloudwatch/eventRule:EventRule::cd-ecs-lifecycle-rule",
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:cloudwatch/eventTarget:EventTarget::cd-ecs-event-cw-target",
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:cloudwatch/logGroup:LogGroup::acme",
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:cloudwatch/logGroup:LogGroup::ecs",
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:cloudwatch/logGroup:LogGroup::logs",
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:cloudwatch/logResourcePolicy:LogResourcePolicy::cd-ecs-log-policy",
+    "type": "aws:cloudwatch/logResourcePolicy:LogResourcePolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:codebuild/project:Project::app-image",
+    "type": "aws:codebuild/project:Project",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:codebuild/project:Project::release-image",
+    "type": "aws:codebuild/project:Project",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:codebuild/project:Project::worker-image",
+    "type": "aws:codebuild/project:Project",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/defaultSecurityGroup:DefaultSecurityGroup::default",
+    "type": "aws:ec2/defaultSecurityGroup:DefaultSecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-Tenant1_app",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-Tenant1_embedding",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-Tenant1_llm",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-Tenant1_worker",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-bootstrap",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-postgres",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-redis",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/securityGroup:SecurityGroup::E-cd-s***-sg443",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/vpcDhcpOptions:VpcDhcpOptions::dhcp-options",
+    "type": "aws:ec2/vpcDhcpOptions:VpcDhcpOptions",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ec2/vpcDhcpOptionsAssociation:VpcDhcpOptionsAssociation::dhcp-options-association",
+    "type": "aws:ec2/vpcDhcpOptionsAssociation:VpcDhcpOptionsAssociation",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecr/pullThroughCacheRule:PullThroughCacheRule::ecr-public",
+    "type": "aws:ecr/pullThroughCacheRule:PullThroughCacheRule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/service:Service::Tenant1_app",
+    "type": "aws:ecs/service:Service",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/service:Service::Tenant1_embedding",
+    "type": "aws:ecs/service:Service",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/service:Service::Tenant1_llm",
+    "type": "aws:ecs/service:Service",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/service:Service::Tenant1_worker",
+    "type": "aws:ecs/service:Service",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/taskDefinition:TaskDefinition::Tenant1_app-taskdef",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/taskDefinition:TaskDefinition::Tenant1_embedding-taskdef",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/taskDefinition:TaskDefinition::Tenant1_llm-taskdef",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/taskDefinition:TaskDefinition::Tenant1_worker-taskdef",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:ecs/taskDefinition:TaskDefinition::release-taskdef",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:elasticache/replicationGroup:ReplicationGroup::redis",
+    "type": "aws:elasticache/replicationGroup:ReplicationGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:elasticache/subnetGroup:SubnetGroup::E-cd-s***-redis",
+    "type": "aws:elasticache/subnetGroup:SubnetGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/instanceProfile:InstanceProfile::ecs-agent-profile",
+    "type": "aws:iam/instanceProfile:InstanceProfile",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/policy:Policy::AllowRoute53Sidecar",
+    "type": "aws:iam/policy:Policy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/policy:Policy::BedrockPolicy",
+    "type": "aws:iam/policy:Policy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/policy:Policy::acm-cert-policy-example.com",
+    "type": "aws:iam/policy:Policy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/policy:Policy::acm-cert-policy-www.example.com",
+    "type": "aws:iam/policy:Policy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::acme-lambda-eventbridge-exec-role",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::acme-lambda-role",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::app",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::code-build-role",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::ecs-agent-profile",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::ecs-task-execution-role",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::embedding",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::llm",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/role:Role::worker",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePoliciesExclusive:RolePoliciesExclusive::acme-lambda-eventbridge-exec-role",
+    "type": "aws:iam/rolePoliciesExclusive:RolePoliciesExclusive",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePoliciesExclusive:RolePoliciesExclusive::code-build-role",
+    "type": "aws:iam/rolePoliciesExclusive:RolePoliciesExclusive",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePoliciesExclusive:RolePoliciesExclusive::ecs-task-execution-role",
+    "type": "aws:iam/rolePoliciesExclusive:RolePoliciesExclusive",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicy:RolePolicy::acme-lambda-eventbridge-exec-role-AllowLambdaInvoke",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicy:RolePolicy::acme-lambda-role-AllowAccessALB",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicy:RolePolicy::code-build-role-codebuildPolicy",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicy:RolePolicy::ecs-task-execution-role-AllowECRPassThrough",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicy:RolePolicy::ecs-task-execution-role-AllowGetSecrets",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::acme-lambda-acm-policy-example.com",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::acme-lambda-acm-policy-www.example.com",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::acme-lambda-basic-execution-role",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::embedding-bedrock-task-role-BedrockPolicy",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::embedding-task-role-AllowRoute53Sidecar",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::llm-bedrock-task-role-BedrockPolicy",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:iam/rolePolicyAttachment:RolePolicyAttachment::llm-task-role-AllowRoute53Sidecar",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lambda/function:Function::acme-lambda",
+    "type": "aws:lambda/function:Function",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lambda/permission:Permission::acme-alb-example-com",
+    "type": "aws:lambda/permission:Permission",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lambda/permission:Permission::acme-alb-www-example-com",
+    "type": "aws:lambda/permission:Permission",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listener:Listener::alb-http",
+    "type": "aws:lb/listener:Listener",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listener:Listener::alb-https",
+    "type": "aws:lb/listener:Listener",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listenerCertificate:ListenerCertificate::acme-listener-cert-example.com",
+    "type": "aws:lb/listenerCertificate:ListenerCertificate",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listenerCertificate:ListenerCertificate::acme-listener-cert-www.example.com",
+    "type": "aws:lb/listenerCertificate:ListenerCertificate",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listenerRule:ListenerRule::acme-http-rule-example.com",
+    "type": "aws:lb/listenerRule:ListenerRule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listenerRule:ListenerRule::acme-http-rule-www.example.com",
+    "type": "aws:lb/listenerRule:ListenerRule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/listenerRule:ListenerRule::app-8000-rule",
+    "type": "aws:lb/listenerRule:ListenerRule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/loadBalancer:LoadBalancer::alb",
+    "type": "aws:lb/loadBalancer:LoadBalancer",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/targetGroup:TargetGroup::acme-tg-examplecom",
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/targetGroup:TargetGroup::acme-tg-wwwexamplecom",
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/targetGroup:TargetGroup::app-8000",
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/targetGroupAttachment:TargetGroupAttachment::acme-tg-attachment-example.com",
+    "type": "aws:lb/targetGroupAttachment:TargetGroupAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:lb/targetGroupAttachment:TargetGroupAttachment::acme-tg-attachment-www.example.com",
+    "type": "aws:lb/targetGroupAttachment:TargetGroupAttachment",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:rds/instance:Instance::e-cd-s***-postgres",
+    "type": "aws:rds/instance:Instance",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:rds/subnetGroup:SubnetGroup::postgres",
+    "type": "aws:rds/subnetGroup:SubnetGroup",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:resourcegroups/group:Group::E-cd-s***",
+    "type": "aws:resourcegroups/group:Group",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::*.estimate.example.com_A",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::*.estimate.example.com_CAA",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::estimate.example.com_A",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::estimate.example.com_CAA",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::estimate.example.com_SOA",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::tenant1-postgres.preview.internal_CNAME",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/record:Record::tenant1-redis.preview.internal_CNAME",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:route53/zone:Zone::estimate.example.com",
+    "type": "aws:route53/zone:Zone",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:s3/bucket:Bucket::alb-logs",
+    "type": "aws:s3/bucket:Bucket",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:s3/bucketObject:BucketObject::state",
+    "type": "aws:s3/bucketObject:BucketObject",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:s3/bucketPolicy:BucketPolicy::alb-logs-policy",
+    "type": "aws:s3/bucketPolicy:BucketPolicy",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock::alb-logs-block",
+    "type": "aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:scheduler/schedule:Schedule::acme-renewal-example.com",
+    "type": "aws:scheduler/schedule:Schedule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:scheduler/schedule:Schedule::acme-renewal-www.example.com",
+    "type": "aws:scheduler/schedule:Schedule",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:wafv2/webAcl:WebAcl::waf",
+    "type": "aws:wafv2/webAcl:WebAcl",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::aws:wafv2/webAclAssociation:WebAclAssociation::waf-association",
+    "type": "aws:wafv2/webAclAssociation:WebAclAssociation",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/internetGateway:InternetGateway::shared-vpc",
+    "type": "aws:ec2/internetGateway:InternetGateway",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/eip:Eip::shared-vpc-1",
+    "type": "aws:ec2/eip:Eip",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/eip:Eip::shared-vpc-2",
+    "type": "aws:ec2/eip:Eip",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/eip:Eip::shared-vpc-3",
+    "type": "aws:ec2/eip:Eip",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/natGateway:NatGateway::shared-vpc-1",
+    "type": "aws:ec2/natGateway:NatGateway",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/natGateway:NatGateway::shared-vpc-2",
+    "type": "aws:ec2/natGateway:NatGateway",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/natGateway:NatGateway::shared-vpc-3",
+    "type": "aws:ec2/natGateway:NatGateway",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-private-1",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-private-2",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-private-3",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-public-1",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-public-2",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-public-3",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-private-1",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-private-2",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-private-3",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-public-1",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-public-2",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-public-3",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-1",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-2",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-3",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-1",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-2",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-3",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-3",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-1",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-2",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-3",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-1",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-2",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-3",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "type": "aws:ec2/vpc:Vpc",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc$aws:ec2/vpcEndpoint:VpcEndpoint::com.amazonaws.us-east-1.s3",
+    "type": "aws:ec2/vpcEndpoint:VpcEndpoint",
+    "parent": "urn:pulumi:s***::cd::awsx:ec2:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ec2:Vpc::shared-vpc",
+    "type": "awsx:ec2:Vpc",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ecr:Repository$aws:ecr/lifecyclePolicy:LifecyclePolicy::build",
+    "type": "aws:ecr/lifecyclePolicy:LifecyclePolicy",
+    "parent": "urn:pulumi:s***::cd::awsx:ecr:Repository::build",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ecr:Repository$aws:ecr/lifecyclePolicy:LifecyclePolicy::build/cache",
+    "type": "aws:ecr/lifecyclePolicy:LifecyclePolicy",
+    "parent": "urn:pulumi:s***::cd::awsx:ecr:Repository::build/cache",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ecr:Repository$aws:ecr/repository:Repository::build",
+    "type": "aws:ecr/repository:Repository",
+    "parent": "urn:pulumi:s***::cd::awsx:ecr:Repository::build",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ecr:Repository$aws:ecr/repository:Repository::build/cache",
+    "type": "aws:ecr/repository:Repository",
+    "parent": "urn:pulumi:s***::cd::awsx:ecr:Repository::build/cache",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ecr:Repository::build",
+    "type": "awsx:ecr:Repository",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::awsx:ecr:Repository::build/cache",
+    "type": "awsx:ecr:Repository",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang$aws:cloudwatch/logGroup:LogGroup::builds",
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "parent": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang::defang",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang$aws:ecs/cluster:Cluster::cluster",
+    "type": "aws:ecs/cluster:Cluster",
+    "parent": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang::defang",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang$aws:ecs/clusterCapacityProviders:ClusterCapacityProviders::cluster-capacity-providers",
+    "type": "aws:ecs/clusterCapacityProviders:ClusterCapacityProviders",
+    "parent": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang::defang",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang$aws:route53/record:Record::estimate.internal_SOA",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang::defang",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang$aws:route53/zone:Zone::estimate.internal",
+    "type": "aws:route53/zone:Zone",
+    "parent": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang::defang",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::defang-mvp:shared/ecs/defang:Defang::defang",
+    "type": "defang-mvp:shared/ecs/defang:Defang",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi-nodejs:dynamic:Resource::app-image",
+    "type": "pulumi-nodejs:dynamic:Resource",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi-nodejs:dynamic:Resource::release-image",
+    "type": "pulumi-nodejs:dynamic:Resource",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi-nodejs:dynamic:Resource::release-task",
+    "type": "pulumi-nodejs:dynamic:Resource",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi-nodejs:dynamic:Resource::worker-image",
+    "type": "pulumi-nodejs:dynamic:Resource",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:providers:aws::default",
+    "type": "pulumi:providers:aws",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:providers:aws::default_6_83_2",
+    "type": "pulumi:providers:aws",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:providers:awsx::default_2_22_0",
+    "type": "pulumi:providers:awsx",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:providers:pulumi-nodejs::default",
+    "type": "pulumi:providers:pulumi-nodejs",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:providers:pulumi::default",
+    "type": "pulumi:providers:pulumi",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:providers:tls::default_5_0_10",
+    "type": "pulumi:providers:tls",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "type": "pulumi:pulumi:Stack",
+    "parent": "",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::tls:index/privateKey:PrivateKey::acme-account-key",
+    "type": "tls:index/privateKey:PrivateKey",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::tls:index/privateKey:PrivateKey::selfsign-cert-pk-example.com",
+    "type": "tls:index/privateKey:PrivateKey",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::tls:index/privateKey:PrivateKey::selfsign-cert-pk-www.example.com",
+    "type": "tls:index/privateKey:PrivateKey",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::tls:index/selfSignedCert:SelfSignedCert::acme-cert-example.com",
+    "type": "tls:index/selfSignedCert:SelfSignedCert",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:s***::cd::tls:index/selfSignedCert:SelfSignedCert::acme-cert-www.example.com",
+    "type": "tls:index/selfSignedCert:SelfSignedCert",
+    "parent": "urn:pulumi:s***::cd::pulumi:pulumi:Stack::cd-s***",
+    "custom": true
+   }
+  ]
+ }
+}

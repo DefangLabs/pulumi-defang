@@ -109,7 +109,7 @@ func cdMain(ctx context.Context, args ...string) error {
 	// commands that can change infrastructure are guarded; see legacy_state.go.
 	switch command {
 	case client.CdCommandUp, client.CdCommandRefresh, client.CdCommandDown, client.CdCommandDestroy:
-		if err := checkLegacyState(ctx, stack); err != nil {
+		if err := checkLegacyState(ctx, &stack); err != nil {
 			return err
 		}
 	}

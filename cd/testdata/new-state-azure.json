@@ -1,0 +1,66 @@
+{
+ "version": 3,
+ "deployment": {
+  "manifest": {
+   "time": "2026-08-28T00:00:00Z",
+   "magic": "fixture",
+   "version": "v3.259.0"
+  },
+  "resources": [
+   {
+    "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:app:ManagedEnvironment::cd-test",
+    "type": "azure-native:app:ManagedEnvironment",
+    "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:operationalinsights:Workspace::cd-test",
+    "type": "azure-native:operationalinsights:Workspace",
+    "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$azure-native:resources:ResourceGroup::cd-test",
+    "type": "azure-native:resources:ResourceGroup",
+    "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service$azure-native:app:ContainerApp::nginx",
+    "type": "azure-native:app:ContainerApp",
+    "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project$defang-azure:index:Service::nginx",
+    "type": "defang-azure:index:Service",
+    "parent": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::defang-azure:index:Project::cd-test",
+    "type": "defang-azure:index:Project",
+    "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::pulumi:providers:azure-native::azure",
+    "type": "pulumi:providers:azure-native",
+    "parent": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::pulumi:providers:defang-azure::default_github_/api.github.com/DefangLabs/pulumi-defang",
+    "type": "pulumi:providers:defang-azure",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:azure::cd-test::pulumi:pulumi:Stack::cd-test-azure",
+    "type": "pulumi:pulumi:Stack",
+    "parent": "",
+    "custom": false
+   }
+  ]
+ }
+}

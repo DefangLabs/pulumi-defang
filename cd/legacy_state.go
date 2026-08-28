@@ -109,6 +109,14 @@ func foreignResources(resources []apitype.ResourceV3) []apitype.ResourceV3 {
 	return foreign
 }
 
+// stackExporter is the part of auto.Stack this needs. It exists so the check
+// can be tested against a state fixture without a Pulumi backend.
+type stackExporter interface {
+	Export(context.Context) (apitype.UntypedDeployment, error)
+}
+
+var _ stackExporter = (*auto.Stack)(nil)
+
 // checkLegacyState reads the stack's current state and refuses to continue if
 // another CD wrote it.
 //
@@ -118,7 +126,7 @@ func foreignResources(resources []apitype.ResourceV3) []apitype.ResourceV3 {
 // exposure from failing open is small: Pulumi has to read the same state to do
 // any work, so a state this cannot read is one the deploy will not get far on
 // either.
-func checkLegacyState(ctx context.Context, stack auto.Stack) error {
+func checkLegacyState(ctx context.Context, stack stackExporter) error {
 	if getenvBool(allowLegacyStateTakeoverEnv) {
 		Println("Warning: " + allowLegacyStateTakeoverEnv + " is set. Skipping the check for a state written by " +
 			"another Defang CD. If this stack belongs to another CD, this deploy will replace every resource in " +

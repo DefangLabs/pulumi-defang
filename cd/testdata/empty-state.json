@@ -1,0 +1,11 @@
+{
+ "version": 3,
+ "deployment": {
+  "manifest": {
+   "time": "2026-08-28T00:00:00Z",
+   "magic": "fixture",
+   "version": "v3.259.0"
+  },
+  "resources": []
+ }
+}

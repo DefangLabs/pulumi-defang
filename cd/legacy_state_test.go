@@ -1,0 +1,343 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/DefangLabs/pulumi-defang/cd/program"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/stretchr/testify/require"
+)
+
+// The state fixtures under testdata/ are derived from real deployments, not
+// hand-written, so they carry the URN shapes this guard actually has to tell
+// apart:
+//
+//   - legacy-state-gcp.json  defang-mvp's Go GCP CD, from that repo's
+//     fabric/pkg/estimator/testdata/gcp-prod.log
+//   - legacy-state-aws.json  defang-mvp's TypeScript CD, from
+//     fabric/pkg/estimator/testdata/potato.log (real stack raphaeltm-prod1)
+//   - new-state-{aws,gcp,azure}.json  this CD, from the recorded
+//     preview-events-*.json in this directory
+//   - mixed-state-gcp.json  a takeover that ran and failed: this CD's resources
+//     on top of surviving legacy ones
+//   - empty-state.json  a stack that was created but never deployed
+func loadFixture(t *testing.T, name string) []apitype.ResourceV3 {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	require.NoError(t, err)
+	var doc apitype.UntypedDeployment
+	require.NoError(t, json.Unmarshal(data, &doc))
+	var snapshot apitype.DeploymentV3
+	require.NoError(t, json.Unmarshal(doc.Deployment, &snapshot))
+	return snapshot.Resources
+}
+
+func TestForeignResourcesRealStates(t *testing.T) {
+	tests := []struct {
+		fixture     string
+		wantForeign bool
+	}{
+		{"empty-state.json", false},
+		{"new-state-aws.json", false},
+		{"new-state-gcp.json", false},
+		{"new-state-azure.json", false},
+		{"legacy-state-gcp.json", true},
+		{"legacy-state-aws.json", true},
+		{"mixed-state-gcp.json", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			resources := loadFixture(t, tt.fixture)
+			foreign := foreignResources(resources)
+			if !tt.wantForeign {
+				require.Emptyf(t, foreign, "state must pass unchanged, but %d resources were called foreign: %v",
+					len(foreign), urns(foreign))
+				return
+			}
+			require.NotEmpty(t, foreign, "legacy state must be detected")
+			// None of this CD's own resources may be reported, even in the
+			// mixed state -- the message has to point at the legacy ones.
+			for _, res := range foreign {
+				require.NotContains(t, string(res.URN), "defang-aws:")
+				require.NotContains(t, string(res.URN), "defang-gcp:")
+				require.NotContains(t, string(res.URN), "defang-azure:")
+			}
+		})
+	}
+}
+
+// The mixed state is the one a denylist of known-legacy types would get wrong:
+// this CD's marker resources are present, so "did our CD write this?" answers
+// yes, yet the legacy resources are still there to be deleted.
+func TestForeignResourcesMixedStateKeepsOurResources(t *testing.T) {
+	mixed := loadFixture(t, "mixed-state-gcp.json")
+	ours := loadFixture(t, "new-state-gcp.json")
+	foreign := foreignResources(mixed)
+
+	require.Len(t, foreign, len(mixed)-len(ours),
+		"exactly the resources that are not in the new-CD state must be flagged")
+	require.Greater(t, len(foreign), 20, "a real legacy GCP stack has dozens of resources")
+}
+
+// Every real legacy resource type token seen in the two legacy fixtures must be
+// flagged. This pins the discriminator against the actual type tokens rather
+// than a summary of them.
+func TestForeignResourcesFlagsKnownLegacyTypes(t *testing.T) {
+	wantFlagged := []string{
+		// Legacy TypeScript CD component type.
+		"defang-mvp:shared/ecs/defang:Defang",
+		// The TypeScript CD is the only Node.js program; this CD is Go.
+		"pulumi-nodejs:dynamic:Resource",
+		// The legacy GCP CD's own in-tree provider.
+		"cloudbuild:index:CloudBuild",
+		// Neither legacy CD parented its cloud resources under a component of
+		// its own, so they are flat cloud types directly under the stack.
+		"gcp:sql/databaseInstance:DatabaseInstance",
+		"gcp:cloudrunv2/service:Service",
+		"gcp:redis/instance:Instance",
+		"aws:ecs/service:Service",
+		"awsx:ec2:Vpc",
+		// The resources whose deletion is the whole point of this guard.
+		"aws:rds/instance:Instance",
+		"aws:elasticache/replicationGroup:ReplicationGroup",
+	}
+
+	flagged := map[string]bool{}
+	for _, fixture := range []string{"legacy-state-gcp.json", "legacy-state-aws.json"} {
+		for _, res := range foreignResources(loadFixture(t, fixture)) {
+			for _, part := range strings.Split(string(res.URN.QualifiedType()), "$") {
+				flagged[part] = true
+			}
+		}
+	}
+	for _, typ := range wantFlagged {
+		require.Truef(t, flagged[typ], "legacy type %q was not flagged as foreign", typ)
+	}
+}
+
+// Legacy component types that no captured state in this repo happens to
+// contain, so they are checked against the type tokens in the source that
+// creates them. DigitalOcean matters because this CD does not support that
+// cloud at all: a DO state must abort with the migration message rather than
+// with "unsupported provider".
+func TestForeignResourcesFlagsLegacyComponentsWithoutAFixture(t *testing.T) {
+	// Type tokens read from defang-mvp at commit d191a5f6:
+	//   pulumi/cd/do/kaniko_image.ts:29   pulumi/shared/aws/vpcx.ts:33
+	//   pulumi/ecs/loki.ts:75             pulumi/cd/aws/tenant_stack.ts:59
+	legacyTypes := []string{
+		"defang-mvp:cd/do/kaniko_image:KanikoImage",
+		"defang-mvp:shared/vpc:Vpc",
+		"defang-mvp:shared/ecs/loki:Loki",
+		"defang-mvp:cd/tenant_stack:TenantStack",
+		"digitalocean:index/app:App",
+		"digitalocean:index/databaseCluster:DatabaseCluster",
+	}
+	for _, typ := range legacyTypes {
+		t.Run(typ, func(t *testing.T) {
+			state := []apitype.ResourceV3{
+				mkRes("urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta", ""),
+				mkRes("urn:pulumi:beta::my-app::"+typ+"::thing",
+					"urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta"),
+			}
+			require.Len(t, foreignResources(state), 1)
+		})
+	}
+}
+
+// "defang-mvp" and "defang-gcp" share a prefix. Matching on the package name
+// rather than a string prefix keeps the legacy package out.
+func TestForeignResourcesDoesNotConfuseDefangMvpWithOurPackages(t *testing.T) {
+	require.False(t, ourPackages["defang-mvp"])
+	state := []apitype.ResourceV3{
+		mkRes("urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta", ""),
+		mkRes("urn:pulumi:beta::my-app::defang-mvp:shared/ecs/defang:Defang$aws:rds/instance:Instance::db",
+			"urn:pulumi:beta::my-app::defang-mvp:shared/ecs/defang:Defang::defang"),
+	}
+	require.Len(t, foreignResources(state), 1)
+}
+
+const (
+	testStackURN = "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp"
+	testProject  = "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test"
+)
+
+// mkRes builds the two fields the check reads, plus the type token the URN
+// already implies, so the fixture matches what Pulumi writes.
+func mkRes(urn, parent string) apitype.ResourceV3 {
+	u := resource.URN(urn)
+	return apitype.ResourceV3{URN: u, Type: u.Type(), Parent: resource.URN(parent)}
+}
+
+// This CD registers a few resources at the top level, outside the Project
+// component, so they carry a plain cloud type token. They must not be mistaken
+// for another CD's leftovers -- a stack with a TTL, or any successful deploy,
+// has them.
+func TestForeignResourcesAllowsOurTopLevelResources(t *testing.T) {
+	for name := range program.TopLevelResourceNames {
+		t.Run(name, func(t *testing.T) {
+			state := []apitype.ResourceV3{
+				mkRes(testStackURN, ""),
+				mkRes(testProject, testStackURN),
+				// Deliberately a raw cloud type with no defang package.
+				mkRes("urn:pulumi:gcp::cd-test::gcp:cloudscheduler/job:Job::"+name, testStackURN),
+			}
+			require.Empty(t, foreignResources(state))
+		})
+	}
+}
+
+// The allowlist is a name AND a position. A resource that borrows one of our
+// top-level names but hangs off something else is still foreign.
+func TestForeignResourcesTopLevelNamesOnlyApplyAtTopLevel(t *testing.T) {
+	const legacyParent = "urn:pulumi:gcp::cd-test::defang-mvp:shared/ecs/defang:Defang::defang"
+	state := []apitype.ResourceV3{
+		mkRes(testStackURN, ""),
+		mkRes(testProject, testStackURN),
+		mkRes("urn:pulumi:gcp::cd-test::defang-mvp:shared/ecs/defang:Defang$gcp:storage/bucketObject:BucketObject::"+
+			program.ProjectPbName, legacyParent),
+	}
+	foreign := foreignResources(state)
+	require.Len(t, foreign, 1)
+	require.Contains(t, string(foreign[0].URN), program.ProjectPbName)
+}
+
+// The root stack and the provider resources exist in every state, this CD's and
+// every older one's, so on their own they must not trip the guard. A stack
+// whose deploy failed before it created anything looks like this.
+func TestForeignResourcesIgnoresStructuralResources(t *testing.T) {
+	state := []apitype.ResourceV3{
+		mkRes(testStackURN, ""),
+		mkRes("urn:pulumi:gcp::cd-test::pulumi:providers:gcp::default_8_26_0", ""),
+		mkRes("urn:pulumi:gcp::cd-test::pulumi:providers:cloudbuild::default", ""),
+		mkRes("urn:pulumi:gcp::cd-test::pulumi:providers:pulumi-nodejs::default", ""),
+		mkRes("urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default", ""),
+	}
+	require.Empty(t, foreignResources(state))
+}
+
+// A user recipe may add resources of its own. They still have to sit under the
+// Project component, so they are recognised; anything genuinely outside it is
+// not something this CD can safely delete.
+func TestForeignResourcesAllowsResourcesUnderOurProject(t *testing.T) {
+	state := []apitype.ResourceV3{
+		mkRes(testStackURN, ""),
+		mkRes(testProject, testStackURN),
+		mkRes("urn:pulumi:gcp::cd-test::defang-gcp:index:Project$custom:mod:Thing::x", testProject),
+		mkRes("urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:sql/user:User::db",
+			testProject),
+	}
+	require.Empty(t, foreignResources(state))
+}
+
+func TestForeignResourcesInEmptyDeployment(t *testing.T) {
+	// A stack that exists but has never been deployed exports a deployment
+	// with no resources key at all (verified against pulumi v3.259.0).
+	fresh := apitype.UntypedDeployment{Version: 3, Deployment: json.RawMessage(
+		`{"manifest":{"time":"2026-08-28T00:00:00Z","magic":"m","version":"v3.259.0"}}`)}
+	foreign, err := foreignResourcesIn(fresh)
+	require.NoError(t, err)
+	require.Empty(t, foreign)
+
+	// A stack that does not exist yet exports nothing at all.
+	foreign, err = foreignResourcesIn(apitype.UntypedDeployment{})
+	require.NoError(t, err)
+	require.Empty(t, foreign)
+}
+
+func TestForeignResourcesInMalformed(t *testing.T) {
+	_, err := foreignResourcesIn(apitype.UntypedDeployment{Version: 3, Deployment: json.RawMessage(`not json`)})
+	require.Error(t, err)
+}
+
+// fakeStack drives checkLegacyState without a Pulumi backend.
+type fakeStack struct {
+	deployment apitype.UntypedDeployment
+	err        error
+}
+
+func (f fakeStack) Export(context.Context) (apitype.UntypedDeployment, error) {
+	return f.deployment, f.err
+}
+
+func fixtureDeployment(t *testing.T, name string) apitype.UntypedDeployment {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	require.NoError(t, err)
+	var doc apitype.UntypedDeployment
+	require.NoError(t, json.Unmarshal(data, &doc))
+	return doc
+}
+
+func TestCheckLegacyStateBlocksLegacyState(t *testing.T) {
+	err := checkLegacyState(context.Background(), fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")})
+	require.Error(t, err)
+
+	var legacyErr *legacyStateError
+	require.ErrorAs(t, err, &legacyErr)
+
+	msg := err.Error()
+	// The message has to say what was found, what it would cost, where the
+	// runbook is, and how to override.
+	require.Contains(t, msg, "different CD")
+	require.Contains(t, msg, "delete")
+	require.Contains(t, msg, "database")
+	require.Contains(t, msg, migrationRunbook)
+	require.Contains(t, msg, allowLegacyStateTakeoverEnv)
+	// It must name real detected resources, not just a count.
+	require.Contains(t, msg, "gcp:")
+	// ...but must not print the whole stack.
+	require.LessOrEqual(t, strings.Count(msg, "\n"), 20)
+	require.Contains(t, msg, "more")
+}
+
+func TestCheckLegacyStatePassesOnOurStates(t *testing.T) {
+	for _, fixture := range []string{"empty-state.json", "new-state-aws.json", "new-state-gcp.json", "new-state-azure.json"} {
+		t.Run(fixture, func(t *testing.T) {
+			require.NoError(t, checkLegacyState(context.Background(),
+				fakeStack{deployment: fixtureDeployment(t, fixture)}))
+		})
+	}
+}
+
+func TestCheckLegacyStateOverride(t *testing.T) {
+	t.Setenv(allowLegacyStateTakeoverEnv, "1")
+	require.NoError(t, checkLegacyState(context.Background(),
+		fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}))
+}
+
+// The override only counts when it is truthy, so an empty or "0" value from a
+// blanket env-var passthrough does not silently disarm the guard.
+func TestCheckLegacyStateOverrideRequiresTruthyValue(t *testing.T) {
+	for _, value := range []string{"", "0", "false", "no"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv(allowLegacyStateTakeoverEnv, value)
+			require.Error(t, checkLegacyState(context.Background(),
+				fakeStack{deployment: fixtureDeployment(t, "legacy-state-gcp.json")}))
+		})
+	}
+}
+
+// An unreadable state fails open: a second read of the state backend must not
+// become a new way for every deploy to fail.
+func TestCheckLegacyStateFailsOpen(t *testing.T) {
+	require.NoError(t, checkLegacyState(context.Background(),
+		fakeStack{err: errors.New("could not export stack: connection reset")}))
+
+	require.NoError(t, checkLegacyState(context.Background(),
+		fakeStack{deployment: apitype.UntypedDeployment{Version: 3, Deployment: json.RawMessage(`{{{`)}}))
+}
+
+func urns(resources []apitype.ResourceV3) []string {
+	out := make([]string, len(resources))
+	for i, r := range resources {
+		out[i] = string(r.URN)
+	}
+	return out
+}

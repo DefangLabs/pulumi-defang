@@ -1,0 +1,642 @@
+{
+ "version": 3,
+ "deployment": {
+  "manifest": {
+   "time": "2026-08-28T00:00:00Z",
+   "magic": "fixture",
+   "version": "v3.259.0"
+  },
+  "resources": [
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:cloudrunv2/service:Service::nginx",
+    "type": "gcp:cloudrunv2/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:serviceaccount/account:Account::nginx",
+    "type": "gcp:serviceaccount/account:Account",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+    "type": "defang-gcp:index:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:certificatemanager/certificateMap:CertificateMap::cd-test-cert-map",
+    "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/backendService:BackendService::nginx-backend",
+    "type": "gcp:compute/backendService:BackendService",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-icmp",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-ssh",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalAddress:GlobalAddress::cd-test-ip",
+    "type": "gcp:compute/globalAddress:GlobalAddress",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-http-rule",
+    "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-https-rule",
+    "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc",
+    "type": "gcp:compute/network:Network",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::nginx-neg",
+    "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::cd-test-subnet",
+    "type": "gcp:compute/subnetwork:Subnetwork",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpProxy:TargetHttpProxy::cd-test-http-proxy",
+    "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpsProxy:TargetHttpsProxy::cd-test-https-proxy",
+    "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-http-urlmap",
+    "type": "gcp:compute/uRLMap:URLMap",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-urlmap",
+    "type": "gcp:compute/uRLMap:URLMap",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:dns/managedZone:ManagedZone::cd-test-private-dns",
+    "type": "gcp:dns/managedZone:ManagedZone",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::artifactregistry.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::certificatemanager.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudbuild.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudresourcemanager.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::compute.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::dns.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::firestore.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::iam.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::redis.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::run.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::secretmanager.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::servicenetworking.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::sqladmin.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::storage.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "type": "defang-gcp:index:Project",
+    "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default_github_/api.github.com/DefangLabs/pulumi-defang",
+    "type": "pulumi:providers:defang-gcp",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp",
+    "type": "pulumi:providers:gcp",
+    "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+    "type": "pulumi:pulumi:Stack",
+    "parent": "",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:artifactregistry/repository:Repository::my-app/build",
+    "type": "gcp:artifactregistry/repository:Repository",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:serviceaccount/account:Account::my-app-build",
+    "type": "gcp:serviceaccount/account:Account",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:storage/bucketObject:BucketObject::state",
+    "type": "gcp:storage/bucketObject:BucketObject",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/network:Network::my-app-vpc",
+    "type": "gcp:compute/network:Network",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/globalAddress:GlobalAddress::my-app-lb-ipaddress",
+    "type": "gcp:compute/globalAddress:GlobalAddress",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:storage/bucketIAMMember:BucketIAMMember::my-app-repo-viewer-member",
+    "type": "gcp:storage/bucketIAMMember:BucketIAMMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/subnetwork:Subnetwork::my-app-shared-subnet",
+    "type": "gcp:compute/subnetwork:Subnetwork",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding::my-app-repo-writer-member",
+    "type": "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionInstanceGroupManager:RegionInstanceGroupManager::llm-instance-group",
+    "type": "gcp:compute/regionInstanceGroupManager:RegionInstanceGroupManager",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::llm.beta.my-app.jordanstephens.defang.app.-A-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:sql/databaseInstance:DatabaseInstance::my-app-postgres-service-postgres",
+    "type": "gcp:sql/databaseInstance:DatabaseInstance",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:redis/instance:Instance::my-app-redis-service-redis",
+    "type": "gcp:redis/instance:Instance",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::redis-service.beta.my-app.jordanstephens.defang.app.-A-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:sql/user:User::my-app-postgres-service-postgres-user",
+    "type": "gcp:sql/user:User",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::cloudbuild:index:CloudBuild::app-build",
+    "type": "cloudbuild:index:CloudBuild",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::postgres-service.beta.my-app.jordanstephens.defang.app.-A-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:serviceaccount/account:Account::my-app-app-service-account",
+    "type": "gcp:serviceaccount/account:Account",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::app.beta.my-app.jordanstephens.defang.app.-A-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::app--8000.beta.my-app.jordanstephens.defang.app.-A-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/router:Router::nat-router",
+    "type": "gcp:compute/router:Router",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/subnetwork:Subnetwork::my-app-managed-proxy-subnet",
+    "type": "gcp:compute/subnetwork:Subnetwork",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/address:Address::llm-private-lb-ip",
+    "type": "gcp:compute/address:Address",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:certificatemanager/certificateMap:CertificateMap::my-app-lb-cert-map",
+    "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/uRLMap:URLMap::my-app-lb-http-redirect-url-map",
+    "type": "gcp:compute/uRLMap:URLMap",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/firewall:Firewall::llm-private-lb-traffic-firewall",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/firewall:Firewall::llm-private-lb-healthcheck-firewall",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::my-app-postgres-service-private-db-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::my-app-redis-service-private-redis-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:sql/database:Database::my-app-postgres-service-postgres-db",
+    "type": "gcp:sql/database:Database",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:secretmanager/secretIamMember:SecretIamMember::app-secret-Defang_my-app_beta_SECRET_KEY-member",
+    "type": "gcp:secretmanager/secretIamMember:SecretIamMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:cloudrunv2/service:Service::app",
+    "type": "gcp:cloudrunv2/service:Service",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/routerNat:RouterNat::nat",
+    "type": "gcp:compute/routerNat:RouterNat",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:certificatemanager/certificateMapEntry:CertificateMapEntry::my-app-wildcard-lb-cert-map-entry",
+    "type": "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::my-app-llm-private-lb-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/healthCheck:HealthCheck::llm-80-private-lb-health-check",
+    "type": "gcp:compute/healthCheck:HealthCheck",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/targetHttpProxy:TargetHttpProxy::my-app-lb-http-proxy",
+    "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/globalForwardingRule:GlobalForwardingRule::my-app-lb-http-forwarding-rule",
+    "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionBackendService:RegionBackendService::llm-host-80-backend-service",
+    "type": "gcp:compute/regionBackendService:RegionBackendService",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::my-app-app-private-lb-neg",
+    "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::my-app-app-lb-neg",
+    "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:cloudrunv2/serviceIamMember:ServiceIamMember::app-public",
+    "type": "gcp:cloudrunv2/serviceIamMember:ServiceIamMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/backendService:BackendService::my-app-app-lb-cloudrun-backend",
+    "type": "gcp:compute/backendService:BackendService",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionBackendService:RegionBackendService::my-app-app-private-lb-cloudrun-backend",
+    "type": "gcp:compute/regionBackendService:RegionBackendService",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/forwardingRule:ForwardingRule::llm-host-80-forwarding-rule",
+    "type": "gcp:compute/forwardingRule:ForwardingRule",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/uRLMap:URLMap::my-app-lb-urlmap",
+    "type": "gcp:compute/uRLMap:URLMap",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionUrlMap:RegionUrlMap::my-app-private-lb-urlmap",
+    "type": "gcp:compute/regionUrlMap:RegionUrlMap",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/regionTargetHttpProxy:RegionTargetHttpProxy::my-appprivate-lb-http-proxy",
+    "type": "gcp:compute/regionTargetHttpProxy:RegionTargetHttpProxy",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/targetHttpsProxy:TargetHttpsProxy::my-app-lb-https-proxy",
+    "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/forwardingRule:ForwardingRule::my-app-private-lb-forwarding-rule",
+    "type": "gcp:compute/forwardingRule:ForwardingRule",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/globalForwardingRule:GlobalForwardingRule::my-app-lb-forwarding-rule",
+    "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::my-app-app-private-lb-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/managedZone:ManagedZone::my-app-public-dns",
+    "type": "gcp:dns/managedZone:ManagedZone",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:certificatemanager/dnsAuthorization:DnsAuthorization::beta.my-app.jordanstephens.defang.app-wildcard-cert-dns-authz",
+    "type": "gcp:certificatemanager/dnsAuthorization:DnsAuthorization",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/managedZone:ManagedZone::my-app-private-dns",
+    "type": "gcp:dns/managedZone:ManagedZone",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:projects/service:Service::my-app-defang-llm",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/globalAddress:GlobalAddress::my-app-vpc-peering-ip",
+    "type": "gcp:compute/globalAddress:GlobalAddress",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:serviceaccount/account:Account::my-app-llm-service-account",
+    "type": "gcp:serviceaccount/account:Account",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/firewall:Firewall::my-app-allow-icmp",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/firewall:Firewall::my-app-allow-ssh",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:certificatemanager/certificate:Certificate::beta.my-app.jordanstephens.defang.app-wildcard-cert",
+    "type": "gcp:certificatemanager/certificate:Certificate",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:servicenetworking/connection:Connection::my-app--service-connection",
+    "type": "gcp:servicenetworking/connection:Connection",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:projects/iAMMember:IAMMember::my-app-beta-llm@jordan-project-463223.iam.gserviceaccount.com-roles/artifactregistry.reader",
+    "type": "gcp:projects/iAMMember:IAMMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:projects/iAMMember:IAMMember::my-app-beta-llm@jordan-project-463223.iam.gserviceaccount.com-roles/cloudtrace.agent",
+    "type": "gcp:projects/iAMMember:IAMMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:projects/iAMMember:IAMMember::my-app-beta-llm@jordan-project-463223.iam.gserviceaccount.com-roles/logging.logWriter",
+    "type": "gcp:projects/iAMMember:IAMMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:compute/instanceTemplate:InstanceTemplate::llm-instance-template",
+    "type": "gcp:compute/instanceTemplate:InstanceTemplate",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:projects/iAMMember:IAMMember::my-app-beta-llm@jordan-project-463223.iam.gserviceaccount.com-roles/monitoring.metricWriter",
+    "type": "gcp:projects/iAMMember:IAMMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:projects/iAMMember:IAMMember::llm-defang-llm",
+    "type": "gcp:projects/iAMMember:IAMMember",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::beta.my-app.jordanstephens.defang.app-wildcard-cert-dns-authz-record",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:beta::my-app::gcp:dns/recordSet:RecordSet::beta.my-app.jordanstephens.defang.app.-CAA-dns",
+    "type": "gcp:dns/recordSet:RecordSet",
+    "parent": "urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+    "custom": true
+   }
+  ]
+ }
+}

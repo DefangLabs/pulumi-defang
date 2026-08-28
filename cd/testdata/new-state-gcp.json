@@ -1,0 +1,228 @@
+{
+ "version": 3,
+ "deployment": {
+  "manifest": {
+   "time": "2026-08-28T00:00:00Z",
+   "magic": "fixture",
+   "version": "v3.259.0"
+  },
+  "resources": [
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:cloudrunv2/service:Service::nginx",
+    "type": "gcp:cloudrunv2/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:serviceaccount/account:Account::nginx",
+    "type": "gcp:serviceaccount/account:Account",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+    "type": "defang-gcp:index:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:certificatemanager/certificateMap:CertificateMap::cd-test-cert-map",
+    "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/backendService:BackendService::nginx-backend",
+    "type": "gcp:compute/backendService:BackendService",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-icmp",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-ssh",
+    "type": "gcp:compute/firewall:Firewall",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalAddress:GlobalAddress::cd-test-ip",
+    "type": "gcp:compute/globalAddress:GlobalAddress",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-http-rule",
+    "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-https-rule",
+    "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc",
+    "type": "gcp:compute/network:Network",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::nginx-neg",
+    "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::cd-test-subnet",
+    "type": "gcp:compute/subnetwork:Subnetwork",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpProxy:TargetHttpProxy::cd-test-http-proxy",
+    "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpsProxy:TargetHttpsProxy::cd-test-https-proxy",
+    "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-http-urlmap",
+    "type": "gcp:compute/uRLMap:URLMap",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-urlmap",
+    "type": "gcp:compute/uRLMap:URLMap",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:dns/managedZone:ManagedZone::cd-test-private-dns",
+    "type": "gcp:dns/managedZone:ManagedZone",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::artifactregistry.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::certificatemanager.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudbuild.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudresourcemanager.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::compute.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::dns.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::firestore.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::iam.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::redis.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::run.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::secretmanager.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::servicenetworking.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::sqladmin.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::storage.googleapis.com",
+    "type": "gcp:projects/service:Service",
+    "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+    "type": "defang-gcp:index:Project",
+    "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default_github_/api.github.com/DefangLabs/pulumi-defang",
+    "type": "pulumi:providers:defang-gcp",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp",
+    "type": "pulumi:providers:gcp",
+    "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+    "type": "pulumi:pulumi:Stack",
+    "parent": "",
+    "custom": false
+   }
+  ]
+ }
+}

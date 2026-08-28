@@ -1,0 +1,324 @@
+{
+ "version": 3,
+ "deployment": {
+  "manifest": {
+   "time": "2026-08-28T00:00:00Z",
+   "magic": "fixture",
+   "version": "v3.259.0"
+  },
+  "resources": [
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:cloudwatch/logGroup:LogGroup::logs",
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:ec2/securityGroup:SecurityGroup::alb-sg",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:ec2/securityGroup:SecurityGroup::svc-sg",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:ec2/vpcDhcpOptions:VpcDhcpOptions::dhcp-options",
+    "type": "aws:ec2/vpcDhcpOptions:VpcDhcpOptions",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:ec2/vpcDhcpOptionsAssociation:VpcDhcpOptionsAssociation::dhcp-options-association",
+    "type": "aws:ec2/vpcDhcpOptionsAssociation:VpcDhcpOptionsAssociation",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:ecr/pullThroughCacheRule:PullThroughCacheRule::ecr-public",
+    "type": "aws:ecr/pullThroughCacheRule:PullThroughCacheRule",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:ecs/cluster:Cluster::cluster",
+    "type": "aws:ecs/cluster:Cluster",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:iam/policy:Policy::AllowRoute53Sidecar",
+    "type": "aws:iam/policy:Policy",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:iam/role:Role::exec-role",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:iam/rolePolicy:RolePolicy::ecr-pull-through",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:iam/rolePolicy:RolePolicy::exec-get-secrets",
+    "type": "aws:iam/rolePolicy:RolePolicy",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:iam/rolePolicyAttachment:RolePolicyAttachment::exec-policy",
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:lb/listener:Listener::alb-http",
+    "type": "aws:lb/listener:Listener",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:lb/loadBalancer:LoadBalancer::alb",
+    "type": "aws:lb/loadBalancer:LoadBalancer",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:route53/record:Record::cd-test.internal_SOA",
+    "type": "aws:route53/record:Record",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:route53/zone:Zone::cd-test.internal",
+    "type": "aws:route53/zone:Zone",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:s3/bucket:Bucket::alb-logs",
+    "type": "aws:s3/bucket:Bucket",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration::alb-logs",
+    "type": "aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:s3/bucketPolicy:BucketPolicy::alb-logs",
+    "type": "aws:s3/bucketPolicy:BucketPolicy",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock::alb-logs",
+    "type": "aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$aws:s3/bucketServerSideEncryptionConfiguration:BucketServerSideEncryptionConfiguration::alb-logs",
+    "type": "aws:s3/bucketServerSideEncryptionConfiguration:BucketServerSideEncryptionConfiguration",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/internetGateway:InternetGateway::shared-vpc",
+    "type": "aws:ec2/internetGateway:InternetGateway",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-public-1",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/route:Route::shared-vpc-public-2",
+    "type": "aws:ec2/route:Route",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-private-1",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-private-2",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-public-1",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable$aws:ec2/routeTableAssociation:RouteTableAssociation::shared-vpc-public-2",
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-1",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-private-2",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-1",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-1",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet$aws:ec2/routeTable:RouteTable::shared-vpc-public-2",
+    "type": "aws:ec2/routeTable:RouteTable",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-2",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-1",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-private-2",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-1",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/subnet:Subnet::shared-vpc-public-2",
+    "type": "aws:ec2/subnet:Subnet",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc$aws:ec2/vpcEndpoint:VpcEndpoint::com.amazonaws.us-west-2.s3",
+    "type": "aws:ec2/vpcEndpoint:VpcEndpoint",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc$aws:ec2/vpc:Vpc::shared-vpc",
+    "type": "aws:ec2/vpc:Vpc",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc::shared-vpc",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$awsx:ec2:Vpc::shared-vpc",
+    "type": "awsx:ec2:Vpc",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service$aws:ec2/securityGroup:SecurityGroup::nginx",
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service$aws:ecs/service:Service::nginx",
+    "type": "aws:ecs/service:Service",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service$aws:ecs/taskDefinition:TaskDefinition::nginx",
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service$aws:iam/role:Role::nginx",
+    "type": "aws:iam/role:Role",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service$aws:lb/listenerRule:ListenerRule::nginx-80-rule",
+    "type": "aws:lb/listenerRule:ListenerRule",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service$aws:lb/targetGroup:TargetGroup::nginx-80",
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project$defang-aws:index:Service::nginx",
+    "type": "defang-aws:index:Service",
+    "parent": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::defang-aws:index:Project::cd-test",
+    "type": "defang-aws:index:Project",
+    "parent": "urn:pulumi:aws::cd-test::pulumi:pulumi:Stack::cd-test-aws",
+    "custom": false
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::pulumi:providers:aws::aws",
+    "type": "pulumi:providers:aws",
+    "parent": "urn:pulumi:aws::cd-test::pulumi:pulumi:Stack::cd-test-aws",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::pulumi:providers:awsx::default_3_1_0",
+    "type": "pulumi:providers:awsx",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::pulumi:providers:defang-aws::default_github_/api.github.com/DefangLabs/pulumi-defang",
+    "type": "pulumi:providers:defang-aws",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::pulumi:providers:pulumi::default",
+    "type": "pulumi:providers:pulumi",
+    "parent": "",
+    "custom": true
+   },
+   {
+    "urn": "urn:pulumi:aws::cd-test::pulumi:pulumi:Stack::cd-test-aws",
+    "type": "pulumi:pulumi:Stack",
+    "parent": "",
+    "custom": false
+   }
+  ]
+ }
+}
