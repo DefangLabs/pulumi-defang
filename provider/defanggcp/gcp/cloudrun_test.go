@@ -198,8 +198,8 @@ func TestCreateCloudRunServiceScaling(t *testing.T) {
 			if !gotMax.IsNumber() || gotMax.NumberValue() != tt.wantMax {
 				t.Errorf("template maxInstanceCount = %v, want %v", gotMax, tt.wantMax)
 			}
-			if min := templateScaling.ObjectValue()["minInstanceCount"]; min.IsNumber() && min.NumberValue() != 0 {
-				t.Errorf("template minInstanceCount = %v, want the floor on the service, not the revision", min)
+			if gotMin := templateScaling.ObjectValue()["minInstanceCount"]; gotMin.IsNumber() && gotMin.NumberValue() != 0 {
+				t.Errorf("template minInstanceCount = %v, want the floor on the service, not the revision", gotMin)
 			}
 		})
 	}
