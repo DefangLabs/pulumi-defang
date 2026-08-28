@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//nolint:gosec // Pulumi resource type token, not a credential
 const getManagedZonesToken = "gcp:dns/getManagedZones:getManagedZones"
 
 var errDNSPermissionDenied = errors.New("googleapi: Error 403: Permission denied on resource")
@@ -19,15 +20,16 @@ var errDNSPermissionDenied = errors.New("googleapi: Error 403: Permission denied
 // src/pkg/cli/client/byoc/gcp/byoc.go). If this drifts, the CD stops recognising
 // the zone the CLI created and delegated, and silently creates a duplicate.
 func TestDelegateZoneName(t *testing.T) {
+	const wantExampleZone = "defang-example-com"
 	tests := []struct {
 		name   string
 		domain string
 		want   string
 	}{
 		{"delegate domain", "myproject.tenant.defang.app", "defang-myproject-tenant-defang-app"},
-		{"apex", "example.com", "defang-example-com"},
-		{"uppercase is lowered", "Example.COM", "defang-example-com"},
-		{"trailing dot is dropped", "example.com.", "defang-example-com"},
+		{"apex", "example.com", wantExampleZone},
+		{"uppercase is lowered", "Example.COM", wantExampleZone},
+		{"trailing dot is dropped", "example.com.", wantExampleZone},
 		{"hyphens are preserved", "my-app.tenant.defang.app", "defang-my-app-tenant-defang-app"},
 	}
 	for _, tt := range tests {
