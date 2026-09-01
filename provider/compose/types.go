@@ -72,6 +72,9 @@ type ServiceConfig struct {
 	// Managed Redis: presence enables managed Redis. Matches x-defang-redis extension.
 	Redis *RedisConfig `pulumi:"redis,optional" yaml:"x-defang-redis,omitempty"`
 
+	// Managed object storage: presence enables a private cloud bucket. Matches x-defang-s3 extension.
+	ObjectStore *ObjectStoreConfig `pulumi:"objectStore,optional" yaml:"x-defang-s3,omitempty"`
+
 	// Restart policy (e.g. "no" for Cloud Run jobs)
 	Restart string `pulumi:"restart,optional" yaml:"restart,omitempty"`
 
@@ -431,6 +434,24 @@ func (c *RedisConfig) UnmarshalYAML(value *yaml.Node) error {
 		return nil // bare true/false just enables with defaults
 	}
 	type raw RedisConfig
+	return value.Decode((*raw)(c))
+}
+
+// ObjectStoreConfig matches the x-defang-s3 Compose extension.
+type ObjectStoreConfig struct {
+	// Bucket is the declared bucket name. A bucket name must be globally
+	// unique per cloud, so it is declared rather than generated: the CLI
+	// injects environment variables at compose-load time, before the name
+	// would otherwise be known.
+	Bucket string `pulumi:"bucket" yaml:"bucket"`
+}
+
+// UnmarshalYAML allows `x-defang-s3: true` (bare boolean) in addition to an object.
+func (c *ObjectStoreConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return nil // bare true/false just enables with defaults
+	}
+	type raw ObjectStoreConfig
 	return value.Decode((*raw)(c))
 }
 
