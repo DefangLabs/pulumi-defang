@@ -30,7 +30,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.17.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.17.0
-	github.com/pulumi/pulumi-gcp/sdk/v9 v9.34.1
+	github.com/pulumi/pulumi-gcp/sdk/v9 v9.35.1
 	github.com/pulumi/pulumi/sdk/v3 v3.259.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
