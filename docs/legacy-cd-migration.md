@@ -17,9 +17,9 @@ GCP databases it gives Pulumi the old resource's exact URN as an alias. Pulumi
 can then adopt the resource instead of replacing it.
 
 Aliases are the migration mechanism. The preflight guard is the second line of
-defence: `up` stops unless every data-bearing legacy resource can be mapped to
-exactly one managed service and the current CD image can operate on the rest of
-the legacy state.
+defence: `up` stops unless every persistent legacy service can be mapped to
+exactly one managed service and every other resource has an explicitly reviewed
+replacement path that the current CD image can operate.
 
 ## Start with preview
 
@@ -57,8 +57,10 @@ database has one target and that target does not already exist in the current
 resource tree.
 
 When these checks pass, `up` logs the exact aliases it prepared and proceeds.
-Other stateless legacy infrastructure may be recreated as part of the move, so
-preview remains mandatory.
+Other explicitly reviewed stateless or reconstructible legacy infrastructure
+may be recreated as part of the move, so preview remains mandatory. An unknown
+resource type fails closed even when it belongs to the selected cloud; a cloud
+package match by itself is not evidence that replacement is safe.
 
 ## Cases that require blue/green migration
 
@@ -75,6 +77,9 @@ particular:
 - Switching an existing stack between AWS, GCP, and Azure is blocked.
 - A renamed, removed, ambiguous, duplicated, or otherwise unmapped managed
   database is blocked.
+- An unclassified AWS, GCP, or third-party resource type is blocked. This
+  includes storage or secret resources that have no explicit adoption or
+  replacement rule.
 - An unreadable or malformed state is blocked for `up`; the CD will not guess
   that it is safe.
 

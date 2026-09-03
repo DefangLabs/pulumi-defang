@@ -214,6 +214,65 @@ func TestRealLegacyStatesWithoutUnavailableBuildResourcesAreAdoptable(t *testing
 	}
 }
 
+func TestEveryReleasedLegacyResourceHasAReviewedDisposition(t *testing.T) {
+	for _, tt := range []struct {
+		fixture string
+		cloud   string
+	}{
+		{"legacy-state-aws.json", cloudAWS},
+		{"legacy-state-gcp.json", cloudGCP},
+	} {
+		t.Run(tt.fixture, func(t *testing.T) {
+			for _, res := range foreignResources(fixtureIdentities(t, tt.fixture), tt.cloud) {
+				reason := unsupportedLegacyTypes[res.typ]
+				reviewed := reason != "" || len(specsFor(tt.cloud, res.typ)) != 0 || isReplaceableLegacyResource(res)
+				require.Truef(t, reviewed, "unclassified legacy resource %s", res.display())
+			}
+		})
+	}
+}
+
+func TestUnknownSameCloudResourcesFailClosed(t *testing.T) {
+	tests := []struct {
+		name        string
+		fixture     string
+		cloud       string
+		composeYAML string
+		typ         string
+		resource    string
+	}{
+		{"AWS arbitrary S3 bucket", "legacy-state-aws.json", cloudAWS, awsManagedCompose,
+			"aws:s3/bucket:Bucket", "customer-data"},
+		{"AWS EFS", "legacy-state-aws.json", cloudAWS, awsManagedCompose,
+			"aws:efs/fileSystem:FileSystem", "customer-files"},
+		{"GCP arbitrary bucket", "legacy-state-gcp.json", cloudGCP, gcpManagedCompose,
+			"gcp:storage/bucket:Bucket", "customer-data"},
+		{"GCP secret", "legacy-state-gcp.json", cloudGCP, gcpManagedCompose,
+			"gcp:secretmanager/secret:Secret", "customer-secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			blockedType := tt.typ
+			deployment := fixtureWithoutTypes(t, tt.fixture,
+				"cloudbuild:index:CloudBuild", "pulumi-nodejs:dynamic:Resource")
+			resources, err := resourceIdentitiesIn(deployment)
+			require.NoError(t, err)
+			resources = append(resources, mkIdentity(
+				"urn:pulumi:beta::my-app::"+tt.typ+"::"+tt.resource,
+				"urn:pulumi:beta::my-app::pulumi:pulumi:Stack::my-app-beta",
+			))
+
+			plan := analyzeLegacyState(resources, mustDesiredServices(t, tt.composeYAML), tt.cloud, configFor(tt.cloud))
+			require.Condition(t, func() bool {
+				return slices.ContainsFunc(plan.blockers, func(problem migrationProblem) bool {
+					return problem.resource.typ == blockedType &&
+						strings.Contains(problem.reason, "no reviewed replacement or adoption rule")
+				})
+			})
+		})
+	}
+}
+
 func TestMissingOrAmbiguousDatabaseAliasesBlockUp(t *testing.T) {
 	deployment := fixtureWithoutTypes(t, "legacy-state-gcp.json", "cloudbuild:index:CloudBuild")
 	tests := []struct {
@@ -231,6 +290,21 @@ func TestMissingOrAmbiguousDatabaseAliasesBlockUp(t *testing.T) {
 			require.Contains(t, err.Error(), "no unique matching managed service")
 		})
 	}
+}
+
+func TestDuplicateExplicitAliasesAreAmbiguous(t *testing.T) {
+	const legacyURN = "urn:pulumi:beta::my-app::aws:rds/instance:Instance::legacy-postgres"
+	services := map[string]desiredService{
+		"first":  {kind: servicePostgres, aliases: map[string]string{compose.AliasInstance: legacyURN}},
+		"second": {kind: servicePostgres, aliases: map[string]string{compose.AliasInstance: legacyURN}},
+	}
+	resources := []resourceIdentity{
+		mkIdentity(legacyURN, ""),
+		mkIdentity("urn:pulumi:beta::my-app::defang-mvp:shared/ecs/defang:Defang::defang", ""),
+	}
+	plan := analyzeLegacyState(resources, services, cloudAWS, configFor(cloudAWS))
+	require.Len(t, plan.blockers, 1)
+	require.Contains(t, plan.blockers[0].reason, "no unique matching managed service")
 }
 
 func TestMixedStateAdoptsSurvivingLegacyDatabasesButRejectsDuplicateTarget(t *testing.T) {
@@ -316,6 +390,8 @@ func TestPreviewNeverBlocksButReceivesProvableAliases(t *testing.T) {
 	require.NotEmpty(t, aliases)
 	require.Contains(t, logs.String(), "postgres-service/instance=gcp:sql/databaseInstance:DatabaseInstance::")
 	require.Contains(t, logs.String(), "a real up will stop")
+	require.Contains(t, logs.String(), "cloudbuild:index:CloudBuild::app-build")
+	require.Contains(t, logs.String(), "does not contain the legacy private cloudbuild plugin")
 }
 
 func TestStateInspectionFailsClosedForUpAndDoesNotLeakSecrets(t *testing.T) {
@@ -332,10 +408,18 @@ func TestStateInspectionFailsClosedForUpAndDoesNotLeakSecrets(t *testing.T) {
 	require.NotContains(t, err.Error(), "TOP-SECRET")
 	require.NotContains(t, logs.String(), "TOP-SECRET")
 
-	// Preview is diagnostic and read-only, so the same inspection failure warns
-	// but does not prevent Pulumi from showing whatever plan it can produce.
+	// Preview applies no infrastructure changes, so the same inspection failure
+	// warns but does not prevent Pulumi from showing whatever plan it can produce.
 	require.NoError(t, prepareLegacyState(t.Context(), fakeStack{err: secretErr}, "", testProjectName, testStackName,
 		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, false))
+	require.NotContains(t, logs.String(), "TOP-SECRET")
+
+	deployment := deploymentOf(`{"resources":[{"urn":"urn:pulumi:beta::my-app::gcp:storage/bucket:Bucket::data",` +
+		`"type":"gcp:storage/bucket:Bucket","outputs":{"password":"TOP-SECRET"}}]}`)
+	err = prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName, testStackName,
+		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "TOP-SECRET")
 	require.NotContains(t, logs.String(), "TOP-SECRET")
 }
 
@@ -394,6 +478,23 @@ func TestExactStackOverrideScope(t *testing.T) {
 		_, err := prepareFixture(t, "legacy-state-gcp.json", cloudGCP, gcpManagedCompose, "", true)
 		require.NoError(t, err)
 	})
+}
+
+func TestExactStackOverrideLogsSanitizedBlockerDetails(t *testing.T) {
+	var logs bytes.Buffer
+	originalLogger := stderrLogger
+	stderrLogger = &logs
+	t.Cleanup(func() { stderrLogger = originalLogger })
+
+	aliases, err := prepareFixture(t, "legacy-state-gcp.json", cloudGCP, gcpManagedCompose,
+		"config:\n  defang:allowLegacyStateTakeover: "+testTarget+"\n", true)
+	require.NoError(t, err)
+	require.NotEmpty(t, aliases)
+	require.Contains(t, logs.String(), "continuing despite")
+	require.Contains(t, logs.String(), "cloudbuild:index:CloudBuild::app-build")
+	require.Contains(t, logs.String(), "does not contain the legacy private cloudbuild plugin")
+	require.NotContains(t, logs.String(), "POSTGRES_PASSWORD")
+	require.NotContains(t, logs.String(), "secret")
 }
 
 func TestLegacyStateErrorIsActionableAndBounded(t *testing.T) {

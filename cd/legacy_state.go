@@ -85,6 +85,106 @@ var unsupportedLegacyTypes = map[string]string{
 	"pulumi-nodejs:dynamic:Resource": "the AWS image does not contain the legacy Node dynamic provider/runtime",
 }
 
+// replaceableLegacyTypes is an allowlist of stateless or reconstructible
+// resources emitted by the released legacy drivers. Unknown types fail closed:
+// a package match alone is not proof that deletion is safe. Stateful resources
+// are deliberately absent and need an exact alias rule above instead.
+var replaceableLegacyTypes = map[string]bool{
+	// Legacy AWS networking, compute, build, identity, routing, and certificates.
+	"aws:acm/certificate:Certificate":                             true,
+	"aws:acm/certificateValidation:CertificateValidation":         true,
+	"aws:cloudwatch/eventRule:EventRule":                          true,
+	"aws:cloudwatch/eventTarget:EventTarget":                      true,
+	"aws:cloudwatch/logGroup:LogGroup":                            true,
+	"aws:cloudwatch/logResourcePolicy:LogResourcePolicy":          true,
+	"aws:codebuild/project:Project":                               true,
+	"aws:ec2/defaultSecurityGroup:DefaultSecurityGroup":           true,
+	"aws:ec2/eip:Eip":                                             true,
+	"aws:ec2/internetGateway:InternetGateway":                     true,
+	"aws:ec2/natGateway:NatGateway":                               true,
+	"aws:ec2/route:Route":                                         true,
+	"aws:ec2/routeTable:RouteTable":                               true,
+	"aws:ec2/routeTableAssociation:RouteTableAssociation":         true,
+	"aws:ec2/securityGroup:SecurityGroup":                         true,
+	"aws:ec2/subnet:Subnet":                                       true,
+	"aws:ec2/vpc:Vpc":                                             true,
+	"aws:ec2/vpcDhcpOptions:VpcDhcpOptions":                       true,
+	"aws:ec2/vpcDhcpOptionsAssociation:VpcDhcpOptionsAssociation": true,
+	"aws:ec2/vpcEndpoint:VpcEndpoint":                             true,
+	"aws:ecr/lifecyclePolicy:LifecyclePolicy":                     true,
+	"aws:ecr/pullThroughCacheRule:PullThroughCacheRule":           true,
+	"aws:ecr/repository:Repository":                               true,
+	"aws:ecs/cluster:Cluster":                                     true,
+	"aws:ecs/clusterCapacityProviders:ClusterCapacityProviders":   true,
+	"aws:ecs/service:Service":                                     true,
+	"aws:ecs/taskDefinition:TaskDefinition":                       true,
+	"aws:iam/instanceProfile:InstanceProfile":                     true,
+	"aws:iam/policy:Policy":                                       true,
+	"aws:iam/role:Role":                                           true,
+	"aws:iam/rolePoliciesExclusive:RolePoliciesExclusive":         true,
+	"aws:iam/rolePolicy:RolePolicy":                               true,
+	"aws:iam/rolePolicyAttachment:RolePolicyAttachment":           true,
+	"aws:lambda/function:Function":                                true,
+	"aws:lambda/permission:Permission":                            true,
+	"aws:lb/listener:Listener":                                    true,
+	"aws:lb/listenerCertificate:ListenerCertificate":              true,
+	"aws:lb/listenerRule:ListenerRule":                            true,
+	"aws:lb/loadBalancer:LoadBalancer":                            true,
+	"aws:lb/targetGroup:TargetGroup":                              true,
+	"aws:lb/targetGroupAttachment:TargetGroupAttachment":          true,
+	"aws:resourcegroups/group:Group":                              true,
+	"aws:route53/record:Record":                                   true,
+	"aws:route53/zone:Zone":                                       true,
+	"aws:s3/bucketPolicy:BucketPolicy":                            true,
+	"aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock":      true,
+	"aws:scheduler/schedule:Schedule":                             true,
+	"aws:wafv2/webAcl:WebAcl":                                     true,
+	"aws:wafv2/webAclAssociation:WebAclAssociation":               true,
+	"awsx:ec2:Vpc":                                                true,
+	"awsx:ecr:Repository":                                         true,
+	"defang-mvp:shared/ecs/defang:Defang":                         true,
+	"tls:index/privateKey:PrivateKey":                             true,
+	"tls:index/selfSignedCert:SelfSignedCert":                     true,
+
+	// Legacy GCP networking, compute, build, identity, routing, and certificates.
+	"gcp:artifactregistry/repository:Repository":                        true,
+	"gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding":    true,
+	"gcp:certificatemanager/certificate:Certificate":                    true,
+	"gcp:certificatemanager/certificateMap:CertificateMap":              true,
+	"gcp:certificatemanager/certificateMapEntry:CertificateMapEntry":    true,
+	"gcp:certificatemanager/dnsAuthorization:DnsAuthorization":          true,
+	"gcp:cloudrunv2/service:Service":                                    true,
+	"gcp:cloudrunv2/serviceIamMember:ServiceIamMember":                  true,
+	"gcp:compute/address:Address":                                       true,
+	"gcp:compute/backendService:BackendService":                         true,
+	"gcp:compute/firewall:Firewall":                                     true,
+	"gcp:compute/forwardingRule:ForwardingRule":                         true,
+	"gcp:compute/globalAddress:GlobalAddress":                           true,
+	"gcp:compute/globalForwardingRule:GlobalForwardingRule":             true,
+	"gcp:compute/healthCheck:HealthCheck":                               true,
+	"gcp:compute/instanceTemplate:InstanceTemplate":                     true,
+	"gcp:compute/network:Network":                                       true,
+	"gcp:compute/regionBackendService:RegionBackendService":             true,
+	"gcp:compute/regionInstanceGroupManager:RegionInstanceGroupManager": true,
+	"gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup": true,
+	"gcp:compute/regionTargetHttpProxy:RegionTargetHttpProxy":           true,
+	"gcp:compute/regionUrlMap:RegionUrlMap":                             true,
+	"gcp:compute/router:Router":                                         true,
+	"gcp:compute/routerNat:RouterNat":                                   true,
+	"gcp:compute/subnetwork:Subnetwork":                                 true,
+	"gcp:compute/targetHttpProxy:TargetHttpProxy":                       true,
+	"gcp:compute/targetHttpsProxy:TargetHttpsProxy":                     true,
+	"gcp:compute/uRLMap:URLMap":                                         true,
+	"gcp:dns/managedZone:ManagedZone":                                   true,
+	"gcp:dns/recordSet:RecordSet":                                       true,
+	"gcp:projects/iAMMember:IAMMember":                                  true,
+	"gcp:projects/service:Service":                                      true,
+	"gcp:secretmanager/secretIamMember:SecretIamMember":                 true,
+	"gcp:serviceaccount/account:Account":                                true,
+	"gcp:servicenetworking/connection:Connection":                       true,
+	"gcp:storage/bucketIAMMember:BucketIAMMember":                       true,
+}
+
 var (
 	errInvalidMigrationCompose = errors.New("invalid compose project for legacy-state migration")
 	errInvalidDeployment       = errors.New("unreadable Pulumi deployment")
@@ -277,17 +377,17 @@ func resourceCloud(typ string) string {
 	}
 }
 
-func looksDataBearing(typ string) bool {
-	typ = strings.ToLower(typ)
-	markers := []string{
-		"database", "dynamodb", "elasticache", "firestore", "memorydb", "postgres", "rds/", "redis/",
+func isReplaceableLegacyResource(res resourceIdentity) bool {
+	switch res.typ {
+	case "aws:s3/bucket:Bucket":
+		// The released AWS driver used this bucket only for expiring ALB logs.
+		return res.urn.Name() == "alb-logs"
+	case "aws:s3/bucketObject:BucketObject", "gcp:storage/bucketObject:BucketObject":
+		// This is Defang's generated project metadata, not customer object data.
+		return res.urn.Name() == "state"
+	default:
+		return replaceableLegacyTypes[res.typ]
 	}
-	for _, marker := range markers {
-		if strings.Contains(typ, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 func legacyNameScore(name, service string, suffixes []string) int {
@@ -306,12 +406,15 @@ func legacyNameScore(name, service string, suffixes []string) int {
 
 func matchLegacyService(res resourceIdentity, spec legacyAliasSpec, services map[string]desiredService) (string, int) {
 	bestName, bestScore := "", 0
+	explicitName, explicitMatches := "", 0
 	for name, svc := range services {
 		if svc.kind != spec.serviceKind {
 			continue
 		}
 		if svc.aliases[spec.aliasKind] == string(res.urn) {
-			return name, 1_000_000
+			explicitName = name
+			explicitMatches++
+			continue
 		}
 		score := legacyNameScore(res.urn.Name(), name, spec.legacySuffixes)
 		if score > bestScore {
@@ -319,6 +422,12 @@ func matchLegacyService(res resourceIdentity, spec legacyAliasSpec, services map
 		} else if score != 0 && score == bestScore {
 			bestName = "" // ambiguous; the guard must not guess
 		}
+	}
+	if explicitMatches == 1 {
+		return explicitName, 1_000_000
+	}
+	if explicitMatches > 1 {
+		return "", 1_000_000
 	}
 	return bestName, bestScore
 }
@@ -393,10 +502,10 @@ func resolveLegacyAlias(
 
 	specs := specsFor(cloud, res.typ)
 	if len(specs) == 0 {
-		if looksDataBearing(res.typ) {
-			return legacyAliasSpec{}, "", "this data-bearing resource type has no adoption rule"
+		if isReplaceableLegacyResource(res) {
+			return legacyAliasSpec{}, "", ""
 		}
-		return legacyAliasSpec{}, "", ""
+		return legacyAliasSpec{}, "", "the legacy resource type has no reviewed replacement or adoption rule"
 	}
 
 	var chosen legacyAliasSpec
@@ -415,7 +524,10 @@ func resolveLegacyAlias(
 		if dataBearing {
 			return legacyAliasSpec{}, "", "no unique matching managed service exists in the requested compose project"
 		}
-		return legacyAliasSpec{}, "", ""
+		if isReplaceableLegacyResource(res) {
+			return legacyAliasSpec{}, "", ""
+		}
+		return legacyAliasSpec{}, "", "the legacy resource type has no reviewed replacement or adoption rule"
 	}
 	if !aliasTargetEnabled(chosen, services[service]) {
 		return legacyAliasSpec{}, "",
@@ -517,9 +629,20 @@ func mergeDetectedAliases(dst program.ServiceAliases, src program.ServiceAliases
 	}
 }
 
+func warnMigrationProblems(header string, blockers []migrationProblem) {
+	warn(header)
+	for i, blocker := range blockers {
+		if i == maxReportedResources {
+			warn(fmt.Sprintf("  ...and %d more", len(blockers)-maxReportedResources))
+			break
+		}
+		warn(fmt.Sprintf("  %s — %s", blocker.resource.display(), blocker.reason))
+	}
+}
+
 // prepareLegacyState populates aliases for both preview and up. enforce is
-// true only for up: preview is read-only and must remain available to show the
-// exact plan, even when up would stop.
+// true only for up: preview applies no infrastructure changes and must remain
+// available to show the exact plan, even when up would stop.
 func prepareLegacyState(
 	ctx context.Context,
 	exporter stackExporter,
@@ -560,16 +683,16 @@ func prepareLegacyState(
 	if len(plan.blockers) != 0 {
 		switch {
 		case !enforce:
-			warn(fmt.Sprintf(
+			warnMigrationProblems(fmt.Sprintf(
 				"Preview found %d legacy migration blocker(s); a real up will stop. See %s",
 				len(plan.blockers), migrationRunbook,
-			))
+			), plan.blockers)
 			return nil
 		case override:
-			warn(fmt.Sprintf(
+			warnMigrationProblems(fmt.Sprintf(
 				"Warning: continuing despite %d legacy migration blocker(s). Unaliased databases may be deleted.",
 				len(plan.blockers),
-			))
+			), plan.blockers)
 			return nil
 		default:
 			return &legacyStateError{plan: plan}
