@@ -277,8 +277,23 @@ func DelegateZoneName(domain string) string {
 	return "defang-" + common.SafeLabel(common.NormalizeDNS(domain))
 }
 
-// findDelegateZone returns the name of an existing public managed zone in the deploy
-// project that already serves fqdn, or "" when there is none.
+type delegateZoneMode uint8
+
+const (
+	delegateZoneCreate delegateZoneMode = iota
+	delegateZoneManaged
+	delegateZoneExternal
+)
+
+const externalDelegateZoneLogicalName = "external-public-dns"
+
+type delegateZoneSelection struct {
+	name string
+	mode delegateZoneMode
+}
+
+// findDelegateZone decides whether the project must keep managing its existing
+// public-dns resource, read a zone owned outside this stack, or create public-dns.
 //
 // Ported from the legacy GCP CD's adopt-or-create block
 // (defang-mvp pulumi/cd/gcp/gcpcd/tenant_stack.go:180-190), with one deliberate
@@ -288,30 +303,167 @@ func DelegateZoneName(domain string) string {
 // unlike the legacy behaviour, a permission or throttling failure surfaces as an
 // error instead of silently creating the duplicate zone this function exists to
 // prevent. Cf. the same fail-closed reasoning in defangaws/aws/route53.go:125-161.
-func findDelegateZone(ctx *pulumi.Context, fqdn string, parentOpt pulumi.ResourceOrInvokeOption) (string, error) {
+func findDelegateZone(
+	ctx *pulumi.Context,
+	projectName string,
+	fqdn string,
+	parentOpt pulumi.ResourceOrInvokeOption,
+) (delegateZoneSelection, error) {
 	zones, err := dns.GetManagedZones(ctx, &dns.GetManagedZonesArgs{}, parentOpt)
 	if err != nil {
-		return "", fmt.Errorf("listing Cloud DNS managed zones for %s: %w", fqdn, err)
+		return delegateZoneSelection{}, fmt.Errorf(
+			"cannot list Cloud DNS managed zones for %s; verify the CD identity has dns.managedZones.list "+
+				"(included in roles/dns.admin): %w", common.NormalizeDNS(fqdn), err,
+		)
 	}
 
+	return selectDelegateZone(
+		projectName,
+		fqdn,
+		common.AutonamingPrefix(ctx, "public-dns"),
+		zones.ManagedZones,
+	)
+}
+
+func selectDelegateZone(
+	projectName string,
+	fqdn string,
+	managedNamePrefix string,
+	zones []dns.GetManagedZonesManagedZone,
+) (delegateZoneSelection, error) {
+	fqdn = common.NormalizeDNS(fqdn)
 	cliName := DelegateZoneName(fqdn)
-	var byDNSName string
-	for _, zone := range zones.ManagedZones {
-		// Private zones cannot answer a DNS-01 challenge or serve public records.
-		if zone.Name == nil || *zone.Name == "" || zone.Visibility == "private" || zone.DnsName != fqdn+"." {
+	managedDescription := fmt.Sprintf("Public DNS zone for %v", projectName)
+
+	var matches []dns.GetManagedZonesManagedZone
+	var cliZone *dns.GetManagedZonesManagedZone
+	var managedZones []dns.GetManagedZonesManagedZone
+	for _, zone := range zones {
+		// Private zones cannot answer a DNS-01 challenge or serve public records. Normalize
+		// both values because DNS names are case-insensitive and callers vary on the final dot.
+		if zone.Name == nil || *zone.Name == "" ||
+			!strings.EqualFold(zone.Visibility, "public") ||
+			common.NormalizeDNS(zone.DnsName) != fqdn {
 			continue
 		}
-		if *zone.Name == cliName {
-			return cliName, nil // the CLI's zone: the one the parent NS records point at
+		matches = append(matches, zone)
+		if strings.EqualFold(*zone.Name, cliName) {
+			candidate := zone
+			cliZone = &candidate
 		}
-		// GCP allows several zones to share a dnsName, which is how the duplicate
-		// arises in the first place. Pick the lowest name so repeated deploys keep
-		// adopting the same zone instead of flapping between them.
-		if byDNSName == "" || *zone.Name < byDNSName {
-			byDNSName = *zone.Name
+		if isStackManagedDelegateZone(zone, managedNamePrefix, managedDescription) {
+			managedZones = append(managedZones, zone)
 		}
 	}
-	return byDNSName, nil
+
+	if cliZone != nil {
+		// The exact CLI name is a positive ownership/delegation signal. It wins over
+		// unrelated same-dnsName zones, unless one of them is recognizably the existing
+		// Pulumi-managed public-dns resource. In that case switching to the CLI zone
+		// would omit public-dns from the new program and schedule its deletion.
+		if len(managedZones) != 0 {
+			return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
+				"both the CLI-created zone and a stack-managed public-dns zone exist; remove the unwanted duplicate "+
+					"or migrate its Pulumi state explicitly")
+		}
+		return delegateZoneSelection{name: *cliZone.Name, mode: delegateZoneExternal}, nil
+	}
+
+	if len(managedZones) == 1 {
+		// Keep registering the original managed resource under the same logical name.
+		// Returning a GetManagedZone here would change the same URN into an external read,
+		// relinquishing lifecycle ownership and potentially deleting/replacing the old zone.
+		return delegateZoneSelection{name: *managedZones[0].Name, mode: delegateZoneManaged}, nil
+	}
+	if len(managedZones) > 1 {
+		return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
+			"more than one zone has this stack's public-dns ownership markers")
+	}
+
+	switch len(matches) {
+	case 0:
+		return delegateZoneSelection{mode: delegateZoneCreate}, nil
+	case 1:
+		// A single public zone is unambiguous even if it predates the CLI naming rule.
+		return delegateZoneSelection{name: *matches[0].Name, mode: delegateZoneExternal}, nil
+	default:
+		return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
+			"none has the exact CLI name or this stack's public-dns ownership markers")
+	}
+}
+
+func isStackManagedDelegateZone(
+	zone dns.GetManagedZonesManagedZone,
+	managedNamePrefix string,
+	managedDescription string,
+) bool {
+	if zone.Name == nil || zone.Description != managedDescription {
+		return false
+	}
+	name := strings.ToLower(*zone.Name)
+	prefix := strings.ToLower(strings.TrimSuffix(managedNamePrefix, "-"))
+	return prefix != "" && (name == prefix || strings.HasPrefix(name, prefix+"-"))
+}
+
+func delegateZoneAmbiguityError(
+	fqdn string,
+	cliName string,
+	zones []dns.GetManagedZonesManagedZone,
+	reason string,
+) error {
+	names := make([]string, 0, len(zones))
+	for _, zone := range zones {
+		if zone.Name != nil {
+			names = append(names, *zone.Name)
+		}
+	}
+	return fmt.Errorf(
+		"multiple public Cloud DNS managed zones serve %s (%s), and %s; refusing to choose one: "+
+			"keep the delegated zone named %q and remove the duplicates, or migrate ownership explicitly",
+		fqdn, strings.Join(names, ", "), reason, cliName,
+	)
+}
+
+func ensureDelegateZone(
+	ctx *pulumi.Context,
+	projectName string,
+	fqdn string,
+	parentOpt pulumi.ResourceOrInvokeOption,
+	opts ...pulumi.ResourceOption,
+) (*dns.ManagedZone, error) {
+	selection, err := findDelegateZone(ctx, projectName, fqdn, parentOpt)
+	if err != nil {
+		return nil, err
+	}
+
+	if selection.mode == delegateZoneExternal {
+		// Use a different logical name from the managed public-dns resource. A Pulumi
+		// get/read is external to this stack's lifecycle; sharing the old logical name
+		// would instead convert an existing managed URN into an external one.
+		zone, err := dns.GetManagedZone(
+			ctx, externalDelegateZoneLogicalName, pulumi.ID(selection.name), nil, opts...,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"cannot read Cloud DNS managed zone %q for %s; verify the CD identity has dns.managedZones.get "+
+					"(included in roles/dns.admin): %w", selection.name, fqdn, err,
+			)
+		}
+		return zone, nil
+	}
+
+	// This is intentionally the original managed declaration: same type, logical
+	// name, parent, description, and dnsName, with Name still omitted. Existing
+	// stacks therefore keep the same managed URN and provider-assigned physical name;
+	// setting immutable Name here would schedule their zone for replacement.
+	zone, err := dns.NewManagedZone(ctx, "public-dns", &dns.ManagedZoneArgs{
+		Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
+		DnsName:     pulumi.String(fqdn + "."),
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return zone, nil
 }
 
 // createWildcardCert adopts or creates the public delegate DNS zone, then adds a
@@ -325,35 +477,9 @@ func createWildcardCert(
 	parentOpt pulumi.ResourceOrInvokeOption,
 	opts ...pulumi.ResourceOption,
 ) error {
-	fqdn := strings.TrimSuffix(domain, ".")
+	fqdn := common.NormalizeDNS(domain)
 
-	existing, err := findDelegateZone(ctx, fqdn, parentOpt)
-	if err != nil {
-		return err
-	}
-
-	var zone *dns.ManagedZone
-	if existing != "" {
-		// Adopt the zone the CLI already created and delegated. Creating a second
-		// zone for the same dnsName gets a different nameserver set that the parent
-		// does not delegate to, so the DNS-01 challenge records below would land in
-		// a zone nobody resolves and the wildcard cert would never validate.
-		//
-		// Read rather than pulumi.Import: a read resource stays outside this stack's
-		// lifecycle, so `defang down` cannot delete a zone Defang did not create, and
-		// Pulumi never diffs our args against the CLI's (a mismatch on an immutable
-		// field such as dnsName would otherwise propose a replacement — deleting the
-		// delegated zone and issuing new nameservers).
-		zone, err = dns.GetManagedZone(ctx, "public-dns", pulumi.ID(existing), nil, opts...)
-	} else {
-		zone, err = dns.NewManagedZone(ctx, "public-dns", &dns.ManagedZoneArgs{
-			Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
-			DnsName:     pulumi.String(fqdn + "."),
-			// Name it the way the CLI would, so a later `defang compose up` finds
-			// this zone instead of creating a second one alongside it.
-			Name: pulumi.String(DelegateZoneName(fqdn)),
-		}, opts...)
-	}
+	zone, err := ensureDelegateZone(ctx, projectName, fqdn, parentOpt, opts...)
 	if err != nil {
 		return err
 	}
