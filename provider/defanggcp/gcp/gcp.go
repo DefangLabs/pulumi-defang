@@ -28,10 +28,10 @@ type SharedInfra struct {
 	PublicIP          *compute.GlobalAddress
 	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
 	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
-	// DnsZones maps a BYOD hostname to the name of the existing public Cloud DNS
-	// managed zone that hosts it, for the hostnames a zone was found for. Resolved
-	// by FindZones (dnszone.go) and threaded in from the CD program; empty for
-	// hostnames with no matching zone, which take the load-balancer-authorized
+	// DnsZones maps a BYOD hostname to the existing public Cloud DNS managed zone
+	// that both hosts it and explicitly authorizes Defang record management.
+	// Resolved by FindZones (dnszone.go) and threaded in from the CD program; empty
+	// for hostnames with no trusted match, which take the load-balancer-authorized
 	// certificate path instead. See byodcert.go.
 	DnsZones map[string]string
 	ProxySubnetId     string

@@ -9,10 +9,23 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// FindZones maps each hostname to the name of the public Cloud DNS managed zone
-// in gcpProject whose DNS name is its longest suffix, omitting hostnames no zone
-// matches. The project's zones are listed once for the whole batch, since a
-// project's hostnames are resolved together and the listing is a round trip.
+// byodZoneAuthorizationMarker is an explicit opt-in from a Cloud DNS zone
+// owner allowing Defang deployments in the project to create BYOD records in
+// that zone. It must appear as a whitespace-delimited word in the zone's
+// description.
+//
+// Listing zones proves only that the deploy identity can see them. In a shared
+// project, that is not evidence that the author of a particular Compose project
+// owns every visible DNS namespace. Requiring a zone-owner-controlled marker
+// keeps an arbitrary domainname from turning project-wide DNS permissions into
+// authority to overwrite another application's records.
+const byodZoneAuthorizationMarker = "defang.dev/byod-dns=authorized"
+
+// FindZones maps each hostname to the name of the authorized public Cloud DNS
+// managed zone in gcpProject whose DNS name is its longest suffix, omitting
+// hostnames no trusted zone matches. The project's zones are listed once for the
+// whole batch, since a project's hostnames are resolved together and the
+// listing is a round trip.
 //
 // This is GCP's half of BYOD ("bring your own domain") zone discovery: when a
 // service asks for a custom hostname and a zone that can host it already exists,
@@ -30,11 +43,11 @@ import (
 // inside its authorized VPCs, so neither a public client nor Certificate
 // Manager's DNS-01 validator could see a record placed in one.
 //
-// The search applies no ownership or tag filter (per the BYOD design): whichever
-// existing zone is the closest parent of the hostname wins. Only gcpProject is
-// searched — the deploy identity's own project — matching Azure's
-// deploy-subscription-only scope. GCP has no analogue of Route 53's
-// x-defang-dns-role cross-account hop.
+// A zone is eligible only when its description contains
+// byodZoneAuthorizationMarker as a whitespace-delimited word. This is the
+// explicit authorization boundary for shared GCP projects: project-wide list
+// and record permissions alone do not prove that one deployment owns another
+// team's zone. Only gcpProject is searched — the deploy identity's own project.
 func FindZones(
 	ctx *pulumi.Context, gcpProject string, hostnames []string, opts ...pulumi.InvokeOption,
 ) (map[string]string, error) {
@@ -59,10 +72,10 @@ func FindZones(
 	return found, nil
 }
 
-// bestZoneMatch picks the public zone whose DNS name is the longest suffix of
-// hostname and returns that zone's name ("" when nothing matches). A zone
-// matches hostname itself or any parent of it, so "api.example.com" matches a
-// zone for "example.com" but "example.com.evil.com" does not.
+// bestZoneMatch picks the authorized public zone whose DNS name is the longest
+// suffix of hostname and returns that zone's name ("" when nothing matches). A
+// zone matches hostname itself or any parent of it, so "api.example.com"
+// matches a zone for "example.com" but "example.com.evil.com" does not.
 //
 // A wildcard hostname matches on the name it stands for: "*.example.com" is
 // hosted by the "example.com" zone, and by a "foo.example.com" zone when the
@@ -82,6 +95,9 @@ func bestZoneMatch(hostname string, zones []dns.GetManagedZonesManagedZone) stri
 		if z.Name == nil || *z.Name == "" {
 			continue
 		}
+		if !zoneAllowsByodRecords(z.Description) {
+			continue
+		}
 		name := common.NormalizeDNS(z.DnsName)
 		if name == "" {
 			continue
@@ -89,9 +105,18 @@ func bestZoneMatch(hostname string, zones []dns.GetManagedZonesManagedZone) stri
 		if hostname != name && !strings.HasSuffix(hostname, "."+name) {
 			continue
 		}
-		if len(name) > len(bestName) {
+		if len(name) > len(bestName) || len(name) == len(bestName) && *z.Name < bestZone {
 			bestName, bestZone = name, *z.Name
 		}
 	}
 	return bestZone
+}
+
+func zoneAllowsByodRecords(description string) bool {
+	for _, word := range strings.Fields(description) {
+		if word == byodZoneAuthorizationMarker {
+			return true
+		}
+	}
+	return false
 }

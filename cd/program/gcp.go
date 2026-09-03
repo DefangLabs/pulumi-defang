@@ -34,10 +34,10 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 	}
 
 	args := toGCPArgs(cf, etag)
-	// Resolve each BYOD hostname to an existing public Cloud DNS zone and thread the
-	// zone names into the provider, so it writes the records into the customer's own
-	// zone and issues a DNS-authorized cert there. Hostnames with no zone still get
-	// a cert, authorized by the load balancer instead.
+	// Resolve each BYOD hostname to an explicitly authorized public Cloud DNS zone
+	// and thread the zone names into the provider, so it writes records only where
+	// the zone owner opted in. Hostnames with no trusted zone still get a cert,
+	// authorized by the load balancer instead.
 	if zones := findByodZonesGCP(ctx, cf, gcpProvider); len(zones) > 0 {
 		zoneMap := pulumi.StringMap{}
 		for hostname, zone := range zones {
@@ -85,8 +85,8 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 
 // findByodZonesGCP resolves every BYOD hostname the project asks for — each
 // service's `domainname` plus its default-network aliases — to the name of an
-// existing public Cloud DNS managed zone in the deploy project. Hostnames with no
-// matching zone are absent from the result and take the
+// explicitly authorized public Cloud DNS managed zone in the deploy project.
+// Hostnames with no trusted matching zone are absent from the result and take the
 // load-balancer-authorized certificate path instead.
 //
 // The lookup runs here rather than in the CLI (as AWS does in
@@ -120,14 +120,14 @@ func findByodZonesGCP(pctx *pulumi.Context, cf *compose.Project, provider pulumi
 				"authorized certificates", err), nil)
 		return nil
 	}
-	// No zone for a hostname is a normal answer, not a failure. Unlike AWS and
+	// No trusted zone for a hostname is a normal answer, not a failure. Unlike AWS and
 	// Azure, GCP does not drop the hostname's certificate here — it issues one with
 	// load balancer authorization, so the actionable hint is about DNS rather than
 	// about `defang cert gen`.
 	for _, hostname := range hostnames {
 		if _, ok := zones[common.NormalizeDNS(hostname)]; !ok {
 			_ = pctx.Log.Warn(fmt.Sprintf(
-				"BYOD DNS: no public Cloud DNS zone in this project hosts %s; its certificate will use "+
+				"BYOD DNS: no authorized public Cloud DNS zone in this project hosts %s; its certificate will use "+
 					"load balancer authorization and activates once %s resolves to this deployment's load "+
 					"balancer IP address.", hostname, hostname), nil)
 		}

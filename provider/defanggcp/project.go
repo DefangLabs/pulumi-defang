@@ -27,9 +27,10 @@ type ProjectInputs struct {
 	// container so application logs can be correlated with a specific deployment.
 	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
 	// DnsZones maps a BYOD hostname — any service's `domainname` or default-network
-	// alias — to the name of the existing public Cloud DNS managed zone that hosts
-	// it. The CD program resolves this before the deploy (cd/program/gcp.go
-	// findByodZones) because only the deploy identity can list the project's zones.
+	// alias — to the existing public Cloud DNS managed zone that hosts it and whose
+	// owner explicitly authorized Defang record management. The CD program resolves
+	// this before the deploy (cd/program/gcp.go findByodZones) because only the
+	// deploy identity can list the project's zones.
 	//
 	// A hostname present here gets its records written into that zone and a
 	// DNS-authorized managed certificate. A hostname absent from it still gets a

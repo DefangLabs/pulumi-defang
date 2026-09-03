@@ -1,14 +1,28 @@
 package gcp
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
-	"strconv"
+	"sort"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/dns"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var errConflictingByodZones = errors.New("conflicting Cloud DNS zones for one BYOD authorization domain")
+
+type byodDnsAuthorization struct {
+	zone     string
+	resource *certificatemanager.DnsAuthorization
+}
+
+type byodHostnameRequest struct {
+	hostname string
+	services []string
+}
 
 // createByodCerts issues one Certificate Manager managed certificate per BYOD
 // hostname and attaches it to the load balancer's certificate map, so a service
@@ -41,52 +55,101 @@ func createByodCerts(
 	entries []LBServiceEntry,
 	opts ...pulumi.ResourceOption,
 ) error {
-	seen := map[string]bool{}
+	requests := byodHostnameRequests(entries)
+	if err := validateByodAuthorizationZones(requests, infra.DnsZones); err != nil {
+		return err
+	}
+
+	authorizations := map[string]byodDnsAuthorization{}
+	for _, request := range requests {
+		hostname := request.hostname
+		if len(request.services) > 1 {
+			warnf(ctx, "BYOD TLS: %q is requested by services %q; creating one shared certificate-map entry",
+				hostname, request.services)
+		}
+
+		// Use a short hash of the normalized hostname so resource identity is
+		// independent of which service asks for an overlapping name, while staying
+		// below Certificate Manager's 63-character name limit.
+		name := byodResourceName("cert", hostname)
+
+		cert, err := createByodCert(ctx, name, hostname, infra, authorizations, opts...)
+		if err != nil {
+			return err
+		}
+		if cert == nil {
+			continue // not certifiable; createByodCert has warned
+		}
+
+		// Hostname (not Matcher: PRIMARY) so this certificate is served for SNI
+		// requests for exactly this name. The delegate-domain wildcard keeps the
+		// PRIMARY slot as the fallback, so the two never compete.
+		if _, err := certificatemanager.NewCertificateMapEntry(ctx, name+"-map-entry",
+			&certificatemanager.CertificateMapEntryArgs{
+				Map:          certMap.Name,
+				Certificates: pulumi.StringArray{cert.ID()},
+				Hostname:     pulumi.String(hostname),
+			}, opts...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func byodHostnameRequests(entries []LBServiceEntry) []byodHostnameRequest {
+	requesters := map[string]map[string]struct{}{}
 	for _, entry := range entries {
-		for i, hostname := range common.ByodHostnames(entry.Config) {
+		for _, hostname := range common.ByodHostnames(entry.Config) {
 			hostname = common.NormalizeDNS(hostname)
 			if hostname == "" {
 				continue
 			}
-			if seen[hostname] {
-				// Two names that resolve to the same certificate map entry would make
-				// the GCP API reject the map, so keep the first and say which one lost.
-				warnf(ctx, "BYOD TLS: %q is requested more than once in this project; "+
-					"certifying it for the first service that asked and ignoring the repeat", hostname)
-				continue
+			if requesters[hostname] == nil {
+				requesters[hostname] = map[string]struct{}{}
 			}
-			seen[hostname] = true
-
-			// Names are derived from the service and the hostname's position in its
-			// list, not from the hostname itself: a Certificate Manager resource name
-			// is capped at 63 characters and Pulumi prefixes ours with
-			// "<project>-<stack>-" and suffixes a hash, which a long hostname would
-			// blow past.
-			name := entry.Name + "-byod-cert"
-			if i > 0 {
-				name += "-" + strconv.Itoa(i)
-			}
-
-			cert, err := createByodCert(ctx, name, hostname, infra, opts...)
-			if err != nil {
-				return err
-			}
-			if cert == nil {
-				continue // not certifiable; createByodCert has warned
-			}
-
-			// Hostname (not Matcher: PRIMARY) so this certificate is served for SNI
-			// requests for exactly this name. The delegate-domain wildcard keeps the
-			// PRIMARY slot as the fallback, so the two never compete.
-			if _, err := certificatemanager.NewCertificateMapEntry(ctx, name+"-map-entry",
-				&certificatemanager.CertificateMapEntryArgs{
-					Map:          certMap.Name,
-					Certificates: pulumi.StringArray{cert.ID()},
-					Hostname:     pulumi.String(hostname),
-				}, opts...); err != nil {
-				return err
-			}
+			requesters[hostname][entry.Name] = struct{}{}
 		}
+	}
+
+	hostnames := make([]string, 0, len(requesters))
+	for hostname := range requesters {
+		hostnames = append(hostnames, hostname)
+	}
+	sort.Strings(hostnames)
+
+	requests := make([]byodHostnameRequest, 0, len(hostnames))
+	for _, hostname := range hostnames {
+		services := make([]string, 0, len(requesters[hostname]))
+		for service := range requesters[hostname] {
+			services = append(services, service)
+		}
+		sort.Strings(services)
+		requests = append(requests, byodHostnameRequest{hostname: hostname, services: services})
+	}
+	return requests
+}
+
+// validateByodAuthorizationZones rejects an internally inconsistent discovery
+// result before registering any BYOD resources. A DNS authorization has one
+// challenge record and therefore one destination zone; the same normalized
+// authorization domain cannot safely point at two zones.
+func validateByodAuthorizationZones(requests []byodHostnameRequest, zones map[string]string) error {
+	authorizationZones := map[string]string{}
+	for _, request := range requests {
+		zone := zones[request.hostname]
+		if zone == "" {
+			continue
+		}
+		domain := authorizationDomain(request.hostname)
+		if firstZone, ok := authorizationZones[domain]; ok && firstZone != zone {
+			zoneA, zoneB := firstZone, zone
+			if zoneB < zoneA {
+				zoneA, zoneB = zoneB, zoneA
+			}
+			return fmt.Errorf("%w: BYOD TLS authorization domain %q resolved to %q and %q",
+				errConflictingByodZones, domain, zoneA, zoneB)
+		}
+		authorizationZones[domain] = zone
 	}
 	return nil
 }
@@ -99,6 +162,7 @@ func createByodCert(
 	ctx *pulumi.Context,
 	name, hostname string,
 	infra *SharedInfra,
+	authorizations map[string]byodDnsAuthorization,
 	opts ...pulumi.ResourceOption,
 ) (*certificatemanager.Certificate, error) {
 	zone := infra.DnsZones[hostname]
@@ -129,14 +193,43 @@ func createByodCert(
 		return nil, err
 	}
 
-	// A DNS authorization is issued for the name the certificate covers, which for
-	// a wildcard is the parent it stands for: an authorization for "example.com"
-	// covers both "example.com" and "*.example.com".
-	authzDomain := common.NormalizeDNS(trimWildcard(hostname))
-	authz, err := certificatemanager.NewDnsAuthorization(ctx, name+"-authz",
+	// One DNS authorization covers a domain and its wildcard. Reuse it across
+	// hostnames and services so example.com plus *.example.com publish one CNAME
+	// challenge while still receiving separate certificates and map entries.
+	authzDomain := authorizationDomain(hostname)
+	authz, ok := authorizations[authzDomain]
+	if ok && authz.zone != zone {
+		return nil, fmt.Errorf("%w: BYOD TLS authorization domain %q resolved to %q and %q",
+			errConflictingByodZones, authzDomain, authz.zone, zone)
+	}
+	if !ok {
+		resource, err := createByodDnsAuthorization(ctx, authzDomain, zone, opts...)
+		if err != nil {
+			return nil, err
+		}
+		authz = byodDnsAuthorization{zone: zone, resource: resource}
+		authorizations[authzDomain] = authz
+	}
+
+	return certificatemanager.NewCertificate(ctx, name, &certificatemanager.CertificateArgs{
+		Description: pulumi.StringPtr("DNS authorized certificate for " + hostname),
+		Managed: &certificatemanager.CertificateManagedArgs{
+			Domains:           pulumi.StringArray{pulumi.String(hostname)},
+			DnsAuthorizations: pulumi.StringArray{authz.resource.ID()},
+		},
+	}, opts...)
+}
+
+func createByodDnsAuthorization(
+	ctx *pulumi.Context,
+	domain, zone string,
+	opts ...pulumi.ResourceOption,
+) (*certificatemanager.DnsAuthorization, error) {
+	name := byodResourceName("authz", domain)
+	authz, err := certificatemanager.NewDnsAuthorization(ctx, name,
 		&certificatemanager.DnsAuthorizationArgs{
-			Description: pulumi.StringPtr("DNS authorization for " + hostname),
-			Domain:      pulumi.String(authzDomain),
+			Description: pulumi.StringPtr("DNS authorization for " + domain),
+			Domain:      pulumi.String(domain),
 		}, opts...)
 	if err != nil {
 		return nil, err
@@ -146,7 +239,7 @@ func createByodCert(
 	// record, so read it off the output by index rather than creating resources
 	// inside an ApplyT the way createWildcardCert still has to.
 	record := authz.DnsResourceRecords.Index(pulumi.Int(0))
-	if _, err := dns.NewRecordSet(ctx, name+"-authz-record", &dns.RecordSetArgs{
+	if _, err := dns.NewRecordSet(ctx, name+"-record", &dns.RecordSetArgs{
 		ManagedZone: pulumi.String(zone),
 		Name:        record.Name().Elem(),
 		Type:        record.Type().Elem(),
@@ -155,14 +248,7 @@ func createByodCert(
 	}, opts...); err != nil {
 		return nil, err
 	}
-
-	return certificatemanager.NewCertificate(ctx, name, &certificatemanager.CertificateArgs{
-		Description: pulumi.StringPtr("DNS authorized certificate for " + hostname),
-		Managed: &certificatemanager.CertificateManagedArgs{
-			Domains:           pulumi.StringArray{pulumi.String(hostname)},
-			DnsAuthorizations: pulumi.StringArray{authz.ID()},
-		},
-	}, opts...)
+	return authz, nil
 }
 
 // createByodRecord points a BYOD hostname at the load balancer from inside the
@@ -198,6 +284,15 @@ func trimWildcard(hostname string) string {
 		return hostname[len(common.WildcardPrefix):]
 	}
 	return hostname
+}
+
+func authorizationDomain(hostname string) string {
+	return common.NormalizeDNS(trimWildcard(common.NormalizeDNS(hostname)))
+}
+
+func byodResourceName(kind, value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("byod-%s-%x", kind, digest[:6])
 }
 
 // warnf logs a Pulumi warning. BYOD TLS problems are reported this way rather
