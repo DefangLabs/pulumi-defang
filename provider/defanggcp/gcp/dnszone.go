@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -21,6 +22,8 @@ import (
 // keeps an arbitrary domainname from turning project-wide DNS permissions into
 // authority to overwrite another application's records.
 const byodZoneAuthorizationMarker = "defang.dev/byod-dns=authorized"
+
+var errAmbiguousByodZones = errors.New("ambiguous authorized public Cloud DNS managed zones")
 
 // FindZones maps each hostname to the name of the authorized public Cloud DNS
 // managed zone in gcpProject whose DNS name is its longest suffix, omitting
@@ -130,8 +133,9 @@ func bestZoneMatch(hostname string, zones []dns.GetManagedZonesManagedZone) (str
 	slices.Sort(zoneNames)
 	if len(zoneNames) > 1 {
 		return "", fmt.Errorf(
-			"multiple authorized public Cloud DNS managed zones match hostname %q at DNS suffix %q: %s; keep %q in the description of only the publicly delegated zone",
-			hostname, bestName, strings.Join(zoneNames, ", "), byodZoneAuthorizationMarker,
+			"%w for hostname %q at DNS suffix %q: %s; keep %q in the description of only the publicly "+
+				"delegated zone",
+			errAmbiguousByodZones, hostname, bestName, strings.Join(zoneNames, ", "), byodZoneAuthorizationMarker,
 		)
 	}
 	return zoneNames[0], nil

@@ -95,9 +95,12 @@ func TestBestZoneMatchRejectsAmbiguousEquivalentZones(t *testing.T) {
 	_, err := bestZoneMatch("api.example.com", []dns.GetManagedZonesManagedZone{
 		z("z-zone"), z("a-zone"), z("m-zone"), z("a-zone"),
 	})
-	require.ErrorContains(t, err, `multiple authorized public Cloud DNS managed zones match hostname "api.example.com" at DNS suffix "example.com"`)
+	require.ErrorIs(t, err, errAmbiguousByodZones)
+	require.ErrorContains(t, err,
+		`ambiguous authorized public Cloud DNS managed zones for hostname "api.example.com" at DNS suffix "example.com"`)
 	require.ErrorContains(t, err, "a-zone, m-zone, z-zone")
-	require.ErrorContains(t, err, `keep "defang.dev/byod-dns=authorized" in the description of only the publicly delegated zone`)
+	require.ErrorContains(t, err,
+		`keep "defang.dev/byod-dns=authorized" in the description of only the publicly delegated zone`)
 }
 
 type findZonesMocks struct {
