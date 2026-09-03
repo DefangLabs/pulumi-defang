@@ -1,90 +1,142 @@
 # Moving a project to this CD
 
 Defang has shipped more than one deploy driver ("CD"). This page is for a
-project that an older one deployed, and that you now want on this one.
+project that an older driver deployed and that now needs to run on this one.
 
-## Why you cannot deploy in place
+## Why migration needs a preflight
 
-Every CD is given the same Pulumi state: same bucket, same project, same stack.
-So this CD opens the older CD's state and finds resources it does not recognise.
+The old and current drivers open the same Pulumi project and stack. Their
+resource names and parent trees differ, so an ordinary deploy can look like a
+request to create new infrastructure and delete the old infrastructure. If a
+managed database is replaced, its data can be lost.
 
-The two CDs share no resource identifiers, and this CD has no code to adopt the
-older one's resources. Pulumi therefore reads every existing resource as gone.
-One deploy would:
+The current CD performs a state preflight before `preview` and `up`. It reads
+resource identity (URN, type, and parent) from the snapshot and discards all
+exported inputs and outputs, which can contain secrets. For supported AWS and
+GCP databases it gives Pulumi the old resource's exact URN as an alias. Pulumi
+can then adopt the resource instead of replacing it.
 
-1. create a complete new set of infrastructure, including a new, empty database,
-   then
-2. delete everything the older CD made, including the database that holds your
-   data.
+Aliases are the migration mechanism. The preflight guard is the second line of
+defence: `up` stops unless every data-bearing legacy resource can be mapped to
+exactly one managed service and the current CD image can operate on the rest of
+the legacy state.
 
-Outside production mode, managed databases are created with deletion protection
-and backups off, so that data is not recoverable.
+## Start with preview
 
-This is why `defang compose up` stops with an error on such a stack, instead of
-deploying. The guard that stops it is in `cd/legacy_state.go`.
+Run a preview with the same project, stack, compose file, recipe, and cloud that
+the real deployment will use:
 
-## What to do instead
+```console
+defang cd preview --stack <old-stack>
+```
 
-Deploy to a new stack, move traffic to it, then shut the old one down. The two
-stacks run side by side while you check the new one, and the old one keeps
-serving until you are ready.
+Preview is deliberately non-blocking. It applies every alias the preflight can
+prove and prints both the prepared alias mappings and any blockers that would
+stop a real `up`. Inspect the Pulumi plan. Each existing managed database must
+be adopted in place: the plan must not create, replace, or delete its RDS,
+ElastiCache, MemoryDB, Cloud SQL, or Memorystore data resource.
 
-1. **Deploy to a new stack.** Pick a name the project has never used.
+Do not run the real deployment if preview reports a blocker or plans a database
+replacement. Contact Defang support or use the blue/green procedure below.
 
+## In-place migrations that can proceed
+
+The preflight can prepare exact-URN aliases for these resources:
+
+- AWS RDS instances and their subnet/security groups.
+- AWS ElastiCache replication groups and their subnet/security groups.
+- AWS MemoryDB clusters and their subnet, parameter, and security groups.
+- GCP Cloud SQL instances and their optional user/database children.
+- GCP Memorystore instances.
+
+The requested compose project must still contain a uniquely matching managed
+Postgres or Redis service. Existing `x-defang-aliases` values must agree with
+the state, and an AWS Redis deployment must keep the same ElastiCache or
+MemoryDB engine. Mixed states are accepted only when each surviving legacy
+database has one target and that target does not already exist in the current
+resource tree.
+
+When these checks pass, `up` logs the exact aliases it prepared and proceeds.
+Other stateless legacy infrastructure may be recreated as part of the move, so
+preview remains mandatory.
+
+## Cases that require blue/green migration
+
+Use a new stack when the preflight cannot prove an in-place migration safe. In
+particular:
+
+- A legacy GCP state containing `cloudbuild:index:CloudBuild` is blocked because
+  the current minimal GCP CD image does not contain that private provider
+  plugin.
+- A legacy AWS state containing `pulumi-nodejs:dynamic:Resource` is blocked
+  because the current minimal AWS CD image does not contain the legacy Node
+  dynamic provider/runtime.
+- Legacy Azure state has no defined in-place adoption path.
+- Switching an existing stack between AWS, GCP, and Azure is blocked.
+- A renamed, removed, ambiguous, duplicated, or otherwise unmapped managed
+  database is blocked.
+- An unreadable or malformed state is blocked for `up`; the CD will not guess
+  that it is safe.
+
+These runtime limitations need separate compatibility work. An exact-stack
+override can bypass the guard, but it does not install a missing provider or
+make an unaliased database safe.
+
+### Blue/green procedure
+
+1. Deploy to a stack name the project has never used:
+
+   ```console
+   defang compose up --stack <new-stack>
    ```
-   defang compose up --stack <new-name>
+
+2. Back up the old database and restore it into the new stack using the normal
+   database tools. Defang does not copy data between stacks.
+
+3. Exercise the application against the new stack's URLs.
+
+4. Move the project's traffic or domain to the new stack.
+
+5. Only after verification and a recoverable backup, remove the old stack:
+
+   ```console
+   defang compose down --stack <old-stack>
    ```
 
-   This creates its own infrastructure and its own database. Nothing in the old
-   stack is touched.
+`down` and `destroy` are intentionally not guarded. They delete the selected
+stack, including its databases, because deletion is exactly what those commands
+request. Never run either command merely to clear a migration error.
 
-2. **Move your data.** Back up the old database and restore into the new one,
-   with your normal database tooling. Defang does not copy data between stacks.
+## If the result looks wrong
 
-3. **Check the new stack.** Its URLs are separate from the old ones. Exercise
-   the app against them before you send anyone real.
-
-4. **Move traffic.** Point your domain at the new stack.
-
-5. **Shut the old stack down**, once you are confident and your backups are
-   safe.
-
-   ```
-   defang compose down --stack <old-name>
-   ```
-
-   `down` and `destroy` are not blocked on an old stack. They delete what the
-   old CD made, which is what you are asking for at this point.
-
-## If the error is wrong
-
-The check refuses any stack holding resources this CD did not create. If you
-believe your stack does belong to this CD, contact Defang support rather than
-working around it — a wrong deploy here is not reversible.
-
-Also do not run `down` or `destroy` to clear the error. Neither is blocked, and
-both delete the resources the error just listed. The stack is not stuck — the
-deploy stopped before it changed anything.
+A blocked `up` stops before setting new stack config or changing
+infrastructure. Retry a transient state-backend failure. If the same error
+remains, keep the old stack in place and contact Defang support with the
+preflight message and preview. State inputs and outputs are not included in the
+preflight error or alias audit log.
 
 ## For Defang operators
 
-A deliberate takeover is authorised with `defang:allowLegacyStateTakeover` in
-the recipe's `pulumi_config`. The value is the `<project>/<stack>` it applies
-to, for example:
+The break-glass override is `defang:allowLegacyStateTakeover` in the recipe's
+`pulumi_config`. Its value must be the exact `<project>/<stack>` target:
 
 ```yaml
 config:
   defang:allowLegacyStateTakeover: acme-shop/prod
 ```
 
-The value is a stack name and not `true` on purpose. A recipe is keyed by
-tenant and mode, so one recipe is shared by every project that tenant deploys
-in that mode. `true` would disarm the guard for all of them, including projects
-nobody is migrating. Naming the target keeps a tenant-wide setting to a
-single-stack effect.
+The value is not a boolean. A recipe is tenant/mode scoped and can be shared by
+multiple projects, so an exact target prevents an authorization for one stack
+from disabling the guard for another. The preflight still applies every alias
+it can prove before the override bypasses remaining blockers, and it writes a
+prominent warning to the deployment log. Remove the entry immediately after
+the migration; it has no expiry.
 
-Remove the entry once the migration is done. There is no expiry.
+`DEFANG_ALLOW_LEGACY_STATE_TAKEOVER` provides the same exact-stack override for
+a CD run started by hand. The CLI does not forward it during ordinary deploys,
+and self-destruct resources explicitly exclude it from their environment.
 
-`DEFANG_ALLOW_LEGACY_STATE_TAKEOVER` does the same thing, with the same
-`<project>/<stack>` value, for a CD run started by hand — which has no recipe.
-The CLI does not pass it through, so it has no effect on a normal deploy.
+An override is not a repair. Before using one, verify from preview and the
+alias audit log that every database is adopted in place, resolve missing legacy
+provider/runtime dependencies, take a tested backup, and record who approved
+the exception.
