@@ -120,8 +120,7 @@ func TestCreateECSLifecycleToCWLogsNames(t *testing.T) {
 		cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{})
 		require.NoError(t, err)
 		// Version("") is a no-op option: the real caller passes the AWS provider.
-		_, err = createECSLifecycleToCWLogs(ctx, "myproject", cluster, pulumi.Version(""))
-		return err
+		return createECSLifecycleToCWLogs(ctx, "myproject", cluster, pulumi.Version(""))
 	},
 		pulumi.WithMocks("myproject", "beta", mocks),
 		withConfig(map[string]string{

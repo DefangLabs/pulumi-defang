@@ -66,7 +66,7 @@ func CreateProjectInfra(
 	// Forward ECS lifecycle events into a CloudWatch log group the CLI tails;
 	// without it `defang compose up` never sees DEPLOYMENT_COMPLETED. Matches
 	// the TS createECSLifecycleToCWLogsEventBridgeRule call in cd/aws/byoc.ts.
-	if _, err := createECSLifecycleToCWLogs(ctx, projectName, cluster, opt); err != nil {
+	if err := createECSLifecycleToCWLogs(ctx, projectName, cluster, opt); err != nil {
 		return nil, err
 	}
 

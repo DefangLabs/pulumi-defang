@@ -91,14 +91,14 @@ func createECSLifecycleToCWLogs(
 	projectName string,
 	cluster *ecs.Cluster,
 	opt pulumi.ResourceOrInvokeOption,
-) (*cloudwatch.LogGroup, error) {
+) error {
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "ecs-events", &cloudwatch.LogGroupArgs{
 		// Explicit name, not autonaming: the CLI derives this exact string.
 		Name:            pulumi.String(stackDir(ctx, projectName, ECSEventsLogGroupSuffix)),
 		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
 	}, opt)
 	if err != nil {
-		return nil, fmt.Errorf("creating ECS events log group: %w", err)
+		return fmt.Errorf("creating ECS events log group: %w", err)
 	}
 
 	// EventBridge writes to a log group through a resource policy on the group,
@@ -133,7 +133,7 @@ func createECSLifecycleToCWLogs(
 		PolicyDocument: policyDocument,
 	}, opt)
 	if err != nil {
-		return nil, fmt.Errorf("creating ECS events log resource policy: %w", err)
+		return fmt.Errorf("creating ECS events log resource policy: %w", err)
 	}
 
 	eventPattern := cluster.Arn.ApplyT(ecsEventPattern).(pulumi.StringOutput)
@@ -143,7 +143,7 @@ func createECSLifecycleToCWLogs(
 		EventPattern: eventPattern,
 	}, opt)
 	if err != nil {
-		return nil, fmt.Errorf("creating ECS lifecycle event rule: %w", err)
+		return fmt.Errorf("creating ECS lifecycle event rule: %w", err)
 	}
 
 	// The target is what starts delivery, and EventBridge can only write once
@@ -155,8 +155,8 @@ func createECSLifecycleToCWLogs(
 		Rule: rule.Name,
 	}, opt, pulumi.DependsOn([]pulumi.Resource{policy}))
 	if err != nil {
-		return nil, fmt.Errorf("creating ECS lifecycle event target: %w", err)
+		return fmt.Errorf("creating ECS lifecycle event target: %w", err)
 	}
 
-	return logGroup, nil
+	return nil
 }
