@@ -265,16 +265,16 @@ func requireURLMapRouting(t *testing.T, resources []albResource) urlMapRouting {
 	return routing
 }
 
-// publicDNSNames returns the hostnames the provider created public A records for.
-// CreatePublicDNSRecord names the resource "<hostname>_<type>" and normalizes the
-// hostname to FQDN form (CreatePublicDNSRecord), so the trailing dot is stripped:
-// URL-map hosts match the HTTP Host header, which carries no trailing dot.
+// publicDNSNames returns the hostnames the provider put in A records. Read the
+// deployed record name rather than its Pulumi logical name, then strip the FQDN
+// trailing dot because URL-map hosts match the HTTP Host header without it.
 func publicDNSNames(resources []albResource) []string {
 	var names []string
 	for _, r := range resources {
-		if r.typeof == "gcp:dns/recordSet:RecordSet" && strings.HasSuffix(r.name, "_A") {
-			names = append(names, strings.TrimSuffix(strings.TrimSuffix(r.name, "_A"), "."))
+		if r.typeof != "gcp:dns/recordSet:RecordSet" || r.inputs["type"].StringValue() != "A" {
+			continue
 		}
+		names = append(names, strings.TrimSuffix(r.inputs["name"].StringValue(), "."))
 	}
 	return names
 }
@@ -326,6 +326,7 @@ func TestCreateLoadBalancersRoutesEachServiceDelegateHostnamesToItsOwnBackend(t 
 // hostname once delegate names are in the map -- here a BYOD `domainname` that
 // happens to be another service's delegate name.
 func TestCreateLoadBalancersRejectsTwoServicesClaimingOneHostname(t *testing.T) {
+	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		proxy := testCloudRunEntry(t, ctx, "proxy", 80)
 		proxy.Config.DomainName = testAPIDelegateHostname // == api's delegate hostname
@@ -333,23 +334,58 @@ func TestCreateLoadBalancersRejectsTwoServicesClaimingOneHostname(t *testing.T) 
 			testCloudRunEntry(t, ctx, "api", 8080),
 			proxy,
 		}, testInfraWithDomain(ctx))
-	}, pulumi.WithMocks("proj", "stack", &albMocks{}))
+	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.ErrorIs(t, err, errDuplicateRoute)
 	require.Contains(t, err.Error(), `"api" and "proxy" both claim hostname "api.proj.example.com"`)
+	requireNoExternalLBResources(t, mocks.resources)
 }
 
 // Two service names that differ only in characters pathMatcherName strips (here
 // "_" vs "-") reduce to the same path matcher name. Duplicate path matcher names
 // are rejected by GCP; say which services collided instead.
 func TestCreateLoadBalancersRejectsTwoServicesReducingToOneRoute(t *testing.T) {
+	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
 			testCloudRunEntry(t, ctx, "my_api", 8080),
 			testCloudRunEntry(t, ctx, "my-api", 9090),
 		}, testInfraWithDomain(ctx))
-	}, pulumi.WithMocks("proj", "stack", &albMocks{}))
+	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.ErrorIs(t, err, errDuplicateRoute)
 	require.Contains(t, err.Error(), `both reduce to load balancer route "my-api"`)
+	requireNoExternalLBResources(t, mocks.resources)
+}
+
+func TestCreateLoadBalancersRejectsNormalizedAliasClaimedByTwoServices(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		api := testCloudRunEntry(t, ctx, "api", 8080)
+		api.Config.DomainName = "api.example.com"
+		api.Config.Networks = map[compose.NetworkID]compose.ServiceNetworkConfig{
+			compose.DefaultNetwork: {Aliases: []string{"shared.example.com"}},
+		}
+		ui := testCloudRunEntry(t, ctx, "ui", 3000)
+		ui.Config.DomainName = "ui.example.com"
+		ui.Config.Networks = map[compose.NetworkID]compose.ServiceNetworkConfig{
+			compose.DefaultNetwork: {Aliases: []string{"SHARED.EXAMPLE.COM."}},
+		}
+		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{api, ui}, testInfraWithDomain(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.ErrorIs(t, err, errDuplicateRoute)
+	require.Contains(t, err.Error(), `"api" and "ui" both claim hostname "shared.example.com"`)
+	requireNoExternalLBResources(t, mocks.resources)
+}
+
+func requireNoExternalLBResources(t *testing.T, resources []albResource) {
+	t.Helper()
+	for _, res := range resources {
+		require.NotContains(t, []string{
+			"gcp:dns/recordSet:RecordSet",
+			"gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+			"gcp:compute/backendService:BackendService",
+			"gcp:compute/uRLMap:URLMap",
+		}, res.typeof, "external load balancer resource %s %q was registered before route validation", res.typeof, res.name)
+	}
 }
 
 // A `domainname` set to the service's own delegate hostname is a plausible user
@@ -365,7 +401,7 @@ func TestCreateLoadBalancersDeduplicatesByodMatchingOwnDelegateHostname(t *testi
 
 	urlMap := requireResource(t, mocks.resources, "gcp:compute/uRLMap:URLMap", "urlmap")
 	hosts := urlMap.inputs["hostRules"].ArrayValue()[0].ObjectValue()["hosts"].ArrayValue()
-	require.Len(t, hosts, 2, "expected api.proj.example.com and api--80.proj.example.com, no repeat")
+	require.Len(t, hosts, 4, "expected two delegate names with bare and explicit-443 forms, no repeat")
 	requireURLMapRouting(t, mocks.resources) // also asserts no duplicate across rules
 }
 
@@ -396,10 +432,13 @@ func TestCreateLoadBalancersRoutesCustomDomainAndDefaultNetworkAliases(t *testin
 	require.Equal(t, "api-backend_id", routing.backendFor("pr-42.preview.example.com"))
 	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname))
 	require.Equal(t, "ui-backend_id", routing.backendFor("ui.proj.example.com"))
-	// A global EXTERNAL_MANAGED URL map considers an explicit port. We don't
-	// publish port-qualified hosts, so this must demonstrate the real fallback
-	// rather than pretending the host-only rule matches it.
-	require.Equal(t, "ui-backend_id", routing.backendFor("shop.example.com:443"))
+	// A global EXTERNAL_MANAGED URL map considers an explicit port, so the URL
+	// map must list :443 variants instead of letting these requests fall back.
+	require.Equal(t, "api-backend_id", routing.backendFor("shop.example.com:443"))
+	require.Equal(t, "api-backend_id", routing.backendFor("admin.example.com:443"))
+	require.Equal(t, "api-backend_id", routing.backendFor("pr-42.preview.example.com:443"))
+	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname+":443"))
+	require.Equal(t, "api-backend_id", routing.backendFor("api--8080.proj.example.com:443"))
 }
 
 // The standalone Service path has no delegate domain (SharedInfra.Domain == "").

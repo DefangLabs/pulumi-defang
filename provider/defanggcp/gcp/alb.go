@@ -88,6 +88,9 @@ func createExternalLoadBalancers(
 	if len(ingressEntries) == 0 {
 		return nil
 	}
+	if err := validateExternalRoutes(ingressEntries, config.Domain); err != nil {
+		return err
+	}
 
 	// Create public DNS A records for each ingress service when a domain is configured.
 	// Mirrors the CD's getDomainAndCerts logic: one record for the main service domain
@@ -655,7 +658,43 @@ func routeHostnames(entry LBServiceEntry, domain string) []string {
 			hosts = append(hosts, hostname)
 		}
 	}
-	return hosts
+
+	// Unlike a classic Application Load Balancer, this global EXTERNAL_MANAGED
+	// load balancer considers an explicit port part of the host match. Its HTTPS
+	// forwarding rule listens on 443, so cover both forms clients send in Host
+	// and HTTP/2 :authority ("example.com" and "example.com:443").
+	withHTTPSPort := make([]string, 0, len(hosts)*2)
+	for _, hostname := range hosts {
+		withHTTPSPort = append(withHTTPSPort, hostname, hostname+":443")
+	}
+	return withHTTPSPort
+}
+
+// validateExternalRoutes rejects duplicate path matchers and host patterns. It
+// runs before any external DNS, NEG, or backend resources are registered so
+// callers receive this actionable error instead of a duplicate-URN or API error
+// from a partially built load balancer.
+func validateExternalRoutes(entries []LBServiceEntry, domain string) error {
+	hostOwner := map[string]string{}    // host pattern -> service that serves it
+	matcherOwner := map[string]string{} // path matcher name -> service it routes to
+	for _, entry := range entries {
+		matcher := pathMatcherName(entry.Name)
+		if owner, taken := matcherOwner[matcher]; taken {
+			return fmt.Errorf("services %q and %q both reduce to load balancer route %q: %w",
+				owner, entry.Name, matcher, errDuplicateRoute)
+		}
+		matcherOwner[matcher] = entry.Name
+
+		for _, host := range routeHostnames(entry, domain) {
+			if owner, taken := hostOwner[host]; taken {
+				return fmt.Errorf(
+					"services %q and %q both claim hostname %q: %w", owner, entry.Name, host, errDuplicateRoute,
+				)
+			}
+			hostOwner[host] = entry.Name
+		}
+	}
+	return nil
 }
 
 func buildURLMap(
@@ -667,8 +706,6 @@ func buildURLMap(
 	var firstBackendID pulumi.StringPtrInput
 	var hostRules compute.URLMapHostRuleArray
 	var pathMatchers compute.URLMapPathMatcherArray
-	hostOwner := map[string]string{}    // hostname -> service that serves it
-	matcherOwner := map[string]string{} // path matcher name -> service it routes to
 
 	for _, entry := range entries {
 		backendID, matcher, err := buildLBEntry(ctx, entry, config.Region, opts...)
@@ -681,11 +718,6 @@ func buildURLMap(
 			continue
 		}
 		name := pathMatcherName(entry.Name)
-		if owner, taken := matcherOwner[name]; taken {
-			return nil, fmt.Errorf("services %q and %q both reduce to load balancer route %q: %w",
-				owner, entry.Name, name, errDuplicateRoute)
-		}
-		matcherOwner[name] = entry.Name
 		pathMatchers = append(pathMatchers, matcher)
 
 		// A path matcher is only reachable through a host rule that names it, so
@@ -693,12 +725,6 @@ func buildURLMap(
 		// only BYOD names got a rule and every delegate name fell through to
 		// DefaultService -- i.e. to the first ingress service. See #373.
 		hosts := routeHostnames(entry, config.Domain)
-		for _, host := range hosts {
-			if owner, taken := hostOwner[host]; taken {
-				return nil, fmt.Errorf("services %q and %q both claim hostname %q: %w", owner, entry.Name, host, errDuplicateRoute)
-			}
-			hostOwner[host] = entry.Name
-		}
 		if len(hosts) > 0 {
 			hostRules = append(hostRules, &compute.URLMapHostRuleArgs{
 				Hosts:       pulumi.ToStringArray(hosts),
