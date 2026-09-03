@@ -76,6 +76,7 @@ func TestSelfDestructEnv(t *testing.T) {
 		"PULUMI_CONFIG_PASSPHRASE=hunter2",
 		"AZURE_SUBSCRIPTION_ID=sub",
 		"AZURE_LOCATION=westus",
+		"AWS_REGION=us-west-2",
 		// dropped: per-run / runtime / credentials
 		"DEFANG_ETAG=abc123",
 		"DEFANG_TTL=12h",
@@ -89,6 +90,13 @@ func TestSelfDestructEnv(t *testing.T) {
 		"AWS_ACCESS_KEY_ID=AKIA",
 		"AWS_SECRET_ACCESS_KEY=shh",
 		"AWS_SESSION_TOKEN=shh",
+		// Where CodeBuild's credential provider fetches THIS build's identity;
+		// frozen into the schedule it makes the down run ask for a build that
+		// no longer exists.
+		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=/v2/credentials/2b0e0f5e-dead-beef",
+		"AWS_CONTAINER_CREDENTIALS_FULL_URI=http://169.254.170.2/v2/credentials/x",
+		"AWS_CONTAINER_AUTHORIZATION_TOKEN=shh",
+		"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE=/tmp/token",
 		"PATH=/usr/bin",
 		"HOSTNAME=aca-abc",
 		"CONTAINER_APP_JOB_NAME=defang-cd",
@@ -109,6 +117,7 @@ func TestSelfDestructEnv(t *testing.T) {
 		"PULUMI_CONFIG_PASSPHRASE":   "hunter2",
 		"AZURE_SUBSCRIPTION_ID":      "sub",
 		"AZURE_LOCATION":             "westus",
+		"AWS_REGION":                 "us-west-2",
 	}
 	got := SelfDestructEnv(environ)
 	if !reflect.DeepEqual(got, want) {
