@@ -15,7 +15,7 @@ var (
 	errDependencyNotFound     = errors.New("service not found in dependencies map")
 	errSidecarParentNotFound  = errors.New("sidecar parent service not found")
 	errSidecarParentIsSidecar = errors.New("sidecar parent is itself a sidecar")
-	errSidecarParentManaged   = errors.New("sidecar parent must be a container service, not managed Postgres/Redis")
+	errSidecarParentManaged   = errors.New("sidecar parent must be a container service, not a managed service")
 )
 
 // partitionSidecars splits services into standalone services and sidecar
@@ -39,7 +39,7 @@ func partitionSidecars(
 			return nil, nil, fmt.Errorf("service %s: %w: %q", name, errSidecarParentNotFound, parent)
 		case parentSvc.SidecarParent() != "":
 			return nil, nil, fmt.Errorf("service %s: parent %q: %w", name, parent, errSidecarParentIsSidecar)
-		case parentSvc.Postgres != nil || parentSvc.Redis != nil:
+		case isManagedService(parentSvc):
 			return nil, nil, fmt.Errorf("service %s: parent %q: %w", name, parent, errSidecarParentManaged)
 		}
 		if sidecars[parent] == nil {
@@ -48,6 +48,14 @@ func partitionSidecars(
 		sidecars[parent][name] = svc
 	}
 	return standalone, sidecars, nil
+}
+
+// isManagedService reports whether a service is dispatched to a managed AWS
+// backend (RDS, ElastiCache, S3) instead of an ECS task. Kept local to this
+// provider: GCP and Azure do not dispatch x-defang-s3 yet, so
+// common.IsManagedService must keep its current meaning for them.
+func isManagedService(svc compose.ServiceConfig) bool {
+	return svc.Postgres != nil || svc.Redis != nil || svc.ObjectStore != nil
 }
 
 // Project is the controller struct for the defang-aws:index:Project component.
@@ -196,6 +204,11 @@ func buildProject(
 	taskRoleArns := pulumi.StringMap{}
 	serviceIds := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{} // service name → dependency resource for dependees
+	// x-defang-s3 service name → bucket ARN, for the IAM grants attached to
+	// the task roles of the services that depend on them. Filled as the loop
+	// dispatches each store; the topological sort guarantees a store is
+	// created before any service that depends_on it.
+	objectStoreArns := map[string]pulumi.StringInput{}
 
 	var configProvider compose.ConfigProvider
 	if ctx.DryRun() {
@@ -229,44 +242,38 @@ func buildProject(
 	for _, svcName := range sortedNames {
 		svc := standalone[svcName]
 
-		// Collect dependency resources from services this one depends on;
-		// depends_on entries naming this service's own sidecars are handled
-		// as container dependencies inside the task definition.
-		var deps []pulumi.Resource
-		for dep, val := range svc.DependsOn {
-			if _, isOwnSidecar := sidecars[svcName][dep]; isOwnSidecar {
-				continue
-			}
-			if r, ok := dependencies[dep]; ok {
-				deps = append(deps, r)
-			} else if val.Required {
-				return nil, fmt.Errorf("service %s requires %s: %w", svcName, dep, errDependencyNotFound)
-			}
+		deps, err := collectDeps(svcName, svc, sidecars[svcName], dependencies)
+		if err != nil {
+			return nil, err
 		}
 
 		waitForHealthy := waitForSteady[svcName] || args.WaitForSteadyState
-		endpoint, dependency, svcComp, datastoreID, err := newService(
+		res, err := newService(
 			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps,
-			pluginID, parentOpt)
+			objectStoreGrants(svc, sidecars[svcName], objectStoreArns), pluginID, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
 
-		endpoints[svcName] = endpoint
-		if svcComp != nil {
-			serviceNames[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
-			taskRoleArns[svcName] = svcComp.TaskRoleArn.Untyped().(pulumi.StringOutput)
-			serviceIds[svcName] = svcComp.ServiceName.Untyped().(pulumi.StringOutput)
+		endpoints[svcName] = res.Endpoint
+		if res.Service != nil {
+			serviceNames[svcName] = res.Service.ServiceName.Untyped().(pulumi.StringOutput)
+			taskRoleArns[svcName] = res.Service.TaskRoleArn.Untyped().(pulumi.StringOutput)
+			serviceIds[svcName] = res.Service.ServiceName.Untyped().(pulumi.StringOutput)
 		}
-		// For datastore services, deliberately overwrite the ECS service name set
+		// For managed services, deliberately overwrite the ECS service name set
 		// above with the backing resource's physical ID (RDS instance, MemoryDB/
-		// ElastiCache cluster). newService returns a non-nil datastoreID only for
-		// those, so container services keep their ECS service name.
-		if datastoreID != nil {
-			serviceIds[svcName] = datastoreID
+		// ElastiCache cluster, S3 bucket). newService returns a non-nil
+		// DatastoreID only for those, so container services keep their ECS
+		// service name.
+		if res.DatastoreID != nil {
+			serviceIds[svcName] = res.DatastoreID
 		}
-		if dependency != nil {
-			dependencies[svcName] = dependency
+		if res.Dependency != nil {
+			dependencies[svcName] = res.Dependency
+		}
+		if res.BucketArn != nil {
+			objectStoreArns[svcName] = res.BucketArn
 		}
 	}
 
@@ -294,9 +301,10 @@ func apexServiceName(services compose.Services) string {
 	owner := ""
 	ingressPorts := 0
 	for name, svc := range services {
-		// Managed datastores are dispatched as Postgres/Redis, never as ALB
-		// ingress targets, so they can't own the apex even if a port is set.
-		if svc.Postgres != nil || svc.Redis != nil {
+		// Managed services are dispatched as Postgres/Redis/ObjectStore, never
+		// as ALB ingress targets, so they can't own the apex even if a port is
+		// set.
+		if isManagedService(svc) {
 			continue
 		}
 		for _, port := range svc.Ports {
@@ -312,6 +320,89 @@ func apexServiceName(services compose.Services) string {
 	return owner
 }
 
+// collectDeps returns the resources svc must be created after: the dependency
+// handles of the services it names in depends_on. Entries naming svc's own
+// sidecars are skipped — those are container dependencies inside the shared
+// task definition, not separate resources.
+func collectDeps(
+	svcName string,
+	svc compose.ServiceConfig,
+	sidecars map[string]compose.ServiceConfig,
+	dependencies map[string]pulumi.Resource,
+) ([]pulumi.Resource, error) {
+	var deps []pulumi.Resource
+	for dep, val := range svc.DependsOn {
+		if _, isOwnSidecar := sidecars[dep]; isOwnSidecar {
+			continue
+		}
+		if r, ok := dependencies[dep]; ok {
+			deps = append(deps, r)
+		} else if val.Required {
+			return nil, fmt.Errorf("service %s requires %s: %w", svcName, dep, errDependencyNotFound)
+		}
+	}
+	return deps, nil
+}
+
+// objectStoreGrants returns the bucket ARNs of the x-defang-s3 services that
+// svc — or one of its sidecars, which share svc's task role — names in
+// depends_on. depends_on is the wiring contract: the CLI injects <STORE>_BUCKET
+// and <STORE>_REGION into a service off that same edge, so a service that can
+// see a bucket name is exactly the one whose task role must reach the bucket.
+// Returns nil when the service depends on no store.
+func objectStoreGrants(
+	svc compose.ServiceConfig,
+	sidecars map[string]compose.ServiceConfig,
+	stores map[string]pulumi.StringInput,
+) map[string]pulumi.StringInput {
+	if len(stores) == 0 {
+		return nil
+	}
+	var grants map[string]pulumi.StringInput
+	collect := func(dependsOn compose.DependsOnConfig) {
+		for dep := range dependsOn {
+			arn, ok := stores[dep]
+			if !ok {
+				continue
+			}
+			if grants == nil {
+				grants = map[string]pulumi.StringInput{}
+			}
+			grants[dep] = arn
+		}
+	}
+	collect(svc.DependsOn)
+	for _, sidecar := range sidecars {
+		collect(sidecar.DependsOn)
+	}
+	return grants
+}
+
+// serviceResult is what dispatching one compose service yields: its endpoint,
+// the handle dependees order against, and the backend-specific extras.
+type serviceResult struct {
+	// Endpoint is the service's address — an ALB/private DNS URL for a
+	// container service, the datastore's connection endpoint, or the bucket's
+	// regional endpoint for an object store.
+	Endpoint pulumi.StringOutput
+	// Dependency is the resource a dependent service waits on.
+	Dependency pulumi.Resource
+	// Service is the ECS component; nil for managed services.
+	Service *ServiceOutputs
+	// DatastoreID is the managed backend's physical identifier (RDS instance,
+	// MemoryDB/ElastiCache cluster, S3 bucket name), surfaced through the
+	// Project's serviceIds output. nil for container services, whose ECS
+	// service name is used instead.
+	DatastoreID pulumi.StringInput
+	// BucketArn is the object store's bucket ARN; nil for every other kind of
+	// service. The project loop hands it to the task-role grant of each
+	// service that depends_on this one.
+	BucketArn pulumi.StringInput
+}
+
+// newService dispatches one compose service to its AWS backend: RDS for
+// x-defang-postgres, ElastiCache for x-defang-redis, S3 for x-defang-s3, and
+// an ECS service for everything else.
 func newService(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -322,49 +413,57 @@ func newService(
 	sidecars map[string]compose.ServiceConfig,
 	waitForSteadyState bool,
 	deps []pulumi.Resource,
+	objectStoreArns map[string]pulumi.StringInput,
 	pluginID common.PluginIdentity,
 	parentOpt pulumi.ResourceOrInvokeOption,
-) (pulumi.StringOutput, pulumi.Resource, *ServiceOutputs, pulumi.StringInput, error) {
-	var endpoint pulumi.StringOutput
-	var dependency pulumi.Resource
-	var svcComp *ServiceOutputs
-	// datastoreID is the managed database's physical identifier (nil for
-	// container services, whose ECS service name is used instead), surfaced
-	// through the Project's serviceIds output.
-	var datastoreID pulumi.StringInput
+) (*serviceResult, error) {
+	res := &serviceResult{}
 	var err error
 	switch {
 	case svc.Postgres != nil:
 		// Managed Postgres → RDS
 		pgComp := &PostgresOutputs{}
 		if regErr := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
+			return nil, fmt.Errorf("registering postgres component %s: %w", svcName, regErr)
 		}
 		if err = createPostgres(ctx, pgComp, configProvider, svcName, svc, infra, deps); err == nil {
-			endpoint = pgComp.Endpoint
-			dependency = pgComp.Dependency
-			datastoreID = pgComp.InstanceIdentifier
+			res.Endpoint = pgComp.Endpoint
+			res.Dependency = pgComp.Dependency
+			res.DatastoreID = pgComp.InstanceIdentifier
 		}
 	case svc.Redis != nil:
 		// Managed Redis → ElastiCache
 		redisComp := &RedisOutputs{}
 		if regErr := ctx.RegisterComponentResource(RedisComponentType, svcName, redisComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
+			return nil, fmt.Errorf("registering redis component %s: %w", svcName, regErr)
 		}
 		if err = createRedis(ctx, redisComp, svcName, svc, infra, deps); err == nil {
-			endpoint = redisComp.Endpoint
-			dependency = redisComp.Dependency
-			datastoreID = redisComp.ClusterId
+			res.Endpoint = redisComp.Endpoint
+			res.Dependency = redisComp.Dependency
+			res.DatastoreID = redisComp.ClusterId
+		}
+	case svc.ObjectStore != nil:
+		// Managed object store → S3 bucket
+		storeComp := &ObjectStoreOutputs{}
+		if regErr := ctx.RegisterComponentResource(ObjectStoreComponentType, svcName, storeComp, parentOpt); regErr != nil {
+			return nil, fmt.Errorf("registering object store component %s: %w", svcName, regErr)
+		}
+		if err = createObjectStore(ctx, storeComp, svcName, svc, infra, deps); err == nil {
+			res.Endpoint = storeComp.Endpoint
+			res.Dependency = storeComp.Dependency
+			res.DatastoreID = storeComp.Bucket
+			res.BucketArn = storeComp.Arn
 		}
 	default:
 		// Container service → ECS
-		svcComp = &ServiceOutputs{}
+		svcComp := &ServiceOutputs{}
+		res.Service = svcComp
 		if regErr := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, parentOpt); regErr != nil {
-			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
+			return nil, fmt.Errorf("registering service component %s: %w", svcName, regErr)
 		}
 		imageURI, imgErr := provideraws.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, pluginID, pulumi.Parent(svcComp))
 		if imgErr != nil {
-			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
+			return nil, fmt.Errorf("resolving image for %s: %w", svcName, imgErr)
 		}
 		args := &provideraws.ECSServiceArgs{
 			Infra:              infra,
@@ -372,14 +471,15 @@ func newService(
 			Networks:           networks,
 			WaitForSteadyState: waitForSteadyState,
 			Sidecars:           sidecars,
+			ObjectStoreArns:    objectStoreArns,
 		}
 		if err = createECSService(ctx, svcComp, configProvider, svcName, svc, args, deps); err == nil {
-			endpoint = pulumi.StringOutput(svcComp.Endpoint)
-			dependency = svcComp.Dependency
+			res.Endpoint = pulumi.StringOutput(svcComp.Endpoint)
+			res.Dependency = svcComp.Dependency
 		}
 	}
 	if err != nil {
-		return pulumi.StringOutput{}, nil, nil, nil, err
+		return nil, err
 	}
-	return endpoint, dependency, svcComp, datastoreID, nil
+	return res, nil
 }

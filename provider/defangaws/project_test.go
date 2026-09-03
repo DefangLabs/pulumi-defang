@@ -1,7 +1,12 @@
 package defangaws
 
 import (
+	"maps"
+	"slices"
 	"testing"
+
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
@@ -74,6 +79,75 @@ func TestApexServiceName(t *testing.T) {
 			if got := apexServiceName(tt.services); got != tt.want {
 				t.Errorf("apexServiceName() = %q, want %q", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestObjectStoreGrants(t *testing.T) {
+	const uploads, backups = "uploads", "backups"
+	stores := map[string]pulumi.StringInput{
+		uploads: pulumi.String("arn:aws:s3:::proj-uploads"),
+		backups: pulumi.String("arn:aws:s3:::proj-backups"),
+	}
+	dependsOn := func(names ...string) compose.DependsOnConfig {
+		cfg := compose.DependsOnConfig{}
+		for _, name := range names {
+			cfg[name] = compose.ServiceDependency{Required: true}
+		}
+		return cfg
+	}
+
+	tests := []struct {
+		name     string
+		svc      compose.ServiceConfig
+		sidecars map[string]compose.ServiceConfig
+		stores   map[string]pulumi.StringInput
+		want     []string
+	}{
+		{
+			name: "no stores in the project",
+			svc:  compose.ServiceConfig{DependsOn: dependsOn(uploads)},
+			want: nil,
+		},
+		{
+			name:   "no depends_on",
+			svc:    compose.ServiceConfig{},
+			stores: stores,
+			want:   nil,
+		},
+		{
+			name:   "depends_on a store",
+			svc:    compose.ServiceConfig{DependsOn: dependsOn(uploads)},
+			stores: stores,
+			want:   []string{uploads},
+		},
+		{
+			name:   "depends_on a plain service is not a grant",
+			svc:    compose.ServiceConfig{DependsOn: dependsOn("db")},
+			stores: stores,
+			want:   nil,
+		},
+		{
+			name:   "depends_on two stores",
+			svc:    compose.ServiceConfig{DependsOn: dependsOn(uploads, backups, "db")},
+			stores: stores,
+			want:   []string{backups, uploads},
+		},
+		{
+			// A sidecar shares its parent's task role, so its depends_on has
+			// to grant the parent.
+			name:     "sidecar depends_on a store",
+			svc:      compose.ServiceConfig{},
+			sidecars: map[string]compose.ServiceConfig{"log": {DependsOn: dependsOn(backups)}},
+			stores:   stores,
+			want:     []string{backups},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := objectStoreGrants(tt.svc, tt.sidecars, tt.stores)
+			assert.ElementsMatch(t, tt.want, slices.Sorted(maps.Keys(got)))
 		})
 	}
 }
