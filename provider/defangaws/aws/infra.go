@@ -63,6 +63,13 @@ func CreateProjectInfra(
 		return nil, fmt.Errorf("creating log group: %w", err)
 	}
 
+	// Forward ECS lifecycle events into a CloudWatch log group the CLI tails;
+	// without it `defang compose up` never sees DEPLOYMENT_COMPLETED. Matches
+	// the TS createECSLifecycleToCWLogsEventBridgeRule call in cd/aws/byoc.ts.
+	if _, err := createECSLifecycleToCWLogs(ctx, projectName, cluster, opt); err != nil {
+		return nil, err
+	}
+
 	execRole, err := CreateExecutionRole(ctx, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating execution role: %w", err)
@@ -208,6 +215,7 @@ func CreateProjectInfra(
 		PrivateZoneID:    net.PrivateZone.ZoneId,
 		PrivateDomain:    net.PrivateDomain,
 		ProjectDomain:    projectDomain,
+		ProjectName:      projectName,
 		PrivateSgID:      privateSg.ID(),
 		AlarmTopicArn:    alarmTopicArn,
 		SkipNatGW:        !net.UseNatGW,
