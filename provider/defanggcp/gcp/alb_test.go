@@ -192,21 +192,38 @@ func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
 // instead of picking apart nested PropertyValues.
 type urlMapRouting struct {
 	defaultService string
-	hostToMatcher  map[string]string // hostname -> path matcher name
+	hostToMatcher  map[string]string // host pattern -> path matcher name
 	matcherService map[string]string // path matcher name -> backend id
 	hostRuleCount  int
 }
 
 // backendFor resolves a Host header the way GCP does: find the host rule listing
-// the hostname, follow it to its path matcher, and take that matcher's default
-// service. Falls back to the URL map's default service when nothing matches --
-// which is exactly the #373 bug, so tests can assert on it directly.
-func (r urlMapRouting) backendFor(hostname string) string {
-	matcher, ok := r.hostToMatcher[hostname]
-	if !ok {
+// an exact host or the most specific leading-* pattern, follow it to its path
+// matcher, and take that matcher's default service. The provider builds a global
+// EXTERNAL_MANAGED load balancer, so the port (when present) remains part of the
+// match. Falls back to the URL map default when nothing matches -- exactly the
+// #373 failure mode, so the tests can assert on routing rather than structure.
+func (r urlMapRouting) backendFor(hostHeader string) string {
+	hostHeader = strings.ToLower(hostHeader)
+	if matcher, ok := r.hostToMatcher[hostHeader]; ok {
+		return r.matcherService[matcher]
+	}
+
+	bestPatternLength := -1
+	bestMatcher := ""
+	for pattern, matcher := range r.hostToMatcher {
+		if !strings.HasPrefix(pattern, "*") || !strings.HasSuffix(hostHeader, pattern[1:]) {
+			continue
+		}
+		if len(pattern) > bestPatternLength {
+			bestPatternLength = len(pattern)
+			bestMatcher = matcher
+		}
+	}
+	if bestMatcher == "" {
 		return r.defaultService
 	}
-	return r.matcherService[matcher]
+	return r.matcherService[bestMatcher]
 }
 
 func requireURLMapRouting(t *testing.T, resources []albResource) urlMapRouting {
@@ -352,25 +369,37 @@ func TestCreateLoadBalancersDeduplicatesByodMatchingOwnDelegateHostname(t *testi
 	requireURLMapRouting(t, mocks.resources) // also asserts no duplicate across rules
 }
 
-// A service can have both: BYOD names must keep working (they did before #373)
-// and land on the same backend as the delegate names, in one host rule.
-func TestCreateLoadBalancersKeepsByodAndDelegateHostnamesOnOneService(t *testing.T) {
+// PR #499 gives a service's custom domain and its default-network aliases DNS
+// and certificate treatment from common.ByodHostnames. All of those Host values
+// must reach that same service rather than the URL-map default.
+func TestCreateLoadBalancersRoutesCustomDomainAndDefaultNetworkAliases(t *testing.T) {
 	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		entry := testCloudRunEntry(t, ctx, "api", 8080)
 		entry.Config.DomainName = "shop.example.com"
+		entry.Config.Networks = map[compose.NetworkID]compose.ServiceNetworkConfig{
+			compose.DefaultNetwork: {Aliases: []string{"admin.example.com", "*.preview.example.com"}},
+		}
 		return CreateLoadBalancers(ctx, "proj", []LBServiceEntry{
-			entry,
 			testCloudRunEntry(t, ctx, "ui", 3000),
+			entry,
 		}, testInfraWithDomain(ctx))
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
 	routing := requireURLMapRouting(t, mocks.resources)
-	require.Equal(t, 2, routing.hostRuleCount, "BYOD should extend the service's host rule, not add one")
+	require.Equal(t, "ui-backend_id", routing.defaultService,
+		"test fixture must not let api pass through the URL-map fallback")
+	require.Equal(t, 2, routing.hostRuleCount, "custom names should extend the service's host rule, not add one")
 	require.Equal(t, "api-backend_id", routing.backendFor("shop.example.com"))
+	require.Equal(t, "api-backend_id", routing.backendFor("ADMIN.EXAMPLE.COM"))
+	require.Equal(t, "api-backend_id", routing.backendFor("pr-42.preview.example.com"))
 	require.Equal(t, "api-backend_id", routing.backendFor(testAPIDelegateHostname))
 	require.Equal(t, "ui-backend_id", routing.backendFor("ui.proj.example.com"))
+	// A global EXTERNAL_MANAGED URL map considers an explicit port. We don't
+	// publish port-qualified hosts, so this must demonstrate the real fallback
+	// rather than pretending the host-only rule matches it.
+	require.Equal(t, "ui-backend_id", routing.backendFor("shop.example.com:443"))
 }
 
 // The standalone Service path has no delegate domain (SharedInfra.Domain == "").

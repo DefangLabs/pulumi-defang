@@ -627,6 +627,7 @@ func newCertMap(
 // DNS A record per name, buildURLMap puts the same names in the service's host
 // rule -- so a name that resolves always has a route.
 func delegateHostnames(entry LBServiceEntry, domain string) []string {
+	domain = common.NormalizeDNS(domain)
 	if domain == "" {
 		return nil
 	}
@@ -639,6 +640,22 @@ func delegateHostnames(entry LBServiceEntry, domain string) []string {
 		hostnames = append(hostnames, fmt.Sprintf("%s--%d.%s", label, port.Target, domain))
 	}
 	return hostnames
+}
+
+// routeHostnames returns every hostname that must select this service's path
+// matcher: the provider-generated delegate names plus every custom-domain name
+// that the service asks Certificate Manager to cover. Keeping the BYOD half on
+// common.ByodHostnames is important: PR #499 gives the service's domainname and
+// its default-network aliases DNS/certificate treatment from that same list.
+func routeHostnames(entry LBServiceEntry, domain string) []string {
+	hosts := delegateHostnames(entry, domain)
+	for _, hostname := range common.ByodHostnames(entry.Config) {
+		hostname = common.NormalizeDNS(hostname)
+		if hostname != "" && !slices.Contains(hosts, hostname) {
+			hosts = append(hosts, hostname)
+		}
+	}
+	return hosts
 }
 
 func buildURLMap(
@@ -675,11 +692,7 @@ func buildURLMap(
 		// every hostname pointed at this LB needs to appear in one. Without this,
 		// only BYOD names got a rule and every delegate name fell through to
 		// DefaultService -- i.e. to the first ingress service. See #373.
-		hosts := delegateHostnames(entry, config.Domain)
-		// A BYOD domainname can repeat a delegate name; GCP rejects a repeated host.
-		if byod := entry.Config.DomainName; byod != "" && !slices.Contains(hosts, byod) {
-			hosts = append(hosts, byod)
-		}
+		hosts := routeHostnames(entry, config.Domain)
 		for _, host := range hosts {
 			if owner, taken := hostOwner[host]; taken {
 				return nil, fmt.Errorf("services %q and %q both claim hostname %q: %w", owner, entry.Name, host, errDuplicateRoute)

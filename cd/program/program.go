@@ -54,7 +54,9 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		case "aws":
 			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, ttl, projectUpdate)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, ttl, defangCfg.Get("cdImage"), projectUpdate)
+			endpoints, loadBalancerDns, err = deployGCP(
+				ctx, project, domain, etag, ttl, defangCfg.Get("cdImage"), projectUpdate,
+			)
 		case "azure":
 			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, ttl, projectUpdate)
 		default:

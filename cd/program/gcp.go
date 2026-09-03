@@ -16,7 +16,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.Duration, cdImage string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(
+	ctx *pulumi.Context,
+	cf *compose.Project,
+	domain, etag string,
+	ttl time.Duration,
+	cdImage string,
+	projectUpdate *defangv1.ProjectUpdate,
+) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
 		Project: pulumi.String(config.GetProject(ctx)),
 		Region:  pulumi.String(config.GetRegion(ctx)),
@@ -32,7 +39,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, etag), pulumi.Providers(gcpProvider))
+	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, domain, etag), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
@@ -69,7 +76,7 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {
+func toGCPArgs(cf *compose.Project, domain, etag string) *defanggcp.ProjectArgs {
 	args := &defanggcp.ProjectArgs{
 		Services: toGCPServices(cf.Services),
 	}
@@ -83,6 +90,10 @@ func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {
 	if etag != "" {
 		e := etag
 		args.Etag = &e
+	}
+	if domain != "" {
+		d := domain
+		args.Domain = &d
 	}
 	return args
 }
