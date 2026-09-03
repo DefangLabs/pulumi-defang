@@ -340,8 +340,9 @@ func selectDelegateZone(
 	managedDescription := fmt.Sprintf("Public DNS zone for %v", projectName)
 
 	var matches []dns.GetManagedZonesManagedZone
+	matchNames := make(map[string]struct{})
 	var cliZone *dns.GetManagedZonesManagedZone
-	var managedZones []dns.GetManagedZonesManagedZone
+	managedZones := make(map[string]dns.GetManagedZonesManagedZone)
 	for _, zone := range zones {
 		// Private zones cannot answer a DNS-01 challenge or serve public records. Normalize
 		// both values because DNS names are case-insensitive and callers vary on the final dot.
@@ -350,21 +351,29 @@ func selectDelegateZone(
 			common.NormalizeDNS(zone.DnsName) != fqdn {
 			continue
 		}
-		matches = append(matches, zone)
+		nameKey := strings.ToLower(*zone.Name)
+		if _, seen := matchNames[nameKey]; !seen {
+			matches = append(matches, zone)
+			matchNames[nameKey] = struct{}{}
+		}
 		if strings.EqualFold(*zone.Name, cliName) {
 			candidate := zone
 			cliZone = &candidate
 		}
-		if isStackManagedDelegateZone(zone, managedNamePrefix, managedDescription) {
-			managedZones = append(managedZones, zone)
+		if isStackManagedDelegateZone(zone, cliName, managedNamePrefix, managedDescription) {
+			managedZones[nameKey] = zone
 		}
 	}
 
 	if cliZone != nil {
 		// The exact CLI name is a positive ownership/delegation signal. It wins over
-		// unrelated same-dnsName zones, unless one of them is recognizably the existing
-		// Pulumi-managed public-dns resource. In that case switching to the CLI zone
-		// would omit public-dns from the new program and schedule its deletion.
+		// unrelated same-dnsName zones. When that same physical zone also carries the
+		// stack-managed description, it is the explicitly named public-dns created by
+		// this provider and must remain managed. Only a distinct managed zone conflicts.
+		cliNameKey := strings.ToLower(*cliZone.Name)
+		if _, managed := managedZones[cliNameKey]; managed && len(managedZones) == 1 {
+			return delegateZoneSelection{name: *cliZone.Name, mode: delegateZoneManaged}, nil
+		}
 		if len(managedZones) != 0 {
 			return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
 				"both the CLI-created zone and a stack-managed public-dns zone exist; remove the unwanted duplicate "+
@@ -377,7 +386,9 @@ func selectDelegateZone(
 		// Keep registering the original managed resource under the same logical name.
 		// Returning a GetManagedZone here would change the same URN into an external read,
 		// relinquishing lifecycle ownership and potentially deleting/replacing the old zone.
-		return delegateZoneSelection{name: *managedZones[0].Name, mode: delegateZoneManaged}, nil
+		for _, zone := range managedZones {
+			return delegateZoneSelection{name: *zone.Name, mode: delegateZoneManaged}, nil
+		}
 	}
 	if len(managedZones) > 1 {
 		return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
@@ -398,6 +409,7 @@ func selectDelegateZone(
 
 func isStackManagedDelegateZone(
 	zone dns.GetManagedZonesManagedZone,
+	cliName string,
 	managedNamePrefix string,
 	managedDescription string,
 ) bool {
@@ -405,6 +417,15 @@ func isStackManagedDelegateZone(
 		return false
 	}
 	name := strings.ToLower(*zone.Name)
+	// Newly created zones have an explicit CLI-compatible name, which is independent
+	// of Pulumi's current autonaming configuration. The stable managed description
+	// distinguishes them from zones pre-created by the CLI.
+	if strings.EqualFold(name, cliName) {
+		return true
+	}
+
+	// Older stack-owned zones were auto-named. Preserve their managed registration
+	// when their physical name still matches the active autonaming convention.
 	prefix := strings.ToLower(strings.TrimSuffix(managedNamePrefix, "-"))
 	return prefix != "" && (name == prefix || strings.HasPrefix(name, prefix+"-"))
 }
@@ -457,14 +478,19 @@ func ensureDelegateZone(
 		return zone, nil
 	}
 
-	// This is intentionally the original managed declaration: same type, logical
-	// name, parent, description, and dnsName, with Name still omitted. Existing
-	// stacks therefore keep the same managed URN and provider-assigned physical name;
-	// setting immutable Name here would schedule their zone for replacement.
-	zone, err := dns.NewManagedZone(ctx, "public-dns", &dns.ManagedZoneArgs{
+	zoneArgs := &dns.ManagedZoneArgs{
 		Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
 		DnsName:     pulumi.String(fqdn + "."),
-	}, opts...)
+	}
+	if selection.mode == delegateZoneCreate {
+		// The CLI only looks up this exact physical name. An auto-named zone would be
+		// invisible to it and the CLI would create and delegate a duplicate next time.
+		zoneArgs.Name = pulumi.String(DelegateZoneName(fqdn))
+	}
+	// The managed path intentionally keeps the original declaration's Name omitted.
+	// Existing auto-named stacks therefore retain the same managed URN and physical
+	// zone; adding the now-explicit name there would schedule an immutable replacement.
+	zone, err := dns.NewManagedZone(ctx, "public-dns", zoneArgs, opts...)
 	if err != nil {
 		return nil, err
 	}

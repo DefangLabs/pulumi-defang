@@ -162,6 +162,19 @@ func TestFindDelegateZone(t *testing.T) {
 			want:   delegateZoneSelection{name: cliZone, mode: delegateZoneExternal},
 		},
 		{
+			name:  "the exact-name zone created by this stack stays managed",
+			zones: []map[string]any{zone(cliZone, fqdn+".", "public", managedDescription)},
+			want:  delegateZoneSelection{name: cliZone, mode: delegateZoneManaged},
+		},
+		{
+			name: "duplicate API entries for the same managed zone are one candidate",
+			zones: []map[string]any{
+				zone(cliZone, fqdn+".", "public", managedDescription),
+				zone(cliZone, fqdn+".", "public", managedDescription),
+			},
+			want: delegateZoneSelection{name: cliZone, mode: delegateZoneManaged},
+		},
+		{
 			name: "unrelated zones are ignored",
 			zones: []map[string]any{
 				zone("defang-other-defang-app", "other.defang.app.", "public", "defang delegate domain"),
@@ -186,6 +199,14 @@ func TestFindDelegateZone(t *testing.T) {
 				zone(cliZone, fqdn+".", "public", "defang delegate domain"),
 			},
 			want: delegateZoneSelection{name: cliZone, mode: delegateZoneExternal},
+		},
+		{
+			name: "the exact-name managed zone wins over unrelated duplicates",
+			zones: []map[string]any{
+				zone("unrelated-duplicate", fqdn+".", "public", "other owner"),
+				zone(cliZone, fqdn+".", "public", managedDescription),
+			},
+			want: delegateZoneSelection{name: cliZone, mode: delegateZoneManaged},
 		},
 		{
 			name: "the existing Pulumi resource stays managed",
@@ -311,6 +332,85 @@ func TestFindDelegateZoneRecognizesConfiguredAutonaming(t *testing.T) {
 		}),
 	)
 	require.NoError(t, err)
+}
+
+func TestEnsureDelegateZoneFreshCreateUsesExactCLINameWithParentProvider(t *testing.T) {
+	const (
+		fqdn    = "myproject.tenant.defang.app"
+		cliZone = "defang-myproject-tenant-defang-app"
+	)
+	mocks := &zoneListMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		provider, err := pulumigcp.NewProvider(ctx, "explicit-gcp", &pulumigcp.ProviderArgs{
+			Project: pulumi.String("gcp-project"),
+		})
+		if err != nil {
+			return err
+		}
+		parent := &delegateZoneTestParent{}
+		if err := ctx.RegisterComponentResource(
+			"test:index:Parent", "parent", parent, pulumi.Providers(provider),
+		); err != nil {
+			return err
+		}
+		parentOpt := pulumi.Parent(parent)
+		_, err = ensureDelegateZone(ctx, "myproject", fqdn, parentOpt, parentOpt)
+		return err
+	}, pulumi.WithMocks("myproject", "mystack", mocks))
+	require.NoError(t, err)
+
+	resources := mocks.managedZoneResources()
+	require.Len(t, resources, 1)
+	created := resources[0]
+	assert.Equal(t, "public-dns", created.Name)
+	assert.Empty(t, created.ID)
+	assert.NotNil(t, created.RegisterRPC)
+	assert.Nil(t, created.ReadRPC)
+	assert.Equal(t, cliZone, created.Inputs["name"].StringValue())
+	assert.Equal(t, fqdn+".", created.Inputs["dnsName"].StringValue())
+	assert.True(t,
+		created.RegisterRPC.GetParent() != "" &&
+			strings.HasSuffix(created.RegisterRPC.GetParent(), "test:index:Parent::parent"),
+	)
+	assert.Contains(t, created.Provider, "pulumi:providers:gcp::explicit-gcp")
+
+	mocks.mu.Lock()
+	require.Len(t, mocks.invokeProviders, 1)
+	invokeProvider := mocks.invokeProviders[0]
+	mocks.mu.Unlock()
+	assert.Equal(t, created.Provider, invokeProvider,
+		"zone list invoke and managed create must inherit the same explicit provider")
+}
+
+func TestEnsureDelegateZoneNextRunKeepsExactNameManagedRegardlessOfAutonaming(t *testing.T) {
+	const (
+		fqdn    = "myproject.tenant.defang.app"
+		cliZone = "defang-myproject-tenant-defang-app"
+	)
+	mocks := &zoneListMocks{zones: []map[string]any{
+		zone(cliZone, fqdn+".", "public", "Public DNS zone for myproject"),
+	}}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := ensureDelegateZone(ctx, "myproject", fqdn, pulumi.Parent(nil), pulumi.Parent(nil))
+		return err
+	},
+		pulumi.WithMocks("myproject", "mystack", mocks),
+		withPulumiConfig(map[string]string{
+			pulumiAutonamingConfigKey: `{"pattern":"unrelated-${project}-${stack}-${name}-${hex(7)}"}`,
+		}),
+	)
+	require.NoError(t, err)
+
+	resources := mocks.managedZoneResources()
+	require.Len(t, resources, 1)
+	managed := resources[0]
+	assert.Equal(t, "public-dns", managed.Name)
+	assert.Empty(t, managed.ID)
+	assert.NotNil(t, managed.RegisterRPC)
+	assert.Nil(t, managed.ReadRPC,
+		"a current stack-owned public-dns resource must never be converted to an external read")
+	assert.NotContains(t, managed.Inputs, resource.PropertyKey("name"),
+		"the next-run managed registration must not replace existing auto-named zones")
 }
 
 func TestEnsureDelegateZoneReadPermissionFailureAborts(t *testing.T) {
