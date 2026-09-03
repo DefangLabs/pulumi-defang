@@ -176,8 +176,11 @@ zone owner must make this trust decision explicitly, including for an existing
 Defang delegate zone.
 
 Unmarked and private zones are ignored. If an unmarked child zone is a closer
-suffix than an authorized parent zone, the authorized parent wins. Equivalent
-matches use the managed-zone name as a stable tie-breaker.
+suffix than an authorized parent zone, the authorized parent wins. If distinct
+authorized public zones have the same equally best suffix, Defang cannot infer
+which one is publicly delegated, so zone discovery fails closed with an
+actionable ambiguity warning. The CD then performs no BYOD DNS writes: ordinary
+hostnames use load-balancer authorization and wildcard certificates are skipped.
 
 ### Records and certificates
 
@@ -275,7 +278,8 @@ defang:
   delegated from the parent at the registrar; cert validation then fails. That is
   the user's responsibility, on every cloud. Records are still created.
 - **Multiple matching zones:** longest authorized suffix wins. GCP ignores
-  unmarked zones and breaks equivalent matches by managed-zone name.
+  unmarked and private zones; distinct equally best authorized public zones are
+  ambiguous and fail closed rather than guessing which zone is delegated.
 - **Record ownership:** Pulumi owns the records it creates, so `compose down`
   deletes them (the zone itself is untouched). A pre-existing record at the same
   name conflicts on create — the same ownership model on AWS and Azure.
