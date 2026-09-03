@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/redis"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -61,11 +62,11 @@ func CreateMemoryStore(
 		transitEncryptionMode = pulumi.StringPtr("DISABLED")
 	}
 
-	instanceOpts := opts
+	instanceOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasInstance)...)
 	if infra != nil && infra.ServiceConnection != nil {
 		instanceOpts = append([]pulumi.ResourceOption{
 			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
-		}, opts...)
+		}, instanceOpts...)
 	}
 
 	var authorizedNetwork pulumi.StringPtrInput

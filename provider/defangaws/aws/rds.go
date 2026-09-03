@@ -194,11 +194,12 @@ func CreateRDS(
 	// "<safe>-<hex>" value. Rely on Pulumi's autoname for uniqueness across stacks.
 	var subnetGroupName pulumi.StringPtrOutput
 	if privateSubnetIDs != nil {
+		subnetGroupOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasSubnetGroup)...)
 		subnetGroup, err := rds.NewSubnetGroup(ctx, serviceName, &rds.SubnetGroupArgs{
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, opts...)
+		}, subnetGroupOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating DB subnet group: %w", err)
 		}
@@ -211,6 +212,7 @@ func CreateRDS(
 	if privateSgID != nil {
 		ingressSGs = pulumi.StringArray{privateSgID.ToStringPtrOutput().Elem()}
 	}
+	securityGroupOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasSecurityGroup)...)
 	rdsSG, err := ec2.NewSecurityGroup(ctx, serviceName, &ec2.SecurityGroupArgs{
 		VpcId:       vpcID.ToStringOutput(),
 		Description: pulumi.String("RDS security group for " + serviceName),
@@ -232,7 +234,7 @@ func CreateRDS(
 			},
 		},
 		Tags: tags,
-	}, common.MergeOptions(opts,
+	}, common.MergeOptions(securityGroupOpts,
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
 	)...)
 	if err != nil {
@@ -284,7 +286,8 @@ func CreateRDS(
 	// (now-removed) `storage-encrypted` recipe defaulted to false would otherwise
 	// force-replace on next up. RDS can't toggle encryption in-place, so we
 	// preserve the existing instance and leave migration to the operator.
-	rdsOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{"storageEncrypted"}))
+	rdsOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasInstance)...)
+	rdsOpts = append(rdsOpts, pulumi.IgnoreChanges([]string{"storageEncrypted"}))
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
 	}

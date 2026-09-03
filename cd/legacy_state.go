@@ -1,186 +1,195 @@
 package main
 
-// Guard against taking over a Pulumi state that a different Defang CD wrote.
+// Safe in-place migration from a legacy Defang deploy driver.
 //
-// The Defang CLI hands every CD the same state location: same bucket, same
-// project, same stack, same passphrase. So when a customer is switched from an
-// older CD to this one, this CD opens the older CD's state.
+// The old and current drivers open the same Pulumi stack. The current program
+// therefore has to alias every data-bearing legacy resource it keeps; without
+// an alias Pulumi creates an empty replacement and deletes the original. This
+// preflight reads only resource identity from the old state, maps supported
+// databases to the matching compose services, and passes their exact URNs to
+// the current providers as Pulumi aliases.
 //
-// That is not a safe upgrade. The two CDs share no resource URNs, and there is
-// no alias or adoption code. Pulumi therefore reads the old resources as
-// "gone", plans to create a full new set of infrastructure, and then plans to
-// delete every old resource. The delete list includes managed databases.
-// Outside production mode, deletion protection and backups are both off, so the
-// data goes with them.
-//
-// The supported way to move between CDs is blue/green: deploy to a NEW stack,
-// move traffic, then tear the old stack down. See docs/legacy-cd-migration.md.
-//
-// Only `up` is guarded, because only `up` applies this CD's desired state to a
-// snapshot it did not write, which is what produces create-everything-then-
-// delete-everything. `down` and `destroy` delete exactly what the caller asked
-// them to, and they are the last step of the migration above, so blocking them
-// would leave the old stack with no supported way down. `preview` is the
-// diagnostic that shows the danger. `refresh`, `outputs`, `list` and `cancel`
-// delete no infrastructure.
+// Aliases are the migration mechanism. The guard is defense in depth: `up`
+// stops when a database cannot be mapped one-to-one, the state cannot be read,
+// another cloud owns it, or the current image cannot operate on a legacy
+// resource. `preview` receives every alias that can be proved safe but remains
+// non-blocking so an operator can inspect the complete plan. `down` and
+// `destroy` remain deliberately unguarded because their stated purpose is to
+// delete the selected stack.
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/cd/program"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"go.yaml.in/yaml/v4"
 )
 
-// allowTakeoverConfigKey opts out of the guard. This is the channel that is
-// reachable through the product: the recipe's pulumi_config is free-form and
-// reaches the CD in the `up` payload, so a takeover can be authorized without
-// shipping a CLI or a CD image.
-//
-// The value is the "<project>/<stack>" it applies to, NOT a boolean. A Fabric
-// recipe is keyed by (tenant, mode) — not by stack — so one recipe is shared by
-// every project that tenant deploys in that mode. A boolean would disarm the
-// guard for all of them, including the ones nobody was migrating. Naming the
-// target keeps a tenant-wide setting to a single-stack effect.
+// allowTakeoverConfigKey is an operator-only break-glass override. Its value
+// is the exact "<project>/<stack>" target, not a boolean: Fabric recipes are
+// tenant/mode scoped, so a boolean would disarm every stack sharing a recipe.
 const allowTakeoverConfigKey = "defang:allowLegacyStateTakeover"
 
-// allowTakeoverEnv is the same opt-out for a CD run started by hand, which has
-// no recipe to carry config. It takes the same "<project>/<stack>" value, so a
-// stale or committed value cannot disarm the guard for some other stack.
+// allowTakeoverEnv provides the same exact-stack override for a CD started by
+// hand. The CLI does not forward it during ordinary deployments.
 const allowTakeoverEnv = "DEFANG_ALLOW_LEGACY_STATE_TAKEOVER"
 
-// migrationRunbook is the blue/green migration guide.
 const migrationRunbook = "https://github.com/DefangLabs/pulumi-defang/blob/main/docs/legacy-cd-migration.md"
 
-// maxReportedResources keeps the message readable on a stack with hundreds of
-// foreign resources.
 const maxReportedResources = 5
 
-// thisCDPackages are the Pulumi package names of this CD's own components.
-//
-// Every resource this CD creates through its providers is a descendant of a
-// defang-<cloud>:index:Project component, so its URN carries one of these
-// packages somewhere in the qualified type. Verified against the recorded
-// preview events in cd/testdata/preview-events-{aws,gcp,azure}.json, e.g.
-//
-//	urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc
-//
-// The older CDs have no equivalent: the TypeScript CD used defang-mvp:* and
-// pulumi-nodejs:dynamic:Resource, and the Go GCP CD registered no components at
-// all — its state is flat gcp:* resources plus cloudbuild:index:CloudBuild.
-// "Ours" is deliberately not the word here: defang-mvp:* is Defang's too, and
-// it is exactly what this has to exclude.
-var thisCDPackages = map[string]bool{
-	"defang-aws":   true,
-	"defang-gcp":   true,
-	"defang-azure": true,
-}
+const (
+	cloudAWS   = "aws"
+	cloudAzure = "azure"
+	cloudGCP   = "gcp"
+)
 
-// thisCDTopLevelNames are the names this CD gives the few resources it
-// registers at the top level of the stack, outside the Project component. Their
-// URNs carry a plain cloud package, so the name and the position are the only
-// things that tell them apart from an older CD's leftovers.
-//
-// The list exists only because those resources escape the Project component. If
-// they were ever re-parented under it, their URNs would carry a defang package
-// and this list, isThisCD's position rule, and their tests would all go away.
-//
-// NEVER REMOVE AN ENTRY. This is the union of every name this CD has ever
-// used, not the set it uses today: stacks deployed by an older build still hold
-// the old resource, and dropping its name here would abort their next `up` —
-// which is the only operation that would ever have deleted it. Deadlock, for
-// every stack that has one.
-//
-// Adding is just as unforgiving and nothing in the compiler helps: a new
-// top-level resource declared with a fresh literal still compiles, and would
-// abort every existing stack's next deploy. The state fixtures cannot catch it
-// either — they were captured from runs with no TTL and no state URL, so they
-// contain none of these resources. TestThisCDTopLevelNamesCoversEveryRootRegistration
-// reads the registrations back out of the source instead.
+// thisCDTopLevelNames is the historical union of names registered outside the
+// Project component. Never remove an entry: an older current-CD state may
+// still contain it. A match also requires the expected cloud package and root
+// position, so switching a stack between AWS/GCP/Azure cannot pass as a normal
+// current-CD update.
 var thisCDTopLevelNames = map[string]bool{
-	"project-pb":            true, // program/{aws,gcp,azure}.go, saveProjectPb*
-	"self-destruct":         true, // program/selfdestruct_{aws,gcp}.go
-	"defang-self-destruct":  true, // program/selfdestruct_azure.go, the trigger job
-	"self-destruct-starter": true, // program/selfdestruct_azure.go, its role assignment
+	"project-pb":            true,
+	"self-destruct":         true,
+	"defang-self-destruct":  true,
+	"self-destruct-starter": true,
 }
 
-// isThisCD reports whether a resource was created by this CD.
-func isThisCD(res apitype.ResourceV3) bool {
-	// The qualified type is the full parent chain, "$"-separated, so a match
-	// anywhere in it means the resource hangs off one of our components.
-	for _, typ := range strings.Split(string(res.URN.QualifiedType()), "$") {
-		pkg, _, _ := strings.Cut(typ, ":")
-		if thisCDPackages[pkg] {
+var thisCDPackages = map[string]string{
+	cloudAWS:   "defang-aws",
+	cloudAzure: "defang-azure",
+	cloudGCP:   "defang-gcp",
+}
+
+var nativePackages = map[string]string{
+	cloudAWS:   "aws",
+	cloudAzure: "azure-native",
+	cloudGCP:   "gcp",
+}
+
+// These legacy resources cannot be loaded by the current minimal CD images.
+// Allowing `up` would create the new graph and then fail in the delete phase,
+// leaving two partial deployments. Keep them blocked until their deletion or
+// adoption path is implemented.
+var unsupportedLegacyTypes = map[string]string{
+	"cloudbuild:index:CloudBuild":    "the GCP image does not contain the legacy private cloudbuild plugin",
+	"pulumi-nodejs:dynamic:Resource": "the AWS image does not contain the legacy Node dynamic provider/runtime",
+}
+
+type serviceKind string
+
+const (
+	servicePostgres serviceKind = "Postgres"
+	serviceRedis    serviceKind = "Redis"
+)
+
+// legacyAliasSpec connects one old custom-resource type to the child the
+// current provider registers. legacySuffixes describe names used by released
+// legacy drivers; currentSuffix describes the current child's logical name.
+type legacyAliasSpec struct {
+	cloud          string
+	resourceType   string
+	serviceKind    serviceKind
+	aliasKind      string
+	legacySuffixes []string
+	currentSuffix  string
+	dataBearing    bool
+}
+
+var legacyAliasSpecs = []legacyAliasSpec{
+	// Legacy TypeScript AWS CD. Its stack prefix varied by deployment, so the
+	// matcher accepts an exact service name or a name ending in the service.
+	{cloudAWS, "aws:rds/instance:Instance", servicePostgres, compose.AliasInstance, []string{"-postgres", ""}, "", true},
+	{cloudAWS, "aws:rds/subnetGroup:SubnetGroup", servicePostgres, compose.AliasSubnetGroup, []string{""}, "", false},
+	{cloudAWS, "aws:ec2/securityGroup:SecurityGroup", servicePostgres, compose.AliasSecurityGroup, []string{"-postgres", ""}, "", false},
+	{cloudAWS, "aws:elasticache/replicationGroup:ReplicationGroup", serviceRedis, compose.AliasCluster, []string{""}, "", true},
+	{cloudAWS, "aws:elasticache/subnetGroup:SubnetGroup", serviceRedis, compose.AliasSubnetGroup, []string{""}, "", false},
+	{cloudAWS, "aws:ec2/securityGroup:SecurityGroup", serviceRedis, compose.AliasSecurityGroup, []string{"-redis", ""}, "", false},
+	{cloudAWS, "aws:memorydb/cluster:Cluster", serviceRedis, compose.AliasCluster, []string{""}, "", true},
+	{cloudAWS, "aws:memorydb/subnetGroup:SubnetGroup", serviceRedis, compose.AliasSubnetGroup, []string{""}, "", false},
+	{cloudAWS, "aws:memorydb/parameterGroup:ParameterGroup", serviceRedis, compose.AliasParameterGroup, []string{""}, "", false},
+
+	// Legacy Go GCP CD. Released states retain these project/service names even
+	// after that driver itself added aliases for an earlier naming scheme.
+	{cloudGCP, "gcp:sql/databaseInstance:DatabaseInstance", servicePostgres, compose.AliasInstance, []string{"-postgres"}, "", true},
+	{cloudGCP, "gcp:sql/user:User", servicePostgres, compose.AliasUser, []string{"-postgres-user"}, "-user", false},
+	{cloudGCP, "gcp:sql/database:Database", servicePostgres, compose.AliasDatabase, []string{"-postgres-db"}, "-db", false},
+	{cloudGCP, "gcp:redis/instance:Instance", serviceRedis, compose.AliasInstance, []string{"-redis"}, "", true},
+}
+
+type resourceIdentity struct {
+	urn    resource.URN
+	typ    string
+	parent resource.URN
+}
+
+func identityOf(res apitype.ResourceV3) resourceIdentity {
+	return resourceIdentity{urn: res.URN, typ: string(res.Type), parent: res.Parent}
+}
+
+func (r resourceIdentity) display() string {
+	return fmt.Sprintf("%s::%s", r.urn.QualifiedType(), r.urn.Name())
+}
+
+func resourcePackage(typ string) string {
+	pkg, _, _ := strings.Cut(typ, ":")
+	return pkg
+}
+
+func isStructural(res resourceIdentity) bool {
+	qualified := res.urn.QualifiedType()
+	return qualified == resource.RootStackType || strings.HasPrefix(string(qualified), "pulumi:providers:")
+}
+
+func isRootChild(res resourceIdentity) bool {
+	if strings.Contains(string(res.urn.QualifiedType()), "$") {
+		return false
+	}
+	return res.parent == "" || res.parent.QualifiedType() == resource.RootStackType
+}
+
+func isThisCD(res resourceIdentity, cloud string) bool {
+	wantPackage := thisCDPackages[cloud]
+	for _, typ := range strings.Split(string(res.urn.QualifiedType()), "$") {
+		if resourcePackage(typ) == wantPackage {
 			return true
 		}
 	}
-	return isRootChild(res) && thisCDTopLevelNames[res.URN.Name()]
+	return isRootChild(res) && thisCDTopLevelNames[res.urn.Name()] &&
+		resourcePackage(res.typ) == nativePackages[cloud]
 }
 
-// isStructural reports whether a resource says nothing about who owns the
-// infrastructure. The root stack and the provider resources exist in every
-// state, old and new, so they are not evidence either way.
-func isStructural(res apitype.ResourceV3) bool {
-	typ := res.URN.QualifiedType()
-	return typ == resource.RootStackType || strings.HasPrefix(string(typ), "pulumi:providers:")
-}
-
-// isRootChild reports whether a resource sits directly under the root stack. A
-// "$" in the qualified type means the resource is a component's child by
-// construction, so it is not at the root even if the snapshot has lost its
-// parent field.
-func isRootChild(res apitype.ResourceV3) bool {
-	if strings.Contains(string(res.URN.QualifiedType()), "$") {
-		return false
-	}
-	return res.Parent == "" || res.Parent.QualifiedType() == resource.RootStackType
-}
-
-// foreignResources returns the URNs in a deployment that this CD does not
-// recognize as its own. An empty result means the state is safe to operate on:
-// either it is empty, or this CD wrote all of it.
-//
-// This is deliberately an allowlist rather than a list of known-legacy types. A
-// new type token in an old CD would slip past a denylist; it cannot slip past
-// this. It also catches a half-finished takeover, where our resources and the
-// old CD's resources sit in the same state.
-//
-// It returns URNs, not resources: apitype.ResourceV3 carries decrypted inputs
-// and outputs, and nothing downstream needs them.
-func foreignResources(resources []apitype.ResourceV3) []resource.URN {
-	var foreign []resource.URN
+func foreignResources(resources []resourceIdentity, cloud string) []resourceIdentity {
+	var foreign []resourceIdentity
 	for _, res := range resources {
-		if isStructural(res) || isThisCD(res) {
+		if isStructural(res) || isThisCD(res, cloud) {
 			continue
 		}
-		foreign = append(foreign, res.URN)
+		foreign = append(foreign, res)
 	}
 	return foreign
 }
 
-// stackExporter is the part of auto.Stack this needs. It exists so the check
-// can be tested against a state fixture without a Pulumi backend.
 type stackExporter interface {
 	Export(context.Context) (apitype.UntypedDeployment, error)
 }
 
-// takeoverAllowed reports whether this exact stack has been authorized for a
-// deliberate takeover. Both channels name their target, so an authorization
-// left behind in a shared recipe or a shell cannot free a different stack.
 func takeoverAllowed(recipePulumiConfig, project, stack string) bool {
 	if project == "" || stack == "" {
-		return false // never let a half-built target match a half-built value
+		return false
 	}
 	target := project + "/" + stack
 	return recipeTakeoverTarget(recipePulumiConfig) == target || os.Getenv(allowTakeoverEnv) == target
 }
 
-// recipeTakeoverTarget reads the opt-in key out of the recipe, using the same
-// parser that turns the recipe into stack config. A malformed recipe is not an
-// opt-in; stackConfigJson reports that error a few lines later.
 func recipeTakeoverTarget(recipePulumiConfig string) string {
 	if recipePulumiConfig == "" {
 		return ""
@@ -193,69 +202,345 @@ func recipeTakeoverTarget(recipePulumiConfig string) string {
 	return target
 }
 
-// checkLegacyState reads the stack's current state and refuses to continue if a
-// different CD wrote it. It detects "not this CD" in either direction: a newer
-// CD's state would trip it too.
-//
-// It fails open. If the state cannot be read it warns and returns nil, because
-// making every deploy depend on a second successful read of the state backend
-// would turn a transient backend error into an outage for every customer. The
-// exposure from failing open is small: Pulumi has to read the same state to do
-// any work, so a state this cannot read is one the deploy will not get far on
-// either.
-func checkLegacyState(ctx context.Context, exporter stackExporter, recipePulumiConfig, projectName, stackName string) error {
-	if takeoverAllowed(recipePulumiConfig, projectName, stackName) {
-		warn("Warning: " + projectName + "/" + stackName + " is allowed to take over a state written by another " +
-			"Defang CD. If this stack belongs to another CD, this deploy will replace every resource in it, " +
-			"including databases.")
-		return nil
-	}
-
-	deployment, err := exporter.Export(ctx)
-	if err != nil {
-		// Deliberately not logging err. auto.Stack.Export runs `pulumi stack
-		// export --show-secrets`, and on failure the SDK packs the command's
-		// entire stdout into the error, so printing it would put the decrypted
-		// state into the deploy log. Set DEFANG_PULUMI_DEBUG=1 to debug this.
-		warn("Skipping the check for another Defang CD's state: could not read the existing state.")
-		return nil
-	}
-
-	foreign, err := foreignResourcesIn(deployment)
-	if err != nil {
-		warn("Skipping the check for another Defang CD's state: could not parse the existing state:", err)
-		return nil
-	}
-	if len(foreign) == 0 {
-		return nil
-	}
-	return &legacyStateError{foreign: foreign}
+type desiredService struct {
+	kind    serviceKind
+	aliases map[string]string
 }
 
-// foreignResourcesIn decodes an exported deployment and returns the URNs this
-// CD does not own. A stack that has never been deployed exports a deployment
-// with no resources at all, which yields an empty result.
-func foreignResourcesIn(deployment apitype.UntypedDeployment) ([]resource.URN, error) {
-	// A stack that does not exist yet exports nothing. Handled here so a first
-	// deploy never prints a parse warning.
+func desiredManagedServices(composeYAML []byte) (map[string]desiredService, error) {
+	var project compose.Project
+	if err := yaml.Unmarshal(composeYAML, &project); err != nil {
+		return nil, fmt.Errorf("parsing compose for migration: %w", err)
+	}
+	services := make(map[string]desiredService)
+	for name, svc := range project.Services {
+		switch {
+		case svc.Postgres != nil && svc.Redis != nil:
+			return nil, fmt.Errorf("service %q declares both Postgres and Redis", name)
+		case svc.Postgres != nil:
+			services[name] = desiredService{kind: servicePostgres, aliases: svc.Aliases}
+		case svc.Redis != nil:
+			services[name] = desiredService{kind: serviceRedis, aliases: svc.Aliases}
+		}
+	}
+	return services, nil
+}
+
+type migrationProblem struct {
+	resource resourceIdentity
+	reason   string
+}
+
+type migrationPlan struct {
+	aliases      program.ServiceAliases
+	blockers     []migrationProblem
+	foreignCount int
+	adoptedCount int
+	recognized   bool
+}
+
+func specsFor(cloud, typ string) []legacyAliasSpec {
+	var specs []legacyAliasSpec
+	for _, spec := range legacyAliasSpecs {
+		if spec.cloud == cloud && spec.resourceType == typ {
+			specs = append(specs, spec)
+		}
+	}
+	return specs
+}
+
+func resourceCloud(typ string) string {
+	switch resourcePackage(typ) {
+	case "aws", "awsx", "defang-aws", "defang-mvp", "pulumi-nodejs", "tls":
+		return cloudAWS
+	case "azure-native", "defang-azure":
+		return cloudAzure
+	case "cloudbuild", "gcp", "defang-gcp":
+		return cloudGCP
+	case "digitalocean":
+		return "digitalocean"
+	default:
+		return ""
+	}
+}
+
+func looksDataBearing(typ string) bool {
+	typ = strings.ToLower(typ)
+	for _, marker := range []string{"database", "dynamodb", "elasticache", "firestore", "memorydb", "postgres", "rds/", "redis/"} {
+		if strings.Contains(typ, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func legacyNameScore(name, service string, suffixes []string) int {
+	best := 0
+	for _, suffix := range suffixes {
+		candidate := service + suffix
+		switch {
+		case name == candidate:
+			best = max(best, 10_000+len(candidate))
+		case strings.HasSuffix(name, "-"+candidate):
+			best = max(best, len(candidate))
+		}
+	}
+	return best
+}
+
+func matchLegacyService(res resourceIdentity, spec legacyAliasSpec, services map[string]desiredService) (string, int) {
+	bestName, bestScore := "", 0
+	for name, svc := range services {
+		if svc.kind != spec.serviceKind {
+			continue
+		}
+		if svc.aliases[spec.aliasKind] == string(res.urn) {
+			return name, 1_000_000
+		}
+		score := legacyNameScore(res.urn.Name(), name, spec.legacySuffixes)
+		if score > bestScore {
+			bestName, bestScore = name, score
+		} else if score != 0 && score == bestScore {
+			bestName = "" // ambiguous; the guard must not guess
+		}
+	}
+	return bestName, bestScore
+}
+
+func currentTargetKey(res resourceIdentity, spec legacyAliasSpec, services map[string]desiredService) string {
+	for name, svc := range services {
+		if svc.kind == spec.serviceKind && res.urn.Name() == name+spec.currentSuffix {
+			return spec.resourceType + "\x00" + name + "\x00" + spec.aliasKind
+		}
+	}
+	return ""
+}
+
+func aliasTargetKey(spec legacyAliasSpec, service string) string {
+	return spec.resourceType + "\x00" + service + "\x00" + spec.aliasKind
+}
+
+func awsRedisEngine(config configMap) string {
+	engine, _ := config["defang-aws:redis-engine"].Value.(string)
+	if engine == "" {
+		return "elasticache"
+	}
+	return engine
+}
+
+func specMatchesAWSRedisEngine(spec legacyAliasSpec, config configMap) bool {
+	if spec.cloud != cloudAWS || spec.serviceKind != serviceRedis || !spec.dataBearing {
+		return true
+	}
+	engine := awsRedisEngine(config)
+	if strings.Contains(spec.resourceType, "memorydb/") {
+		return engine == "memorydb"
+	}
+	return engine == "elasticache"
+}
+
+func analyzeLegacyState(resources []resourceIdentity, services map[string]desiredService, cloud string, config configMap) migrationPlan {
+	plan := migrationPlan{aliases: program.ServiceAliases{}}
+	foreign := foreignResources(resources, cloud)
+	plan.foreignCount = len(foreign)
+	if len(foreign) == 0 {
+		return plan
+	}
+
+	currentTargets := map[string]bool{}
+	for _, res := range resources {
+		if !isThisCD(res, cloud) {
+			continue
+		}
+		for _, spec := range specsFor(cloud, res.typ) {
+			if key := currentTargetKey(res, spec, services); key != "" {
+				currentTargets[key] = true
+			}
+		}
+	}
+
+	seenTargets := map[string]bool{}
+	for _, res := range foreign {
+		if reason := unsupportedLegacyTypes[res.typ]; reason != "" {
+			plan.blockers = append(plan.blockers, migrationProblem{res, reason})
+			continue
+		}
+		if owner := resourceCloud(res.typ); owner == "" || owner != cloud {
+			reason := "the resource is not from the selected " + strings.ToUpper(cloud) + " legacy driver"
+			plan.blockers = append(plan.blockers, migrationProblem{res, reason})
+			continue
+		}
+		if cloud == cloudAzure {
+			plan.blockers = append(plan.blockers, migrationProblem{res, "no legacy Azure in-place adoption path is defined"})
+			continue
+		}
+
+		specs := specsFor(cloud, res.typ)
+		if len(specs) == 0 {
+			if looksDataBearing(res.typ) {
+				plan.blockers = append(plan.blockers, migrationProblem{res, "this data-bearing resource type has no adoption rule"})
+			}
+			continue
+		}
+
+		var chosen legacyAliasSpec
+		service, bestScore := "", 0
+		for _, spec := range specs {
+			name, score := matchLegacyService(res, spec, services)
+			if score > bestScore {
+				chosen, service, bestScore = spec, name, score
+			} else if score != 0 && score == bestScore {
+				service = ""
+			}
+		}
+		if service == "" {
+			dataBearing := false
+			for _, spec := range specs {
+				dataBearing = dataBearing || spec.dataBearing
+			}
+			if dataBearing {
+				plan.blockers = append(plan.blockers, migrationProblem{res, "no unique matching managed service exists in the requested compose project"})
+			}
+			continue
+		}
+		if !specMatchesAWSRedisEngine(chosen, config) {
+			plan.blockers = append(plan.blockers, migrationProblem{res, "the requested AWS Redis engine is a different resource type"})
+			continue
+		}
+
+		key := aliasTargetKey(chosen, service)
+		if currentTargets[key] || seenTargets[key] {
+			plan.blockers = append(plan.blockers, migrationProblem{res, "the current state already has a resource for this service and alias target"})
+			continue
+		}
+		if configured := services[service].aliases[chosen.aliasKind]; configured != "" && configured != string(res.urn) {
+			plan.blockers = append(plan.blockers, migrationProblem{res, "x-defang-aliases points this service and kind at a different resource"})
+			continue
+		}
+
+		if plan.aliases[service] == nil {
+			plan.aliases[service] = map[string]string{}
+		}
+		plan.aliases[service][chosen.aliasKind] = string(res.urn)
+		seenTargets[key] = true
+		plan.adoptedCount++
+		plan.recognized = plan.recognized || chosen.dataBearing
+	}
+
+	// Do not reinterpret an arbitrary flat cloud stack as a Defang migration.
+	// A supported legacy state must contain at least one data-bearing resource
+	// that maps to the desired compose project. AWS states may alternatively be
+	// identified by the legacy Defang component marker.
+	if !plan.recognized {
+		for _, res := range foreign {
+			if strings.Contains(string(res.urn.QualifiedType()), "defang-mvp:") {
+				plan.recognized = true
+				break
+			}
+		}
+	}
+	if !plan.recognized {
+		plan.blockers = append(plan.blockers, migrationProblem{foreign[0], "the state cannot be identified as a supported legacy Defang deployment"})
+	}
+	return plan
+}
+
+func mergeDetectedAliases(dst program.ServiceAliases, src program.ServiceAliases) {
+	for service, aliases := range src {
+		if dst[service] == nil {
+			dst[service] = map[string]string{}
+		}
+		for kind, urn := range aliases {
+			dst[service][kind] = urn
+		}
+	}
+}
+
+// prepareLegacyState populates aliases for both preview and up. enforce is
+// true only for up: preview is read-only and must remain available to show the
+// exact plan, even when up would stop.
+func prepareLegacyState(
+	ctx context.Context,
+	exporter stackExporter,
+	recipePulumiConfig, projectName, stackName string,
+	composeYAML []byte,
+	cloud string,
+	config configMap,
+	aliases program.ServiceAliases,
+	enforce bool,
+) error {
+	override := takeoverAllowed(recipePulumiConfig, projectName, stackName)
+	if override {
+		warn("Warning: the legacy-state takeover override is active for " + projectName + "/" + stackName + ".")
+	}
+
+	services, err := desiredManagedServices(composeYAML)
+	if err != nil {
+		return err
+	}
+	deployment, err := exporter.Export(ctx)
+	if err != nil {
+		return handleStateInspectionFailure(override, enforce, "could not read the existing state")
+	}
+	resources, err := resourceIdentitiesIn(deployment)
+	if err != nil {
+		return handleStateInspectionFailure(override, enforce, "could not parse the existing state")
+	}
+
+	plan := analyzeLegacyState(resources, services, cloud, config)
+	mergeDetectedAliases(aliases, plan.aliases)
+	if summary := stableAliasSummary(plan.aliases); len(summary) != 0 {
+		warn("Prepared Pulumi migration aliases: " + strings.Join(summary, ", "))
+	}
+	if plan.foreignCount == 0 {
+		return nil
+	}
+
+	if len(plan.blockers) != 0 {
+		switch {
+		case !enforce:
+			warn(fmt.Sprintf("Preview found %d legacy migration blocker(s); a real up will stop. See %s", len(plan.blockers), migrationRunbook))
+			return nil
+		case override:
+			warn(fmt.Sprintf("Warning: continuing despite %d legacy migration blocker(s). Unaliased databases may be deleted.", len(plan.blockers)))
+			return nil
+		default:
+			return &legacyStateError{plan: plan}
+		}
+	}
+
+	warn(fmt.Sprintf("Migrating this legacy stack in place: adopting %d resource(s) by Pulumi alias; %d other legacy resource(s) may be replaced.",
+		plan.adoptedCount, plan.foreignCount-plan.adoptedCount))
+	return nil
+}
+
+func handleStateInspectionFailure(override, enforce bool, reason string) error {
+	if !enforce {
+		warn("Preview could not prepare legacy aliases: " + reason + ". A real up will stop unless an exact-stack override is active.")
+		return nil
+	}
+	if override {
+		warn("Warning: continuing without legacy aliases because " + reason + ". Databases may be deleted.")
+		return nil
+	}
+	return &stateInspectionError{reason: reason}
+}
+
+func resourceIdentitiesIn(deployment apitype.UntypedDeployment) ([]resourceIdentity, error) {
 	if len(deployment.Deployment) == 0 {
 		return nil, nil
 	}
-	// A shape this cannot read must not decode to "no resources", because here
-	// an empty result means "go ahead and delete everything".
 	if deployment.Version != apitype.DeploymentSchemaVersionCurrent {
 		return nil, fmt.Errorf("unsupported deployment version %d", deployment.Version)
 	}
-	// The exported deployment holds decrypted secrets, so none of it is logged
-	// and nothing but URNs and parents leaves this function.
+	// Export includes decrypted inputs/outputs. Keep that snapshot local and
+	// immediately project it to URN/type/parent; no secret-bearing value is
+	// returned, logged, stored in an error, or passed to the Pulumi program.
 	var snapshot apitype.DeploymentV3
 	if err := json.Unmarshal(deployment.Deployment, &snapshot); err != nil {
 		return nil, err
 	}
-	// URN accessors assert on a malformed URN, and the assert panics. A
-	// hand-repaired snapshot is exactly what an operator produces mid-migration,
-	// so check first and let it fail open rather than crash the deploy. The URNs
-	// themselves are not reported, only the position, to keep state out of logs.
+	identities := make([]resourceIdentity, 0, len(snapshot.Resources))
 	for i, res := range snapshot.Resources {
 		if !res.URN.IsValid() {
 			return nil, fmt.Errorf("resource %d has an unreadable URN", i)
@@ -263,34 +548,52 @@ func foreignResourcesIn(deployment apitype.UntypedDeployment) ([]resource.URN, e
 		if res.Parent != "" && !res.Parent.IsValid() {
 			return nil, fmt.Errorf("resource %d has an unreadable parent URN", i)
 		}
+		identities = append(identities, identityOf(res))
 	}
-	return foreignResources(snapshot.Resources), nil
+	return identities, nil
 }
 
-// legacyStateError explains what was found and how to proceed. It reaches the
-// customer through main.go, which prints it and exits 1 — the same exit code as
-// a failed deploy, so nothing downstream can single it out.
+type stateInspectionError struct {
+	reason string
+}
+
+func (e *stateInspectionError) Error() string {
+	return "cannot verify that the existing databases are safe to migrate: " + e.reason +
+		". Nothing has been changed. Retry, or contact Defang support. See " + migrationRunbook
+}
+
 type legacyStateError struct {
-	foreign []resource.URN
+	plan migrationPlan
 }
 
 func (e *legacyStateError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "this stack has %d resources that this version of Defang did not create, "+
-		"so an older version of Defang deployed it:\n", len(e.foreign))
-	for i, urn := range e.foreign {
+	fmt.Fprintf(&b, "this stack cannot yet be migrated in place safely: %d blocker(s) remain after preparing %d Pulumi alias(es):\n",
+		len(e.plan.blockers), e.plan.adoptedCount)
+	for i, blocker := range e.plan.blockers {
 		if i == maxReportedResources {
-			fmt.Fprintf(&b, "  ...and %d more\n", len(e.foreign)-maxReportedResources)
+			fmt.Fprintf(&b, "  ...and %d more\n", len(e.plan.blockers)-maxReportedResources)
 			break
 		}
-		fmt.Fprintf(&b, "  %s::%s\n", urn.QualifiedType(), urn.Name())
+		fmt.Fprintf(&b, "  %s — %s\n", blocker.resource.display(), blocker.reason)
 	}
-	b.WriteString("\nContinuing would replace all of it: a new set of resources would be created and the ones " +
-		"above deleted, databases and their data included. Nothing has been changed.\n" +
-		"\nTo move this project, deploy it to a new stack, then shut this one down. See\n  " +
-		migrationRunbook + "\n" +
-		"\nThis stack is not stuck, so do not run `down` or `destroy` on it to clear the error. Those are not " +
-		"blocked, and they delete everything above.\n" +
-		"\nIf this is wrong, contact Defang support.")
+	b.WriteString("\nContinuing could replace or orphan existing infrastructure, including databases and their data. Nothing has been changed.\n" +
+		"\nRun `preview` to inspect the migration plan, then follow\n  " + migrationRunbook + "\n" +
+		"\nDo not run `down` or `destroy` to clear this error: both intentionally delete the selected stack.\n" +
+		"\nIf the runbook does not cover this state, contact Defang support.")
 	return b.String()
+}
+
+// stableAliasSummary is safe for logs: it includes resource identity only,
+// never the exported resource inputs or outputs that can hold secrets.
+func stableAliasSummary(aliases program.ServiceAliases) []string {
+	var summary []string
+	for service, kinds := range aliases {
+		for kind, urn := range kinds {
+			u := resource.URN(urn)
+			summary = append(summary, service+"/"+kind+"="+string(u.QualifiedType())+"::"+u.Name())
+		}
+	}
+	sort.Strings(summary)
+	return summary
 }

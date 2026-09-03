@@ -272,3 +272,26 @@ func TestServiceArgsAgreeAcrossClouds(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyServiceAliasesDoesNotMutateProjectUpdateSource(t *testing.T) {
+	project, err := parseCompose([]byte("services:\n  db:\n    image: postgres\n    x-defang-postgres: true\n"), "proj")
+	require.NoError(t, err)
+	require.Nil(t, project.Services["db"].Aliases)
+
+	aliases := ServiceAliases{"db": {compose.AliasInstance: clusterURN}}
+	require.NoError(t, applyServiceAliases(project, aliases))
+	require.Equal(t, clusterURN, project.Services["db"].Aliases[compose.AliasInstance])
+	// The migration map remains a separate input. In production the source is
+	// ProjectUpdate.Compose, which is later uploaded verbatim as project.pb.
+	require.Equal(t, clusterURN, aliases["db"][compose.AliasInstance])
+}
+
+func TestApplyServiceAliasesRejectsUnknownServiceAndConflict(t *testing.T) {
+	project, err := parseCompose([]byte("services:\n  db:\n    image: postgres\n    x-defang-postgres: true\n    x-defang-aliases:\n      instance: urn:pulumi:old\n"), "proj")
+	require.NoError(t, err)
+
+	err = applyServiceAliases(project, ServiceAliases{"missing": {compose.AliasInstance: clusterURN}})
+	require.ErrorContains(t, err, "unknown service")
+	err = applyServiceAliases(project, ServiceAliases{"db": {compose.AliasInstance: clusterURN}})
+	require.ErrorContains(t, err, "conflicts with x-defang-aliases")
+}

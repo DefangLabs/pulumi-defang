@@ -10,11 +10,23 @@ import (
 )
 
 func stackConfigJson(recipePulumiConfig string) (string, error) {
+	config, err := stackConfig(recipePulumiConfig)
+	if err != nil {
+		return "", err
+	}
+	configJson, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal stack config: %w", err)
+	}
+	return string(configJson), nil
+}
+
+func stackConfig(recipePulumiConfig string) (configMap, error) {
 	config := configMap{}
 	if len(recipePulumiConfig) != 0 {
 		// Parse all stack config from the recipe's PulumiConfig field
 		if err := unmarshalRecipe(recipePulumiConfig, config); err != nil {
-			return "", err
+			return nil, err
 		}
 	} else {
 		// Legacy path: init stack config
@@ -25,13 +37,9 @@ func stackConfigJson(recipePulumiConfig string) (string, error) {
 	// Eventually the CLI can provide all config through the recipe JSON/YAML.
 	err := addStackConfigFromEnv(config)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	configJson, err := json.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal stack config: %w", err)
-	}
-	return string(configJson), nil
+	return config, nil
 }
 
 // unmarshalRecipe returns stack config from the recipe's PulumiConfig.
@@ -182,7 +190,7 @@ func addStackConfigFromEnv(config configMap) error {
 	// that pass the generic REGION var for their own region fallback below —
 	// this is exactly what "conflicting cloud providers configured" fired on.
 	awsRegion := os.Getenv("AWS_REGION")
-	azureLocation := getenv("AZURE_LOCATION", region) // Azure only
+	azureLocation := getenv("AZURE_LOCATION", region)         // Azure only
 	azureSubscriptionId := os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only; the project RG and Key Vault names are derived from (project, stack, location) and (subscription, RG) respectively — see provider/defangazure/azure/azure.go
 	cdImage := os.Getenv("DEFANG_CD_IMAGE")                   // GCP only; for cleanup
 	delegationSetId := os.Getenv("DELEGATION_SET_ID")         // AWS only

@@ -24,6 +24,20 @@ func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 // function uploads it as a Pulumi-managed blob at the end of the deploy
 // (gated on the project component so the upload only happens on success).
 func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
+	return NewRunWithAliases(projectUpdate, nil)
+}
+
+// ServiceAliases maps a compose service and child-resource kind to a Pulumi
+// URN that the child should adopt. The CD's migration preflight builds this
+// from the existing state; keeping it out of ProjectUpdate means internal
+// migration metadata is neither written back to project.pb nor exposed as a
+// customer-facing compose mutation.
+type ServiceAliases map[string]map[string]string
+
+// NewRunWithAliases is NewRun with state-derived aliases applied after parsing
+// compose and before the provider inputs are built. Callers must finish
+// populating aliases before the returned program starts.
+func NewRunWithAliases(projectUpdate *defangv1.ProjectUpdate, aliases ServiceAliases) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
 		defangCfg := config.New(ctx, "defang")
 
@@ -44,6 +58,9 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 
 		project, err := parseCompose(projectUpdate.Compose, ctx.Project())
 		if err != nil {
+			return err
+		}
+		if err := applyServiceAliases(project, aliases); err != nil {
 			return err
 		}
 
@@ -69,4 +86,24 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 
 		return nil
 	}
+}
+
+func applyServiceAliases(project *compose.Project, aliases ServiceAliases) error {
+	for serviceName, detected := range aliases {
+		svc, ok := project.Services[serviceName]
+		if !ok {
+			return fmt.Errorf("migration alias targets unknown service %q", serviceName)
+		}
+		if svc.Aliases == nil {
+			svc.Aliases = make(map[string]string, len(detected))
+		}
+		for kind, urn := range detected {
+			if existing := svc.Aliases[kind]; existing != "" && existing != urn {
+				return fmt.Errorf("migration alias for service %q kind %q conflicts with x-defang-aliases", serviceName, kind)
+			}
+			svc.Aliases[kind] = urn
+		}
+		project.Services[serviceName] = svc
+	}
+	return nil
 }

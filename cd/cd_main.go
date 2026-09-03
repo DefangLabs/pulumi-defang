@@ -76,25 +76,36 @@ func cdMain(ctx context.Context, args ...string) error {
 			}
 			// FIXME: what to do when Compose project name does not match PROJECT env var?
 		}
-		stack, err = auto.UpsertStackInlineSource(ctx, stackName, projectName, program.NewRun(projectUpdate))
-		if err != nil {
-			return pulumiErr(err)
-		}
-		// Refuse to take over a state that a different Defang CD wrote. The
-		// stack has been upserted by now, but nothing has been written to it,
-		// so a blocked run leaves no config behind. Only `up` is guarded; the
-		// reasoning for that is in legacy_state.go.
-		if command == client.CdCommandUp {
-			if err := checkLegacyState(ctx, &stack, projectUpdate.Recipe.GetPulumiConfig(), projectName, stackName); err != nil {
-				return err
-			}
-		}
-		// Set stack-level config (provider settings, defang config)
-		configJson, err := stackConfigJson(projectUpdate.Recipe.GetPulumiConfig())
+		recipePulumiConfig := projectUpdate.Recipe.GetPulumiConfig()
+		configValues, err := stackConfig(recipePulumiConfig)
 		if err != nil {
 			return err
 		}
-		err = stack.SetAllConfigJson(ctx, configJson, nil)
+		configBytes, err := json.Marshal(configValues)
+		if err != nil {
+			return fmt.Errorf("failed to marshal stack config: %w", err)
+		}
+		cloud, _ := configValues["defang:provider"].Value.(string)
+		if cloud == "" {
+			return &usageError{msg: "missing defang:provider in stack config"}
+		}
+
+		migrationAliases := program.ServiceAliases{}
+		stack, err = auto.UpsertStackInlineSource(ctx, stackName, projectName,
+			program.NewRunWithAliases(projectUpdate, migrationAliases))
+		if err != nil {
+			return pulumiErr(err)
+		}
+		// Prepare exact-URN aliases before either preview or up runs. Preview is
+		// never blocked; up fails closed when the state cannot be proved safe.
+		// Upsert has selected/created the workspace by now but has not written
+		// stack config or infrastructure, so a blocked run leaves state intact.
+		if err := prepareLegacyState(ctx, &stack, recipePulumiConfig, projectName, stackName,
+			projectUpdate.Compose, cloud, configValues, migrationAliases, command == client.CdCommandUp); err != nil {
+			return err
+		}
+		// Set stack-level config (provider settings, defang config)
+		err = stack.SetAllConfigJson(ctx, string(configBytes), nil)
 		if err != nil {
 			return pulumiErr(err)
 		}
