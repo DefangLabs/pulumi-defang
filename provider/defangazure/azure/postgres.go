@@ -142,9 +142,9 @@ func CreatePostgresFlexible(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*postgresResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -158,17 +158,17 @@ func CreatePostgresFlexible(
 	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
 	sanitized := sanitizePostgresName(serviceName)
 
-	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, opts...)
+	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, opt)
 	if err != nil {
 		return nil, err
 	}
 
-	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, opts...)
+	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating PostgreSQL Flexible Server: %w", err)
 	}
 
-	serverChildOpts := append([]pulumi.ResourceOption{pulumi.Parent(server)}, opts...)
+	serverChildOpts := []pulumi.ResourceOption{pulumi.Parent(server), opt}
 
 	// Allowlist extensions. Azure Postgres Flexible Server blocks CREATE EXTENSION
 	// unless the extension is listed in the azure.extensions server parameter first.

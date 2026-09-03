@@ -98,9 +98,9 @@ func CreateCloudSQL(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*CloudSQLResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -122,11 +122,10 @@ func CreateCloudSQL(
 		return gcpPostgresVersion(v)
 	}).(pulumi.StringOutput)
 
-	instanceOpts := opts
+	var instanceOpt pulumi.ResourceOption = opt
 	if infra != nil && infra.ServiceConnection != nil {
-		instanceOpts = append([]pulumi.ResourceOption{
-			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
-		}, opts...)
+		instanceOpt = pulumi.Composite(opt,
+			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}))
 	}
 
 	var regionInput pulumi.StringPtrInput
@@ -155,7 +154,7 @@ func CreateCloudSQL(
 			},
 		},
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-	}, instanceOpts...)
+	}, instanceOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud SQL instance: %w", err)
 	}
@@ -167,15 +166,15 @@ func CreateCloudSQL(
 	// handle it.
 	if pw, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_PASSWORD"]); pw != nil && *pw != "" {
 		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
-			Name:           pg.Username,
-			Instance:       instance.Name,
-			Password:       pg.Password,
-			Type: pulumi.String("BUILT_IN"),
+			Name:     pg.Username,
+			Instance: instance.Name,
+			Password: pg.Password,
+			Type:     pulumi.String("BUILT_IN"),
 			// ABANDON alone. Deleting the instance removes its users, so there is nothing here to
 			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
 			// redundant with the deletion policy, which already suppresses the API call.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL user: %w", err)
 		}
@@ -187,11 +186,11 @@ func CreateCloudSQL(
 	rawDB, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_DB"])
 	if rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
-			Name:           pg.DBName,
+			Name:     pg.DBName,
 			Instance: instance.Name,
 			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, opts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL database: %w", err)
 		}
