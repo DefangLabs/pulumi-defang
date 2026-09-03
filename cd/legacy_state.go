@@ -9,13 +9,14 @@ package main
 // databases to the matching compose services, and passes their exact URNs to
 // the current providers as Pulumi aliases.
 //
-// Aliases are the migration mechanism. The guard is defense in depth: `up`
-// stops when a database cannot be mapped one-to-one, the state cannot be read,
-// another cloud owns it, or the current image cannot operate on a legacy
-// resource. `preview` receives every alias that can be proved safe but remains
-// non-blocking so an operator can inspect the complete plan. `down` and
-// `destroy` remain deliberately unguarded because their stated purpose is to
-// delete the selected stack.
+// Aliases preserve resource identity; they do not prove that a provider can
+// update an adopted resource in place. The guard therefore has two stages:
+// state analysis rejects ambiguous or unsupported adoption, and `up` runs a
+// provider-backed preview that rejects any non-same/non-update operation on an
+// adopted data-bearing resource. Ordinary `preview` remains non-blocking so an
+// operator can inspect the complete plan. `down` and `destroy` remain
+// deliberately unguarded because their stated purpose is to delete the
+// selected stack.
 
 import (
 	"context"
@@ -345,11 +346,18 @@ type migrationProblem struct {
 }
 
 type migrationPlan struct {
-	aliases      program.ServiceAliases
-	blockers     []migrationProblem
-	foreignCount int
-	adoptedCount int
-	recognized   bool
+	aliases              program.ServiceAliases
+	blockers             []migrationProblem
+	dataBearingAdoptions []migrationAdoption
+	foreignCount         int
+	adoptedCount         int
+	recognized           bool
+}
+
+type migrationAdoption struct {
+	resource resourceIdentity
+	spec     legacyAliasSpec
+	service  string
 }
 
 func specsFor(cloud, typ string) []legacyAliasSpec {
@@ -595,6 +603,13 @@ func analyzeLegacyState(
 		plan.aliases[service][chosen.aliasKind] = string(res.urn)
 		seenTargets[key] = true
 		plan.adoptedCount++
+		if chosen.dataBearing {
+			plan.dataBearingAdoptions = append(plan.dataBearingAdoptions, migrationAdoption{
+				resource: res,
+				spec:     chosen,
+				service:  service,
+			})
+		}
 		plan.recognized = plan.recognized || chosen.dataBearing
 	}
 
@@ -640,9 +655,10 @@ func warnMigrationProblems(header string, blockers []migrationProblem) {
 	}
 }
 
-// prepareLegacyState populates aliases for both preview and up. enforce is
-// true only for up: preview applies no infrastructure changes and must remain
-// available to show the exact plan, even when up would stop.
+// prepareLegacyState populates aliases for both preview and up and returns the
+// exact old/new identities that an up safety preview must protect. enforce is
+// true only for up: an explicit preview applies no infrastructure changes and
+// must remain available to show the exact plan, even when up would stop.
 func prepareLegacyState(
 	ctx context.Context,
 	exporter stackExporter,
@@ -652,32 +668,34 @@ func prepareLegacyState(
 	config configMap,
 	aliases program.ServiceAliases,
 	enforce bool,
-) error {
+) (legacyStatePreparation, error) {
 	override := takeoverAllowed(recipePulumiConfig, projectName, stackName)
+	preparation := legacyStatePreparation{override: override}
 	if override {
 		warn("Warning: the legacy-state takeover override is active for " + projectName + "/" + stackName + ".")
 	}
 
 	services, err := desiredManagedServices(composeYAML)
 	if err != nil {
-		return err
+		return preparation, err
 	}
 	deployment, err := exporter.Export(ctx)
 	if err != nil {
-		return handleStateInspectionFailure(override, enforce, "could not read the existing state")
+		return preparation, handleStateInspectionFailure(override, enforce, "could not read the existing state")
 	}
 	resources, err := resourceIdentitiesIn(deployment)
 	if err != nil {
-		return handleStateInspectionFailure(override, enforce, "could not parse the existing state")
+		return preparation, handleStateInspectionFailure(override, enforce, "could not parse the existing state")
 	}
 
 	plan := analyzeLegacyState(resources, services, cloud, config)
+	preparation.resources = migrationPreviewResources(plan.dataBearingAdoptions, projectName, stackName, cloud)
 	mergeDetectedAliases(aliases, plan.aliases)
 	if summary := stableAliasSummary(plan.aliases); len(summary) != 0 {
 		warn("Prepared Pulumi migration aliases: " + strings.Join(summary, ", "))
 	}
 	if plan.foreignCount == 0 {
-		return nil
+		return preparation, nil
 	}
 
 	if len(plan.blockers) != 0 {
@@ -687,15 +705,15 @@ func prepareLegacyState(
 				"Preview found %d legacy migration blocker(s); a real up will stop. See %s",
 				len(plan.blockers), migrationRunbook,
 			), plan.blockers)
-			return nil
+			return preparation, nil
 		case override:
 			warnMigrationProblems(fmt.Sprintf(
 				"Warning: continuing despite %d legacy migration blocker(s). Unaliased databases may be deleted.",
 				len(plan.blockers),
 			), plan.blockers)
-			return nil
+			return preparation, nil
 		default:
-			return &legacyStateError{plan: plan}
+			return preparation, &legacyStateError{plan: plan}
 		}
 	}
 
@@ -704,7 +722,7 @@ func prepareLegacyState(
 			"%d other legacy resource(s) may be replaced.",
 		plan.adoptedCount, plan.foreignCount-plan.adoptedCount,
 	))
-	return nil
+	return preparation, nil
 }
 
 func handleStateInspectionFailure(override, enforce bool, reason string) error {

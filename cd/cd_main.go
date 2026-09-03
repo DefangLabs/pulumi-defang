@@ -45,6 +45,7 @@ func cdMain(ctx context.Context, args ...string) error {
 	}
 
 	var stack auto.Stack
+	var migrationPreparation legacyStatePreparation
 	var err error
 	switch command {
 	case "", "help":
@@ -97,18 +98,20 @@ func cdMain(ctx context.Context, args ...string) error {
 		if err != nil {
 			return pulumiErr(err)
 		}
-		// Prepare exact-URN aliases before either preview or up runs. Preview is
-		// never blocked; up fails closed when the state cannot be proved safe.
-		// Upsert has selected/created the workspace by now but has not written
-		// stack config or infrastructure, so a blocked run leaves state intact.
-		if err := prepareLegacyState(ctx, &stack, recipePulumiConfig, projectName, stackName,
-			projectUpdate.GetCompose(), cloud, configValues, migrationAliases, command == client.CdCommandUp); err != nil {
-			return err
-		}
-		// Set stack-level config (provider settings, defang config)
+		// Set the final stack config before any provider-backed migration
+		// preview. Provider diff semantics can depend on these values.
 		err = stack.SetAllConfigJson(ctx, string(configBytes), nil)
 		if err != nil {
 			return pulumiErr(err)
+		}
+		// Prepare exact-URN aliases before either preview or up runs. Preview is
+		// never blocked; up fails closed when the state cannot be proved safe.
+		// Upsert and stack configuration do not run the Pulumi program or mutate
+		// infrastructure, so a blocked run leaves cloud resources intact.
+		migrationPreparation, err = prepareLegacyState(ctx, &stack, recipePulumiConfig, projectName, stackName,
+			projectUpdate.GetCompose(), cloud, configValues, migrationAliases, command == client.CdCommandUp)
+		if err != nil {
+			return err
 		}
 	case client.CdCommandDestroy, client.CdCommandDown, client.CdCommandRefresh, client.CdCommandCancel, client.CdCommandOutputs:
 		stack, err = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
@@ -167,6 +170,11 @@ func cdMain(ctx context.Context, args ...string) error {
 
 	switch command {
 	case client.CdCommandUp:
+		if err := verifyMigrationPreview(
+			ctx, &stack, migrationPreparation, userAgent, color(), pulumiTargets,
+		); err != nil {
+			return err
+		}
 		evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
 		defer waitEvents()
 		upOpts := []optup.Option{

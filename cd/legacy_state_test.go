@@ -105,7 +105,7 @@ func prepareFixture(
 ) (program.ServiceAliases, error) {
 	t.Helper()
 	aliases := program.ServiceAliases{}
-	err := prepareLegacyState(t.Context(), fakeStack{deployment: fixtureDeployment(t, fixture)}, recipe,
+	_, err := prepareLegacyState(t.Context(), fakeStack{deployment: fixtureDeployment(t, fixture)}, recipe,
 		testProjectName, testStackName, []byte(composeYAML), cloud, configFor(cloud), aliases, enforce)
 	return aliases, err
 }
@@ -206,7 +206,7 @@ func TestRealLegacyStatesWithoutUnavailableBuildResourcesAreAdoptable(t *testing
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			aliases := program.ServiceAliases{}
-			err := prepareLegacyState(t.Context(), fakeStack{deployment: tt.deployment}, "", testProjectName,
+			_, err := prepareLegacyState(t.Context(), fakeStack{deployment: tt.deployment}, "", testProjectName,
 				testStackName, []byte(tt.composeYAML), tt.cloud, configFor(tt.cloud), aliases, true)
 			require.NoError(t, err)
 			require.Equal(t, tt.wantAliases, stableAliasSummary(aliases))
@@ -284,7 +284,7 @@ func TestMissingOrAmbiguousDatabaseAliasesBlockUp(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
+			_, err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
 				testStackName, []byte(tt.composeYAML), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "no unique matching managed service")
@@ -310,8 +310,9 @@ func TestDuplicateExplicitAliasesAreAmbiguous(t *testing.T) {
 func TestMixedStateAdoptsSurvivingLegacyDatabasesButRejectsDuplicateTarget(t *testing.T) {
 	deployment := fixtureWithoutTypes(t, "mixed-state-gcp.json", "cloudbuild:index:CloudBuild")
 	aliases := program.ServiceAliases{}
-	require.NoError(t, prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
-		testStackName, []byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), aliases, true))
+	_, err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
+		testStackName, []byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), aliases, true)
+	require.NoError(t, err)
 	require.Contains(t, stableAliasSummary(aliases),
 		"postgres-service/instance=gcp:sql/databaseInstance:DatabaseInstance::my-app-postgres-service-postgres")
 
@@ -337,7 +338,7 @@ func TestConditionalCloudSQLChildrenMustHaveAnAliasTarget(t *testing.T) {
     x-defang-redis: true
 `
 	aliases := program.ServiceAliases{}
-	err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
+	_, err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
 		testStackName, []byte(composeWithoutChildren), cloudGCP, configFor(cloudGCP), aliases, true)
 	require.ErrorContains(t, err, "will not register a resource to consume this alias")
 	require.NotContains(t, aliases["postgres-service"], compose.AliasUser)
@@ -401,7 +402,7 @@ func TestStateInspectionFailsClosedForUpAndDoesNotLeakSecrets(t *testing.T) {
 	t.Cleanup(func() { stderrLogger = originalLogger })
 
 	secretErr := errSecretExport
-	err := prepareLegacyState(t.Context(), fakeStack{err: secretErr}, "", testProjectName, testStackName,
+	_, err := prepareLegacyState(t.Context(), fakeStack{err: secretErr}, "", testProjectName, testStackName,
 		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
 	var inspectionErr *stateInspectionError
 	require.ErrorAs(t, err, &inspectionErr)
@@ -410,13 +411,14 @@ func TestStateInspectionFailsClosedForUpAndDoesNotLeakSecrets(t *testing.T) {
 
 	// Preview applies no infrastructure changes, so the same inspection failure
 	// warns but does not prevent Pulumi from showing whatever plan it can produce.
-	require.NoError(t, prepareLegacyState(t.Context(), fakeStack{err: secretErr}, "", testProjectName, testStackName,
-		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, false))
+	_, err = prepareLegacyState(t.Context(), fakeStack{err: secretErr}, "", testProjectName, testStackName,
+		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, false)
+	require.NoError(t, err)
 	require.NotContains(t, logs.String(), "TOP-SECRET")
 
 	deployment := deploymentOf(`{"resources":[{"urn":"urn:pulumi:beta::my-app::gcp:storage/bucket:Bucket::data",` +
 		`"type":"gcp:storage/bucket:Bucket","outputs":{"password":"TOP-SECRET"}}]}`)
-	err = prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName, testStackName,
+	_, err = prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName, testStackName,
 		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "TOP-SECRET")
@@ -435,7 +437,7 @@ func TestMalformedStateNeverPanicsAndFailsClosedForUp(t *testing.T) {
 	for i, deployment := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			require.NotPanics(t, func() {
-				err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
+				_, err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
 					testStackName, []byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
 				require.Error(t, err)
 			})
@@ -637,7 +639,7 @@ func TestConfiguredAliasConflictBlocks(t *testing.T) {
 	composeYAML := strings.Replace(gcpManagedCompose, "x-defang-postgres: true",
 		conflictingAlias, 1)
 	deployment := fixtureWithoutTypes(t, "legacy-state-gcp.json", "cloudbuild:index:CloudBuild")
-	err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName, testStackName,
+	_, err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName, testStackName,
 		[]byte(composeYAML), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "x-defang-aliases")

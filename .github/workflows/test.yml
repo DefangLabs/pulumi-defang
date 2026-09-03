@@ -35,6 +35,14 @@ jobs:
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
+      # CD's migration guard has an engine-level regression that executes a
+      # real preview against a mock provider. Keep the CLI aligned with the
+      # Pulumi SDK version in cd/go.mod.
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version: 3.259.0
+
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
 
