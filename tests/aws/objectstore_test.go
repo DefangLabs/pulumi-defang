@@ -172,8 +172,10 @@ func TestConstructAwsProjectObjectStoreGrant(t *testing.T) {
 	}
 
 	// The store itself is a bucket, not a task: it must not reach ECS even
-	// though the compose service carries a minio image anchor.
-	assert.Equal(t, []string{"app"}, m.services())
+	// though the compose service carries a minio image anchor. The name is
+	// project-qualified ("<project>_<service>", and AwsURN names the component
+	// "name") because the CLI parses the service out of the ECS event.
+	assert.Equal(t, []string{"name_app"}, m.services())
 }
 
 // depends_on is the wiring contract — it is what the CLI injects
