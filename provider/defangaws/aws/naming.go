@@ -32,3 +32,40 @@ func targetGroupName(
 
 	return service + suffix
 }
+
+// QualifiedContainerName suffixes a container name with the deployment etag,
+// as the old TS stack did (defang-mvp pulumi/cd/aws/defang_service.ts
+// qualifiedContainerName). This is a wire contract with the Defang CLI, not a
+// label: for every "ECS Task State Change" event the CLI splits the container
+// name on its last "_" and treats the tail as the deployment etag
+// (clouds/aws/ecs/event.go TaskStateChangeEvent.Etag). An unsuffixed name
+// yields an empty etag, which makes parseECSSubscribeEvent drop the event and
+// — worse — leaves the deployment-id → etag cache empty, so the
+// "ECS Deployment State Change" events that carry DEPLOYMENT_COMPLETED are
+// dropped too and `defang compose up` waits forever.
+//
+// The etag is empty for standalone Service callers (no CD deployment), in
+// which case the bare name is used.
+func QualifiedContainerName(name, etag string) string {
+	if etag == "" {
+		return name
+	}
+	return name + "_" + etag
+}
+
+// ECSServiceResourceName is the logical Pulumi name of an ECS service. The
+// physical name is autonamed from it as "<logical>-<hex>", and the Defang CLI
+// parses the compose service back out of the service ARN by taking the text
+// between the first "_" and the last "-" (byoc/aws/... serviceNameFromResources),
+// so the project qualifier is what makes DEPLOYMENT_COMPLETED attributable to a
+// service. Matches the TS `${projectName}_${service_name}` resource name
+// ("FQN but with underscore instead of dots, used by ECS events").
+//
+// projectName is empty for standalone Service callers, which no CLI subscribes
+// to; those keep the bare service name.
+func ECSServiceResourceName(projectName, serviceName string) string {
+	if projectName == "" {
+		return serviceName
+	}
+	return projectName + "_" + serviceName
+}

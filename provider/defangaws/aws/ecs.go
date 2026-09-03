@@ -82,6 +82,10 @@ type SharedInfra struct {
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
+	// ProjectName is the compose project name; empty for standalone Service
+	// callers. It qualifies the ECS service name so the CLI can attribute
+	// lifecycle events to a service (see ecsServiceResourceName).
+	ProjectName string
 	Policies
 
 	// Schema-exposed handles to pre-existing infrastructure, for standalone
@@ -300,12 +304,12 @@ func buildMountPoints(volumes []compose.ServiceVolumeConfig) []MountPoint {
 
 // buildVolumesFrom converts compose volumes_from entries to ECS volumesFrom,
 // resolving service names to their container names via the sidecar map.
-func buildVolumesFrom(refs []string, sidecars map[string]compose.ServiceConfig) []VolumeFrom {
+func buildVolumesFrom(refs []string, sidecars map[string]compose.ServiceConfig, etag string) []VolumeFrom {
 	volumesFrom := make([]VolumeFrom, 0, len(refs))
 	for _, ref := range refs {
 		source, readOnly := parseVolumesFrom(ref)
 		if sc, ok := sidecars[source]; ok {
-			source = sc.GetContainerName(source)
+			source = QualifiedContainerName(sc.GetContainerName(source), etag)
 		}
 		volumesFrom = append(volumesFrom, VolumeFrom{
 			SourceContainer: ptr.String(source),
@@ -358,7 +362,7 @@ var composeToEcsConditions = map[string]awsecs.ContainerCondition{
 // dependencies. Only dependencies on sidecar containers in the same task are
 // supported; others are dropped (matches the TS behaviour).
 func buildDependsOn(
-	dependsOn compose.DependsOnConfig, sidecars map[string]compose.ServiceConfig,
+	dependsOn compose.DependsOnConfig, sidecars map[string]compose.ServiceConfig, etag string,
 ) []ContainerDependency {
 	deps := make([]ContainerDependency, 0, len(dependsOn))
 	for depName, dep := range common.Sorted(dependsOn) {
@@ -371,7 +375,7 @@ func buildDependsOn(
 			condition = awsecs.ContainerConditionStart
 		}
 		deps = append(deps, ContainerDependency{
-			ContainerName: ptr.String(sc.GetContainerName(depName)),
+			ContainerName: ptr.String(QualifiedContainerName(sc.GetContainerName(depName), etag)),
 			Condition:     condition,
 		})
 	}
@@ -614,7 +618,7 @@ func CreateECSService(
 	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
 	// so all values must be concrete before marshaling. Each optional input's
 	// index into allInputs is tracked explicitly.
-	containerName := svc.GetContainerName(serviceName)
+	containerName := QualifiedContainerName(svc.GetContainerName(serviceName), infra.Etag)
 
 	allInputs := []interface{}{args.ImageURI}
 	logGroupIdx := -1
@@ -754,7 +758,7 @@ func CreateECSService(
 			Secrets:          mainSecrets,
 			Command:          svc.Command,
 			EntryPoint:       svc.Entrypoint,
-			DependsOn:        buildDependsOn(svc.DependsOn, args.Sidecars),
+			DependsOn:        buildDependsOn(svc.DependsOn, args.Sidecars, infra.Etag),
 			HealthCheck:      healthCheck,
 			Image:            imageUri,
 			LogConfiguration: logConfiguration,
@@ -763,7 +767,7 @@ func CreateECSService(
 			// AWS normalizes these to [] on read; use empty slices to avoid null vs [] diffs
 			MountPoints:    buildMountPoints(svc.Volumes),
 			SystemControls: []SystemControl{},
-			VolumesFrom:    buildVolumesFrom(svc.VolumesFrom, args.Sidecars),
+			VolumesFrom:    buildVolumesFrom(svc.VolumesFrom, args.Sidecars, infra.Etag),
 		}}
 
 		for _, sd := range sidecarDatas {
@@ -774,7 +778,7 @@ func CreateECSService(
 			slices.SortFunc(scEnvVars, func(a, b KeyValuePair) int {
 				return cmp.Compare(a.Name, b.Name)
 			})
-			scContainerName := sd.cfg.GetContainerName(sd.name)
+			scContainerName := QualifiedContainerName(sd.cfg.GetContainerName(sd.name), infra.Etag)
 			containerDefs = append(containerDefs, ContainerDefinition{
 				Name:             scContainerName,
 				Essential:        ptr.Bool(sd.cfg.Restart != "no"),
@@ -783,7 +787,7 @@ func CreateECSService(
 				Secrets:          sd.secrets,
 				Command:          sd.cfg.Command,
 				EntryPoint:       sd.cfg.Entrypoint,
-				DependsOn:        buildDependsOn(sd.cfg.DependsOn, args.Sidecars),
+				DependsOn:        buildDependsOn(sd.cfg.DependsOn, args.Sidecars, infra.Etag),
 				HealthCheck:      buildHealthCheck(sd.cfg.HealthCheck),
 				Image:            all[sd.imageIdx].(string),
 				LogConfiguration: logConfigurationFor(scContainerName),
@@ -791,7 +795,7 @@ func CreateECSService(
 				WorkingDirectory: sd.cfg.WorkingDir,
 				MountPoints:      buildMountPoints(sd.cfg.Volumes),
 				SystemControls:   []SystemControl{},
-				VolumesFrom:      buildVolumesFrom(sd.cfg.VolumesFrom, args.Sidecars),
+				VolumesFrom:      buildVolumesFrom(sd.cfg.VolumesFrom, args.Sidecars, infra.Etag),
 			})
 		}
 
@@ -1023,7 +1027,7 @@ func CreateECSService(
 
 	ecsService, err := ecs.NewService(
 		ctx,
-		serviceName,
+		ECSServiceResourceName(infra.ProjectName, serviceName),
 		ecsServiceArgs,
 		parentOpt,
 		pulumi.DependsOn(lbDependsOn),
