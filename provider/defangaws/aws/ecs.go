@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -172,6 +173,11 @@ type ECSServiceArgs struct {
 	// Keyed by service name; volumesFrom/dependsOn on the main service may
 	// reference these names.
 	Sidecars map[string]compose.ServiceConfig
+	// ObjectStoreArns are the S3 bucket ARNs this service is granted access
+	// to, keyed by the x-defang-s3 service name that owns each bucket. Ignored
+	// when TaskRoleArn is caller-supplied — the caller owns that role's
+	// policies, same as the route53/bedrock/x-defang-policies attachments.
+	ObjectStoreArns map[string]pulumi.StringInput
 	// Triggers force a service redeployment when any value changes.
 	Triggers pulumi.StringMapInput
 }
@@ -512,6 +518,17 @@ func CreateECSService(
 			}, parentOpt)
 			if err != nil {
 				return nil, fmt.Errorf("attaching bedrock policy: %w", err)
+			}
+			lbDependsOn = append(lbDependsOn, dep)
+		}
+
+		// Grant access to the buckets of the x-defang-s3 services this one
+		// depends on. Sorted for a deterministic resource name per store.
+		for _, storeName := range slices.Sorted(maps.Keys(args.ObjectStoreArns)) {
+			dep, err := attachObjectStorePolicy(
+				ctx, taskRole, serviceName, storeName, args.ObjectStoreArns[storeName], parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("granting %s access to object store %q: %w", serviceName, storeName, err)
 			}
 			lbDependsOn = append(lbDependsOn, dep)
 		}

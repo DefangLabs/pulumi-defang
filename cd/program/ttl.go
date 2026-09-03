@@ -87,12 +87,25 @@ var selfDestructEnvExclude = map[string]bool{
 	"AZURE_FEDERATED_TOKEN_FILE": true,
 	// Credentials must never be frozen into a trigger resource; the scheduled
 	// run authenticates with the ambient (managed) identity instead.
-	"AWS_ACCESS_KEY_ID":                 true,
-	"AWS_SECRET_ACCESS_KEY":             true,
-	"AWS_SESSION_TOKEN":                 true,
-	"AZURE_CLIENT_SECRET":               true,
-	"AZURE_CLIENT_CERTIFICATE_PATH":     true,
-	"AZURE_CLIENT_CERTIFICATE_PASSWORD": true,
+	"AWS_ACCESS_KEY_ID":     true,
+	"AWS_SECRET_ACCESS_KEY": true,
+	"AWS_SESSION_TOKEN":     true,
+	// Not credentials themselves, but where to fetch them: CodeBuild points
+	// the SDK's container-credential provider at a path minted for THIS
+	// build. Freezing it makes the scheduled down ask for a build identity
+	// that no longer exists, and the SDK fails before it reads a single
+	// resource:
+	//   error: read ".pulumi/meta.yaml": ... get credentials:
+	//   InvalidIdInRequest: CredentialsV2Request: Credentials not found
+	// Dropped, so CodeBuild's own value for the new build survives instead of
+	// being overwritten by the environment override.
+	"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": true,
+	"AWS_CONTAINER_CREDENTIALS_FULL_URI":     true,
+	"AWS_CONTAINER_AUTHORIZATION_TOKEN":      true,
+	"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": true,
+	"AZURE_CLIENT_SECRET":                    true,
+	"AZURE_CLIENT_CERTIFICATE_PATH":          true,
+	"AZURE_CLIENT_CERTIFICATE_PASSWORD":      true,
 }
 
 // selfDestructEnvPrefixes selects the config-carrying variables. The same
