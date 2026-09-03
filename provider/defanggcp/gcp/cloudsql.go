@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -99,10 +98,9 @@ func CreateCloudSQL(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOrInvokeOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*CloudSQLResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider, opts...)
-	resourceOpts := common.ResourceOptions(opts)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -124,11 +122,10 @@ func CreateCloudSQL(
 		return gcpPostgresVersion(v)
 	}).(pulumi.StringOutput)
 
-	instanceOpts := resourceOpts
+	var instanceOpt pulumi.ResourceOption = opt
 	if infra != nil && infra.ServiceConnection != nil {
-		instanceOpts = append([]pulumi.ResourceOption{
-			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
-		}, resourceOpts...)
+		instanceOpt = pulumi.Composite(opt,
+			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}))
 	}
 
 	var regionInput pulumi.StringPtrInput
@@ -157,7 +154,7 @@ func CreateCloudSQL(
 			},
 		},
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-	}, instanceOpts...)
+	}, instanceOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud SQL instance: %w", err)
 	}
@@ -177,7 +174,7 @@ func CreateCloudSQL(
 			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
 			// redundant with the deletion policy, which already suppresses the API call.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, resourceOpts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL user: %w", err)
 		}
@@ -193,7 +190,7 @@ func CreateCloudSQL(
 			Instance: instance.Name,
 			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, resourceOpts...)
+		}, opt)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL database: %w", err)
 		}

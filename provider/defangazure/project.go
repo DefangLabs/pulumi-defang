@@ -154,9 +154,8 @@ func createPostgresResources(
 	if err := ctx.RegisterComponentResource("defang-azure:index:Postgres", svcName, comp, childOpts...); err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("registering Azure Postgres component %s: %w", svcName, err)
 	}
-	svcOpts := []pulumi.ResourceOrInvokeOption{pulumi.Parent(comp)}
-
-	pgResult, err := providerazure.CreatePostgresFlexible(ctx, infra.ConfigProvider, svcName, svc, infra, svcOpts...)
+	pgResult, err := providerazure.CreatePostgresFlexible(
+		ctx, infra.ConfigProvider, svcName, svc, infra, pulumi.Parent(comp))
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 	}

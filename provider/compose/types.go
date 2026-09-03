@@ -541,7 +541,7 @@ func getPostgresVersion(image string) string {
 func (s ServiceConfig) ResolvePostgres(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
-	opts ...pulumi.ResourceOrInvokeOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) *PostgresConfigArgs {
 	if s.Postgres == nil {
 		return nil
@@ -552,22 +552,16 @@ func (s ServiceConfig) ResolvePostgres(
 		version = pulumi.StringPtr(getPostgresVersion(*img))
 	}
 
-	// Go has no slice covariance; every element survives the widening.
-	invokeOpts := make([]pulumi.InvokeOption, len(opts))
-	for i, opt := range opts {
-		invokeOpts[i] = opt
-	}
-
 	// POSTGRES_DB drives resource creation decisions, so it must be a static
 	// string; a dynamic (Output) value falls back to the default name.
 	dbNameStr, _ := StaticEnvValue(s.Environment["POSTGRES_DB"])
 	if dbNameStr == nil || *dbNameStr == "" {
 		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
-	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB, invokeOpts...)
-	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER, invokeOpts...)
+	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB, opt)
+	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER, opt)
 	// FIXME: should not default to ""
-	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "", invokeOpts...)
+	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "", opt)
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {

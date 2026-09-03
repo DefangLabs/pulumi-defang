@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
@@ -143,10 +142,9 @@ func CreatePostgresFlexible(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOrInvokeOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*postgresResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider, opts...)
-	resourceOpts := common.ResourceOptions(opts)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -160,17 +158,17 @@ func CreatePostgresFlexible(
 	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
 	sanitized := sanitizePostgresName(serviceName)
 
-	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, resourceOpts...)
+	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, opt)
 	if err != nil {
 		return nil, err
 	}
 
-	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, resourceOpts...)
+	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating PostgreSQL Flexible Server: %w", err)
 	}
 
-	serverChildOpts := append([]pulumi.ResourceOption{pulumi.Parent(server)}, resourceOpts...)
+	serverChildOpts := []pulumi.ResourceOption{pulumi.Parent(server), opt}
 
 	// Allowlist extensions. Azure Postgres Flexible Server blocks CREATE EXTENSION
 	// unless the extension is listed in the azure.extensions server parameter first.
