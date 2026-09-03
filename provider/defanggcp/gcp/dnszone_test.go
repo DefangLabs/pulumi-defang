@@ -79,20 +79,25 @@ func TestBestZoneMatchRequiresAuthorizationAndUsesLongestTrustedSuffix(t *testin
 		{name: "bare wildcard", hostname: "*.", want: ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, bestZoneMatch(tt.hostname, zones))
+			got, err := bestZoneMatch(tt.hostname, zones)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestBestZoneMatchBreaksEquivalentZoneTiesByName(t *testing.T) {
+func TestBestZoneMatchRejectsAmbiguousEquivalentZones(t *testing.T) {
 	z := func(name string) dns.GetManagedZonesManagedZone {
 		return dns.GetManagedZonesManagedZone{
 			Name: &name, DnsName: "example.com.", Description: byodZoneAuthorizationMarker,
 		}
 	}
-	require.Equal(t, "a-zone", bestZoneMatch("api.example.com", []dns.GetManagedZonesManagedZone{
-		z("z-zone"), z("a-zone"), z("m-zone"),
-	}))
+	_, err := bestZoneMatch("api.example.com", []dns.GetManagedZonesManagedZone{
+		z("z-zone"), z("a-zone"), z("m-zone"), z("a-zone"),
+	})
+	require.ErrorContains(t, err, `multiple authorized public Cloud DNS managed zones match hostname "api.example.com" at DNS suffix "example.com"`)
+	require.ErrorContains(t, err, "a-zone, m-zone, z-zone")
+	require.ErrorContains(t, err, `keep "defang.dev/byod-dns=authorized" in the description of only the publicly delegated zone`)
 }
 
 type findZonesMocks struct {

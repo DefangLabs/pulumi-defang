@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -65,7 +66,11 @@ func FindZones(
 
 	found := map[string]string{}
 	for _, hostname := range hostnames {
-		if zone := bestZoneMatch(hostname, result.ManagedZones); zone != "" {
+		zone, err := bestZoneMatch(hostname, result.ManagedZones)
+		if err != nil {
+			return nil, err
+		}
+		if zone != "" {
 			found[common.NormalizeDNS(hostname)] = zone
 		}
 	}
@@ -73,19 +78,22 @@ func FindZones(
 }
 
 // bestZoneMatch picks the authorized public zone whose DNS name is the longest
-// suffix of hostname and returns that zone's name ("" when nothing matches). A
+// suffix of hostname and returns that zone's name ("" when nothing matches). It
+// returns an error when distinct authorized zones share that equally best DNS
+// suffix because their names cannot reveal which one is publicly delegated. A
 // zone matches hostname itself or any parent of it, so "api.example.com"
 // matches a zone for "example.com" but "example.com.evil.com" does not.
 //
 // A wildcard hostname matches on the name it stands for: "*.example.com" is
 // hosted by the "example.com" zone, and by a "foo.example.com" zone when the
 // hostname is "*.foo.example.com".
-func bestZoneMatch(hostname string, zones []dns.GetManagedZonesManagedZone) string {
+func bestZoneMatch(hostname string, zones []dns.GetManagedZonesManagedZone) (string, error) {
 	hostname = common.NormalizeDNS(strings.TrimPrefix(hostname, common.WildcardPrefix))
 	if hostname == "" {
-		return ""
+		return "", nil
 	}
-	var bestZone, bestName string
+	var bestName string
+	bestZones := map[string]struct{}{}
 	for _, z := range zones {
 		// Visibility is "public" or "private"; the API leaves it empty for public
 		// zones created before the field existed, so treat empty as public.
@@ -105,11 +113,28 @@ func bestZoneMatch(hostname string, zones []dns.GetManagedZonesManagedZone) stri
 		if hostname != name && !strings.HasSuffix(hostname, "."+name) {
 			continue
 		}
-		if len(name) > len(bestName) || len(name) == len(bestName) && *z.Name < bestZone {
-			bestName, bestZone = name, *z.Name
+		if len(name) > len(bestName) {
+			bestName = name
+			bestZones = map[string]struct{}{*z.Name: {}}
+		} else if len(name) == len(bestName) {
+			bestZones[*z.Name] = struct{}{}
 		}
 	}
-	return bestZone
+	if len(bestZones) == 0 {
+		return "", nil
+	}
+	zoneNames := make([]string, 0, len(bestZones))
+	for zoneName := range bestZones {
+		zoneNames = append(zoneNames, zoneName)
+	}
+	slices.Sort(zoneNames)
+	if len(zoneNames) > 1 {
+		return "", fmt.Errorf(
+			"multiple authorized public Cloud DNS managed zones match hostname %q at DNS suffix %q: %s; keep %q in the description of only the publicly delegated zone",
+			hostname, bestName, strings.Join(zoneNames, ", "), byodZoneAuthorizationMarker,
+		)
+	}
+	return zoneNames[0], nil
 }
 
 func zoneAllowsByodRecords(description string) bool {
