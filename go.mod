@@ -15,6 +15,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
+	github.com/DefangLabs/defang/src v0.0.0-20260903213614-b3aaa2b11a9e
 	github.com/aws/aws-sdk-go-v2/config v1.32.39
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.73.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.90.4
@@ -156,15 +157,14 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/encoding v0.3.6 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
-	github.com/spf13/cast v1.5.0 // indirect
+	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
-	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/zalando/go-keyring v0.2.8 // indirect
 	github.com/zclconf/go-cty v1.16.3 // indirect

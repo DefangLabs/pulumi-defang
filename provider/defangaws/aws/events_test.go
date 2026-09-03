@@ -12,12 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStackDir(t *testing.T) {
-	// Same shape as the CLI's ByocBaseClient.StackDir and the TS stackDir.
-	assert.Equal(t, "/Defang/myproject/beta/ecs", StackDir("Defang", "myproject", "beta", "ecs"))
-	assert.Equal(t, "/myproject/beta/ecs", StackDir("", "myproject", "beta", "ecs"))
-}
-
 func TestClusterServiceArnPrefix(t *testing.T) {
 	// The autonamed cluster of a real deploy; note it does NOT end in
 	// "cluster", which is why the TS regex could not be ported literally.

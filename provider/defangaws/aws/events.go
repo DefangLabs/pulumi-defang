@@ -5,32 +5,21 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/defang/src/pkg/stackpath"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// ECSEventsLogGroupSuffix is the last path segment of the log group the Defang
-// CLI tails for service state. ByocAws.getSubscribeLogGroupInputs subscribes to
-// StackDir(project, "ecs") and parseSubscribeEvent only routes an event to the
-// ECS parser when the log group name ends in "/ecs", so this suffix — and the
-// StackDir shape around it — is a wire contract with the CLI, not a label.
-const ECSEventsLogGroupSuffix = "ecs"
-
-// StackDir builds the "/<prefix>/<project>/<stack>/<name>" path shared with the
-// CLI (ByocBaseClient.StackDir) and the old TS stack (shared/config.ts stackDir).
-// An empty prefix drops its segment, as it does on both other sides.
-func StackDir(prefix, projectName, stack, name string) string {
-	segments := []string{""} // leading slash
-	if prefix != "" {
-		segments = append(segments, prefix)
-	}
-	return strings.Join(append(segments, projectName, stack, name), "/")
-}
-
+// stackDir builds the log group path the Defang CLI tails, using the CLI's own
+// definition of the shape (stackpath.StackDir, which ByocBaseClient.StackDir
+// also calls). Importing it rather than restating it is what keeps the two
+// sides from drifting: the CLI subscribes to stackpath.LogGroupECS and only
+// routes an event to its ECS parser when the log group name ends in "/ecs", so
+// this path is a wire contract, not a label.
 func stackDir(ctx *pulumi.Context, projectName, name string) string {
-	return StackDir(common.Prefix.Get(ctx), projectName, ctx.Stack(), name)
+	return stackpath.StackDir(common.Prefix.Get(ctx), projectName, ctx.Stack(), name)
 }
 
 // clusterServiceArnPrefix turns a cluster ARN into the prefix every ECS service
@@ -94,7 +83,7 @@ func createECSLifecycleToCWLogs(
 ) error {
 	logGroup, err := cloudwatch.NewLogGroup(ctx, "ecs-events", &cloudwatch.LogGroupArgs{
 		// Explicit name, not autonaming: the CLI derives this exact string.
-		Name:            pulumi.String(stackDir(ctx, projectName, ECSEventsLogGroupSuffix)),
+		Name:            pulumi.String(stackDir(ctx, projectName, stackpath.LogGroupECS)),
 		RetentionInDays: pulumi.Int(LogRetentionDays.Get(ctx)),
 	}, opt)
 	if err != nil {
