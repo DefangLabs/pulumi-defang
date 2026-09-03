@@ -174,6 +174,11 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Redis.FromSnapshot),
 		}
 	}
+	if svc.ObjectStore != nil {
+		args.ObjectStore = awscompose.ObjectStoreConfigArgs{
+			Bucket: pulumi.String(svc.ObjectStore.Bucket),
+		}
+	}
 	if svc.HealthCheck != nil {
 		args.HealthCheck = awscompose.HealthCheckConfigArgs{
 			Test:               pulumi.ToStringArray(svc.HealthCheck.Test),
