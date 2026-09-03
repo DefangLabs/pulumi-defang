@@ -120,6 +120,17 @@
       },
       "type": "object"
     },
+    "defang-gcp:compose:ObjectStoreConfig": {
+      "properties": {
+        "bucket": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "bucket"
+      ]
+    },
     "defang-gcp:compose:PostgresConfig": {
       "properties": {
         "allowDowntime": {
@@ -225,6 +236,9 @@
           "additionalProperties": {
             "$ref": "#/types/defang-gcp:compose:ServiceNetworkConfig"
           }
+        },
+        "objectStore": {
+          "$ref": "#/types/defang-gcp:compose:ObjectStoreConfig"
         },
         "platform": {
           "type": "string"

@@ -804,6 +804,139 @@ func (o NetworkConfigMapOutput) MapIndex(k pulumi.StringInput) NetworkConfigOutp
 	}).(NetworkConfigOutput)
 }
 
+type ObjectStoreConfig struct {
+	Bucket string `pulumi:"bucket"`
+}
+
+// ObjectStoreConfigInput is an input type that accepts ObjectStoreConfigArgs and ObjectStoreConfigOutput values.
+// You can construct a concrete instance of `ObjectStoreConfigInput` via:
+//
+//	ObjectStoreConfigArgs{...}
+type ObjectStoreConfigInput interface {
+	pulumi.Input
+
+	ToObjectStoreConfigOutput() ObjectStoreConfigOutput
+	ToObjectStoreConfigOutputWithContext(context.Context) ObjectStoreConfigOutput
+}
+
+type ObjectStoreConfigArgs struct {
+	Bucket pulumi.StringInput `pulumi:"bucket"`
+}
+
+func (ObjectStoreConfigArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*ObjectStoreConfig)(nil)).Elem()
+}
+
+func (i ObjectStoreConfigArgs) ToObjectStoreConfigOutput() ObjectStoreConfigOutput {
+	return i.ToObjectStoreConfigOutputWithContext(context.Background())
+}
+
+func (i ObjectStoreConfigArgs) ToObjectStoreConfigOutputWithContext(ctx context.Context) ObjectStoreConfigOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ObjectStoreConfigOutput)
+}
+
+func (i ObjectStoreConfigArgs) ToObjectStoreConfigPtrOutput() ObjectStoreConfigPtrOutput {
+	return i.ToObjectStoreConfigPtrOutputWithContext(context.Background())
+}
+
+func (i ObjectStoreConfigArgs) ToObjectStoreConfigPtrOutputWithContext(ctx context.Context) ObjectStoreConfigPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ObjectStoreConfigOutput).ToObjectStoreConfigPtrOutputWithContext(ctx)
+}
+
+// ObjectStoreConfigPtrInput is an input type that accepts ObjectStoreConfigArgs, ObjectStoreConfigPtr and ObjectStoreConfigPtrOutput values.
+// You can construct a concrete instance of `ObjectStoreConfigPtrInput` via:
+//
+//	        ObjectStoreConfigArgs{...}
+//
+//	or:
+//
+//	        nil
+type ObjectStoreConfigPtrInput interface {
+	pulumi.Input
+
+	ToObjectStoreConfigPtrOutput() ObjectStoreConfigPtrOutput
+	ToObjectStoreConfigPtrOutputWithContext(context.Context) ObjectStoreConfigPtrOutput
+}
+
+type objectStoreConfigPtrType ObjectStoreConfigArgs
+
+func ObjectStoreConfigPtr(v *ObjectStoreConfigArgs) ObjectStoreConfigPtrInput {
+	return (*objectStoreConfigPtrType)(v)
+}
+
+func (*objectStoreConfigPtrType) ElementType() reflect.Type {
+	return reflect.TypeOf((**ObjectStoreConfig)(nil)).Elem()
+}
+
+func (i *objectStoreConfigPtrType) ToObjectStoreConfigPtrOutput() ObjectStoreConfigPtrOutput {
+	return i.ToObjectStoreConfigPtrOutputWithContext(context.Background())
+}
+
+func (i *objectStoreConfigPtrType) ToObjectStoreConfigPtrOutputWithContext(ctx context.Context) ObjectStoreConfigPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ObjectStoreConfigPtrOutput)
+}
+
+type ObjectStoreConfigOutput struct{ *pulumi.OutputState }
+
+func (ObjectStoreConfigOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*ObjectStoreConfig)(nil)).Elem()
+}
+
+func (o ObjectStoreConfigOutput) ToObjectStoreConfigOutput() ObjectStoreConfigOutput {
+	return o
+}
+
+func (o ObjectStoreConfigOutput) ToObjectStoreConfigOutputWithContext(ctx context.Context) ObjectStoreConfigOutput {
+	return o
+}
+
+func (o ObjectStoreConfigOutput) ToObjectStoreConfigPtrOutput() ObjectStoreConfigPtrOutput {
+	return o.ToObjectStoreConfigPtrOutputWithContext(context.Background())
+}
+
+func (o ObjectStoreConfigOutput) ToObjectStoreConfigPtrOutputWithContext(ctx context.Context) ObjectStoreConfigPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v ObjectStoreConfig) *ObjectStoreConfig {
+		return &v
+	}).(ObjectStoreConfigPtrOutput)
+}
+
+func (o ObjectStoreConfigOutput) Bucket() pulumi.StringOutput {
+	return o.ApplyT(func(v ObjectStoreConfig) string { return v.Bucket }).(pulumi.StringOutput)
+}
+
+type ObjectStoreConfigPtrOutput struct{ *pulumi.OutputState }
+
+func (ObjectStoreConfigPtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**ObjectStoreConfig)(nil)).Elem()
+}
+
+func (o ObjectStoreConfigPtrOutput) ToObjectStoreConfigPtrOutput() ObjectStoreConfigPtrOutput {
+	return o
+}
+
+func (o ObjectStoreConfigPtrOutput) ToObjectStoreConfigPtrOutputWithContext(ctx context.Context) ObjectStoreConfigPtrOutput {
+	return o
+}
+
+func (o ObjectStoreConfigPtrOutput) Elem() ObjectStoreConfigOutput {
+	return o.ApplyT(func(v *ObjectStoreConfig) ObjectStoreConfig {
+		if v != nil {
+			return *v
+		}
+		var ret ObjectStoreConfig
+		return ret
+	}).(ObjectStoreConfigOutput)
+}
+
+func (o ObjectStoreConfigPtrOutput) Bucket() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ObjectStoreConfig) *string {
+		if v == nil {
+			return nil
+		}
+		return &v.Bucket
+	}).(pulumi.StringPtrOutput)
+}
+
 type PostgresConfig struct {
 	AllowDowntime *bool   `pulumi:"allowDowntime"`
 	FromSnapshot  *string `pulumi:"fromSnapshot"`
@@ -1397,6 +1530,7 @@ type ServiceConfig struct {
 	Llm             *LlmConfig                      `pulumi:"llm"`
 	NetworkMode     *string                         `pulumi:"networkMode"`
 	Networks        map[string]ServiceNetworkConfig `pulumi:"networks"`
+	ObjectStore     *ObjectStoreConfig              `pulumi:"objectStore"`
 	Platform        *string                         `pulumi:"platform"`
 	Policies        []string                        `pulumi:"policies"`
 	Ports           []ServicePortConfig             `pulumi:"ports"`
@@ -1436,6 +1570,7 @@ type ServiceConfigArgs struct {
 	Llm             LlmConfigPtrInput             `pulumi:"llm"`
 	NetworkMode     pulumi.StringPtrInput         `pulumi:"networkMode"`
 	Networks        ServiceNetworkConfigMapInput  `pulumi:"networks"`
+	ObjectStore     ObjectStoreConfigPtrInput     `pulumi:"objectStore"`
 	Platform        pulumi.StringPtrInput         `pulumi:"platform"`
 	Policies        pulumi.StringArrayInput       `pulumi:"policies"`
 	Ports           ServicePortConfigArrayInput   `pulumi:"ports"`
@@ -1557,6 +1692,10 @@ func (o ServiceConfigOutput) NetworkMode() pulumi.StringPtrOutput {
 
 func (o ServiceConfigOutput) Networks() ServiceNetworkConfigMapOutput {
 	return o.ApplyT(func(v ServiceConfig) map[string]ServiceNetworkConfig { return v.Networks }).(ServiceNetworkConfigMapOutput)
+}
+
+func (o ServiceConfigOutput) ObjectStore() ObjectStoreConfigPtrOutput {
+	return o.ApplyT(func(v ServiceConfig) *ObjectStoreConfig { return v.ObjectStore }).(ObjectStoreConfigPtrOutput)
 }
 
 func (o ServiceConfigOutput) Platform() pulumi.StringPtrOutput {
@@ -2048,6 +2187,8 @@ func init() {
 	pulumi.RegisterInputType(reflect.TypeOf((*LlmConfigPtrInput)(nil)).Elem(), LlmConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*NetworkConfigInput)(nil)).Elem(), NetworkConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*NetworkConfigMapInput)(nil)).Elem(), NetworkConfigMap{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ObjectStoreConfigInput)(nil)).Elem(), ObjectStoreConfigArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ObjectStoreConfigPtrInput)(nil)).Elem(), ObjectStoreConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*PostgresConfigInput)(nil)).Elem(), PostgresConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*PostgresConfigPtrInput)(nil)).Elem(), PostgresConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*RedisConfigInput)(nil)).Elem(), RedisConfigArgs{})
@@ -2076,6 +2217,8 @@ func init() {
 	pulumi.RegisterOutputType(LlmConfigPtrOutput{})
 	pulumi.RegisterOutputType(NetworkConfigOutput{})
 	pulumi.RegisterOutputType(NetworkConfigMapOutput{})
+	pulumi.RegisterOutputType(ObjectStoreConfigOutput{})
+	pulumi.RegisterOutputType(ObjectStoreConfigPtrOutput{})
 	pulumi.RegisterOutputType(PostgresConfigOutput{})
 	pulumi.RegisterOutputType(PostgresConfigPtrOutput{})
 	pulumi.RegisterOutputType(RedisConfigOutput{})

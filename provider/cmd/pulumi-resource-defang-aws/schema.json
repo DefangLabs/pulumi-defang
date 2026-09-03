@@ -162,6 +162,17 @@
       },
       "type": "object"
     },
+    "defang-aws:compose:ObjectStoreConfig": {
+      "properties": {
+        "bucket": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "bucket"
+      ]
+    },
     "defang-aws:compose:PostgresConfig": {
       "properties": {
         "allowDowntime": {
@@ -267,6 +278,9 @@
           "additionalProperties": {
             "$ref": "#/types/defang-aws:compose:ServiceNetworkConfig"
           }
+        },
+        "objectStore": {
+          "$ref": "#/types/defang-aws:compose:ObjectStoreConfig"
         },
         "platform": {
           "type": "string"
@@ -468,6 +482,58 @@
       "requiredInputs": [
         "projectName"
       ]
+    },
+    "defang-aws:index:ObjectStore": {
+      "properties": {
+        "arn": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint",
+        "bucket",
+        "region",
+        "arn"
+      ],
+      "inputProperties": {
+        "aws": {
+          "$ref": "#/types/defang-aws:aws:SharedInfra"
+        },
+        "deploy": {
+          "$ref": "#/types/defang-aws:compose:DeployConfig"
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "image": {
+          "type": "string",
+          "plain": true
+        },
+        "objectStore": {
+          "$ref": "#/types/defang-aws:compose:ObjectStoreConfig"
+        },
+        "projectName": {
+          "type": "string",
+          "plain": true
+        }
+      },
+      "requiredInputs": [
+        "projectName",
+        "objectStore"
+      ],
+      "isComponent": true
     },
     "defang-aws:index:Postgres": {
       "properties": {
