@@ -3,6 +3,7 @@ package gcp
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -17,7 +18,10 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert authorization")
+var (
+	errAmbiguousDelegateZones = errors.New("ambiguous public DNS managed zones")
+	errInvalidDNSRecord       = errors.New("invalid DNS record in wildcard cert authorization")
+)
 
 // SharedInfra holds project-level GCP resources shared across all services.
 type SharedInfra struct {
@@ -417,10 +421,11 @@ func delegateZoneAmbiguityError(
 			names = append(names, *zone.Name)
 		}
 	}
+	sort.Strings(names)
 	return fmt.Errorf(
-		"multiple public Cloud DNS managed zones serve %s (%s), and %s; refusing to choose one: "+
+		"%w: multiple public Cloud DNS managed zones serve %s (%s), and %s; refusing to choose one: "+
 			"keep the delegated zone named %q and remove the duplicates, or migrate ownership explicitly",
-		fqdn, strings.Join(names, ", "), reason, cliName,
+		errAmbiguousDelegateZones, fqdn, strings.Join(names, ", "), reason, cliName,
 	)
 }
 

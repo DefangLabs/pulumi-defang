@@ -89,7 +89,7 @@ func zoneState(snapshot *deploy.Snapshot, logicalName string) *pkgresource.State
 		return nil
 	}
 	for _, state := range snapshot.Resources {
-		if string(state.Type) == managedZoneToken && string(state.URN.Name()) == logicalName {
+		if string(state.Type) == managedZoneToken && state.URN.Name() == logicalName {
 			return state
 		}
 	}

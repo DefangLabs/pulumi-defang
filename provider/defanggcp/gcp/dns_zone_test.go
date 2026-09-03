@@ -13,13 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	//nolint:gosec // Pulumi resource type token, not a credential
-	getManagedZonesToken = "gcp:dns/getManagedZones:getManagedZones"
-	managedZoneToken     = "gcp:dns/managedZone:ManagedZone"
-)
+//nolint:gosec // Pulumi invoke token, not a credential
+const getManagedZonesToken = "gcp:dns/getManagedZones:getManagedZones"
 
-var errDNSPermissionDenied = errors.New("googleapi: Error 403: Permission denied on resource")
+//nolint:gosec // Pulumi resource type token, not a credential
+const managedZoneToken = "gcp:dns/managedZone:ManagedZone"
+
+var (
+	errDNSPermissionDenied       = errors.New("googleapi: Error 403: Permission denied on resource")
+	errServiceAccountActAsDenied = errors.New("403 iam.serviceAccounts.actAs denied")
+)
 
 // TestDelegateZoneName pins the zone name against the Defang CLI's own derivation
 // in PrepareDomainDelegation ("defang-" + dns.SafeLabel(delegateDomain), defang
@@ -132,6 +135,7 @@ func zone(name, dnsName, visibility, description string) map[string]any {
 	}
 }
 
+//nolint:funlen // The table deliberately keeps all selection outcomes together for auditability.
 func TestFindDelegateZone(t *testing.T) {
 	const (
 		projectName        = "myproject"
@@ -265,7 +269,7 @@ func TestFindDelegateZoneListErrorAborts(t *testing.T) {
 		err  error
 	}{
 		{"permission denied", errDNSPermissionDenied},
-		{"credential lacks permission", errors.New("403 iam.serviceAccounts.actAs denied")},
+		{"credential lacks permission", errServiceAccountActAsDenied},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -390,7 +394,10 @@ func TestEnsureDelegateZoneReadsExternalWithParentProvider(t *testing.T) {
 	assert.Equal(t, cliZone, external.ID)
 	assert.Nil(t, external.RegisterRPC)
 	require.NotNil(t, external.ReadRPC)
-	assert.True(t, external.ReadRPC.GetParent() != "" && strings.HasSuffix(external.ReadRPC.GetParent(), "test:index:Parent::parent"))
+	assert.True(t,
+		external.ReadRPC.GetParent() != "" &&
+			strings.HasSuffix(external.ReadRPC.GetParent(), "test:index:Parent::parent"),
+	)
 	assert.Contains(t, external.Provider, "pulumi:providers:gcp::explicit-gcp")
 
 	mocks.mu.Lock()
