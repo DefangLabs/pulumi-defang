@@ -110,11 +110,10 @@ func withConfig(cfg map[string]string) pulumi.RunOption {
 	return func(info *pulumi.RunInfo) { info.Config = cfg }
 }
 
-// TestCreateECSLifecycleToCWLogsNames checks the two names that must not
-// collide between stacks sharing an account: the log group (the CLI derives it
-// from the same prefix/project/stack) and the log resource policy (resource
-// policies are account+region scoped by name, so an unqualified name would let
-// one stack's teardown revoke another's EventBridge writes).
+// TestCreateECSLifecycleToCWLogsNames checks the log group name the CLI derives
+// from prefix/project/stack, and that the resource policy is scoped to that log
+// group rather than to the account (account-scoped policies are capped at 10
+// per region, so a per-stack one would break the 11th stack in an account).
 func TestCreateECSLifecycleToCWLogsNames(t *testing.T) {
 	mocks := &eventsTestMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -138,5 +137,9 @@ func TestCreateECSLifecycleToCWLogsNames(t *testing.T) {
 
 	policy, ok := mocks.inputs["aws:cloudwatch/logResourcePolicy:LogResourcePolicy/ecs-events"]
 	require.True(t, ok, "expected a log resource policy")
-	assert.Equal(t, "Defang-myproject-beta-ecs-log-policy", policy["policyName"].StringValue())
+	assert.False(t, policy.HasValue("policyName"),
+		"policyName would make the policy account-scoped; exactly one of the two may be set")
+	assert.Equal(t,
+		"arn:aws:logs:us-west-2:123401343364:log-group:/Defang/myproject/beta/ecs",
+		policy["resourceArn"].StringValue())
 }
