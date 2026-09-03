@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DefangLabs/defang/src/pkg/stackpath"
 	awsprov "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
@@ -109,8 +110,9 @@ func TestAwsProjectCreatesECSEventsLogGroup(t *testing.T) {
 	ecsLogGroup, ok := captured.logGroups["ecs-events"]
 	require.True(t, ok, "expected an ECS events log group")
 	assert.Equal(t, "/Defang/myproject/beta/ecs", ecsLogGroup.Get("name").AsString())
+	// Same name the CLI derives, from the CLI's own definition of the shape.
 	assert.Equal(t,
-		awsprov.StackDir("Defang", testEventsProject, testEventsStack, awsprov.ECSEventsLogGroupSuffix),
+		stackpath.StackDir("Defang", testEventsProject, testEventsStack, stackpath.LogGroupECS),
 		ecsLogGroup.Get("name").AsString())
 
 	// EventBridge writes through a resource policy on the group, not a role.

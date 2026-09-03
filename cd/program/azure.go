@@ -279,7 +279,13 @@ func provisionCerts(pctx *pulumi.Context, jobs []certJob, subscriptionID, resour
 			svcCtx, cancel := context.WithTimeout(ctx, perServiceCertTimeout)
 			defer cancel()
 			_ = pctx.Log.Info(fmt.Sprintf("Issuing managed cert for %s at %s", job.service, job.hostname), nil)
-			if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, job.service, job.hostname, dns.DirectResolverAt); err != nil {
+			// IssueCert defaults to term.Infof, which writes to the CD task's
+			// stdout; route its progress through the Pulumi log like the rest
+			// of this function.
+			certLog := func(format string, args ...any) {
+				_ = pctx.Log.Info(fmt.Sprintf(format, args...), nil)
+			}
+			if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, job.service, job.hostname, dns.DirectResolverAt, certLog); err != nil {
 				_ = pctx.Log.Warn(fmt.Sprintf("managed cert: issuance for %s failed: %v", job.hostname, err), nil)
 			}
 			// Errors are logged, not returned: one job's failure must not cancel

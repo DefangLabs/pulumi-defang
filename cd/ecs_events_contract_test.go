@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/DefangLabs/defang/src/pkg/clouds/aws/ecs"
+	"github.com/DefangLabs/defang/src/pkg/stackpath"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	awsprov "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/stretchr/testify/assert"
@@ -28,19 +28,23 @@ const (
 	contractClusterArn = "arn:aws:ecs:us-west-2:123401343364:cluster/Defang-myproject-beta-cluster-4a858f2"
 )
 
-// TestECSEventsLogGroupMatchesCLI pins the log group name against the CLI's
-// ByocBaseClient.StackDir(project, "ecs"), which is
-// strings.Join([]string{"", prefix, project, stack, name}, "/"). Only a group
-// whose name ends in "/ecs" reaches parseECSSubscribeEvent.
+// TestECSEventsLogGroupMatchesCLI pins the log group name the provider builds.
+// Since DefangLabs/defang#2245 both sides call stackpath.StackDir — the
+// provider through its own stackDir helper, the CLI through
+// ByocBaseClient.StackDir — so the two can no longer disagree by construction.
+// What is still worth pinning is the literal: this exact string is what
+// deployed stacks already carry and what the CLI subscribes to, and only a
+// group whose name ends in "/ecs" reaches parseECSSubscribeEvent.
 //
-// (Spelled out rather than imported: pulling the CLI's byoc package into this
-// module drags its whole compose/UI dependency tree into the cd build.)
+// The import is cheap because stackpath is a stdlib-only leaf; the CLI's byoc
+// package would have dragged its whole compose/UI tree into the cd build,
+// which is why this shape used to be spelled out here instead.
 func TestECSEventsLogGroupMatchesCLI(t *testing.T) {
-	provider := awsprov.StackDir(
-		contractPrefix, contractProject, contractStack, awsprov.ECSEventsLogGroupSuffix)
+	logGroup := stackpath.StackDir(
+		contractPrefix, contractProject, contractStack, stackpath.LogGroupECS)
 
-	assert.Equal(t, "/Defang/myproject/beta/ecs", provider)
-	assert.True(t, strings.HasSuffix(provider, "/ecs"))
+	assert.Equal(t, "/Defang/myproject/beta/ecs", logGroup)
+	assert.True(t, stackpath.IsLogGroup(logGroup, stackpath.LogGroupECS))
 }
 
 // taskStateChangeEvent is an ECS Task State Change as EventBridge delivers it,
