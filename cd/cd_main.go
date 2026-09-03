@@ -76,7 +76,7 @@ func cdMain(ctx context.Context, args ...string) error {
 			}
 			// FIXME: what to do when Compose project name does not match PROJECT env var?
 		}
-		recipePulumiConfig := projectUpdate.Recipe.GetPulumiConfig()
+		recipePulumiConfig := projectUpdate.GetRecipe().GetPulumiConfig()
 		configValues, err := stackConfig(recipePulumiConfig)
 		if err != nil {
 			return err
@@ -92,7 +92,8 @@ func cdMain(ctx context.Context, args ...string) error {
 
 		migrationAliases := program.ServiceAliases{}
 		stack, err = auto.UpsertStackInlineSource(ctx, stackName, projectName,
-			program.NewRunWithAliases(projectUpdate, migrationAliases))
+			// Pulumi supplies its own *pulumi.Context when it invokes this closure.
+			program.NewRunWithAliases(projectUpdate, migrationAliases)) //nolint:contextcheck
 		if err != nil {
 			return pulumiErr(err)
 		}
@@ -101,7 +102,7 @@ func cdMain(ctx context.Context, args ...string) error {
 		// Upsert has selected/created the workspace by now but has not written
 		// stack config or infrastructure, so a blocked run leaves state intact.
 		if err := prepareLegacyState(ctx, &stack, recipePulumiConfig, projectName, stackName,
-			projectUpdate.Compose, cloud, configValues, migrationAliases, command == client.CdCommandUp); err != nil {
+			projectUpdate.GetCompose(), cloud, configValues, migrationAliases, command == client.CdCommandUp); err != nil {
 			return err
 		}
 		// Set stack-level config (provider settings, defang config)

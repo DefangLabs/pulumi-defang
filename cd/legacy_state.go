@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -84,6 +85,11 @@ var unsupportedLegacyTypes = map[string]string{
 	"pulumi-nodejs:dynamic:Resource": "the AWS image does not contain the legacy Node dynamic provider/runtime",
 }
 
+var (
+	errInvalidMigrationCompose = errors.New("invalid compose project for legacy-state migration")
+	errInvalidDeployment       = errors.New("unreadable Pulumi deployment")
+)
+
 type serviceKind string
 
 const (
@@ -109,19 +115,25 @@ var legacyAliasSpecs = []legacyAliasSpec{
 	// matcher accepts an exact service name or a name ending in the service.
 	{cloudAWS, "aws:rds/instance:Instance", servicePostgres, compose.AliasInstance, []string{"-postgres", ""}, "", true},
 	{cloudAWS, "aws:rds/subnetGroup:SubnetGroup", servicePostgres, compose.AliasSubnetGroup, []string{""}, "", false},
-	{cloudAWS, "aws:ec2/securityGroup:SecurityGroup", servicePostgres, compose.AliasSecurityGroup, []string{"-postgres", ""}, "", false},
-	{cloudAWS, "aws:elasticache/replicationGroup:ReplicationGroup", serviceRedis, compose.AliasCluster, []string{""}, "", true},
+	{cloudAWS, "aws:ec2/securityGroup:SecurityGroup", servicePostgres,
+		compose.AliasSecurityGroup, []string{"-postgres", ""}, "", false},
+	{cloudAWS, "aws:elasticache/replicationGroup:ReplicationGroup", serviceRedis,
+		compose.AliasCluster, []string{""}, "", true},
 	{cloudAWS, "aws:elasticache/subnetGroup:SubnetGroup", serviceRedis, compose.AliasSubnetGroup, []string{""}, "", false},
-	{cloudAWS, "aws:ec2/securityGroup:SecurityGroup", serviceRedis, compose.AliasSecurityGroup, []string{"-redis", ""}, "", false},
+	{cloudAWS, "aws:ec2/securityGroup:SecurityGroup", serviceRedis,
+		compose.AliasSecurityGroup, []string{"-redis", ""}, "", false},
 	{cloudAWS, "aws:memorydb/cluster:Cluster", serviceRedis, compose.AliasCluster, []string{""}, "", true},
 	{cloudAWS, "aws:memorydb/subnetGroup:SubnetGroup", serviceRedis, compose.AliasSubnetGroup, []string{""}, "", false},
-	{cloudAWS, "aws:memorydb/parameterGroup:ParameterGroup", serviceRedis, compose.AliasParameterGroup, []string{""}, "", false},
+	{cloudAWS, "aws:memorydb/parameterGroup:ParameterGroup", serviceRedis,
+		compose.AliasParameterGroup, []string{""}, "", false},
 
 	// Legacy Go GCP CD. Released states retain these project/service names even
 	// after that driver itself added aliases for an earlier naming scheme.
-	{cloudGCP, "gcp:sql/databaseInstance:DatabaseInstance", servicePostgres, compose.AliasInstance, []string{"-postgres"}, "", true},
+	{cloudGCP, "gcp:sql/databaseInstance:DatabaseInstance", servicePostgres,
+		compose.AliasInstance, []string{"-postgres"}, "", true},
 	{cloudGCP, "gcp:sql/user:User", servicePostgres, compose.AliasUser, []string{"-postgres-user"}, "-user", false},
-	{cloudGCP, "gcp:sql/database:Database", servicePostgres, compose.AliasDatabase, []string{"-postgres-db"}, "-db", false},
+	{cloudGCP, "gcp:sql/database:Database", servicePostgres,
+		compose.AliasDatabase, []string{"-postgres-db"}, "-db", false},
 	{cloudGCP, "gcp:redis/instance:Instance", serviceRedis, compose.AliasInstance, []string{"-redis"}, "", true},
 }
 
@@ -179,7 +191,7 @@ func foreignResources(resources []resourceIdentity, cloud string) []resourceIden
 }
 
 type stackExporter interface {
-	Export(context.Context) (apitype.UntypedDeployment, error)
+	Export(ctx context.Context) (apitype.UntypedDeployment, error)
 }
 
 func takeoverAllowed(recipePulumiConfig, project, stack string) bool {
@@ -203,8 +215,9 @@ func recipeTakeoverTarget(recipePulumiConfig string) string {
 }
 
 type desiredService struct {
-	kind    serviceKind
-	aliases map[string]string
+	kind        serviceKind
+	aliases     map[string]string
+	environment compose.Environment
 }
 
 func desiredManagedServices(composeYAML []byte) (map[string]desiredService, error) {
@@ -216,11 +229,11 @@ func desiredManagedServices(composeYAML []byte) (map[string]desiredService, erro
 	for name, svc := range project.Services {
 		switch {
 		case svc.Postgres != nil && svc.Redis != nil:
-			return nil, fmt.Errorf("service %q declares both Postgres and Redis", name)
+			return nil, fmt.Errorf("%w: service %q declares both Postgres and Redis", errInvalidMigrationCompose, name)
 		case svc.Postgres != nil:
-			services[name] = desiredService{kind: servicePostgres, aliases: svc.Aliases}
+			services[name] = desiredService{kind: servicePostgres, aliases: svc.Aliases, environment: svc.Environment}
 		case svc.Redis != nil:
-			services[name] = desiredService{kind: serviceRedis, aliases: svc.Aliases}
+			services[name] = desiredService{kind: serviceRedis, aliases: svc.Aliases, environment: svc.Environment}
 		}
 	}
 	return services, nil
@@ -266,7 +279,10 @@ func resourceCloud(typ string) string {
 
 func looksDataBearing(typ string) bool {
 	typ = strings.ToLower(typ)
-	for _, marker := range []string{"database", "dynamodb", "elasticache", "firestore", "memorydb", "postgres", "rds/", "redis/"} {
+	markers := []string{
+		"database", "dynamodb", "elasticache", "firestore", "memorydb", "postgres", "rds/", "redis/",
+	}
+	for _, marker := range markers {
 		if strings.Contains(typ, marker) {
 			return true
 		}
@@ -320,6 +336,25 @@ func aliasTargetKey(spec legacyAliasSpec, service string) string {
 	return spec.resourceType + "\x00" + service + "\x00" + spec.aliasKind
 }
 
+// aliasTargetEnabled mirrors conditional child registration in the current
+// providers. An alias is not protective unless the Pulumi program will
+// actually register a resource that consumes it.
+func aliasTargetEnabled(spec legacyAliasSpec, service desiredService) bool {
+	if spec.cloud != cloudGCP || spec.serviceKind != servicePostgres {
+		return true
+	}
+	switch spec.aliasKind {
+	case compose.AliasUser:
+		password, _ := compose.StaticEnvValue(service.environment["POSTGRES_PASSWORD"])
+		return password != nil && *password != ""
+	case compose.AliasDatabase:
+		database, _ := compose.StaticEnvValue(service.environment["POSTGRES_DB"])
+		return database != nil && *database != "" && *database != compose.DEFAULT_POSTGRES_DB
+	default:
+		return true
+	}
+}
+
 func awsRedisEngine(config configMap) string {
 	engine, _ := config["defang-aws:redis-engine"].Value.(string)
 	if engine == "" {
@@ -339,7 +374,65 @@ func specMatchesAWSRedisEngine(spec legacyAliasSpec, config configMap) bool {
 	return engine == "elasticache"
 }
 
-func analyzeLegacyState(resources []resourceIdentity, services map[string]desiredService, cloud string, config configMap) migrationPlan {
+func resolveLegacyAlias(
+	res resourceIdentity,
+	services map[string]desiredService,
+	cloud string,
+	config configMap,
+) (legacyAliasSpec, string, string) {
+	if reason := unsupportedLegacyTypes[res.typ]; reason != "" {
+		return legacyAliasSpec{}, "", reason
+	}
+	if owner := resourceCloud(res.typ); owner == "" || owner != cloud {
+		return legacyAliasSpec{}, "", "the resource is not from the selected " +
+			strings.ToUpper(cloud) + " legacy driver"
+	}
+	if cloud == cloudAzure {
+		return legacyAliasSpec{}, "", "no legacy Azure in-place adoption path is defined"
+	}
+
+	specs := specsFor(cloud, res.typ)
+	if len(specs) == 0 {
+		if looksDataBearing(res.typ) {
+			return legacyAliasSpec{}, "", "this data-bearing resource type has no adoption rule"
+		}
+		return legacyAliasSpec{}, "", ""
+	}
+
+	var chosen legacyAliasSpec
+	service, bestScore := "", 0
+	dataBearing := false
+	for _, spec := range specs {
+		dataBearing = dataBearing || spec.dataBearing
+		name, score := matchLegacyService(res, spec, services)
+		if score > bestScore {
+			chosen, service, bestScore = spec, name, score
+		} else if score != 0 && score == bestScore {
+			service = ""
+		}
+	}
+	if service == "" {
+		if dataBearing {
+			return legacyAliasSpec{}, "", "no unique matching managed service exists in the requested compose project"
+		}
+		return legacyAliasSpec{}, "", ""
+	}
+	if !aliasTargetEnabled(chosen, services[service]) {
+		return legacyAliasSpec{}, "",
+			"the requested compose project will not register a resource to consume this alias"
+	}
+	if !specMatchesAWSRedisEngine(chosen, config) {
+		return legacyAliasSpec{}, "", "the requested AWS Redis engine is a different resource type"
+	}
+	return chosen, service, ""
+}
+
+func analyzeLegacyState(
+	resources []resourceIdentity,
+	services map[string]desiredService,
+	cloud string,
+	config configMap,
+) migrationPlan {
 	plan := migrationPlan{aliases: program.ServiceAliases{}}
 	foreign := foreignResources(resources, cloud)
 	plan.foreignCount = len(foreign)
@@ -361,60 +454,26 @@ func analyzeLegacyState(resources []resourceIdentity, services map[string]desire
 
 	seenTargets := map[string]bool{}
 	for _, res := range foreign {
-		if reason := unsupportedLegacyTypes[res.typ]; reason != "" {
+		chosen, service, reason := resolveLegacyAlias(res, services, cloud, config)
+		if reason != "" {
 			plan.blockers = append(plan.blockers, migrationProblem{res, reason})
 			continue
-		}
-		if owner := resourceCloud(res.typ); owner == "" || owner != cloud {
-			reason := "the resource is not from the selected " + strings.ToUpper(cloud) + " legacy driver"
-			plan.blockers = append(plan.blockers, migrationProblem{res, reason})
-			continue
-		}
-		if cloud == cloudAzure {
-			plan.blockers = append(plan.blockers, migrationProblem{res, "no legacy Azure in-place adoption path is defined"})
-			continue
-		}
-
-		specs := specsFor(cloud, res.typ)
-		if len(specs) == 0 {
-			if looksDataBearing(res.typ) {
-				plan.blockers = append(plan.blockers, migrationProblem{res, "this data-bearing resource type has no adoption rule"})
-			}
-			continue
-		}
-
-		var chosen legacyAliasSpec
-		service, bestScore := "", 0
-		for _, spec := range specs {
-			name, score := matchLegacyService(res, spec, services)
-			if score > bestScore {
-				chosen, service, bestScore = spec, name, score
-			} else if score != 0 && score == bestScore {
-				service = ""
-			}
 		}
 		if service == "" {
-			dataBearing := false
-			for _, spec := range specs {
-				dataBearing = dataBearing || spec.dataBearing
-			}
-			if dataBearing {
-				plan.blockers = append(plan.blockers, migrationProblem{res, "no unique matching managed service exists in the requested compose project"})
-			}
-			continue
-		}
-		if !specMatchesAWSRedisEngine(chosen, config) {
-			plan.blockers = append(plan.blockers, migrationProblem{res, "the requested AWS Redis engine is a different resource type"})
 			continue
 		}
 
 		key := aliasTargetKey(chosen, service)
 		if currentTargets[key] || seenTargets[key] {
-			plan.blockers = append(plan.blockers, migrationProblem{res, "the current state already has a resource for this service and alias target"})
+			plan.blockers = append(plan.blockers, migrationProblem{
+				res, "the current state already has a resource for this service and alias target",
+			})
 			continue
 		}
 		if configured := services[service].aliases[chosen.aliasKind]; configured != "" && configured != string(res.urn) {
-			plan.blockers = append(plan.blockers, migrationProblem{res, "x-defang-aliases points this service and kind at a different resource"})
+			plan.blockers = append(plan.blockers, migrationProblem{
+				res, "x-defang-aliases points this service and kind at a different resource",
+			})
 			continue
 		}
 
@@ -440,7 +499,9 @@ func analyzeLegacyState(resources []resourceIdentity, services map[string]desire
 		}
 	}
 	if !plan.recognized {
-		plan.blockers = append(plan.blockers, migrationProblem{foreign[0], "the state cannot be identified as a supported legacy Defang deployment"})
+		plan.blockers = append(plan.blockers, migrationProblem{
+			foreign[0], "the state cannot be identified as a supported legacy Defang deployment",
+		})
 	}
 	return plan
 }
@@ -499,24 +560,34 @@ func prepareLegacyState(
 	if len(plan.blockers) != 0 {
 		switch {
 		case !enforce:
-			warn(fmt.Sprintf("Preview found %d legacy migration blocker(s); a real up will stop. See %s", len(plan.blockers), migrationRunbook))
+			warn(fmt.Sprintf(
+				"Preview found %d legacy migration blocker(s); a real up will stop. See %s",
+				len(plan.blockers), migrationRunbook,
+			))
 			return nil
 		case override:
-			warn(fmt.Sprintf("Warning: continuing despite %d legacy migration blocker(s). Unaliased databases may be deleted.", len(plan.blockers)))
+			warn(fmt.Sprintf(
+				"Warning: continuing despite %d legacy migration blocker(s). Unaliased databases may be deleted.",
+				len(plan.blockers),
+			))
 			return nil
 		default:
 			return &legacyStateError{plan: plan}
 		}
 	}
 
-	warn(fmt.Sprintf("Migrating this legacy stack in place: adopting %d resource(s) by Pulumi alias; %d other legacy resource(s) may be replaced.",
-		plan.adoptedCount, plan.foreignCount-plan.adoptedCount))
+	warn(fmt.Sprintf(
+		"Migrating this legacy stack in place: adopting %d resource(s) by Pulumi alias; "+
+			"%d other legacy resource(s) may be replaced.",
+		plan.adoptedCount, plan.foreignCount-plan.adoptedCount,
+	))
 	return nil
 }
 
 func handleStateInspectionFailure(override, enforce bool, reason string) error {
 	if !enforce {
-		warn("Preview could not prepare legacy aliases: " + reason + ". A real up will stop unless an exact-stack override is active.")
+		warn("Preview could not prepare legacy aliases: " + reason +
+			". A real up will stop unless an exact-stack override is active.")
 		return nil
 	}
 	if override {
@@ -531,7 +602,7 @@ func resourceIdentitiesIn(deployment apitype.UntypedDeployment) ([]resourceIdent
 		return nil, nil
 	}
 	if deployment.Version != apitype.DeploymentSchemaVersionCurrent {
-		return nil, fmt.Errorf("unsupported deployment version %d", deployment.Version)
+		return nil, fmt.Errorf("%w: unsupported version %d", errInvalidDeployment, deployment.Version)
 	}
 	// Export includes decrypted inputs/outputs. Keep that snapshot local and
 	// immediately project it to URN/type/parent; no secret-bearing value is
@@ -543,10 +614,10 @@ func resourceIdentitiesIn(deployment apitype.UntypedDeployment) ([]resourceIdent
 	identities := make([]resourceIdentity, 0, len(snapshot.Resources))
 	for i, res := range snapshot.Resources {
 		if !res.URN.IsValid() {
-			return nil, fmt.Errorf("resource %d has an unreadable URN", i)
+			return nil, fmt.Errorf("%w: resource %d has an invalid URN", errInvalidDeployment, i)
 		}
 		if res.Parent != "" && !res.Parent.IsValid() {
-			return nil, fmt.Errorf("resource %d has an unreadable parent URN", i)
+			return nil, fmt.Errorf("%w: resource %d has an invalid parent URN", errInvalidDeployment, i)
 		}
 		identities = append(identities, identityOf(res))
 	}
@@ -568,8 +639,11 @@ type legacyStateError struct {
 
 func (e *legacyStateError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "this stack cannot yet be migrated in place safely: %d blocker(s) remain after preparing %d Pulumi alias(es):\n",
-		len(e.plan.blockers), e.plan.adoptedCount)
+	fmt.Fprintf(
+		&b,
+		"this stack cannot yet be migrated in place safely: %d blocker(s) remain after preparing %d Pulumi alias(es):\n",
+		len(e.plan.blockers), e.plan.adoptedCount,
+	)
 	for i, blocker := range e.plan.blockers {
 		if i == maxReportedResources {
 			fmt.Fprintf(&b, "  ...and %d more\n", len(e.plan.blockers)-maxReportedResources)
@@ -577,7 +651,8 @@ func (e *legacyStateError) Error() string {
 		}
 		fmt.Fprintf(&b, "  %s — %s\n", blocker.resource.display(), blocker.reason)
 	}
-	b.WriteString("\nContinuing could replace or orphan existing infrastructure, including databases and their data. Nothing has been changed.\n" +
+	b.WriteString("\nContinuing could replace or orphan existing infrastructure, including databases and their data. " +
+		"Nothing has been changed.\n" +
 		"\nRun `preview` to inspect the migration plan, then follow\n  " + migrationRunbook + "\n" +
 		"\nDo not run `down` or `destroy` to clear this error: both intentionally delete the selected stack.\n" +
 		"\nIf the runbook does not cover this state, contact Defang support.")

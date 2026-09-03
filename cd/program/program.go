@@ -11,6 +11,11 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
+var (
+	errMigrationAliasUnknownService = errors.New("migration alias targets an unknown service")
+	errMigrationAliasConflict       = errors.New("migration alias conflicts with x-defang-aliases")
+)
+
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 	cf := compose.Project{Name: projectName}
 	if err := yaml.Unmarshal(data, &cf); err != nil {
@@ -43,7 +48,7 @@ func NewRunWithAliases(projectUpdate *defangv1.ProjectUpdate, aliases ServiceAli
 
 		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
 		domain := defangCfg.Get("domain")         // optional project domain
-		etag := projectUpdate.Etag                // deployment identifier
+		etag := projectUpdate.GetEtag()           // deployment identifier
 		if etag == "" {
 			etag = defangCfg.Get("etag")
 		}
@@ -52,11 +57,11 @@ func NewRunWithAliases(projectUpdate *defangv1.ProjectUpdate, aliases ServiceAli
 			return err
 		}
 
-		if len(projectUpdate.Compose) == 0 {
+		if len(projectUpdate.GetCompose()) == 0 {
 			return errors.New("ProjectUpdate has no compose field")
 		}
 
-		project, err := parseCompose(projectUpdate.Compose, ctx.Project())
+		project, err := parseCompose(projectUpdate.GetCompose(), ctx.Project())
 		if err != nil {
 			return err
 		}
@@ -92,14 +97,14 @@ func applyServiceAliases(project *compose.Project, aliases ServiceAliases) error
 	for serviceName, detected := range aliases {
 		svc, ok := project.Services[serviceName]
 		if !ok {
-			return fmt.Errorf("migration alias targets unknown service %q", serviceName)
+			return fmt.Errorf("%w %q", errMigrationAliasUnknownService, serviceName)
 		}
 		if svc.Aliases == nil {
 			svc.Aliases = make(map[string]string, len(detected))
 		}
 		for kind, urn := range detected {
 			if existing := svc.Aliases[kind]; existing != "" && existing != urn {
-				return fmt.Errorf("migration alias for service %q kind %q conflicts with x-defang-aliases", serviceName, kind)
+				return fmt.Errorf("%w: service %q kind %q", errMigrationAliasConflict, serviceName, kind)
 			}
 			svc.Aliases[kind] = urn
 		}

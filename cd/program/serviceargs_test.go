@@ -287,7 +287,13 @@ func TestApplyServiceAliasesDoesNotMutateProjectUpdateSource(t *testing.T) {
 }
 
 func TestApplyServiceAliasesRejectsUnknownServiceAndConflict(t *testing.T) {
-	project, err := parseCompose([]byte("services:\n  db:\n    image: postgres\n    x-defang-postgres: true\n    x-defang-aliases:\n      instance: urn:pulumi:old\n"), "proj")
+	project, err := parseCompose([]byte(`services:
+  db:
+    image: postgres
+    x-defang-postgres: true
+    x-defang-aliases:
+      instance: urn:pulumi:old
+`), "proj")
 	require.NoError(t, err)
 
 	err = applyServiceAliases(project, ServiceAliases{"missing": {compose.AliasInstance: clusterURN}})

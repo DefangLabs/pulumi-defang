@@ -27,7 +27,8 @@ import (
 // recorded previews. mixed-state-gcp is a failed partial takeover.
 func fixtureDeployment(t *testing.T, name string) apitype.UntypedDeployment {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", name))
+	// Callers pass only fixture constants declared in this test file.
+	data, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec
 	require.NoError(t, err)
 	var doc apitype.UntypedDeployment
 	require.NoError(t, json.Unmarshal(data, &doc))
@@ -88,6 +89,8 @@ const (
 `
 )
 
+var errSecretExport = errors.New("export failed; decrypted password=TOP-SECRET")
+
 type fakeStack struct {
 	deployment apitype.UntypedDeployment
 	err        error
@@ -137,11 +140,12 @@ func TestRealLegacyStatesPrepareAliasesBeforeReportingRuntimeBlockers(t *testing
 		wantBlockType string
 	}{
 		{
-			name:          "GCP private build plugin",
-			fixture:       "legacy-state-gcp.json",
-			cloud:         cloudGCP,
-			composeYAML:   gcpManagedCompose,
-			wantAlias:     "postgres-service/instance=gcp:sql/databaseInstance:DatabaseInstance::my-app-postgres-service-postgres",
+			name:        "GCP private build plugin",
+			fixture:     "legacy-state-gcp.json",
+			cloud:       cloudGCP,
+			composeYAML: gcpManagedCompose,
+			wantAlias: "postgres-service/instance=gcp:sql/databaseInstance:DatabaseInstance::" +
+				"my-app-postgres-service-postgres",
 			wantBlockType: "cloudbuild:index:CloudBuild",
 		},
 		{
@@ -240,22 +244,47 @@ func TestMixedStateAdoptsSurvivingLegacyDatabasesButRejectsDuplicateTarget(t *te
 	resources, err := resourceIdentitiesIn(deployment)
 	require.NoError(t, err)
 	resources = append(resources, mkIdentity(
-		"urn:pulumi:beta::my-app::defang-gcp:index:Project$defang-gcp:index:Postgres$gcp:sql/databaseInstance:DatabaseInstance::postgres-service",
+		"urn:pulumi:beta::my-app::defang-gcp:index:Project$defang-gcp:index:Postgres$"+
+			"gcp:sql/databaseInstance:DatabaseInstance::postgres-service",
 		"urn:pulumi:beta::my-app::defang-gcp:index:Project$defang-gcp:index:Postgres::postgres-service"))
 	plan := analyzeLegacyState(resources, mustDesiredServices(t, gcpManagedCompose), cloudGCP, configFor(cloudGCP))
 	require.NotEmpty(t, plan.blockers)
 	require.Contains(t, plan.blockers[0].reason, "already has a resource")
 }
 
+func TestConditionalCloudSQLChildrenMustHaveAnAliasTarget(t *testing.T) {
+	deployment := fixtureWithoutTypes(t, "legacy-state-gcp.json", "cloudbuild:index:CloudBuild")
+	composeWithoutChildren := `services:
+  postgres-service:
+    image: postgres:16
+    x-defang-postgres: true
+  redis-service:
+    image: redis:7
+    x-defang-redis: true
+`
+	aliases := program.ServiceAliases{}
+	err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName,
+		testStackName, []byte(composeWithoutChildren), cloudGCP, configFor(cloudGCP), aliases, true)
+	require.ErrorContains(t, err, "will not register a resource to consume this alias")
+	require.NotContains(t, aliases["postgres-service"], compose.AliasUser)
+	require.NotContains(t, aliases["postgres-service"], compose.AliasDatabase)
+	require.Contains(t, aliases["postgres-service"], compose.AliasInstance)
+}
+
 func TestCloudDetectionRejectsProviderSwitchesAndLegacyAzure(t *testing.T) {
 	// A current GCP state is safe only for GCP. Cross-cloud up must not delete it.
-	plan := analyzeLegacyState(fixtureIdentities(t, "new-state-gcp.json"), map[string]desiredService{}, cloudAWS, configFor(cloudAWS))
+	plan := analyzeLegacyState(
+		fixtureIdentities(t, "new-state-gcp.json"), map[string]desiredService{}, cloudAWS, configFor(cloudAWS),
+	)
 	require.NotEmpty(t, plan.blockers)
 	require.Contains(t, plan.blockers[0].reason, "selected AWS")
 
 	azureLegacy := []resourceIdentity{
 		mkIdentity("urn:pulumi:prod::app::pulumi:pulumi:Stack::app-prod", ""),
-		mkIdentity("urn:pulumi:prod::app::azure-native:dbforpostgresql:Server::postgres", "urn:pulumi:prod::app::pulumi:pulumi:Stack::app-prod"),
+		mkIdentity(
+			"urn:pulumi:prod::app::azure-native:dbforpostgresql:Server::postgres",
+			"urn:pulumi:prod::app::pulumi:pulumi:Stack::app-prod",
+		),
 	}
 	plan = analyzeLegacyState(azureLegacy, mustDesiredServices(t, awsManagedCompose), cloudAzure, configFor(cloudAzure))
 	require.NotEmpty(t, plan.blockers)
@@ -295,7 +324,7 @@ func TestStateInspectionFailsClosedForUpAndDoesNotLeakSecrets(t *testing.T) {
 	stderrLogger = &logs
 	t.Cleanup(func() { stderrLogger = originalLogger })
 
-	secretErr := errors.New("export failed; decrypted password=TOP-SECRET")
+	secretErr := errSecretExport
 	err := prepareLegacyState(t.Context(), fakeStack{err: secretErr}, "", testProjectName, testStackName,
 		[]byte(gcpManagedCompose), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
 	var inspectionErr *stateInspectionError
@@ -387,11 +416,14 @@ func TestForeignResourceDetectionUsesCloudPackageAndParent(t *testing.T) {
 		stackURN   = "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp"
 		projectURN = "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test"
 	)
-	base := []resourceIdentity{mkIdentity(stackURN, ""), mkIdentity(projectURN, stackURN)}
+	base := make([]resourceIdentity, 0, 3)
+	base = append(base, mkIdentity(stackURN, ""), mkIdentity(projectURN, stackURN))
 	for name := range thisCDTopLevelNames {
 		t.Run(name, func(t *testing.T) {
 			atRoot := mkIdentity("urn:pulumi:gcp::cd-test::gcp:storage/bucketObject:BucketObject::"+name, stackURN)
-			underLegacy := mkIdentity("urn:pulumi:gcp::cd-test::defang-mvp:legacy:Project$gcp:storage/bucketObject:BucketObject::"+name,
+			underLegacy := mkIdentity(
+				"urn:pulumi:gcp::cd-test::defang-mvp:legacy:Project$"+
+					"gcp:storage/bucketObject:BucketObject::"+name,
 				"urn:pulumi:gcp::cd-test::defang-mvp:legacy:Project::legacy")
 			require.Empty(t, foreignResources(append(slices.Clone(base), atRoot), cloudGCP))
 			require.Len(t, foreignResources(append(slices.Clone(base), underLegacy), cloudGCP), 1)
@@ -434,7 +466,8 @@ func TestThisCDTopLevelNamesCoversEveryRootRegistration(t *testing.T) {
 		if strings.HasSuffix(source, "_test.go") {
 			continue
 		}
-		body, err := os.ReadFile(source)
+		// Sources come from the fixed program/*.go glob immediately above.
+		body, err := os.ReadFile(source) //nolint:gosec
 		require.NoError(t, err)
 		bodies[source] = string(body)
 		for _, match := range assignment.FindAllStringSubmatch(string(body), -1) {
@@ -497,8 +530,11 @@ func deploymentOf(body string) apitype.UntypedDeployment {
 }
 
 func TestConfiguredAliasConflictBlocks(t *testing.T) {
+	const conflictingAlias = `x-defang-postgres: true
+    x-defang-aliases:
+      instance: urn:pulumi:other::project::gcp:sql/databaseInstance:DatabaseInstance::other`
 	composeYAML := strings.Replace(gcpManagedCompose, "x-defang-postgres: true",
-		"x-defang-postgres: true\n    x-defang-aliases:\n      instance: urn:pulumi:other::project::gcp:sql/databaseInstance:DatabaseInstance::other", 1)
+		conflictingAlias, 1)
 	deployment := fixtureWithoutTypes(t, "legacy-state-gcp.json", "cloudbuild:index:CloudBuild")
 	err := prepareLegacyState(t.Context(), fakeStack{deployment: deployment}, "", testProjectName, testStackName,
 		[]byte(composeYAML), cloudGCP, configFor(cloudGCP), program.ServiceAliases{}, true)
