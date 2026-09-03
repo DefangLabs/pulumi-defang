@@ -3,6 +3,7 @@ package defangaws
 import (
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -227,22 +228,14 @@ func buildProject(
 	// ingress port. Otherwise the apex is left unbound (ALB default action).
 	infra.ApexServiceName = apexServiceName(standalone)
 
-	// Pre-compute which services need waitForSteadyState: true if any other
-	// service depends on them with condition: service_healthy (matches TS tenant_stack.ts)
-	waitForSteady := map[string]bool{}
-	for _, other := range standalone {
-		for dep, val := range other.DependsOn {
-			if val.Condition == "service_healthy" {
-				waitForSteady[dep] = true
-			}
-		}
-	}
+	waitForSteady := servicesNeedingSteadyState(standalone)
 
-	sortedNames := common.TopologicalSort(standalone)
+	depGraph := foldSidecarDeps(standalone, sidecars)
+	sortedNames := common.TopologicalSort(depGraph)
 	for _, svcName := range sortedNames {
 		svc := standalone[svcName]
 
-		deps, err := collectDeps(svcName, svc, sidecars[svcName], dependencies)
+		deps, err := collectDeps(svcName, depGraph[svcName], sidecars[svcName], dependencies)
 		if err != nil {
 			return nil, err
 		}
@@ -250,7 +243,7 @@ func buildProject(
 		waitForHealthy := waitForSteady[svcName] || args.WaitForSteadyState
 		res, err := newService(
 			ctx, configProvider, svcName, svc, args.Networks, infra, sidecars[svcName], waitForHealthy, deps,
-			objectStoreGrants(svc, sidecars[svcName], objectStoreArns), pluginID, parentOpt)
+			objectStoreGrants(depGraph[svcName], objectStoreArns), pluginID, parentOpt)
 		if err != nil {
 			return nil, fmt.Errorf("building service %s: %w", svcName, err)
 		}
@@ -320,6 +313,21 @@ func apexServiceName(services compose.Services) string {
 	return owner
 }
 
+// servicesNeedingSteadyState returns the services another service depends on
+// with condition: service_healthy — those deployments must wait until the
+// service is steady (matches TS tenant_stack.ts).
+func servicesNeedingSteadyState(services compose.Services) map[string]bool {
+	waitForSteady := map[string]bool{}
+	for _, svc := range services {
+		for dep, val := range svc.DependsOn {
+			if val.Condition == "service_healthy" {
+				waitForSteady[dep] = true
+			}
+		}
+	}
+	return waitForSteady
+}
+
 // collectDeps returns the resources svc must be created after: the dependency
 // handles of the services it names in depends_on. Entries naming svc's own
 // sidecars are skipped — those are container dependencies inside the shared
@@ -345,37 +353,75 @@ func collectDeps(
 }
 
 // objectStoreGrants returns the bucket ARNs of the x-defang-s3 services that
-// svc — or one of its sidecars, which share svc's task role — names in
-// depends_on. depends_on is the wiring contract: the CLI injects <STORE>_BUCKET
-// and <STORE>_REGION into a service off that same edge, so a service that can
-// see a bucket name is exactly the one whose task role must reach the bucket.
-// Returns nil when the service depends on no store.
+// svc names in depends_on. depends_on is the wiring contract: the CLI injects
+// <STORE>_BUCKET and <STORE>_REGION into a service off that same edge, so a
+// service that can see a bucket name is exactly the one whose task role must
+// reach the bucket. Returns nil when the service depends on no store.
+//
+// Call it with a service from foldSidecarDeps' graph, so a sidecar's
+// depends_on grants the parent whose task role it shares.
 func objectStoreGrants(
 	svc compose.ServiceConfig,
-	sidecars map[string]compose.ServiceConfig,
 	stores map[string]pulumi.StringInput,
 ) map[string]pulumi.StringInput {
 	if len(stores) == 0 {
 		return nil
 	}
 	var grants map[string]pulumi.StringInput
-	collect := func(dependsOn compose.DependsOnConfig) {
-		for dep := range dependsOn {
-			arn, ok := stores[dep]
-			if !ok {
-				continue
-			}
-			if grants == nil {
-				grants = map[string]pulumi.StringInput{}
-			}
-			grants[dep] = arn
+	for dep := range svc.DependsOn {
+		arn, ok := stores[dep]
+		if !ok {
+			continue
 		}
-	}
-	collect(svc.DependsOn)
-	for _, sidecar := range sidecars {
-		collect(sidecar.DependsOn)
+		if grants == nil {
+			grants = map[string]pulumi.StringInput{}
+		}
+		grants[dep] = arn
 	}
 	return grants
+}
+
+// foldSidecarDeps returns the standalone services with each sidecar's
+// depends_on folded into its parent's. A sidecar ships inside its parent's
+// task definition and shares its task role, so its dependencies are the
+// parent's: they decide the order the parent is created in, and which buckets
+// the parent's task role is granted. Without this, a parent whose only edge to
+// a store comes from a sidecar could be dispatched before the store exists,
+// and the grant would be silently skipped.
+//
+// Edges back into the group — a sidecar naming its parent or a sibling — are
+// dropped: those are container dependencies inside the one task definition,
+// not resources to order against.
+func foldSidecarDeps(
+	standalone compose.Services,
+	sidecars map[string]map[string]compose.ServiceConfig,
+) compose.Services {
+	if len(sidecars) == 0 {
+		return standalone
+	}
+	graph := make(compose.Services, len(standalone))
+	maps.Copy(graph, standalone)
+	for parent, group := range sidecars {
+		svc, ok := graph[parent]
+		if !ok {
+			continue // partitionSidecars rejects an unknown parent
+		}
+		merged := make(compose.DependsOnConfig, len(svc.DependsOn))
+		maps.Copy(merged, svc.DependsOn)
+		for _, sidecar := range group {
+			for dep, val := range sidecar.DependsOn {
+				if _, inGroup := group[dep]; inGroup || dep == parent {
+					continue
+				}
+				if _, dup := merged[dep]; !dup {
+					merged[dep] = val
+				}
+			}
+		}
+		svc.DependsOn = merged
+		graph[parent] = svc
+	}
+	return graph
 }
 
 // serviceResult is what dispatching one compose service yields: its endpoint,

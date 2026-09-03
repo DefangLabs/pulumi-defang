@@ -98,11 +98,10 @@ func TestObjectStoreGrants(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		svc      compose.ServiceConfig
-		sidecars map[string]compose.ServiceConfig
-		stores   map[string]pulumi.StringInput
-		want     []string
+		name   string
+		svc    compose.ServiceConfig
+		stores map[string]pulumi.StringInput
+		want   []string
 	}{
 		{
 			name: "no stores in the project",
@@ -133,21 +132,41 @@ func TestObjectStoreGrants(t *testing.T) {
 			stores: stores,
 			want:   []string{backups, uploads},
 		},
-		{
-			// A sidecar shares its parent's task role, so its depends_on has
-			// to grant the parent.
-			name:     "sidecar depends_on a store",
-			svc:      compose.ServiceConfig{},
-			sidecars: map[string]compose.ServiceConfig{"log": {DependsOn: dependsOn(backups)}},
-			stores:   stores,
-			want:     []string{backups},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := objectStoreGrants(tt.svc, tt.sidecars, tt.stores)
+			got := objectStoreGrants(tt.svc, tt.stores)
 			assert.ElementsMatch(t, tt.want, slices.Sorted(maps.Keys(got)))
 		})
 	}
+}
+
+// A sidecar shares its parent's task definition and task role, so its
+// depends_on is the parent's: it decides when the parent is created and which
+// buckets the parent's task role reaches. Edges back into the sidecar group
+// are container-level, not resources to order against.
+func TestFoldSidecarDeps(t *testing.T) {
+	const app, store, db = "app", "uploads", "db"
+	dep := compose.ServiceDependency{Required: true}
+
+	standalone := compose.Services{
+		app:   {DependsOn: compose.DependsOnConfig{db: dep}},
+		store: {ObjectStore: &compose.ObjectStoreConfig{Bucket: "proj-uploads"}},
+		db:    {Postgres: &compose.PostgresConfig{}},
+	}
+	sidecars := map[string]map[string]compose.ServiceConfig{
+		app: {
+			"log":  {DependsOn: compose.DependsOnConfig{store: dep, app: dep}},
+			"prox": {DependsOn: compose.DependsOnConfig{"log": dep}},
+		},
+	}
+
+	graph := foldSidecarDeps(standalone, sidecars)
+	assert.ElementsMatch(t, []string{db, store}, slices.Sorted(maps.Keys(graph[app].DependsOn)))
+	// The input map is left alone: the loop still dispatches the original
+	// service config.
+	assert.ElementsMatch(t, []string{db}, slices.Sorted(maps.Keys(standalone[app].DependsOn)))
+	// No sidecars, no copy.
+	assert.Nil(t, foldSidecarDeps(standalone, nil)[store].DependsOn)
 }
