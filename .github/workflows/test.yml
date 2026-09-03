@@ -36,12 +36,19 @@ jobs:
         uses: ./.github/actions/setup-go
 
       # CD's migration guard has an engine-level regression that executes a
-      # real preview against a mock provider. Keep the CLI aligned with the
-      # Pulumi SDK version in cd/go.mod.
+      # real preview against a mock provider. Derive the CLI version from the
+      # Pulumi SDK pin used by the CD module.
+      - name: Read CD Pulumi SDK version
+        id: cd-pulumi-version
+        working-directory: cd
+        run: |
+          version="$(go list -m -f '{{.Version}}' github.com/pulumi/pulumi/sdk/v3)"
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
         with:
-          pulumi-version: 3.259.0
+          pulumi-version: ${{ steps.cd-pulumi-version.outputs.version }}
 
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
