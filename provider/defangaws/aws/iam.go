@@ -146,6 +146,69 @@ func attachPullThroughCachePolicy(
 	return err
 }
 
+// objectStoreActions are the S3 actions granted to a service that depends on
+// an x-defang-s3 store, split by the ARN they apply to.
+//
+// The bucket-level half is not optional: HeadBucket — what many S3 clients
+// call at startup to check their credentials — is authorized by s3:ListBucket
+// on the BUCKET ARN, and no object-level action covers it. A grant of only the
+// object actions lets every read and write succeed while that probe returns
+// 403, and a client that treats the probe as fatal then disables storage for
+// the life of the process. GetBucketLocation is here for the SDKs that resolve
+// the region before their first call.
+var (
+	objectStoreBucketActions = []string{
+		"s3:ListBucket",
+		"s3:GetBucketLocation",
+		"s3:ListBucketMultipartUploads",
+	}
+	objectStoreObjectActions = []string{
+		"s3:GetObject",
+		"s3:PutObject",
+		"s3:DeleteObject",
+		"s3:AbortMultipartUpload",
+		"s3:ListMultipartUploadParts",
+	}
+)
+
+// attachObjectStorePolicy grants serviceName's task role access to one
+// x-defang-s3 bucket, named by storeName. Inline rather than a managed policy:
+// the document names a single bucket ARN, so it has exactly one consumer.
+func attachObjectStorePolicy(
+	ctx *pulumi.Context,
+	taskRole *iam.Role,
+	serviceName string,
+	storeName string,
+	bucketArn pulumi.StringInput,
+	opts ...pulumi.ResourceOption,
+) (pulumi.Resource, error) {
+	policyJson := bucketArn.ToStringOutput().ApplyT(func(arn string) (string, error) {
+		b, err := json.Marshal(PolicyDocument{
+			Version: "2012-10-17",
+			Statement: []PolicyStatement{
+				{
+					Sid:      "AllowObjectStoreBucket",
+					Effect:   "Allow",
+					Action:   objectStoreBucketActions,
+					Resource: arn,
+				},
+				{
+					Sid:      "AllowObjectStoreObjects",
+					Effect:   "Allow",
+					Action:   objectStoreObjectActions,
+					Resource: arn + "/*",
+				},
+			},
+		})
+		return string(b), err
+	}).(pulumi.StringOutput)
+
+	return iam.NewRolePolicy(ctx, serviceName+"-objectstore-"+storeName, &iam.RolePolicyArgs{
+		Role:   taskRole.Name,
+		Policy: policyJson,
+	}, opts...)
+}
+
 // resolvePolicyArn turns an x-defang-policies entry into a policy ARN. Full
 // ARNs pass through; bare names resolve to a customer-managed policy in the
 // caller's account (matches makeArn in defang-mvp: partition "aws", no region).
