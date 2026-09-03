@@ -110,6 +110,27 @@ func TestFindByodZonesGCPFallsBackWhenListingFails(t *testing.T) {
 	require.Equal(t, 1, mocks.Calls())
 }
 
+func TestFindByodZonesGCPFallsBackWhenZoneSelectionIsAmbiguous(t *testing.T) {
+	mocks := &gcpByodZoneMocks{zones: []resource.PropertyValue{
+		gcpManagedZone("z-zone", "example.com.", gcpByodZoneAuthorizationMarker),
+		gcpManagedZone("a-zone", "example.com.", gcpByodZoneAuthorizationMarker),
+	}}
+	var got map[string]string
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		provider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{})
+		if err != nil {
+			return err
+		}
+		got = findByodZonesGCP(ctx, &compose.Project{Services: compose.Services{
+			"api": gcpByodService("api.example.com", true),
+		}}, provider)
+		return nil
+	}, pulumi.WithMocks("project", "stack", mocks))
+	require.NoError(t, err)
+	require.Nil(t, got)
+	require.Equal(t, 1, mocks.Calls())
+}
+
 func TestByodZoneLookupFailureWarningDescribesBothFallbacks(t *testing.T) {
 	warning := byodZoneLookupFailureWarning(errInjectedGcpByodZoneLookup)
 	require.Contains(t, warning, "injected managed-zone listing failure")
