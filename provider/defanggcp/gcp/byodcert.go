@@ -295,11 +295,9 @@ func byodResourceName(kind, value string) string {
 	return fmt.Sprintf("byod-%s-%x", kind, digest[:6])
 }
 
-// warnf logs a Pulumi warning. BYOD TLS problems are reported this way rather
-// than returned: the services are already deployed and reachable on their
-// delegate-domain hostnames, so failing the deploy over a certificate would undo
-// working infrastructure. This is the same warn-and-degrade rule AWS and Azure
-// follow (see docs/byod-dns-zones.md).
+// warnf logs an intentionally degradable BYOD TLS condition. Resource
+// registration and inconsistent-zone errors are still returned to avoid hiding
+// a partially configured certificate or DNS graph.
 func warnf(ctx *pulumi.Context, format string, args ...any) {
 	_ = ctx.Log.Warn(fmt.Sprintf(format, args...), nil)
 }

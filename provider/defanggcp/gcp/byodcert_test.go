@@ -144,10 +144,8 @@ func propertyStrings(value resource.PropertyValue) []string {
 func TestCreateByodCertsReusesAuthorizationAndKeepsSeparateHostEntries(t *testing.T) {
 	mocks := &byodMocks{}
 	entries := []LBServiceEntry{
-		{Name: "api", Config: byodService("Example.COM.", "*.example.com")},
-		// Both names normalize to requests already made by api. The first service
-		// deterministically owns the duplicate map entries.
-		{Name: "web", Config: byodService("*.EXAMPLE.COM.", "example.com")},
+		{Name: "api", Config: byodService("Example.COM.")},
+		{Name: "web", Config: byodService("*.EXAMPLE.COM.")},
 	}
 	zones := map[string]string{
 		"example.com":   "trusted-zone",

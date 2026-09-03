@@ -14,6 +14,8 @@ import (
 
 const gcpByodZoneAuthorizationMarker = "defang.dev/byod-dns=authorized"
 
+var errInjectedGcpByodZoneLookup = errors.New("injected managed-zone listing failure")
+
 type gcpByodZoneMocks struct {
 	mu       sync.Mutex
 	calls    int
@@ -30,7 +32,7 @@ func (m *gcpByodZoneMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap,
 	defer m.mu.Unlock()
 	m.calls++
 	if m.failCall {
-		return nil, errors.New("injected managed-zone listing failure")
+		return nil, errInjectedGcpByodZoneLookup
 	}
 	return resource.PropertyMap{"managedZones": resource.NewArrayProperty(m.zones)}, nil
 }
@@ -106,6 +108,24 @@ func TestFindByodZonesGCPFallsBackWhenListingFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, got)
 	require.Equal(t, 1, mocks.Calls())
+}
+
+func TestByodZoneLookupFailureWarningDescribesBothFallbacks(t *testing.T) {
+	warning := byodZoneLookupFailureWarning(errInjectedGcpByodZoneLookup)
+	require.Contains(t, warning, "injected managed-zone listing failure")
+	require.Contains(t, warning, "exact hostnames fall back to load balancer authorized certificates")
+	require.Contains(t, warning, "wildcard certificates are skipped because they require DNS authorization")
+}
+
+func TestNoTrustedByodZoneWarningDistinguishesWildcard(t *testing.T) {
+	exact := noTrustedByodZoneWarning("API.Example.COM.")
+	require.Contains(t, exact, "load balancer authorization")
+	require.NotContains(t, exact, "will be skipped")
+
+	wildcard := noTrustedByodZoneWarning("*.Example.COM.")
+	require.Contains(t, wildcard, "wildcard certificate will be skipped")
+	require.Contains(t, wildcard, "requires DNS authorization")
+	require.NotContains(t, wildcard, "load balancer authorization")
 }
 
 func TestFindByodZonesGCPSkipsListingWithoutIngressByodHostnames(t *testing.T) {

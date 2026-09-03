@@ -95,9 +95,10 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.D
 // its project, so `defang compose up` needs no extra client-side role. On GCP the
 // CLI never populated ServiceInfo.ZoneId at all, so there was nothing to move.
 //
-// A failed lookup is a warning, not an error. The services still deploy, and
-// their certs fall back to load balancer authorization, which is what the legacy
-// GCP CD used for every BYOD domain.
+// A failed lookup is a warning, not an error. The services still deploy. Exact
+// hostnames fall back to load balancer authorization, which is what the legacy
+// GCP CD used for every BYOD domain; wildcards are skipped because GCP requires
+// DNS authorization for them.
 func findByodZonesGCP(pctx *pulumi.Context, cf *compose.Project, provider pulumi.ProviderResource) map[string]string {
 	// Per hostname, not per service: a service's domainname and its aliases need
 	// not live in the same zone.
@@ -115,27 +116,39 @@ func findByodZonesGCP(pctx *pulumi.Context, cf *compose.Project, provider pulumi
 	// One listing answers every hostname (see FindZones).
 	zones, err := providergcp.FindZones(pctx, config.GetProject(pctx), hostnames, pulumi.Provider(provider))
 	if err != nil {
-		_ = pctx.Log.Warn(fmt.Sprintf(
-			"BYOD DNS: zone lookup failed (%v); custom hostnames fall back to load balancer "+
-				"authorized certificates", err), nil)
+		_ = pctx.Log.Warn(byodZoneLookupFailureWarning(err), nil)
 		return nil
 	}
-	// No trusted zone for a hostname is a normal answer, not a failure. Unlike AWS and
-	// Azure, GCP does not drop the hostname's certificate here — it issues one with
-	// load balancer authorization, so the actionable hint is about DNS rather than
-	// about `defang cert gen`.
+	// No trusted zone for a hostname is a normal answer, not a failure. GCP uses
+	// load balancer authorization for exact names. Wildcards cannot use that path,
+	// so their managed certificates are skipped and the warning points to DNS
+	// authorization or ACME instead.
 	for _, hostname := range hostnames {
 		if _, ok := zones[common.NormalizeDNS(hostname)]; !ok {
-			_ = pctx.Log.Warn(fmt.Sprintf(
-				"BYOD DNS: no authorized public Cloud DNS zone in this project hosts %s; its certificate will use "+
-					"load balancer authorization and activates once %s resolves to this deployment's load "+
-					"balancer IP address.", hostname, hostname), nil)
+			_ = pctx.Log.Warn(noTrustedByodZoneWarning(hostname), nil)
 		}
 	}
 	if len(zones) == 0 {
 		return nil
 	}
 	return zones
+}
+
+func byodZoneLookupFailureWarning(err error) string {
+	return fmt.Sprintf("BYOD DNS: zone lookup failed (%v); exact hostnames fall back to load balancer "+
+		"authorized certificates, while wildcard certificates are skipped because they require DNS authorization", err)
+}
+
+func noTrustedByodZoneWarning(hostname string) string {
+	normalized := common.NormalizeDNS(hostname)
+	if common.IsWildcardHost(normalized) {
+		return fmt.Sprintf("BYOD DNS: no authorized public Cloud DNS zone in this project hosts %s; "+
+			"its wildcard certificate will be skipped because GCP requires DNS authorization. "+
+			"Authorize a matching zone or run `defang cert gen` to use ACME.", hostname)
+	}
+	return fmt.Sprintf("BYOD DNS: no authorized public Cloud DNS zone in this project hosts %s; its certificate will use "+
+		"load balancer authorization and activates once %s resolves to this deployment's load "+
+		"balancer IP address.", hostname, hostname)
 }
 
 func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {

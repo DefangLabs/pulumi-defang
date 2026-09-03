@@ -27,7 +27,9 @@ diverge.
 - **Zone trust is cloud-specific.** GCP requires an explicit zone-owner opt-in
   before Defang writes records; see the GCP section. Existing AWS and Azure
   behavior is described in their sections below.
-- **"No zone" is not an error.** It degrades to the delegate domain + ACME.
+- **"No zone" is not an error.** AWS and Azure retain the delegate-domain +
+  ACME path. GCP exact hostnames use load-balancer authorization; GCP wildcards
+  retain the delegate-domain + ACME path because they require DNS authorization.
 
 ## AWS
 
@@ -243,9 +245,10 @@ rather than a choice: AWS can reach zones in another account through
 
 ## SDK regeneration
 
-`ProjectInputs`/`ServiceInputs` changes require regenerating the Azure SDK:
-`make schema` + `make sdks` (azure), committed alongside the source change (the
-pre-push hook enforces a clean `sdk/v2/`).
+`ProjectInputs`/`ServiceInputs` changes require regenerating the affected
+provider schema and SDK. Run `make provider schema go_sdk` and commit any
+generated changes alongside the source change (the pre-push hook enforces a
+clean `sdk/v2/`).
 
 ## Files
 
