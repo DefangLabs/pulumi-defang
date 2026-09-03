@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	errAmbiguousDelegateZones = errors.New("ambiguous public DNS managed zones")
-	errUncertainZoneOwnership = errors.New("uncertain public DNS managed-zone ownership")
-	errInvalidDNSRecord       = errors.New("invalid DNS record in wildcard cert authorization")
+	errAmbiguousDelegateZones  = errors.New("ambiguous public DNS managed zones")
+	errUncertainZoneOwnership  = errors.New("uncertain public DNS managed-zone ownership")
+	errInvalidDNSRecord        = errors.New("invalid DNS record in wildcard cert authorization")
+	errInvalidDelegateZoneMode = errors.New("invalid delegate-zone selection mode")
 )
 
 // SharedInfra holds project-level GCP resources shared across all services.
@@ -335,25 +336,32 @@ func findDelegateZone(
 	)
 }
 
-func selectDelegateZone(
-	projectName string,
+// delegateZoneCandidate tracks, per physical zone name, whether it carries any of the
+// ownership signals selectDelegateZone chooses between.
+type delegateZoneCandidate struct {
+	zone               dns.GetManagedZonesManagedZone
+	exactCLI           bool
+	managed            bool
+	externalCLI        bool
+	uncertainOwnership bool
+}
+
+// classifyDelegateZoneCandidates groups the zones serving fqdn by physical name and
+// splits them into the CLI-named zone (if any), the stack-managed zone(s), and the
+// zones that merely look possibly stack-managed.
+func classifyDelegateZoneCandidates(
 	fqdn string,
+	cliName string,
+	managedDescription string,
 	managedNamePrefix string,
 	zones []dns.GetManagedZonesManagedZone,
-) (delegateZoneSelection, error) {
-	fqdn = common.NormalizeDNS(fqdn)
-	cliName := DelegateZoneName(fqdn)
-	managedDescription := managedDelegateZoneDescription + projectName
-
-	type candidate struct {
-		zone               dns.GetManagedZonesManagedZone
-		exactCLI           bool
-		managed            bool
-		externalCLI        bool
-		uncertainOwnership bool
-	}
-
-	candidates := make(map[string]candidate)
+) (
+	[]dns.GetManagedZonesManagedZone,
+	map[string]delegateZoneCandidate,
+	map[string]delegateZoneCandidate,
+	*delegateZoneCandidate,
+) {
+	candidates := make(map[string]delegateZoneCandidate)
 	for _, zone := range zones {
 		// Private zones cannot answer a DNS-01 challenge or serve public records. Normalize
 		// both values because DNS names are case-insensitive and callers vary on the final dot.
@@ -376,9 +384,9 @@ func selectDelegateZone(
 	}
 
 	matches := make([]dns.GetManagedZonesManagedZone, 0, len(candidates))
-	managedZones := make(map[string]candidate)
-	uncertainZones := make(map[string]candidate)
-	var cliZone *candidate
+	managedZones := make(map[string]delegateZoneCandidate)
+	uncertainZones := make(map[string]delegateZoneCandidate)
+	var cliZone *delegateZoneCandidate
 	for nameKey, zone := range candidates {
 		matches = append(matches, zone.zone)
 		if zone.managed {
@@ -392,6 +400,22 @@ func selectDelegateZone(
 			cliZone = &candidate
 		}
 	}
+	return matches, managedZones, uncertainZones, cliZone
+}
+
+func selectDelegateZone(
+	projectName string,
+	fqdn string,
+	managedNamePrefix string,
+	zones []dns.GetManagedZonesManagedZone,
+) (delegateZoneSelection, error) {
+	fqdn = common.NormalizeDNS(fqdn)
+	cliName := DelegateZoneName(fqdn)
+	managedDescription := managedDelegateZoneDescription + projectName
+
+	matches, managedZones, uncertainZones, cliZone := classifyDelegateZoneCandidates(
+		fqdn, cliName, managedDescription, managedNamePrefix, zones,
+	)
 
 	if cliZone != nil {
 		// The exact CLI name is a positive ownership/delegation signal. It wins over
@@ -402,12 +426,8 @@ func selectDelegateZone(
 		if cliZone.managed && len(managedZones) == 1 && len(uncertainZones) == 0 {
 			return delegateZoneSelection{name: *cliZone.zone.Name, mode: delegateZoneManagedExact}, nil
 		}
-		if _, sameResource := managedZones[cliNameKey]; sameResource {
-			delete(managedZones, cliNameKey)
-		}
-		if _, sameResource := uncertainZones[cliNameKey]; sameResource {
-			delete(uncertainZones, cliNameKey)
-		}
+		delete(managedZones, cliNameKey)
+		delete(uncertainZones, cliNameKey)
 		if len(managedZones) != 0 || len(uncertainZones) != 0 {
 			return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
 				"both the CLI-created zone and a stack-managed public-dns zone exist; remove the unwanted duplicate "+
@@ -550,8 +570,11 @@ func ensureDelegateZone(
 	case delegateZoneManagedLegacy:
 		// Legacy public-dns resources were auto-named. Omitting Name preserves their
 		// original input shape and physical zone.
+	case delegateZoneExternal:
+		// Unreachable: handled by the early return above.
+		fallthrough
 	default:
-		return nil, fmt.Errorf("invalid delegate-zone selection mode %d", selection.mode)
+		return nil, fmt.Errorf("%w: %d", errInvalidDelegateZoneMode, selection.mode)
 	}
 	zone, err := dns.NewManagedZone(ctx, "public-dns", zoneArgs, opts...)
 	if err != nil {
