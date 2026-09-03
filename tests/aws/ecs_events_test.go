@@ -38,6 +38,7 @@ type capturedProject struct {
 	eventRule      property.Map
 	eventTarget    property.Map
 	ecsServices    []string // logical names
+	ecsServiceArgs []property.Map
 	taskDefs       []property.Map
 }
 
@@ -67,6 +68,7 @@ func constructProjectForEvents(t *testing.T, services map[string]property.Value)
 				captured.eventTarget = args.Inputs
 			case "aws:ecs/service:Service":
 				captured.ecsServices = append(captured.ecsServices, args.Name)
+				captured.ecsServiceArgs = append(captured.ecsServiceArgs, args.Inputs)
 			case "aws:ecs/taskDefinition:TaskDefinition":
 				captured.taskDefs = append(captured.taskDefs, args.Inputs)
 			default:
@@ -184,6 +186,15 @@ func TestAwsProjectECSNamesAreCLIParseable(t *testing.T) {
 	// last "-" of the autonamed physical name "<logical>-<hex>".
 	require.Len(t, captured.ecsServices, 1)
 	assert.Equal(t, "myproject_app", captured.ecsServices[0])
+
+	// The assertion above is only about the wire format because the service is
+	// autonamed: with no "name" input Pulumi derives the physical name from the
+	// logical one. Setting "name" explicitly would break that derivation while
+	// leaving the assertion green, so pin its absence.
+	require.Len(t, captured.ecsServiceArgs, 1)
+	_, hasName := captured.ecsServiceArgs[0].GetOk("name")
+	assert.False(t, hasName,
+		"ECS service must stay autonamed; an explicit name breaks the <logical>-<hex> shape the CLI parses")
 
 	// TaskStateChangeEvent.Etag takes the text after the last "_" of the
 	// container name; an empty etag makes the CLI drop the event.
