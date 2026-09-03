@@ -58,7 +58,9 @@ func runMigrationTestProvider() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Println(handle.Port)
+	if _, err := fmt.Fprintln(os.Stdout, handle.Port); err != nil {
+		return 1
+	}
 	if err := <-handle.Done; err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -99,7 +101,7 @@ func (migrationTestProvider) CheckConfig(
 	_ context.Context,
 	req *pulumirpc.CheckRequest,
 ) (*pulumirpc.CheckResponse, error) {
-	return &pulumirpc.CheckResponse{Inputs: req.News}, nil
+	return &pulumirpc.CheckResponse{Inputs: req.GetNews()}, nil
 }
 
 func (migrationTestProvider) DiffConfig(
@@ -124,15 +126,15 @@ func (migrationTestProvider) Check(
 	_ context.Context,
 	req *pulumirpc.CheckRequest,
 ) (*pulumirpc.CheckResponse, error) {
-	return &pulumirpc.CheckResponse{Inputs: req.News}, nil
+	return &pulumirpc.CheckResponse{Inputs: req.GetNews()}, nil
 }
 
 func (migrationTestProvider) Diff(
 	_ context.Context,
 	req *pulumirpc.DiffRequest,
 ) (*pulumirpc.DiffResponse, error) {
-	oldValue := req.OldInputs.GetFields()["immutable"].GetStringValue()
-	newValue := req.News.GetFields()["immutable"].GetStringValue()
+	oldValue := req.GetOldInputs().GetFields()["immutable"].GetStringValue()
+	newValue := req.GetNews().GetFields()["immutable"].GetStringValue()
 	if oldValue == newValue {
 		return &pulumirpc.DiffResponse{Changes: pulumirpc.DiffResponse_DIFF_NONE}, nil
 	}
@@ -160,19 +162,19 @@ func (migrationTestProvider) Create(
 	if err := recordMigrationProviderCall("create"); err != nil {
 		return nil, err
 	}
-	return &pulumirpc.CreateResponse{Id: "database-id", Properties: req.Properties}, nil
+	return &pulumirpc.CreateResponse{Id: "database-id", Properties: req.GetProperties()}, nil
 }
 
 func (migrationTestProvider) Update(
 	_ context.Context,
 	req *pulumirpc.UpdateRequest,
 ) (*pulumirpc.UpdateResponse, error) {
-	if !req.Preview {
+	if !req.GetPreview() {
 		if err := recordMigrationProviderCall("update"); err != nil {
 			return nil, err
 		}
 	}
-	return &pulumirpc.UpdateResponse{Properties: req.News}, nil
+	return &pulumirpc.UpdateResponse{Properties: req.GetNews()}, nil
 }
 
 func (migrationTestProvider) Delete(
@@ -194,9 +196,12 @@ func recordMigrationProviderCall(call string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	_, err = fmt.Fprintln(file, call)
-	return err
+	_, writeErr := fmt.Fprintln(file, call)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 type migrationTestDatabase struct {
@@ -291,7 +296,7 @@ func TestEngineMigrationPreviewBlocksForcedReplacementBeforeMutation(t *testing.
 
 	// From this point on, any actual Create/Delete proves the pre-Up gate let a
 	// destructive provider operation through.
-	require.NoError(t, os.WriteFile(providerLog, nil, 0o600)) //nolint:gosec
+	require.NoError(t, os.WriteFile(providerLog, nil, 0o600))
 	stack.Workspace().SetProgram(migrationTestProgram("current-database", "new-shape", oldURN))
 
 	previewErr := verifyMigrationPreview(
@@ -317,7 +322,7 @@ func TestEngineMigrationPreviewBlocksForcedReplacementBeforeMutation(t *testing.
 	require.NoError(t, err)
 	identities, err := resourceIdentitiesIn(deployment)
 	require.NoError(t, err)
-	var urns []resource.URN
+	urns := make([]resource.URN, 0, len(identities))
 	for _, identity := range identities {
 		urns = append(urns, identity.urn)
 	}

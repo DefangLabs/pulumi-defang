@@ -57,7 +57,7 @@ func migrationPreviewResources(
 }
 
 type stackPreviewer interface {
-	Preview(context.Context, ...optpreview.Option) (auto.PreviewResult, error)
+	Preview(ctx context.Context, opts ...optpreview.Option) (auto.PreviewResult, error)
 }
 
 type migrationPreviewStep struct {
@@ -201,7 +201,8 @@ func verifyMigrationPreview(
 	if err != nil {
 		collector.abort()
 		if preparation.override {
-			warn("Warning: the migration safety preview failed, but the exact-stack takeover override permits up to continue. Existing data may be replaced or deleted.")
+			warn("Warning: the migration safety preview failed, but the exact-stack takeover override " +
+				"permits up to continue. Existing data may be replaced or deleted.")
 			return nil
 		}
 		return &migrationPreviewError{reason: "the provider-backed preview failed"}
@@ -210,7 +211,8 @@ func verifyMigrationPreview(
 	steps, streamFailed := collector.finish()
 	if streamFailed {
 		if preparation.override {
-			warn("Warning: the migration safety preview event stream was incomplete, but the exact-stack takeover override permits up to continue. Existing data may be replaced or deleted.")
+			warn("Warning: the migration safety preview event stream was incomplete, but the exact-stack " +
+				"takeover override permits up to continue. Existing data may be replaced or deleted.")
 			return nil
 		}
 		return &migrationPreviewError{reason: "the provider-backed preview event stream was incomplete"}
@@ -219,7 +221,8 @@ func verifyMigrationPreview(
 		if preparation.override {
 			warnMigrationPreviewSteps(
 				fmt.Sprintf(
-					"Warning: the exact-stack takeover override permits up despite %d destructive operation(s) in the provider-backed preview. Existing data may be replaced or deleted.",
+					"Warning: the exact-stack takeover override permits up despite %d destructive operation(s) "+
+						"in the provider-backed preview. Existing data may be replaced or deleted.",
 					len(steps),
 				),
 				steps,
@@ -252,8 +255,9 @@ type migrationPreviewError struct {
 }
 
 func (e *migrationPreviewError) Error() string {
-	return "cannot verify that the adopted databases are safe to update: " + e.reason +
-		". Nothing has been changed. Run `preview` for diagnostics, then retry or contact Defang support. See " +
+	return "cannot verify that the adopted data-bearing resources are safe to update: " + e.reason +
+		". No cloud resources have been changed. Run `preview` for diagnostics, then retry or contact " +
+		"Defang support. See " +
 		migrationRunbook
 }
 
@@ -275,7 +279,7 @@ func (e *destructiveMigrationPreviewError) Error() string {
 		}
 		fmt.Fprintf(&b, "  %s\n", step.display())
 	}
-	b.WriteString("\nNothing has been changed. Correct the immutable configuration difference or use a blue/green migration. " +
-		"See " + migrationRunbook)
+	b.WriteString("\nNo cloud resources have been changed. Correct the immutable configuration difference " +
+		"or use a blue/green migration. See " + migrationRunbook)
 	return b.String()
 }

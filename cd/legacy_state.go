@@ -771,7 +771,7 @@ type stateInspectionError struct {
 
 func (e *stateInspectionError) Error() string {
 	return "cannot verify that the existing databases are safe to migrate: " + e.reason +
-		". Nothing has been changed. Retry, or contact Defang support. See " + migrationRunbook
+		". No cloud resources have been changed. Retry, or contact Defang support. See " + migrationRunbook
 }
 
 type legacyStateError struct {
@@ -793,7 +793,7 @@ func (e *legacyStateError) Error() string {
 		fmt.Fprintf(&b, "  %s — %s\n", blocker.resource.display(), blocker.reason)
 	}
 	b.WriteString("\nContinuing could replace or orphan existing infrastructure, including databases and their data. " +
-		"Nothing has been changed.\n" +
+		"No cloud resources have been changed.\n" +
 		"\nRun `preview` to inspect the migration plan, then follow\n  " + migrationRunbook + "\n" +
 		"\nDo not run `down` or `destroy` to clear this error: both intentionally delete the selected stack.\n" +
 		"\nIf the runbook does not cover this state, contact Defang support.")

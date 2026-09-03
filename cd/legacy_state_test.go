@@ -505,7 +505,7 @@ func TestLegacyStateErrorIsActionableAndBounded(t *testing.T) {
 	require.ErrorAs(t, err, &migrationErr)
 	msg := err.Error()
 	require.Contains(t, msg, "Pulumi alias")
-	require.Contains(t, msg, "Nothing has been changed")
+	require.Contains(t, msg, "No cloud resources have been changed")
 	require.Contains(t, msg, "preview")
 	require.Contains(t, msg, "`down`")
 	require.Contains(t, msg, migrationRunbook)

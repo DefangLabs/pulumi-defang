@@ -16,6 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	errTestPreviewSecret = errors.New("provider failed with password TOP-SECRET")
+	errTestEventSecret   = errors.New("event decode failed with password TOP-SECRET")
+)
+
 type fakeMigrationPreviewer struct {
 	calls  int
 	events []events.EngineEvent
@@ -122,7 +127,7 @@ func TestMigrationPreviewBlocksEveryDestructiveProviderOperation(t *testing.T) {
 			var destructiveErr *destructiveMigrationPreviewError
 			require.ErrorAs(t, err, &destructiveErr)
 			require.Contains(t, err.Error(), string(op))
-			require.Contains(t, err.Error(), "Nothing has been changed")
+			require.Contains(t, err.Error(), "No cloud resources have been changed")
 			require.NotContains(t, err.Error(), "TOP-SECRET")
 		})
 	}
@@ -151,12 +156,12 @@ func TestMigrationPreviewFailureAndEventErrorsFailClosedWithoutSecrets(t *testin
 	}{
 		{
 			name:      "preview command",
-			previewer: &fakeMigrationPreviewer{err: errors.New("provider failed with password TOP-SECRET")},
+			previewer: &fakeMigrationPreviewer{err: errTestPreviewSecret},
 		},
 		{
 			name: "event stream",
 			previewer: &fakeMigrationPreviewer{events: []events.EngineEvent{
-				{Error: errors.New("event decode failed with password TOP-SECRET")},
+				{Error: errTestEventSecret},
 			}},
 		},
 	} {
@@ -209,7 +214,7 @@ func TestMigrationPreviewExactStackOverrideCanBypassSanitizedPreviewFailure(t *t
 	stderrLogger = &logs
 	t.Cleanup(func() { stderrLogger = originalLogger })
 
-	previewer := &fakeMigrationPreviewer{err: errors.New("provider failed with password TOP-SECRET")}
+	previewer := &fakeMigrationPreviewer{err: errTestPreviewSecret}
 	require.NoError(t, verifyMigrationPreview(t.Context(), previewer, legacyStatePreparation{
 		override:  true,
 		resources: []migrationPreviewResource{testPreviewResource(1)},
