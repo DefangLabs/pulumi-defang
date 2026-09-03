@@ -50,7 +50,7 @@ func createLbLogsBucket(
 			BucketKeyEnabled: pulumi.Bool(true), // frequently accessed objects will use bucket keys
 		},
 	}
-	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{}, sseRules, opt)
+	bucket, err := CreatePrivateBucket(ctx, name, &s3.BucketArgs{}, sseRules, opt)
 	if err != nil {
 		return nil, err
 	}

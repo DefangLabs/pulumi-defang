@@ -122,6 +122,20 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
+
+		// Every field below is copied unconditionally, including the zero
+		// value: the compose types have no "unset" state for a bare bool or
+		// string, and a conditional write is how a field gets forgotten.
+		// See TestServiceArgsCopyEveryField.
+		Aliases:         pulumi.ToStringMap(svc.Aliases),
+		Autoscaling:     pulumi.Bool(svc.Autoscaling),
+		ContainerName:   pulumi.StringPtrFromPtr(svc.ContainerName),
+		NetworkMode:     pulumi.String(svc.NetworkMode),
+		Policies:        pulumi.ToStringArray(svc.Policies),
+		Restart:         pulumi.String(svc.Restart),
+		StopGracePeriod: pulumi.StringPtrFromPtr(svc.StopGracePeriod),
+		VolumesFrom:     pulumi.ToStringArray(svc.VolumesFrom),
+		WorkingDir:      pulumi.StringPtrFromPtr(svc.WorkingDir),
 	}
 	if svc.DomainName != "" {
 		args.DomainName = pulumi.String(svc.DomainName)
@@ -174,6 +188,11 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Redis.FromSnapshot),
 		}
 	}
+	if svc.ObjectStore != nil {
+		args.ObjectStore = awscompose.ObjectStoreConfigArgs{
+			Bucket: pulumi.String(svc.ObjectStore.Bucket),
+		}
+	}
 	if svc.HealthCheck != nil {
 		args.HealthCheck = awscompose.HealthCheckConfigArgs{
 			Test:               pulumi.ToStringArray(svc.HealthCheck.Test),
@@ -199,6 +218,17 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 	}
 	if svc.LLM != nil {
 		args.Llm = awscompose.LlmConfigArgs{}
+	}
+	if len(svc.Volumes) > 0 {
+		volumes := make(awscompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
+		for _, v := range svc.Volumes {
+			volumes = append(volumes, awscompose.ServiceVolumeConfigArgs{
+				Source:   pulumi.String(v.Source),
+				Target:   pulumi.String(v.Target),
+				ReadOnly: pulumi.Bool(v.ReadOnly),
+			})
+		}
+		args.Volumes = volumes
 	}
 	return args
 }
