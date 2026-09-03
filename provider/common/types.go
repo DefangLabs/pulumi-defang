@@ -17,20 +17,28 @@ func MergeOptions(opts []pulumi.ResourceOption, overrides ...pulumi.ResourceOpti
 	return append(append([]pulumi.ResourceOption{}, opts...), overrides...)
 }
 
-// InvokeOptions returns the subset of opts that are also invoke options.
+// Go has no slice covariance, so an option list that is valid for both
+// resources and invokes cannot be handed to either API directly. These two
+// widen such a list; every element is kept, nothing is inspected or dropped.
 //
-// Provider-package options such as pulumi.Parent and pulumi.Provider are
-// declared as pulumi.ResourceOrInvokeOption, so a slice collected as
-// []pulumi.ResourceOption still carries everything an invoke needs to resolve
-// its provider. Invokes inherit the provider from their parent, and the CD
-// runs with pulumi:disable-default-providers, so an invoke issued without one
-// of these is rejected outright.
-func InvokeOptions(opts []pulumi.ResourceOption) []pulumi.InvokeOption {
-	var invokeOpts []pulumi.InvokeOption
-	for _, opt := range opts {
-		if invokeOpt, ok := opt.(pulumi.InvokeOption); ok {
-			invokeOpts = append(invokeOpts, invokeOpt)
-		}
+// The pair exists because a function that both looks a value up and creates
+// resources from it — CreateRDS, CreateCloudSQL, CreatePostgresFlexible —
+// takes pulumi.ResourceOrInvokeOption and needs each half separately. The
+// invoke half matters: the CD runs with pulumi:disable-default-providers, so
+// an invoke that carries neither a parent nor a provider is rejected.
+
+func ResourceOptions(opts []pulumi.ResourceOrInvokeOption) []pulumi.ResourceOption {
+	resourceOpts := make([]pulumi.ResourceOption, len(opts))
+	for i, opt := range opts {
+		resourceOpts[i] = opt
+	}
+	return resourceOpts
+}
+
+func InvokeOptions(opts []pulumi.ResourceOrInvokeOption) []pulumi.InvokeOption {
+	invokeOpts := make([]pulumi.InvokeOption, len(opts))
+	for i, opt := range opts {
+		invokeOpts[i] = opt
 	}
 	return invokeOpts
 }

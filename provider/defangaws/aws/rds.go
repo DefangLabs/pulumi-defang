@@ -173,9 +173,10 @@ func CreateRDS(
 	privateSgID pulumi.StringPtrInput,
 	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
-	opts ...pulumi.ResourceOption,
+	opts ...pulumi.ResourceOrInvokeOption,
 ) (*RDSResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider, common.InvokeOptions(opts)...)
+	pg := svc.ResolvePostgres(ctx, configProvider, opts...)
+	resourceOpts := common.ResourceOptions(opts)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -198,7 +199,7 @@ func CreateRDS(
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, opts...)
+		}, resourceOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating DB subnet group: %w", err)
 		}
@@ -232,7 +233,7 @@ func CreateRDS(
 			},
 		},
 		Tags: tags,
-	}, common.MergeOptions(opts,
+	}, common.MergeOptions(resourceOpts,
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
 	)...)
 	if err != nil {
@@ -284,7 +285,7 @@ func CreateRDS(
 	// (now-removed) `storage-encrypted` recipe defaulted to false would otherwise
 	// force-replace on next up. RDS can't toggle encryption in-place, so we
 	// preserve the existing instance and leave migration to the operator.
-	rdsOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{"storageEncrypted"}))
+	rdsOpts := common.MergeOptions(resourceOpts, pulumi.IgnoreChanges([]string{"storageEncrypted"}))
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
 	}
@@ -314,7 +315,7 @@ func CreateRDS(
 				statistic:          "Minimum",
 				description:        "RDS free storage space is below 1 GiB",
 			},
-		}, opts...)
+		}, resourceOpts...)
 	if err != nil {
 		return nil, err
 	}
