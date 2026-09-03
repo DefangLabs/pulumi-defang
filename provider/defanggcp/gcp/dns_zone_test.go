@@ -153,7 +153,7 @@ func TestFindDelegateZone(t *testing.T) {
 	}{
 		{
 			name: "no zones at all",
-			want: delegateZoneSelection{mode: delegateZoneCreate},
+			want: delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 		{
 			name:   "the CLI-created zone is read externally",
@@ -164,15 +164,23 @@ func TestFindDelegateZone(t *testing.T) {
 		{
 			name:  "the exact-name zone created by this stack stays managed",
 			zones: []map[string]any{zone(cliZone, fqdn+".", "public", managedDescription)},
-			want:  delegateZoneSelection{name: cliZone, mode: delegateZoneManaged},
+			want:  delegateZoneSelection{name: cliZone, mode: delegateZoneManagedExact},
 		},
 		{
-			name: "duplicate API entries for the same managed zone are one candidate",
+			name: "exact CLI and stack markers on duplicate API entries identify one managed candidate",
 			zones: []map[string]any{
-				zone(cliZone, fqdn+".", "public", managedDescription),
+				zone(cliZone, strings.ToUpper(fqdn)+".", "PUBLIC", externalDelegateZoneDescription),
 				zone(cliZone, fqdn+".", "public", managedDescription),
 			},
-			want: delegateZoneSelection{name: cliZone, mode: delegateZoneManaged},
+			want: delegateZoneSelection{name: cliZone, mode: delegateZoneManagedExact},
+		},
+		{
+			name: "duplicate API entries for the same external CLI zone are one candidate",
+			zones: []map[string]any{
+				zone(cliZone, fqdn, "public", externalDelegateZoneDescription),
+				zone(cliZone, fqdn+"...", "PUBLIC", externalDelegateZoneDescription),
+			},
+			want: delegateZoneSelection{name: cliZone, mode: delegateZoneExternal},
 		},
 		{
 			name: "unrelated zones are ignored",
@@ -180,12 +188,12 @@ func TestFindDelegateZone(t *testing.T) {
 				zone("defang-other-defang-app", "other.defang.app.", "public", "defang delegate domain"),
 				zone("customer-apex", "example.com.", "public", "customer zone"),
 			},
-			want: delegateZoneSelection{mode: delegateZoneCreate},
+			want: delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 		{
 			name:  "a private zone for the delegate domain is ignored",
 			zones: []map[string]any{zone("private-mirror", fqdn+".", "private", "private zone")},
-			want:  delegateZoneSelection{mode: delegateZoneCreate},
+			want:  delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 		{
 			name:  "one differently named public zone is unambiguous",
@@ -201,19 +209,36 @@ func TestFindDelegateZone(t *testing.T) {
 			want: delegateZoneSelection{name: cliZone, mode: delegateZoneExternal},
 		},
 		{
+			name:  "an exact-name zone without the CLI or current stack marker fails closed",
+			zones: []map[string]any{zone(cliZone, fqdn+".", "public", "unknown owner")},
+			wantErr: []string{
+				"uncertain public DNS managed-zone ownership",
+				"refusing to read it as external",
+				"migrate its Pulumi state explicitly",
+			},
+		},
+		{
+			name:  "an exact-name zone with an old project description fails closed",
+			zones: []map[string]any{zone(cliZone, fqdn+".", "public", "Public DNS zone for old-project")},
+			wantErr: []string{
+				"uncertain public DNS managed-zone ownership",
+				"current project/autonaming markers do not prove ownership",
+			},
+		},
+		{
 			name: "the exact-name managed zone wins over unrelated duplicates",
 			zones: []map[string]any{
 				zone("unrelated-duplicate", fqdn+".", "public", "other owner"),
 				zone(cliZone, fqdn+".", "public", managedDescription),
 			},
-			want: delegateZoneSelection{name: cliZone, mode: delegateZoneManaged},
+			want: delegateZoneSelection{name: cliZone, mode: delegateZoneManagedExact},
 		},
 		{
-			name: "the existing Pulumi resource stays managed",
+			name: "the legacy auto-named Pulumi resource stays managed",
 			zones: []map[string]any{
 				zone("public-dns-a1b2c3d", fqdn+".", "public", managedDescription),
 			},
-			want: delegateZoneSelection{name: "public-dns-a1b2c3d", mode: delegateZoneManaged},
+			want: delegateZoneSelection{name: "public-dns-a1b2c3d", mode: delegateZoneManagedLegacy},
 		},
 		{
 			name: "a stack ownership signal wins over an unrelated duplicate",
@@ -221,7 +246,25 @@ func TestFindDelegateZone(t *testing.T) {
 				zone("unrelated-duplicate", fqdn+".", "public", "other owner"),
 				zone("public-dns-a1b2c3d", fqdn+".", "public", managedDescription),
 			},
-			want: delegateZoneSelection{name: "public-dns-a1b2c3d", mode: delegateZoneManaged},
+			want: delegateZoneSelection{name: "public-dns-a1b2c3d", mode: delegateZoneManagedLegacy},
+		},
+		{
+			name: "an old project description is not silently converted to an external read",
+			zones: []map[string]any{
+				zone("old-project-public-dns-a1b2c3d", fqdn+".", "public", "Public DNS zone for old-project"),
+			},
+			wantErr: []string{
+				"uncertain public DNS managed-zone ownership",
+				"prior stack-owned public-dns",
+			},
+		},
+		{
+			name:  "a current auto-name marker with a changed description fails closed",
+			zones: []map[string]any{zone("public-dns-a1b2c3d", fqdn+".", "public", "unknown owner")},
+			wantErr: []string{
+				"uncertain public DNS managed-zone ownership",
+				"refusing to read it as external",
+			},
 		},
 		{
 			name: "duplicates without an ownership signal fail",
@@ -250,12 +293,12 @@ func TestFindDelegateZone(t *testing.T) {
 		{
 			name:  "a parent zone is not a match for the delegate domain",
 			zones: []map[string]any{zone("defang-tenant-defang-app", "tenant.defang.app.", "public", "parent")},
-			want:  delegateZoneSelection{mode: delegateZoneCreate},
+			want:  delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 		{
 			name:  "a zone with no name is skipped",
 			zones: []map[string]any{zone("", fqdn+".", "public", "missing name")},
-			want:  delegateZoneSelection{mode: delegateZoneCreate},
+			want:  delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 	}
 
@@ -310,11 +353,11 @@ func TestFindDelegateZoneListErrorAborts(t *testing.T) {
 	}
 }
 
-func TestFindDelegateZoneRecognizesConfiguredAutonaming(t *testing.T) {
+func TestFindDelegateZonePreservesLegacyAutonamedZoneAcrossConfigDrift(t *testing.T) {
 	const fqdn = "myproject.tenant.defang.app"
 	mocks := &zoneListMocks{zones: []map[string]any{
 		zone(
-			"defang-myproject-mystack-public-dns-a1b2c3d",
+			"old-project-old-stack-public-dns-a1b2c3d",
 			fqdn+".",
 			"public",
 			"Public DNS zone for myproject",
@@ -323,12 +366,15 @@ func TestFindDelegateZoneRecognizesConfiguredAutonaming(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		selection, err := findDelegateZone(ctx, "myproject", fqdn, pulumi.Parent(nil))
 		require.NoError(t, err)
-		assert.Equal(t, delegateZoneManaged, selection.mode)
+		assert.Equal(t, delegateZoneSelection{
+			name: "old-project-old-stack-public-dns-a1b2c3d",
+			mode: delegateZoneManagedLegacy,
+		}, selection)
 		return nil
 	},
-		pulumi.WithMocks("myproject", "mystack", mocks),
+		pulumi.WithMocks("new-pulumi-project", "new-stack", mocks),
 		withPulumiConfig(map[string]string{
-			pulumiAutonamingConfigKey: `{"pattern":"Defang-${project}-${stack}-${name}-${hex(7)}"}`,
+			pulumiAutonamingConfigKey: `{"pattern":"new-${project}-${stack}-${name}-${hex(7)}"}`,
 		}),
 	)
 	require.NoError(t, err)
@@ -409,8 +455,8 @@ func TestEnsureDelegateZoneNextRunKeepsExactNameManagedRegardlessOfAutonaming(t 
 	assert.NotNil(t, managed.RegisterRPC)
 	assert.Nil(t, managed.ReadRPC,
 		"a current stack-owned public-dns resource must never be converted to an external read")
-	assert.NotContains(t, managed.Inputs, resource.PropertyKey("name"),
-		"the next-run managed registration must not replace existing auto-named zones")
+	assert.Equal(t, cliZone, managed.Inputs["name"].StringValue(),
+		"the next-run exact managed registration must preserve the immutable explicit name")
 }
 
 func TestEnsureDelegateZoneReadPermissionFailureAborts(t *testing.T) {
@@ -444,7 +490,12 @@ func TestEnsureDelegateZonePreservesManagedRegistration(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := ensureDelegateZone(ctx, "myproject", fqdn, pulumi.Parent(nil), pulumi.Parent(nil))
 		return err
-	}, pulumi.WithMocks("myproject", "mystack", mocks))
+	},
+		pulumi.WithMocks("new-pulumi-project", "new-stack", mocks),
+		withPulumiConfig(map[string]string{
+			pulumiAutonamingConfigKey: `{"pattern":"changed-${project}-${stack}-${name}-${hex(7)}"}`,
+		}),
+	)
 	require.NoError(t, err)
 
 	resources := mocks.managedZoneResources()

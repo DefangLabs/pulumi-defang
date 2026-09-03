@@ -57,7 +57,18 @@ func (o *lifecycleOperations) provider() *deploytest.Provider {
 	}
 }
 
-func managedZoneProgram(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
+func exactManagedZoneProgram(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
+	_, err := monitor.RegisterResource(managedZoneToken, "public-dns", true, deploytest.ResourceOptions{
+		Inputs: resource.PropertyMap{
+			"description": resource.NewStringProperty("Public DNS zone for myproject"),
+			"dnsName":     resource.NewStringProperty("myproject.tenant.defang.app."),
+			"name":        resource.NewStringProperty("defang-myproject-tenant-defang-app"),
+		},
+	})
+	return err
+}
+
+func legacyAutonamedZoneProgram(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 	_, err := monitor.RegisterResource(managedZoneToken, "public-dns", true, deploytest.ResourceOptions{
 		Inputs: resource.PropertyMap{
 			"description": resource.NewStringProperty("Public DNS zone for myproject"),
@@ -96,14 +107,53 @@ func zoneState(snapshot *deploy.Snapshot, logicalName string) *pkgresource.State
 	return nil
 }
 
-func TestManagedDelegateZoneLifecycleTransitionStaysManaged(t *testing.T) {
+func TestExactManagedDelegateZoneLifecycleUpdateIsNoOp(t *testing.T) {
+	ops := &lifecycleOperations{}
+
+	lt.NewTestBuilder(t, nil).
+		WithProvider("gcp", "1.0.0", ops.provider()).
+		RunUpdate(exactManagedZoneProgram, true).
+		Then(func(oldSnapshot *deploy.Snapshot, err error) {
+			require.NoError(t, err)
+			oldZone := zoneState(oldSnapshot, "public-dns")
+			require.NotNil(t, oldZone)
+			assert.False(t, oldZone.External)
+			assert.Equal(t, resource.ID("managed-zone-id"), oldZone.ID)
+			assert.Equal(t,
+				resource.NewStringProperty("defang-myproject-tenant-defang-app"),
+				oldZone.Inputs[resource.PropertyKey("name")],
+			)
+
+			createsBefore := ops.creates.Load()
+			updatesBefore := ops.updates.Load()
+			deletesBefore := ops.deletes.Load()
+			assert.Equal(t, int32(1), createsBefore)
+			assert.Zero(t, updatesBefore)
+			assert.Zero(t, deletesBefore)
+			lt.NewTestBuilder(t, oldSnapshot).
+				WithProvider("gcp", "1.0.0", ops.provider()).
+				RunUpdate(exactManagedZoneProgram, true).
+				Then(func(newSnapshot *deploy.Snapshot, err error) {
+					require.NoError(t, err)
+					newZone := zoneState(newSnapshot, "public-dns")
+					require.NotNil(t, newZone)
+					assert.False(t, newZone.External)
+					assert.Equal(t, oldZone.ID, newZone.ID)
+					assert.Equal(t, createsBefore, ops.creates.Load(), "same-program update must not recreate")
+					assert.Equal(t, updatesBefore, ops.updates.Load(), "same-program update must not update")
+					assert.Equal(t, deletesBefore, ops.deletes.Load(), "same-program update must not delete")
+				})
+		})
+}
+
+func TestLegacyAutonamedDelegateZoneLifecycleUpdateIsNoOp(t *testing.T) {
 	ops := &lifecycleOperations{}
 
 	// This first update is the old implementation: public-dns is a managed
 	// resource with an auto-named physical Name because Name is absent from inputs.
 	lt.NewTestBuilder(t, nil).
 		WithProvider("gcp", "1.0.0", ops.provider()).
-		RunUpdate(managedZoneProgram, true).
+		RunUpdate(legacyAutonamedZoneProgram, true).
 		Then(func(oldSnapshot *deploy.Snapshot, err error) {
 			require.NoError(t, err)
 			oldZone := zoneState(oldSnapshot, "public-dns")
@@ -117,7 +167,7 @@ func TestManagedDelegateZoneLifecycleTransitionStaysManaged(t *testing.T) {
 			// update, or second create.
 			lt.NewTestBuilder(t, oldSnapshot).
 				WithProvider("gcp", "1.0.0", ops.provider()).
-				RunUpdate(managedZoneProgram, true).
+				RunUpdate(legacyAutonamedZoneProgram, true).
 				Then(func(newSnapshot *deploy.Snapshot, err error) {
 					require.NoError(t, err)
 					newZone := zoneState(newSnapshot, "public-dns")

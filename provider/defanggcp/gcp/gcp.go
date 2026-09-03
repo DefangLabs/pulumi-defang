@@ -20,6 +20,7 @@ import (
 
 var (
 	errAmbiguousDelegateZones = errors.New("ambiguous public DNS managed zones")
+	errUncertainZoneOwnership = errors.New("uncertain public DNS managed-zone ownership")
 	errInvalidDNSRecord       = errors.New("invalid DNS record in wildcard cert authorization")
 )
 
@@ -284,12 +285,17 @@ func DelegateZoneName(domain string) string {
 type delegateZoneMode uint8
 
 const (
-	delegateZoneCreate delegateZoneMode = iota
-	delegateZoneManaged
+	delegateZoneCreateExact delegateZoneMode = iota
+	delegateZoneManagedExact
+	delegateZoneManagedLegacy
 	delegateZoneExternal
 )
 
-const externalDelegateZoneLogicalName = "external-public-dns"
+const (
+	externalDelegateZoneLogicalName = "external-public-dns"
+	managedDelegateZoneDescription  = "Public DNS zone for "
+	externalDelegateZoneDescription = "defang delegate domain"
+)
 
 type delegateZoneSelection struct {
 	name string
@@ -337,12 +343,17 @@ func selectDelegateZone(
 ) (delegateZoneSelection, error) {
 	fqdn = common.NormalizeDNS(fqdn)
 	cliName := DelegateZoneName(fqdn)
-	managedDescription := fmt.Sprintf("Public DNS zone for %v", projectName)
+	managedDescription := managedDelegateZoneDescription + projectName
 
-	var matches []dns.GetManagedZonesManagedZone
-	matchNames := make(map[string]struct{})
-	var cliZone *dns.GetManagedZonesManagedZone
-	managedZones := make(map[string]dns.GetManagedZonesManagedZone)
+	type candidate struct {
+		zone               dns.GetManagedZonesManagedZone
+		exactCLI           bool
+		managed            bool
+		externalCLI        bool
+		uncertainOwnership bool
+	}
+
+	candidates := make(map[string]candidate)
 	for _, zone := range zones {
 		// Private zones cannot answer a DNS-01 challenge or serve public records. Normalize
 		// both values because DNS names are case-insensitive and callers vary on the final dot.
@@ -352,16 +363,33 @@ func selectDelegateZone(
 			continue
 		}
 		nameKey := strings.ToLower(*zone.Name)
-		if _, seen := matchNames[nameKey]; !seen {
-			matches = append(matches, zone)
-			matchNames[nameKey] = struct{}{}
+		current := candidates[nameKey]
+		if current.zone.Name == nil {
+			current.zone = zone
 		}
-		if strings.EqualFold(*zone.Name, cliName) {
+		current.exactCLI = current.exactCLI || strings.EqualFold(*zone.Name, cliName)
+		current.managed = current.managed || zone.Description == managedDescription
+		current.externalCLI = current.externalCLI || zone.Description == externalDelegateZoneDescription
+		current.uncertainOwnership = current.uncertainOwnership ||
+			isPossiblyStackManagedDelegateZone(zone, managedNamePrefix, managedDescription)
+		candidates[nameKey] = current
+	}
+
+	matches := make([]dns.GetManagedZonesManagedZone, 0, len(candidates))
+	managedZones := make(map[string]candidate)
+	uncertainZones := make(map[string]candidate)
+	var cliZone *candidate
+	for nameKey, zone := range candidates {
+		matches = append(matches, zone.zone)
+		if zone.managed {
+			managedZones[nameKey] = zone
+		}
+		if zone.uncertainOwnership && !zone.managed {
+			uncertainZones[nameKey] = zone
+		}
+		if zone.exactCLI {
 			candidate := zone
 			cliZone = &candidate
-		}
-		if isStackManagedDelegateZone(zone, cliName, managedNamePrefix, managedDescription) {
-			managedZones[nameKey] = zone
 		}
 	}
 
@@ -370,34 +398,50 @@ func selectDelegateZone(
 		// unrelated same-dnsName zones. When that same physical zone also carries the
 		// stack-managed description, it is the explicitly named public-dns created by
 		// this provider and must remain managed. Only a distinct managed zone conflicts.
-		cliNameKey := strings.ToLower(*cliZone.Name)
-		if _, managed := managedZones[cliNameKey]; managed && len(managedZones) == 1 {
-			return delegateZoneSelection{name: *cliZone.Name, mode: delegateZoneManaged}, nil
+		cliNameKey := strings.ToLower(*cliZone.zone.Name)
+		if cliZone.managed && len(managedZones) == 1 && len(uncertainZones) == 0 {
+			return delegateZoneSelection{name: *cliZone.zone.Name, mode: delegateZoneManagedExact}, nil
 		}
-		if len(managedZones) != 0 {
+		if _, sameResource := managedZones[cliNameKey]; sameResource {
+			delete(managedZones, cliNameKey)
+		}
+		if _, sameResource := uncertainZones[cliNameKey]; sameResource {
+			delete(uncertainZones, cliNameKey)
+		}
+		if len(managedZones) != 0 || len(uncertainZones) != 0 {
 			return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
 				"both the CLI-created zone and a stack-managed public-dns zone exist; remove the unwanted duplicate "+
 					"or migrate its Pulumi state explicitly")
 		}
-		return delegateZoneSelection{name: *cliZone.Name, mode: delegateZoneExternal}, nil
+		if cliZone.uncertainOwnership || !cliZone.externalCLI {
+			return delegateZoneSelection{}, delegateZoneOwnershipError(fqdn, cliName, matches)
+		}
+		return delegateZoneSelection{name: *cliZone.zone.Name, mode: delegateZoneExternal}, nil
 	}
 
 	if len(managedZones) == 1 {
+		if len(uncertainZones) != 0 {
+			return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
+				"a stack-managed public-dns zone and another possibly stack-owned zone both exist")
+		}
 		// Keep registering the original managed resource under the same logical name.
 		// Returning a GetManagedZone here would change the same URN into an external read,
 		// relinquishing lifecycle ownership and potentially deleting/replacing the old zone.
 		for _, zone := range managedZones {
-			return delegateZoneSelection{name: *zone.Name, mode: delegateZoneManaged}, nil
+			return delegateZoneSelection{name: *zone.zone.Name, mode: delegateZoneManagedLegacy}, nil
 		}
 	}
 	if len(managedZones) > 1 {
 		return delegateZoneSelection{}, delegateZoneAmbiguityError(fqdn, cliName, matches,
 			"more than one zone has this stack's public-dns ownership markers")
 	}
+	if len(uncertainZones) != 0 {
+		return delegateZoneSelection{}, delegateZoneOwnershipError(fqdn, cliName, matches)
+	}
 
 	switch len(matches) {
 	case 0:
-		return delegateZoneSelection{mode: delegateZoneCreate}, nil
+		return delegateZoneSelection{mode: delegateZoneCreateExact}, nil
 	case 1:
 		// A single public zone is unambiguous even if it predates the CLI naming rule.
 		return delegateZoneSelection{name: *matches[0].Name, mode: delegateZoneExternal}, nil
@@ -407,27 +451,37 @@ func selectDelegateZone(
 	}
 }
 
-func isStackManagedDelegateZone(
+func isPossiblyStackManagedDelegateZone(
 	zone dns.GetManagedZonesManagedZone,
-	cliName string,
 	managedNamePrefix string,
 	managedDescription string,
 ) bool {
-	if zone.Name == nil || zone.Description != managedDescription {
+	if zone.Name == nil || zone.Description == managedDescription ||
+		zone.Description == externalDelegateZoneDescription {
 		return false
 	}
-	name := strings.ToLower(*zone.Name)
-	// Newly created zones have an explicit CLI-compatible name, which is independent
-	// of Pulumi's current autonaming configuration. The stable managed description
-	// distinguishes them from zones pre-created by the CLI.
-	if strings.EqualFold(name, cliName) {
+	if strings.HasPrefix(zone.Description, managedDelegateZoneDescription) {
 		return true
 	}
 
-	// Older stack-owned zones were auto-named. Preserve their managed registration
-	// when their physical name still matches the active autonaming convention.
+	name := strings.ToLower(*zone.Name)
 	prefix := strings.ToLower(strings.TrimSuffix(managedNamePrefix, "-"))
 	return prefix != "" && (name == prefix || strings.HasPrefix(name, prefix+"-"))
+}
+
+func delegateZoneOwnershipError(
+	fqdn string,
+	cliName string,
+	zones []dns.GetManagedZonesManagedZone,
+) error {
+	names := delegateZoneNames(zones)
+	return fmt.Errorf(
+		"%w: public Cloud DNS managed zone candidate(s) for %s (%s) may be a prior stack-owned public-dns "+
+			"resource, but the current project/autonaming markers do not prove ownership; refusing to read it as external "+
+			"because that could delete the managed resource: keep the delegated zone named %q and migrate its Pulumi "+
+			"state explicitly",
+		errUncertainZoneOwnership, fqdn, strings.Join(names, ", "), cliName,
+	)
 }
 
 func delegateZoneAmbiguityError(
@@ -436,6 +490,15 @@ func delegateZoneAmbiguityError(
 	zones []dns.GetManagedZonesManagedZone,
 	reason string,
 ) error {
+	names := delegateZoneNames(zones)
+	return fmt.Errorf(
+		"%w: multiple public Cloud DNS managed zones serve %s (%s), and %s; refusing to choose one: "+
+			"keep the delegated zone named %q and remove the duplicates, or migrate ownership explicitly",
+		errAmbiguousDelegateZones, fqdn, strings.Join(names, ", "), reason, cliName,
+	)
+}
+
+func delegateZoneNames(zones []dns.GetManagedZonesManagedZone) []string {
 	names := make([]string, 0, len(zones))
 	for _, zone := range zones {
 		if zone.Name != nil {
@@ -443,11 +506,7 @@ func delegateZoneAmbiguityError(
 		}
 	}
 	sort.Strings(names)
-	return fmt.Errorf(
-		"%w: multiple public Cloud DNS managed zones serve %s (%s), and %s; refusing to choose one: "+
-			"keep the delegated zone named %q and remove the duplicates, or migrate ownership explicitly",
-		errAmbiguousDelegateZones, fqdn, strings.Join(names, ", "), reason, cliName,
-	)
+	return names
 }
 
 func ensureDelegateZone(
@@ -479,17 +538,21 @@ func ensureDelegateZone(
 	}
 
 	zoneArgs := &dns.ManagedZoneArgs{
-		Description: pulumi.String(fmt.Sprintf("Public DNS zone for %v", projectName)),
+		Description: pulumi.String(managedDelegateZoneDescription + projectName),
 		DnsName:     pulumi.String(fqdn + "."),
 	}
-	if selection.mode == delegateZoneCreate {
+	switch selection.mode {
+	case delegateZoneCreateExact, delegateZoneManagedExact:
 		// The CLI only looks up this exact physical name. An auto-named zone would be
-		// invisible to it and the CLI would create and delegate a duplicate next time.
+		// invisible to it, and a later exact-name registration must keep the identical
+		// immutable input to avoid replacing the zone created on the first update.
 		zoneArgs.Name = pulumi.String(DelegateZoneName(fqdn))
+	case delegateZoneManagedLegacy:
+		// Legacy public-dns resources were auto-named. Omitting Name preserves their
+		// original input shape and physical zone.
+	default:
+		return nil, fmt.Errorf("invalid delegate-zone selection mode %d", selection.mode)
 	}
-	// The managed path intentionally keeps the original declaration's Name omitted.
-	// Existing auto-named stacks therefore retain the same managed URN and physical
-	// zone; adding the now-explicit name there would schedule an immutable replacement.
 	zone, err := dns.NewManagedZone(ctx, "public-dns", zoneArgs, opts...)
 	if err != nil {
 		return nil, err
