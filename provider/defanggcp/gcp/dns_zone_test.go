@@ -191,9 +191,12 @@ func TestFindDelegateZone(t *testing.T) {
 			want: delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 		{
-			name:  "a private zone for the delegate domain is ignored",
-			zones: []map[string]any{zone("private-mirror", fqdn+".", "private", "private zone")},
-			want:  delegateZoneSelection{mode: delegateZoneCreateExact},
+			name: "private and other non-public zones for the delegate domain are ignored",
+			zones: []map[string]any{
+				zone("private-mirror", fqdn+".", "private", "private zone"),
+				zone("internal-mirror", fqdn+".", "internal", "other zone"),
+			},
+			want: delegateZoneSelection{mode: delegateZoneCreateExact},
 		},
 		{
 			name:  "one differently named public zone is unambiguous",
@@ -428,13 +431,13 @@ func TestEnsureDelegateZoneFreshCreateUsesExactCLINameWithParentProvider(t *test
 		"zone list invoke and managed create must inherit the same explicit provider")
 }
 
-func TestEnsureDelegateZoneNextRunKeepsExactNameManagedRegardlessOfAutonaming(t *testing.T) {
+func TestEnsureDelegateZoneEmptyVisibilityKeepsExactNameManagedRegardlessOfAutonaming(t *testing.T) {
 	const (
 		fqdn    = "myproject.tenant.defang.app"
 		cliZone = "defang-myproject-tenant-defang-app"
 	)
 	mocks := &zoneListMocks{zones: []map[string]any{
-		zone(cliZone, fqdn+".", "public", "Public DNS zone for myproject"),
+		zone(cliZone, fqdn+".", "", "Public DNS zone for myproject"),
 	}}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := ensureDelegateZone(ctx, "myproject", fqdn, pulumi.Parent(nil), pulumi.Parent(nil))
@@ -482,10 +485,10 @@ func TestEnsureDelegateZoneReadPermissionFailureAborts(t *testing.T) {
 	assert.NotEqual(t, "public-dns", resources[0].Name, "read failure must not fall through to managed creation")
 }
 
-func TestEnsureDelegateZonePreservesManagedRegistration(t *testing.T) {
+func TestEnsureDelegateZoneEmptyVisibilityPreservesLegacyManagedRegistration(t *testing.T) {
 	const fqdn = "myproject.tenant.defang.app"
 	mocks := &zoneListMocks{zones: []map[string]any{
-		zone("public-dns-a1b2c3d", fqdn+".", "public", "Public DNS zone for myproject"),
+		zone("public-dns-a1b2c3d", fqdn+".", "", "Public DNS zone for myproject"),
 	}}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := ensureDelegateZone(ctx, "myproject", fqdn, pulumi.Parent(nil), pulumi.Parent(nil))
@@ -511,13 +514,13 @@ func TestEnsureDelegateZonePreservesManagedRegistration(t *testing.T) {
 		"adding immutable Name would replace an existing stack-owned zone")
 }
 
-func TestEnsureDelegateZoneReadsExternalWithParentProvider(t *testing.T) {
+func TestEnsureDelegateZoneEmptyVisibilityReadsExternalWithParentProvider(t *testing.T) {
 	const (
 		fqdn    = "myproject.tenant.defang.app"
 		cliZone = "defang-myproject-tenant-defang-app"
 	)
 	mocks := &zoneListMocks{zones: []map[string]any{
-		zone(cliZone, fqdn+".", "public", "defang delegate domain"),
+		zone(cliZone, fqdn+".", "", "defang delegate domain"),
 	}}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		provider, err := pulumigcp.NewProvider(ctx, "explicit-gcp", &pulumigcp.ProviderArgs{

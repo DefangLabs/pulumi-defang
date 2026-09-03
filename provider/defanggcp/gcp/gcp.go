@@ -365,8 +365,9 @@ func classifyDelegateZoneCandidates(
 	for _, zone := range zones {
 		// Private zones cannot answer a DNS-01 challenge or serve public records. Normalize
 		// both values because DNS names are case-insensitive and callers vary on the final dot.
+		// Older public zones may omit visibility, so only reject explicit non-public values.
 		if zone.Name == nil || *zone.Name == "" ||
-			!strings.EqualFold(zone.Visibility, "public") ||
+			(zone.Visibility != "" && !strings.EqualFold(zone.Visibility, "public")) ||
 			common.NormalizeDNS(zone.DnsName) != fqdn {
 			continue
 		}
