@@ -128,7 +128,7 @@ func createECSLifecycleToCWLogs(
 	// Logs caps account-scoped policies at 10 per region — which the TS stack's
 	// per-project PolicyName would have hit at the 11th stack in an account.
 	// Resource-scoped policies have no such cap, and one attaches per log group.
-	_, err = cloudwatch.NewLogResourcePolicy(ctx, "ecs-events", &cloudwatch.LogResourcePolicyArgs{
+	policy, err := cloudwatch.NewLogResourcePolicy(ctx, "ecs-events", &cloudwatch.LogResourcePolicyArgs{
 		ResourceArn:    logGroup.Arn,
 		PolicyDocument: policyDocument,
 	}, opt)
@@ -146,10 +146,14 @@ func createECSLifecycleToCWLogs(
 		return nil, fmt.Errorf("creating ECS lifecycle event rule: %w", err)
 	}
 
+	// The target is what starts delivery, and EventBridge can only write once
+	// the resource policy exists — neither the rule nor the target references
+	// it, so order them explicitly rather than letting the engine run them in
+	// parallel and drop the events in between.
 	_, err = cloudwatch.NewEventTarget(ctx, "ecs-lifecycle-cw", &cloudwatch.EventTargetArgs{
 		Arn:  logGroup.Arn,
 		Rule: rule.Name,
-	}, opt)
+	}, opt, pulumi.DependsOn([]pulumi.Resource{policy}))
 	if err != nil {
 		return nil, fmt.Errorf("creating ECS lifecycle event target: %w", err)
 	}
