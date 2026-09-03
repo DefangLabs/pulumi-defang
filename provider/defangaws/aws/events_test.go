@@ -2,8 +2,12 @@ package aws
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,4 +73,70 @@ func TestECSEventPattern(t *testing.T) {
 		"arn:aws:ecs:us-west-2:123401343364:service/Defang-proj-beta-cluster-4a858f2/",
 		pattern.Or[0].Resources[0].Prefix)
 	assert.Equal(t, []string{clusterArn}, pattern.Or[1].Detail.ClusterArn)
+}
+
+type eventsTestMocks struct {
+	mu     sync.Mutex
+	inputs map[string]resource.PropertyMap // "<type>/<name>" → inputs
+}
+
+func (m *eventsTestMocks) NewResource(
+	args pulumi.MockResourceArgs,
+) (string, resource.PropertyMap, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.inputs == nil {
+		m.inputs = map[string]resource.PropertyMap{}
+	}
+	m.inputs[args.TypeToken+"/"+args.Name] = args.Inputs
+
+	outputs := args.Inputs.Copy()
+	switch args.TypeToken {
+	case "aws:ecs/cluster:Cluster":
+		outputs["arn"] = resource.NewStringProperty(
+			"arn:aws:ecs:us-west-2:123401343364:cluster/Defang-myproject-beta-cluster-4a858f2")
+	case "aws:cloudwatch/logGroup:LogGroup":
+		outputs["arn"] = resource.NewStringProperty(
+			"arn:aws:logs:us-west-2:123401343364:log-group:/Defang/myproject/beta/ecs")
+	}
+	return args.Name + "_id", outputs, nil
+}
+
+func (m *eventsTestMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
+
+func withConfig(cfg map[string]string) pulumi.RunOption {
+	return func(info *pulumi.RunInfo) { info.Config = cfg }
+}
+
+// TestCreateECSLifecycleToCWLogsNames checks the two names that must not
+// collide between stacks sharing an account: the log group (the CLI derives it
+// from the same prefix/project/stack) and the log resource policy (resource
+// policies are account+region scoped by name, so an unqualified name would let
+// one stack's teardown revoke another's EventBridge writes).
+func TestCreateECSLifecycleToCWLogsNames(t *testing.T) {
+	mocks := &eventsTestMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		cluster, err := ecs.NewCluster(ctx, "cluster", &ecs.ClusterArgs{})
+		require.NoError(t, err)
+		// Version("") is a no-op option: the real caller passes the AWS provider.
+		_, err = createECSLifecycleToCWLogs(ctx, "myproject", cluster, pulumi.Version(""))
+		return err
+	},
+		pulumi.WithMocks("myproject", "beta", mocks),
+		withConfig(map[string]string{
+			"defang:prefix":     "Defang",
+			"pulumi:autonaming": `{"pattern":"Defang-${project}-${stack}-${name}-${hex(7)}"}`,
+		}),
+	)
+	require.NoError(t, err)
+
+	logGroup, ok := mocks.inputs["aws:cloudwatch/logGroup:LogGroup/ecs-events"]
+	require.True(t, ok, "expected an ECS events log group")
+	assert.Equal(t, "/Defang/myproject/beta/ecs", logGroup["name"].StringValue())
+
+	policy, ok := mocks.inputs["aws:cloudwatch/logResourcePolicy:LogResourcePolicy/ecs-events"]
+	require.True(t, ok, "expected a log resource policy")
+	assert.Equal(t, "Defang-myproject-beta-ecs-log-policy", policy["policyName"].StringValue())
 }

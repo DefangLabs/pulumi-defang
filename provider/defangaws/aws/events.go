@@ -123,10 +123,14 @@ func createECSLifecycleToCWLogs(
 		return string(b), err
 	}).(pulumi.StringOutput)
 
-	// A log resource policy is account+region scoped by name, so it must not
-	// collide with another project's; keep the stack-qualified log group name.
+	// Resource policies are account+region scoped by name, so the name must be
+	// stack-qualified — two projects in one account would otherwise overwrite
+	// each other's policy, and tearing either down would revoke the other's.
+	// NOTE: CloudWatch Logs allows only 10 resource policies per account per
+	// region, so a single account cannot hold more than 10 Defang stacks in a
+	// region. The TS stack had the same per-project policy and the same limit.
 	_, err = cloudwatch.NewLogResourcePolicy(ctx, "ecs-events", &cloudwatch.LogResourcePolicyArgs{
-		PolicyName:     logGroup.Name,
+		PolicyName:     pulumi.String(common.AutonamingPrefix(ctx, "ecs-log-policy")),
 		PolicyDocument: policyDocument,
 	}, opt)
 	if err != nil {

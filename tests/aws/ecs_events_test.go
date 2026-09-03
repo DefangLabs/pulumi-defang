@@ -115,7 +115,9 @@ func TestAwsProjectCreatesECSEventsLogGroup(t *testing.T) {
 
 	// EventBridge writes through a resource policy on the group, not a role.
 	require.NotEqual(t, 0, captured.resourcePolicy.Len(), "expected a log resource policy")
-	assert.Equal(t, "/Defang/myproject/beta/ecs", captured.resourcePolicy.Get("policyName").AsString())
+	// Stack-qualified: two projects in one account must not overwrite each
+	// other's policy (resource policies are account+region scoped by name).
+	assert.Equal(t, "ecs-log-policy", captured.resourcePolicy.Get("policyName").AsString())
 	var policy struct {
 		Statement []struct {
 			Action    []string `json:"Action"`
