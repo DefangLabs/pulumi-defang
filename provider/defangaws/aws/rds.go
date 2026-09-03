@@ -175,7 +175,7 @@ func CreateRDS(
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*RDSResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, common.InvokeOptions(opts)...)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
@@ -144,7 +145,7 @@ func CreatePostgresFlexible(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*postgresResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, common.InvokeOptions(opts)...)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}

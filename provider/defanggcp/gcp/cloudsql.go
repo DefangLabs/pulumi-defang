@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -100,7 +101,7 @@ func CreateCloudSQL(
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*CloudSQLResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, common.InvokeOptions(opts)...)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -167,10 +168,10 @@ func CreateCloudSQL(
 	// handle it.
 	if pw, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_PASSWORD"]); pw != nil && *pw != "" {
 		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
-			Name:           pg.Username,
-			Instance:       instance.Name,
-			Password:       pg.Password,
-			Type: pulumi.String("BUILT_IN"),
+			Name:     pg.Username,
+			Instance: instance.Name,
+			Password: pg.Password,
+			Type:     pulumi.String("BUILT_IN"),
 			// ABANDON alone. Deleting the instance removes its users, so there is nothing here to
 			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
 			// redundant with the deletion policy, which already suppresses the API call.
@@ -187,7 +188,7 @@ func CreateCloudSQL(
 	rawDB, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_DB"])
 	if rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
-			Name:           pg.DBName,
+			Name:     pg.DBName,
 			Instance: instance.Name,
 			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),

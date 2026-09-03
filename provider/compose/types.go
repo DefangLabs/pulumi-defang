@@ -538,7 +538,11 @@ func getPostgresVersion(image string) string {
 }
 
 // ResolvePostgres derives PostgresConfig from the service's postgres extension, image tag, and env vars.
-func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider ConfigProvider) *PostgresConfigArgs {
+func (s ServiceConfig) ResolvePostgres(
+	ctx *pulumi.Context,
+	configProvider ConfigProvider,
+	opts ...pulumi.InvokeOption,
+) *PostgresConfigArgs {
 	if s.Postgres == nil {
 		return nil
 	}
@@ -554,9 +558,10 @@ func (s ServiceConfig) ResolvePostgres(ctx *pulumi.Context, configProvider Confi
 	if dbNameStr == nil || *dbNameStr == "" {
 		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
-	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB)
-	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER)
-	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "") // FIXME: should not default to ""
+	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB, opts...)
+	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER, opts...)
+	// FIXME: should not default to ""
+	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "", opts...)
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {
