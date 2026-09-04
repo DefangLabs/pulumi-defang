@@ -70,10 +70,18 @@ func (noopAWSMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error)
 	return args.Args, nil
 }
 
-// legacyAliasSpy records the legacy identity each registered resource declared.
+// legacyAliasSpy records the legacy identity each registered resource declared,
+// keyed by resource type as well as name: several of the resources below share
+// a Pulumi name (e.g. the RDS instance, its security group and its subnet group
+// are all registered as "postgres"), so name alone can't tell them apart.
 type legacyAliasSpy struct {
 	noopAWSMocks
-	aliases map[string][]legacyAliasSpec
+	aliases map[legacyResourceKey][]legacyAliasSpec
+}
+
+type legacyResourceKey struct {
+	typeToken string
+	name      string
 }
 
 type legacyAliasSpec struct {
@@ -84,11 +92,12 @@ type legacyAliasSpec struct {
 
 func (m *legacyAliasSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	if m.aliases == nil {
-		m.aliases = map[string][]legacyAliasSpec{}
+		m.aliases = map[legacyResourceKey][]legacyAliasSpec{}
 	}
+	key := legacyResourceKey{typeToken: args.TypeToken, name: args.Name}
 	for _, alias := range args.RegisterRPC.GetAliases() {
 		if spec := alias.GetSpec(); spec != nil {
-			m.aliases[args.Name] = append(m.aliases[args.Name], legacyAliasSpec{
+			m.aliases[key] = append(m.aliases[key], legacyAliasSpec{
 				name:     spec.GetName(),
 				project:  spec.GetProject(),
 				noParent: spec.GetNoParent(),
@@ -118,13 +127,13 @@ func TestRDSAdoptsLegacyMvpNames(t *testing.T) {
 	}, pulumi.WithMocks("myproject", "prod1", spy))
 	require.NoError(t, err)
 
-	assert.Contains(t, spy.aliases["postgres"], legacyAliasSpec{
+	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:rds/instance:Instance", "postgres"}], legacyAliasSpec{
 		name: "defang-cd-prod1-postgres", project: legacyProject, noParent: true,
 	}, "RDS instance would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases["postgres"], legacyAliasSpec{
+	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:ec2/securityGroup:SecurityGroup", "postgres"}], legacyAliasSpec{
 		name: "Defang-cd-prod1-postgres", project: legacyProject, noParent: true,
 	}, "RDS security group would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases["postgres"], legacyAliasSpec{
+	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:rds/subnetGroup:SubnetGroup", "postgres"}], legacyAliasSpec{
 		name: "postgres", project: legacyProject, noParent: true,
 	}, "RDS subnet group would be replaced instead of adopted")
 }
@@ -144,10 +153,13 @@ func TestElasticacheAdoptsLegacyMvpNames(t *testing.T) {
 	}, pulumi.WithMocks("myproject", "prod1", spy))
 	require.NoError(t, err)
 
-	assert.Contains(t, spy.aliases[service], legacyAliasSpec{
+	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:elasticache/replicationGroup:ReplicationGroup", service}], legacyAliasSpec{
 		name: service, project: legacyProject, noParent: true,
 	}, "replication group would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases[service], legacyAliasSpec{
+	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:elasticache/subnetGroup:SubnetGroup", service}], legacyAliasSpec{
 		name: "Defang-cd-prod1-" + service, project: legacyProject, noParent: true,
-	}, "ElastiCache subnet group and security group would be replaced instead of adopted")
+	}, "ElastiCache subnet group would be replaced instead of adopted")
+	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:ec2/securityGroup:SecurityGroup", service}], legacyAliasSpec{
+		name: "Defang-cd-prod1-" + service, project: legacyProject, noParent: true,
+	}, "ElastiCache security group would be replaced instead of adopted")
 }
