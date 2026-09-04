@@ -60,9 +60,10 @@ func CreateDNSZones(
 			return nil, fmt.Errorf("creating postgres private DNS zone: %w", err)
 		}
 
-		// "link" alone: the zone above parents it, in Pulumi and in Azure's own
-		// resource ID, so the name has nothing left to disambiguate.
-		_, err = privatedns.NewVirtualNetworkLink(ctx, "link", &privatedns.VirtualNetworkLinkArgs{
+		// Named for its zone, not "link": a Pulumi URN inherits its parent's
+		// TYPE but not its name, so two links called "link" under two
+		// PrivateZone parents would produce one URN and fail the deploy.
+		_, err = privatedns.NewVirtualNetworkLink(ctx, "postgres", &privatedns.VirtualNetworkLinkArgs{
 			ResourceGroupName:   infra.ResourceGroup.Name,
 			PrivateZoneName:     pgZone.Name,
 			Location:            pulumi.String("global"),
@@ -90,7 +91,7 @@ func CreateDNSZones(
 			return nil, fmt.Errorf("creating Redis private DNS zone: %w", err)
 		}
 
-		redisLink, err := privatedns.NewVirtualNetworkLink(ctx, "link", &privatedns.VirtualNetworkLinkArgs{
+		redisLink, err := privatedns.NewVirtualNetworkLink(ctx, "redis", &privatedns.VirtualNetworkLinkArgs{
 			ResourceGroupName:   infra.ResourceGroup.Name,
 			PrivateZoneName:     redisZone.Name,
 			Location:            pulumi.String("global"),
