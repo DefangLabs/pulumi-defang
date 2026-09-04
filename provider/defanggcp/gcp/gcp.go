@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
@@ -116,9 +117,10 @@ func BuildGlobalConfig(
 	// Pulumi state, which left the VPC orphaned with nothing left to delete it: the project then
 	// ran into its NETWORKS quota (issue #183). Letting the destroy fail is what puts the CLI's
 	// cleanup tool (DefangLabs/defang#2157) in front of the user.
+	// networkName(project + "-vpc") in the legacy CD; it skipped the prefix and stack.
 	vpc, err := compute.NewNetwork(ctx, "vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
-	}, opts...)
+	}, common.MergeOptions(opts, legacyAlias(legacyNetworkName(projectName+"-vpc")))...)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +129,8 @@ func BuildGlobalConfig(
 		IpCidrRange: pulumi.String("10.0.0.0/16"),
 		Region:      pulumi.String(region),
 		Network:     vpc.ID(),
-	}, opts...)
+	}, common.MergeOptions(opts,
+		legacyAlias(legacyResourceName(ctx, projectName, "shared-subnet")))...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,18 +181,7 @@ func BuildGlobalConfig(
 	// public-dns below: Pulumi's default resource ID already prefixes it with
 	// <pulumi-project>-<stack>, which includes projectName, so repeating it here
 	// risked exceeding GCP's 63-char resource ID limit.
-	privateZone, err := dns.NewManagedZone(ctx, "private-dns", &dns.ManagedZoneArgs{
-		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
-		DnsName:     pulumi.String("google.internal."),
-		Visibility:  pulumi.String("private"),
-		PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
-			Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
-				&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
-					NetworkUrl: vpc.ID(),
-				},
-			},
-		},
-	}, append(opts, pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
+	privateZone, err := createPrivateZone(ctx, projectName, vpc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +236,7 @@ func buildOptionalInfra(
 	}
 
 	if needsVpcPeering(services) {
-		serviceConn, err := createVPCPeeringInfra(ctx, cfg.VpcId, opts...)
+		serviceConn, err := createVPCPeeringInfra(ctx, projectName, cfg.VpcId, opts...)
 		if err != nil {
 			return err
 		}
@@ -370,4 +362,32 @@ func GcpRegion(ctx *pulumi.Context) string {
 		return r
 	}
 	return defaultGCPRegion
+}
+
+// createPrivateZone creates the project's private google.internal. zone.
+// Extracted so BuildGlobalConfig stays within the length limit.
+func createPrivateZone(
+	ctx *pulumi.Context,
+	projectName string,
+	vpc *compute.Network,
+	opts ...pulumi.ResourceOption,
+) (*dns.ManagedZone, error) {
+	privateZone, err := dns.NewManagedZone(ctx, "private-dns", &dns.ManagedZoneArgs{
+		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
+		DnsName:     pulumi.String("google.internal."),
+		Visibility:  pulumi.String("private"),
+		PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
+			Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
+				&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
+					NetworkUrl: vpc.ID(),
+				},
+			},
+		},
+	}, append(common.MergeOptions(opts,
+		legacyAlias(legacyResourceName(ctx, projectName, "private-dns"))),
+		pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
+	if err != nil {
+		return nil, err
+	}
+	return privateZone, nil
 }

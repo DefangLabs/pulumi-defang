@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -96,6 +95,7 @@ func sqlBackupConfig(ctx *pulumi.Context) *sql.DatabaseInstanceSettingsBackupCon
 func CreateCloudSQL(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
+	projectName string,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
@@ -123,8 +123,10 @@ func CreateCloudSQL(
 		return gcpPostgresVersion(v)
 	}).(pulumi.StringOutput)
 
-	instanceOpts := common.MergeOptions(
-		[]pulumi.ResourceOption{opt}, svc.AliasOptions(compose.AliasInstance)...)
+	// resourceName(project, config, service, "postgres") in the legacy CD.
+	instanceOpts := []pulumi.ResourceOption{
+		opt, legacyAlias(legacyResourceName(ctx, projectName, serviceName, "postgres")),
+	}
 	if infra != nil && infra.ServiceConnection != nil {
 		instanceOpts = append(instanceOpts,
 			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}))
@@ -176,8 +178,7 @@ func CreateCloudSQL(
 			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
 			// redundant with the deletion policy, which already suppresses the API call.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, common.MergeOptions([]pulumi.ResourceOption{opt},
-			svc.AliasOptions(compose.AliasUser)...)...)
+		}, opt, legacyAlias(legacyPlainName(projectName, serviceName, "postgres", "user")))
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL user: %w", err)
 		}
@@ -193,8 +194,7 @@ func CreateCloudSQL(
 			Instance: instance.Name,
 			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, common.MergeOptions([]pulumi.ResourceOption{opt},
-			svc.AliasOptions(compose.AliasDatabase)...)...)
+		}, opt, legacyAlias(legacyPlainName(projectName, serviceName, "postgres", "db")))
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL database: %w", err)
 		}

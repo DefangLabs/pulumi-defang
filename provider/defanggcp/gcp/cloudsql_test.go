@@ -64,7 +64,7 @@ func TestCloudSQLResolvesConfigPasswordWithExplicitProvider(t *testing.T) {
 		prov, err := gcp.NewProvider(ctx, "explicit-gcp", &gcp.ProviderArgs{})
 		require.NoError(t, err)
 
-		_, err = CreateCloudSQL(ctx, NewConfigProvider("myproject"), "database", compose.ServiceConfig{
+		_, err = CreateCloudSQL(ctx, NewConfigProvider("myproject"), "myproject", "database", compose.ServiceConfig{
 			Image:    pulumi.String("postgres:16"),
 			Postgres: &compose.PostgresConfig{},
 			Environment: compose.Environment{
@@ -83,7 +83,7 @@ func TestCloudSQLResolvesConfigPasswordWithExplicitProvider(t *testing.T) {
 	}
 }
 
-// aliasSpy records the aliases each registered resource carried.
+// aliasSpy records the legacy names each registered resource declared.
 type aliasSpy struct {
 	noopMocks
 	aliases map[string][]string
@@ -94,60 +94,35 @@ func (m *aliasSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.P
 		m.aliases = map[string][]string{}
 	}
 	for _, alias := range args.RegisterRPC.GetAliases() {
-		if urn := alias.GetUrn(); urn != "" {
-			m.aliases[args.Name] = append(m.aliases[args.Name], urn)
+		if spec := alias.GetSpec(); spec != nil {
+			m.aliases[args.Name] = append(m.aliases[args.Name], spec.GetName())
 		}
 	}
 	return args.Name + "_id", args.Inputs, nil
 }
 
-// A legacy defang-mvp stack registered its Cloud SQL resources under different
-// URNs than this CD does. Without aliases an `up` creates a new instance and
-// deletes the old one — and the legacy DatabaseInstance is not retained, so
-// that destroys the data. x-defang-aliases carries the old URNs across.
-func TestCloudSQLAppliesMigrationAliases(t *testing.T) {
-	const (
-		instanceURN = "urn:pulumi:mig::proj::gcp:sql/databaseInstance:DatabaseInstance::legacy-postgres"
-		userURN     = "urn:pulumi:mig::proj::gcp:sql/user:User::legacy-postgres-user"
-		databaseURN = "urn:pulumi:mig::proj::gcp:sql/database:Database::legacy-postgres-db"
-	)
+// Without these aliases an `up` over a legacy defang-mvp stack plans a create
+// plus a delete for the database rather than an update, and the legacy
+// DatabaseInstance carries no retainOnDelete — the delete takes the data too.
+func TestCloudSQLAdoptsLegacyMvpNames(t *testing.T) {
 	spy := &aliasSpy{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		_, err := CreateCloudSQL(ctx, &compose.DryRunConfigProvider{}, "database", compose.ServiceConfig{
-			Image:    pulumi.String("postgres:16"),
-			Postgres: &compose.PostgresConfig{},
-			Environment: compose.Environment{
-				"POSTGRES_PASSWORD": pulumi.String("literal-password"),
-				"POSTGRES_USER":     pulumi.String("martekio"),
-				"POSTGRES_DB":       pulumi.String("martekioDB"),
-			},
-			Aliases: map[string]string{
-				compose.AliasInstance: instanceURN,
-				compose.AliasUser:     userURN,
-				compose.AliasDatabase: databaseURN,
-			},
-		}, nil, pulumi.Parent(nil))
+		_, err := CreateCloudSQL(ctx, &compose.DryRunConfigProvider{}, "martekio-mig", "database",
+			compose.ServiceConfig{
+				Image:    pulumi.String("postgres:16"),
+				Postgres: &compose.PostgresConfig{},
+				Environment: compose.Environment{
+					"POSTGRES_PASSWORD": pulumi.String("literal-password"),
+					"POSTGRES_USER":     pulumi.String("martekio"),
+					"POSTGRES_DB":       pulumi.String("martekioDB"),
+				},
+			}, nil, pulumi.Parent(nil))
 		return err
-	}, pulumi.WithMocks("proj", "mig", spy))
+	}, pulumi.WithMocks("martekio-mig", "cyc", spy))
 	require.NoError(t, err)
 
-	assert.Contains(t, spy.aliases["database"], instanceURN, "Cloud SQL instance lost its migration alias")
-	assert.Contains(t, spy.aliases["database-user"], userURN, "Cloud SQL user lost its migration alias")
-	assert.Contains(t, spy.aliases["database-db"], databaseURN, "Cloud SQL database lost its migration alias")
-}
-
-// No x-defang-aliases means no aliases: a greenfield stack must not carry them.
-func TestCloudSQLWithoutAliasesRegistersNone(t *testing.T) {
-	spy := &aliasSpy{}
-	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		_, err := CreateCloudSQL(ctx, &compose.DryRunConfigProvider{}, "database", compose.ServiceConfig{
-			Image:       pulumi.String("postgres:16"),
-			Postgres:    &compose.PostgresConfig{},
-			Environment: compose.Environment{"POSTGRES_PASSWORD": pulumi.String("literal-password")},
-		}, nil, pulumi.Parent(nil))
-		return err
-	}, pulumi.WithMocks("proj", "mig", spy))
-	require.NoError(t, err)
-
-	assert.Empty(t, spy.aliases["database"])
+	assert.Contains(t, spy.aliases["database"], "defang-martekio-mig-cyc-database-postgres",
+		"Cloud SQL instance would be replaced instead of adopted")
+	assert.Contains(t, spy.aliases["database-user"], "martekio-mig-database-postgres-user")
+	assert.Contains(t, spy.aliases["database-db"], "martekio-mig-database-postgres-db")
 }

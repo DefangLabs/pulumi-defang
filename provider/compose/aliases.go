@@ -7,12 +7,9 @@ import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 // service.
 const (
 	AliasCluster        = "cluster"
-	AliasDatabase       = "database"
-	AliasInstance       = "instance"
 	AliasParameterGroup = "parameter-group"
 	AliasSecurityGroup  = "security-group"
 	AliasSubnetGroup    = "subnet-group"
-	AliasUser           = "user"
 )
 
 // AliasOptions returns pulumi.Aliases resource options for the given child

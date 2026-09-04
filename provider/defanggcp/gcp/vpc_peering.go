@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/servicenetworking"
@@ -21,6 +22,7 @@ func needsVpcPeering(services map[string]compose.ServiceConfig) bool {
 // connection for Cloud SQL private IP access.
 func createVPCPeeringInfra(
 	ctx *pulumi.Context,
+	projectName string,
 	vpcId pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
 ) (*servicenetworking.Connection, error) {
@@ -33,7 +35,8 @@ func createVPCPeeringInfra(
 		AddressType:  pulumi.String("INTERNAL"),
 		PrefixLength: pulumi.Int(16),
 		Network:      vpcId,
-	}, opts...)
+	}, common.MergeOptions(opts,
+		legacyAlias(legacyResourceName(ctx, projectName, "vpc-peering-ip")))...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +60,8 @@ func createVPCPeeringInfra(
 			ReservedPeeringRanges: pulumi.StringArray{privateIpAlloc.Name},
 			DeletionPolicy:        pulumi.String("ABANDON"),
 		},
-		opts...,
+		common.MergeOptions(opts,
+			legacyAlias(legacyResourceName(ctx, projectName, "service-connection")))...,
 	)
 	if err != nil {
 		return nil, err
