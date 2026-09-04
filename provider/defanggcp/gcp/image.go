@@ -81,6 +81,7 @@ type gcpBuildResource struct {
 type buildStep struct {
 	Name string   `yaml:"name"`
 	Args []string `yaml:"args"`
+	Env  []string `yaml:"env,omitempty"`
 }
 
 // generateBuildSteps returns a YAML-encoded Cloud Build step list that builds
@@ -97,6 +98,19 @@ func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pu
 		platform = build.Platforms[0]
 	}
 	buildArgs := []string{"buildx", "build", "--platform", platform}
+	buildArgs = append(buildArgs, "-f", build.GetDockerfile())
+	if target := build.GetTarget(); target != "" {
+		buildArgs = append(buildArgs, "--target", target)
+	}
+	// Values travel in the step's env rather than on the command line, so they
+	// stay out of the Pulumi state that records these steps. Sorted for a
+	// stable ordering: a map walk would reshuffle the args every run and make
+	// the Build resource look changed when it isn't.
+	var buildEnv []string
+	for k, v := range common.Sorted(build.Args) {
+		buildArgs = append(buildArgs, "--build-arg", k)
+		buildEnv = append(buildEnv, k+"="+v)
+	}
 	for _, c := range build.CacheFrom {
 		buildArgs = append(buildArgs, "--cache-from="+c)
 	}
@@ -118,6 +132,7 @@ func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pu
 			{
 				Name: "gcr.io/cloud-builders/docker",
 				Args: append(buildArgs, "-t", d, "--load", "."),
+				Env:  buildEnv,
 			},
 		}
 		b, err := yaml.Marshal(steps)
