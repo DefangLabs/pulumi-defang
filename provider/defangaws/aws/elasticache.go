@@ -247,7 +247,10 @@ func CreateElasticache(
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, common.MergeOptions(opts, svc.AliasOptions(compose.AliasSubnetGroup)...)...)
+			// stack(service_name) in the legacy CD (redis.ts).
+		}, common.MergeOptions(opts,
+			append(svc.AliasOptions(compose.AliasSubnetGroup),
+				legacyAlias(legacyStackName(ctx, serviceName)))...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ElastiCache subnet group: %w", err)
 		}
@@ -284,6 +287,8 @@ func CreateElasticache(
 		Tags: tags,
 	}, common.MergeOptions(common.MergeOptions(opts, svc.AliasOptions(compose.AliasSecurityGroup)...),
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+		// createSecurityGroup() registered every SG under stack(name).
+		legacyAlias(legacyStackName(ctx, serviceName)),
 	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache security group: %w", err)
@@ -335,7 +340,9 @@ func CreateElasticache(
 		rgArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
-	clusterOpts := common.MergeOptions(opts, svc.AliasOptions(compose.AliasCluster)...)
+	clusterOpts := common.MergeOptions(opts,
+		// The legacy CD named the replication group after the bare service.
+		append(svc.AliasOptions(compose.AliasCluster), legacyAlias(serviceName))...)
 	clusterOpts = append(clusterOpts, pulumi.IgnoreChanges([]string{
 		"atRestEncryptionEnabled",
 		"authToken", // TODO: allow user to set authToken via config

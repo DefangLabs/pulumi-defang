@@ -198,7 +198,9 @@ func CreateRDS(
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, opt)
+			// The legacy CD named this one after the bare service, with no stack
+			// prefix (postgres.ts: new aws.rds.SubnetGroup(service_name)).
+		}, pulumi.Composite(opt, legacyAlias(serviceName)))
 		if err != nil {
 			return nil, fmt.Errorf("creating DB subnet group: %w", err)
 		}
@@ -234,6 +236,8 @@ func CreateRDS(
 		Tags: tags,
 	}, pulumi.Composite(opt,
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+		// createSecurityGroup() registered every SG under stack(name).
+		legacyAlias(legacyStackName(ctx, serviceName)),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS security group: %w", err)
@@ -284,7 +288,8 @@ func CreateRDS(
 	// (now-removed) `storage-encrypted` recipe defaulted to false would otherwise
 	// force-replace on next up. RDS can't toggle encryption in-place, so we
 	// preserve the existing instance and leave migration to the operator.
-	rdsOpts := []pulumi.ResourceOption{opt, pulumi.IgnoreChanges([]string{"storageEncrypted"})}
+	rdsOpts := []pulumi.ResourceOption{opt, pulumi.IgnoreChanges([]string{"storageEncrypted"}),
+		legacyAlias(legacyRdsInstanceName(ctx, serviceName))}
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
 	}
