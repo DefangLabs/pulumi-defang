@@ -91,6 +91,9 @@ func collectExternalRegistries(services map[string]compose.ServiceConfig) []stri
 // checks for one and returns logicalName unchanged when none is set, so that
 // no-op return is what tells us to fall back to the legacy prefix/project/
 // stack scoping ourselves instead of re-parsing the pulumi:autonaming config.
+//
+// An empty logicalName asks for the project-scoped ID with no role segment at
+// all; see projectRepositoryID.
 func artifactRegistryRepositoryID(ctx *pulumi.Context, projectName, logicalName string) string {
 	name := common.AutonamingPrefix(ctx, logicalName)
 	if name == logicalName {
@@ -98,10 +101,35 @@ func artifactRegistryRepositoryID(ctx *pulumi.Context, projectName, logicalName 
 		if prefix := common.Prefix.Get(ctx); prefix != "" {
 			parts = append(parts, prefix)
 		}
-		parts = append(parts, projectName, ctx.Stack(), logicalName)
+		parts = append(parts, projectName, ctx.Stack())
+		if logicalName != "" {
+			parts = append(parts, logicalName)
+		}
 		name = strings.Join(parts, "-")
 	}
 	return sanitizeRepoName(name)
+}
+
+// projectRepositoryID returns the physical ID of the project's own image
+// repository: "<prefix>-<project>-<stack>", with no role segment.
+//
+// The segment is deliberately absent. "repo" on an Artifact Registry
+// repository says nothing the resource type does not already say, and dropping
+// it makes this ID identical to the one the legacy defang-mvp CD chose
+// (resourceName(project, config) with no extra parts -- see
+// legacy_aliases.go). repositoryId is ForceNew, so an alias alone cannot stop
+// a replacement when it differs: matching the legacy ID is what turns the
+// adoption of a legacy repository into an update instead of a
+// create-replacement.
+//
+// The two CDs still part company on names long enough to need trimming: the
+// legacy CD hash-trimmed at 55 characters with a base36 hash, this one trims
+// at 63 with a hex hash. Such a project adopts the URN and then replaces the
+// repository anyway. It holds images rather than data and the replacement
+// succeeds cleanly, so that residue is left alone rather than pinning today's
+// naming to the legacy trim forever.
+func projectRepositoryID(ctx *pulumi.Context, projectName string) string {
+	return artifactRegistryRepositoryID(ctx, projectName, "")
 }
 
 // createRemoteRepos creates Artifact Registry REMOTE repositories that act as
@@ -166,12 +194,14 @@ func createBuildInfra(
 
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
 		// RepositoryId is required by the GCP API; unlike AWS, GCP does not auto-generate resource IDs.
-		RepositoryId: pulumi.String(artifactRegistryRepositoryID(ctx, projectName, "repo")),
+		RepositoryId: pulumi.String(projectRepositoryID(ctx, projectName)),
 		Location:     pulumi.String(region),
 		Description:  pulumi.String("Docker images for " + projectName),
 		Format:       pulumi.String("DOCKER"),
 	}, common.MergeOptions(opts,
-		// resourceName(project, config) with no extra parts in the legacy CD.
+		// resourceName(project, config) with no extra parts in the legacy CD --
+		// which is also the repositoryId above, so the adoption is an update
+		// rather than a create-replacement.
 		legacyAlias(legacyResourceName(ctx, projectName)))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)

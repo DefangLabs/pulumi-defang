@@ -87,6 +87,60 @@ func repositoryIDForTest(
 	return repositoryID
 }
 
+// gcpAutonamingPattern is the pattern the CD writes for the gcp provider; the
+// project repository ID has to come out right under the real recipe, not only
+// under the no-recipe fallback.
+const gcpAutonamingPattern = `{"pattern":"defang-${project}-${stack}-${name}-${hex(7)}"}`
+
+func projectRepositoryIDForTest(t *testing.T, stack, composeProject string, config map[string]string) string {
+	t.Helper()
+
+	var repositoryID string
+	opts := []pulumi.RunOption{pulumi.WithMocks(composeProject, stack, testMocks{})}
+	if config != nil {
+		opts = append(opts, withPulumiConfig(config))
+	}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		repositoryID = projectRepositoryID(ctx, composeProject)
+		return nil
+	}, opts...)
+	require.NoError(t, err)
+	return repositoryID
+}
+
+// The project repository carries no role segment, with or without the recipe.
+func TestProjectRepositoryIDHasNoRoleSegment(t *testing.T) {
+	assert.Equal(t, "defang-compose-project-dev",
+		projectRepositoryIDForTest(t, "dev", "compose-project", nil))
+	assert.Equal(t, "defang-compose-project-dev",
+		projectRepositoryIDForTest(t, "dev", "compose-project",
+			map[string]string{pulumiAutonamingConfigKey: gcpAutonamingPattern}))
+}
+
+// The adoption invariant: the ID this CD asks for must be the one the legacy
+// defang-mvp CD already gave the repository, or the alias adopts a URN whose
+// ForceNew repositoryId then replaces it anyway.
+func TestProjectRepositoryIDMatchesLegacyID(t *testing.T) {
+	for _, tc := range []struct{ stack, project string }{
+		{"dev", "compose-project"},
+		{"prod", "app"},
+		{"newprovidergcp", "html-css-js"},
+	} {
+		t.Run(tc.project+"-"+tc.stack, func(t *testing.T) {
+			var legacyID string
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				legacyID = legacyResourceName(ctx, tc.project)
+				return nil
+			}, pulumi.WithMocks(tc.project, tc.stack, testMocks{}))
+			require.NoError(t, err)
+
+			assert.Equal(t, legacyID,
+				projectRepositoryIDForTest(t, tc.stack, tc.project,
+					map[string]string{pulumiAutonamingConfigKey: gcpAutonamingPattern}))
+		})
+	}
+}
+
 func TestArtifactRegistryRepositoryIDFallsBackToLegacyScope(t *testing.T) {
 	devID := repositoryIDForTest(t, "dev", "compose-project", "repo", nil)
 	prodID := repositoryIDForTest(t, "prod", "compose-project", "repo", nil)
@@ -162,11 +216,11 @@ func TestCreateBuildInfraUsesScopedRepositoryIDInImageURL(t *testing.T) {
 	require.Len(t, mocks.repositories, 1)
 	assert.Equal(t, artifactRepositoryRegistration{
 		logicalName:    "repo",
-		repositoryID:   "defang-compose-project-dev-repo",
+		repositoryID:   "defang-compose-project-dev",
 		retainOnDelete: false,
 	}, mocks.repositories[0])
 	assert.Equal(t,
-		"us-central1-docker.pkg.dev/gcp-project/defang-compose-project-dev-repo",
+		"us-central1-docker.pkg.dev/gcp-project/defang-compose-project-dev",
 		<-url,
 	)
 }
