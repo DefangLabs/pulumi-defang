@@ -287,8 +287,11 @@ func TestConstructProjectWithDomainNameSetsHostRule(t *testing.T) {
 	hostRules := urlMap.inputs.Get("hostRules").AsArray()
 	require.Equal(t, 1, hostRules.Len(), "expected one host rule for the domain name")
 	hosts := hostRules.Get(0).AsMap().Get("hosts").AsArray()
-	require.Equal(t, 1, hosts.Len())
-	assert.Equal(t, "app.example.com", hosts.Get(0).AsString())
+	actualHosts := make([]string, hosts.Len())
+	for i := 0; i < hosts.Len(); i++ {
+		actualHosts[i] = hosts.Get(i).AsString()
+	}
+	assert.ElementsMatch(t, []string{"app.example.com", "app.example.com:443"}, actualHosts)
 }
 
 func TestConstructProjectWithDomainCreatesWildcardCert(t *testing.T) {

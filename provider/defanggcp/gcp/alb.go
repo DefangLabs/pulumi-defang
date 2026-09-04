@@ -25,6 +25,7 @@ var (
 	errNoTCPPort               = errors.New("at least one tcp port is needed for health check")
 	errTooManyPorts            = errors.New("too many ports with protocol")
 	errMultipleIngressPorts    = errors.New("multiple ingress ports are not supported for Compute Engine services")
+	errDuplicateRoute          = errors.New("two services cannot share a load balancer route")
 )
 
 // LBServiceEntry holds the data needed to wire a service into the external load balancer.
@@ -87,6 +88,9 @@ func createExternalLoadBalancers(
 	if len(ingressEntries) == 0 {
 		return nil
 	}
+	if err := validateExternalRoutes(ingressEntries, config.Domain); err != nil {
+		return err
+	}
 
 	// Create public DNS A records for each ingress service when a domain is configured.
 	// Mirrors the CD's getDomainAndCerts logic: one record for the main service domain
@@ -94,18 +98,8 @@ func createExternalLoadBalancers(
 	if config.Domain != "" {
 		ip := pulumi.StringArray{config.PublicIP.Address}
 		for _, entry := range ingressEntries {
-			svcDomain := common.ServiceLabel(entry.Name) + "." + config.Domain
-			if err := CreatePublicDNSRecord(ctx, config.PublicZoneId, svcDomain, "A", pulumi.Int(60), ip, opts...); err != nil {
-				return err
-			}
-			for _, port := range entry.Config.Ports {
-				if !port.IsIngress() {
-					continue
-				}
-				portDomain := fmt.Sprintf("%s--%d.%s", common.ServiceLabel(entry.Name), port.Target, config.Domain)
-				if err := CreatePublicDNSRecord(
-					ctx, config.PublicZoneId, portDomain, "A", pulumi.Int(60), ip, opts...,
-				); err != nil {
+			for _, hostname := range delegateHostnames(entry, config.Domain) {
+				if err := CreatePublicDNSRecord(ctx, config.PublicZoneId, hostname, "A", pulumi.Int(60), ip, opts...); err != nil {
 					return err
 				}
 			}
@@ -132,7 +126,7 @@ func createExternalLoadBalancers(
 		}
 	}
 
-	urlMap, err := buildURLMap(ctx, ingressEntries, config.Region, opts...)
+	urlMap, err := buildURLMap(ctx, ingressEntries, config, opts...)
 	if err != nil {
 		return err
 	}
@@ -627,10 +621,86 @@ func newCertMap(
 	return certificatemanager.NewCertificateMapResource(ctx, "cert-map", args, opts...)
 }
 
+// delegateHostnames returns the hostnames the provider publishes DNS records for
+// on behalf of one ingress service: "<service>.<domain>", plus
+// "<service>--<port>.<domain>" for each ingress port. Empty when no delegate
+// domain is configured (e.g. the standalone Service path).
+//
+// Both callers read from this one list -- createExternalLoadBalancers creates a
+// DNS A record per name, buildURLMap puts the same names in the service's host
+// rule -- so a name that resolves always has a route.
+func delegateHostnames(entry LBServiceEntry, domain string) []string {
+	domain = common.NormalizeDNS(domain)
+	if domain == "" {
+		return nil
+	}
+	label := common.ServiceLabel(entry.Name)
+	hostnames := []string{label + "." + domain}
+	for _, port := range entry.Config.Ports {
+		if !port.IsIngress() {
+			continue
+		}
+		hostnames = append(hostnames, fmt.Sprintf("%s--%d.%s", label, port.Target, domain))
+	}
+	return hostnames
+}
+
+// routeHostnames returns every hostname that must select this service's path
+// matcher: the provider-generated delegate names plus every custom-domain name
+// that the service asks Certificate Manager to cover. Keeping the BYOD half on
+// common.ByodHostnames is important: PR #499 gives the service's domainname and
+// its default-network aliases DNS/certificate treatment from that same list.
+func routeHostnames(entry LBServiceEntry, domain string) []string {
+	hosts := delegateHostnames(entry, domain)
+	for _, hostname := range common.ByodHostnames(entry.Config) {
+		hostname = common.NormalizeDNS(hostname)
+		if hostname != "" && !slices.Contains(hosts, hostname) {
+			hosts = append(hosts, hostname)
+		}
+	}
+
+	// Unlike a classic Application Load Balancer, this global EXTERNAL_MANAGED
+	// load balancer considers an explicit port part of the host match. Its HTTPS
+	// forwarding rule listens on 443, so cover both forms clients send in Host
+	// and HTTP/2 :authority ("example.com" and "example.com:443").
+	withHTTPSPort := make([]string, 0, len(hosts)*2)
+	for _, hostname := range hosts {
+		withHTTPSPort = append(withHTTPSPort, hostname, hostname+":443")
+	}
+	return withHTTPSPort
+}
+
+// validateExternalRoutes rejects duplicate path matchers and host patterns. It
+// runs before any external DNS, NEG, or backend resources are registered so
+// callers receive this actionable error instead of a duplicate-URN or API error
+// from a partially built load balancer.
+func validateExternalRoutes(entries []LBServiceEntry, domain string) error {
+	hostOwner := map[string]string{}    // host pattern -> service that serves it
+	matcherOwner := map[string]string{} // path matcher name -> service it routes to
+	for _, entry := range entries {
+		matcher := pathMatcherName(entry.Name)
+		if owner, taken := matcherOwner[matcher]; taken {
+			return fmt.Errorf("services %q and %q both reduce to load balancer route %q: %w",
+				owner, entry.Name, matcher, errDuplicateRoute)
+		}
+		matcherOwner[matcher] = entry.Name
+
+		for _, host := range routeHostnames(entry, domain) {
+			if owner, taken := hostOwner[host]; taken {
+				return fmt.Errorf(
+					"services %q and %q both claim hostname %q: %w", owner, entry.Name, host, errDuplicateRoute,
+				)
+			}
+			hostOwner[host] = entry.Name
+		}
+	}
+	return nil
+}
+
 func buildURLMap(
 	ctx *pulumi.Context,
 	entries []LBServiceEntry,
-	region string,
+	config *SharedInfra,
 	opts ...pulumi.ResourceOption,
 ) (*compute.URLMap, error) {
 	var firstBackendID pulumi.StringPtrInput
@@ -638,7 +708,7 @@ func buildURLMap(
 	var pathMatchers compute.URLMapPathMatcherArray
 
 	for _, entry := range entries {
-		backendID, matcher, hostRule, err := buildLBEntry(ctx, entry, region, opts...)
+		backendID, matcher, err := buildLBEntry(ctx, entry, config.Region, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -647,10 +717,26 @@ func buildURLMap(
 		if matcher == nil {
 			continue
 		}
+		name := pathMatcherName(entry.Name)
 		pathMatchers = append(pathMatchers, matcher)
-		if hostRule != nil {
-			hostRules = append(hostRules, hostRule)
+
+		// A path matcher is only reachable through a host rule that names it, so
+		// every hostname pointed at this LB needs to appear in one. Without this,
+		// only BYOD names got a rule and every delegate name fell through to
+		// DefaultService -- i.e. to the first ingress service. See #373.
+		hosts := routeHostnames(entry, config.Domain)
+		if len(hosts) > 0 {
+			hostRules = append(hostRules, &compute.URLMapHostRuleArgs{
+				Hosts:       pulumi.ToStringArray(hosts),
+				PathMatcher: pulumi.String(name),
+			})
 		}
+
+		// The first ingress service in TopologicalSort order becomes the URL map's
+		// DefaultService: where an unmatched Host header lands, i.e. the bare
+		// project domain or any host pointed at this IP from outside the project.
+		// Same as the legacy CD (gcpcd/alb.go, firstPublicBackendID).
+		// TODO(#373): decide which service should own the bare project domain.
 		if firstBackendID == nil {
 			firstBackendID = backendID.ToStringOutput()
 		}
@@ -668,21 +754,21 @@ func buildURLMap(
 }
 
 // buildLBEntry creates backend resources for one LB service entry and returns the
-// backend ID, path matcher, and optional host rule. Returns nil backendID if the
-// entry has no applicable ports.
+// backend ID and its path matcher. Returns a nil matcher if the entry has no
+// applicable ports. Host rules are built by the caller, which owns the routing.
 func buildLBEntry(
 	ctx *pulumi.Context,
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, error) {
 	if entry.CloudRunService != nil {
 		return buildCloudRunLBEntry(ctx, entry, region, opts...)
 	}
 	if entry.InstanceGroup != nil {
 		return buildMIGLBEntry(ctx, entry, opts...)
 	}
-	return pulumi.IDOutput{}, nil, nil, nil
+	return pulumi.IDOutput{}, nil, nil
 }
 
 func buildCloudRunLBEntry(
@@ -690,7 +776,7 @@ func buildCloudRunLBEntry(
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, error) {
 	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-neg",
 		&compute.RegionNetworkEndpointGroupArgs{
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
@@ -700,7 +786,7 @@ func buildCloudRunLBEntry(
 			},
 		}, opts...)
 	if err != nil {
-		return pulumi.IDOutput{}, nil, nil, err
+		return pulumi.IDOutput{}, nil, err
 	}
 
 	backend, err := compute.NewBackendService(ctx, entry.Name+"-backend",
@@ -712,20 +798,12 @@ func buildCloudRunLBEntry(
 			},
 		}, opts...)
 	if err != nil {
-		return pulumi.IDOutput{}, nil, nil, err
+		return pulumi.IDOutput{}, nil, err
 	}
 
-	matcher := &compute.URLMapPathMatcherArgs{
-		Name: pulumi.String(entry.Name), DefaultService: backend.ID(),
-	}
-	var hostRule *compute.URLMapHostRuleArgs
-	if entry.Config.DomainName != "" {
-		hostRule = &compute.URLMapHostRuleArgs{
-			Hosts:       pulumi.ToStringArray([]string{entry.Config.DomainName}),
-			PathMatcher: pulumi.String(entry.Name),
-		}
-	}
-	return backend.ID(), matcher, hostRule, nil
+	return backend.ID(), &compute.URLMapPathMatcherArgs{
+		Name: pulumi.String(pathMatcherName(entry.Name)), DefaultService: backend.ID(),
+	}, nil
 }
 
 // buildMIGLBEntry creates an LB backend for the first ingress port of a Compute Engine MIG.
@@ -733,7 +811,7 @@ func buildMIGLBEntry(
 	ctx *pulumi.Context,
 	entry LBServiceEntry,
 	opts ...pulumi.ResourceOption,
-) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, error) {
 	for _, port := range entry.Config.Ports {
 		// Use IsIngress() so a default (empty) Mode is treated as ingress, matching
 		// HasIngressPorts() — otherwise the filter in createExternalLoadBalancers admits
@@ -751,7 +829,7 @@ func buildMIGLBEntry(
 				},
 			}, opts...)
 		if err != nil {
-			return pulumi.IDOutput{}, nil, nil, err
+			return pulumi.IDOutput{}, nil, err
 		}
 
 		backend, err := compute.NewBackendService(ctx, entry.Name+"-"+portStr+"-gce-backend",
@@ -765,22 +843,14 @@ func buildMIGLBEntry(
 				PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", port.GetProtocol(), port.Target)),
 			}, append(opts, pulumi.DependsOn([]pulumi.Resource{entry.InstanceGroup}))...)
 		if err != nil {
-			return pulumi.IDOutput{}, nil, nil, err
+			return pulumi.IDOutput{}, nil, err
 		}
 
-		matcher := &compute.URLMapPathMatcherArgs{
-			Name: pulumi.String(entry.Name), DefaultService: backend.ID(),
-		}
-		var hostRule *compute.URLMapHostRuleArgs
-		if entry.Config.DomainName != "" {
-			hostRule = &compute.URLMapHostRuleArgs{
-				Hosts:       pulumi.ToStringArray([]string{entry.Config.DomainName}),
-				PathMatcher: pulumi.String(entry.Name),
-			}
-		}
-		return backend.ID(), matcher, hostRule, nil
+		return backend.ID(), &compute.URLMapPathMatcherArgs{
+			Name: pulumi.String(pathMatcherName(entry.Name)), DefaultService: backend.ID(),
+		}, nil
 	}
-	return pulumi.IDOutput{}, nil, nil, nil
+	return pulumi.IDOutput{}, nil, nil
 }
 
 func migBackend(entry LBServiceEntry) *compute.BackendServiceBackendArgs {
