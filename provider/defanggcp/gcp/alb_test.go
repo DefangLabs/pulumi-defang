@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -18,6 +19,7 @@ type albResource struct {
 }
 
 type albMocks struct {
+	mu        sync.RWMutex
 	resources []albResource
 }
 
@@ -26,10 +28,18 @@ func (m *albMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.P
 	if args.RegisterRPC != nil {
 		parent = args.RegisterRPC.GetParent()
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.resources = append(m.resources, albResource{
 		name: args.Name, typeof: args.TypeToken, inputs: args.Inputs, parent: parent,
 	})
 	return args.Name + "_id", args.Inputs, nil
+}
+
+func (m *albMocks) Resources() []albResource {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]albResource(nil), m.resources...)
 }
 
 func (m *albMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
@@ -55,7 +65,7 @@ func TestCreateLoadBalancersMIGHostModeExternalBackendUsesRateAndPortName(t *tes
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
-	backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", "api-3000-gce-backend")
+	backend := requireResource(t, mocks.Resources(), "gcp:compute/backendService:BackendService", "api-3000-gce-backend")
 	requirePropertyString(t, backend.inputs, "portName", "port-tcp-3000")
 	backends := backend.inputs["backends"].ArrayValue()
 	require.Len(t, backends, 1)
@@ -81,7 +91,7 @@ func TestCreateLoadBalancersMIGSingleIngressLeavesBalancingModeUnset(t *testing.
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
-	backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", "api-3000-gce-backend")
+	backend := requireResource(t, mocks.Resources(), "gcp:compute/backendService:BackendService", "api-3000-gce-backend")
 	requirePropertyString(t, backend.inputs, "portName", "port-tcp-3000")
 	backendArgs := backend.inputs["backends"].ArrayValue()[0].ObjectValue()
 	require.False(t, backendArgs.HasValue("balancingMode"))
@@ -139,6 +149,7 @@ func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
+	resources := mocks.Resources()
 	for _, typ := range []string{
 		"gcp:compute/address:Address",
 		"gcp:compute/firewall:Firewall",
@@ -147,7 +158,7 @@ func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
 		"gcp:compute/forwardingRule:ForwardingRule",
 	} {
 		found := false
-		for _, r := range mocks.resources {
+		for _, r := range resources {
 			if r.typeof == typ {
 				found = true
 				// Pulumi always assigns *some* parent (the implicit stack
@@ -166,7 +177,7 @@ func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
 	// both used the bare service name. Pulumi's mocks don't enforce URN
 	// uniqueness themselves, so check it explicitly.
 	seen := map[string]bool{}
-	for _, r := range mocks.resources {
+	for _, r := range resources {
 		key := r.typeof + "::" + r.name
 		require.False(t, seen[key], "duplicate resource: type=%s name=%q", r.typeof, r.name)
 		seen[key] = true
@@ -181,7 +192,7 @@ func TestCreateLoadBalancersHostModePropagatesOpts(t *testing.T) {
 		"gcp:compute/regionBackendService:RegionBackendService",
 		"gcp:compute/forwardingRule:ForwardingRule",
 	} {
-		requireResource(t, mocks.resources, typ, "smokeworker-tcp-6379")
+		requireResource(t, resources, typ, "smokeworker-tcp-6379")
 	}
 }
 

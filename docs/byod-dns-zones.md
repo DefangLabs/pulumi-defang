@@ -4,14 +4,14 @@
 
 When a service sets a custom `domainname` ("bring your own domain"), Defang
 should check whether a DNS zone that can host that domain **already exists** in
-the account being deployed to. If one does, manage the records there and issue a
-cloud-managed TLS certificate. If none does, that is a normal outcome, not an
-error: skip the BYOD records, keep the service reachable on its delegate-domain
-hostname, and leave the ACME / `defang cert generate` path available.
+the account being deployed to and is authorized for this use. If one does,
+manage the records there and issue a cloud-managed TLS certificate. If none
+does, that is a normal outcome, not an error: keep the service reachable on its
+delegate-domain hostname and use the cloud's safe fallback.
 
 Every cloud answers the same two questions, so they should behave the same way:
 
-1. **Which existing zone can host this domain?** — longest DNS-suffix match.
+1. **Which authorized existing zone can host this domain?** — longest DNS-suffix match.
 2. **What if none can?** — degrade, don't fail.
 
 This document covers where that lookup lives per cloud and what it does. The
@@ -24,9 +24,12 @@ diverge.
   identity there already has DNS read permission and knows which account it is
   in, so a user running `defang compose up` needs no extra client-side role.
 - **A managed cert is issued whenever a zone is used.**
-- **No restriction on which zone matches** — longest DNS-suffix match, no
-  ownership or tag filter. Whichever existing zone is the closest parent wins.
-- **"No zone" is not an error.** It degrades to the delegate domain + ACME.
+- **Zone trust is cloud-specific.** GCP requires an explicit zone-owner opt-in
+  before Defang writes records; see the GCP section. Existing AWS and Azure
+  behavior is described in their sections below.
+- **"No zone" is not an error.** AWS and Azure retain the delegate-domain +
+  ACME path. GCP exact hostnames use load-balancer authorization; GCP wildcards
+  retain the delegate-domain + ACME path because they require DNS authorization.
 
 ## AWS
 
@@ -137,22 +140,98 @@ environment's static IP — exactly what an apex A record must point at.
 
 ## GCP
 
-Not implemented, tracked in
-[issue 395](https://github.com/DefangLabs/pulumi-defang/issues/395).
-`ServiceInfo.ZoneId` is unused on the GCP path and BYOD domains go through ACME.
-When it is added it should answer the same two questions: a longest-suffix match
-over the project's Cloud DNS managed zones, and a warn-and-degrade response when
-nothing matches. The legacy TypeScript CD had no BYOD DNS on GCP either
-(`defang-mvp/pulumi/cd/gcp` has no zone handling), so this is a gap rather than a
-cutover regression.
+`FindZones` (`provider/defanggcp/gcp/dnszone.go`) lists the deploy project's
+Cloud DNS zones once and matches every ingress service's `domainname` plus its
+aliases on the Compose `default` network. Matching is case-insensitive, ignores
+a trailing dot, understands `*.` wildcards, and chooses the longest eligible DNS
+suffix.
+
+### Authorizing a Cloud DNS zone
+
+Seeing a zone in the deploy project does not prove that a Compose project owns
+it. This matters when several teams or applications share one GCP project: a
+service could otherwise set `domainname` to another application's hostname and
+cause Defang's project-wide DNS identity to overwrite that record.
+
+The zone owner must therefore add this exact whitespace-delimited marker to the
+public managed zone's description:
+
+```text
+defang.dev/byod-dns=authorized
+```
+
+For example, while preserving any useful existing description:
+
+```bash
+gcloud dns managed-zones update ZONE_NAME \
+  --project=GCP_PROJECT_ID \
+  --description="Customer DNS zone defang.dev/byod-dns=authorized"
+```
+
+The marker authorizes Defang deployments using that project's CD identity to
+create and delete BYOD routing and certificate-validation records anywhere in
+the zone. In a shared project, prefer a dedicated subzone for the application
+and authorize that narrower zone. Defang never adds the marker implicitly; a
+zone owner must make this trust decision explicitly, including for an existing
+Defang delegate zone.
+
+Unmarked and private zones are ignored. If an unmarked child zone is a closer
+suffix than an authorized parent zone, the authorized parent wins. If distinct
+authorized public zones have the same equally best suffix, Defang cannot infer
+which one is publicly delegated, so zone discovery fails closed with an
+actionable ambiguity warning. The CD then performs no BYOD DNS writes: ordinary
+hostnames use load-balancer authorization and wildcard certificates are skipped.
+
+### Records and certificates
+
+For a hostname in an authorized zone, the provider creates:
+
+- an A record pointing the hostname to the global load-balancer address;
+- a Certificate Manager DNS authorization and its CNAME challenge; and
+- a managed certificate attached to the existing certificate map with an exact
+  hostname entry.
+
+A DNS authorization covers both a base domain and its wildcard. Requests for
+`example.com` and `*.example.com`, including requests from different services,
+therefore share one authorization and one CNAME challenge. They still receive
+separate certificates and certificate-map hostname entries so Certificate
+Manager can select the correct certificate for each SNI name.
+
+Hostnames are normalized and sorted before deduplication, and requesting
+service names are sorted. If multiple services request the same normalized
+hostname, Defang creates one shared certificate-map entry and warns with the
+sorted service list, independent of Go map iteration order.
+
+### Safe fallback
+
+When no authorized zone matches, an ordinary hostname still gets a
+load-balancer-authorized managed certificate. Defang does not write Cloud DNS
+records; the domain owner points the hostname directly at the load balancer's IP
+address, and Certificate Manager activates the certificate after the public DNS
+and port 443 path are ready. No redeploy is needed.
+
+Certificate Manager does not support wildcard names with load-balancer
+authorization. A wildcard with no authorized zone is skipped with an actionable
+warning; use an authorized Cloud DNS zone or `defang cert gen` instead.
+
+If listing Cloud DNS zones fails, all ordinary hostnames take the same
+load-balancer-authorization fallback and wildcard names are skipped. Resource
+registration failures after an authorized zone is selected are returned rather
+than silently leaving a partial DNS/certificate configuration.
+
+This restores behavior from the legacy Go GCP CD
+(`defang-mvp/pulumi/cd/gcp/gcpcd/defangservice.go`), whose load-balancer
+authorization branch was the production path because GCP never populated
+`ServiceInfo.ZoneId`. DNS authorization and safe zone selection are deliberate
+improvements over that implementation.
 
 ## One rule for a missing zone, on every cloud
 
-"No zone hosts this hostname" is a **normal answer** and both implemented clouds
-degrade identically: warn, skip that hostname's records, issue no managed
-certificate for it, keep the service reachable on its delegate-domain hostname,
-and leave `defang cert gen` (ACME) available. Neither cloud fails the deploy, and
-the warning carries the same actionable hint on both.
+"No authorized zone hosts this hostname" is a **normal answer**. AWS and Azure
+warn and leave `defang cert gen` (ACME) available. GCP can do better for ordinary
+hostnames: it creates a load-balancer-authorized managed certificate without
+writing into any DNS zone. GCP wildcards still require DNS authorization, so
+they warn and leave the ACME path available.
 
 This matches the legacy TypeScript CD, which is the behaviour a cutover must not
 regress: `defang-mvp/pulumi/cd/aws/defang_service.ts` gated the whole Route 53 +
@@ -169,9 +248,10 @@ rather than a choice: AWS can reach zones in another account through
 
 ## SDK regeneration
 
-`ProjectInputs`/`ServiceInputs` changes require regenerating the Azure SDK:
-`make schema` + `make sdks` (azure), committed alongside the source change (the
-pre-push hook enforces a clean `sdk/v2/`).
+`ProjectInputs`/`ServiceInputs` changes require regenerating the affected
+provider schema and SDK. Run `make provider schema go_sdk` and commit any
+generated changes alongside the source change (the pre-push hook enforces a
+clean `sdk/v2/`).
 
 ## Files
 
@@ -184,6 +264,9 @@ pulumi-defang:
 - `provider/defangazure/service.go` — `DnsZones` input + threading
 - `provider/defangazure/azure/containerapp.go` — `CreateContainerApp` param + call
 - `provider/defangazure/azure/customdomain.go` — `CreateByodDomain`
+- `provider/defanggcp/gcp/dnszone.go` — trusted longest-suffix zone selection
+- `provider/defanggcp/gcp/byodcert.go` — A records, DNS/LB authorization, cert-map entries
+- `cd/program/gcp.go` — GCP zone discovery and `DnsZones` wiring
 - `sdk/v2/**` — regenerated
 
 defang:
@@ -194,8 +277,9 @@ defang:
 - **Not delegated at registrar:** the zone may exist without its NS being
   delegated from the parent at the registrar; cert validation then fails. That is
   the user's responsibility, on every cloud. Records are still created.
-- **Multiple matching zones:** longest-suffix wins; ties are not expected (zone
-  names are unique within an account).
+- **Multiple matching zones:** longest authorized suffix wins. GCP ignores
+  unmarked and private zones; distinct equally best authorized public zones are
+  ambiguous and fail closed rather than guessing which zone is delegated.
 - **Record ownership:** Pulumi owns the records it creates, so `compose down`
   deletes them (the zone itself is untouched). A pre-existing record at the same
   name conflicts on create — the same ownership model on AWS and Azure.

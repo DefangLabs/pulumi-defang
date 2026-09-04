@@ -547,6 +547,13 @@
         "serviceIds"
       ],
       "inputProperties": {
+        "dnsZones": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
         "domain": {
           "type": "string",
           "plain": true

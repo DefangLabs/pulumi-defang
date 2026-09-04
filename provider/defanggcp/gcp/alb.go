@@ -132,6 +132,12 @@ func createExternalLoadBalancers(
 		}
 	}
 
+	// Managed certs for every service `domainname`, keyed off the zones discovered
+	// for them. See byodcert.go.
+	if err := createByodCerts(ctx, certMap, config, ingressEntries, opts...); err != nil {
+		return err
+	}
+
 	urlMap, err := buildURLMap(ctx, ingressEntries, config.Region, opts...)
 	if err != nil {
 		return err
