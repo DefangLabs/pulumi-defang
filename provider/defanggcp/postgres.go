@@ -60,7 +60,7 @@ func (*Postgres) Construct(
 	}
 	// Standalone Construct runs without a shared GlobalConfig; the project-level
 	// dispatcher calls createPostgres with a non-nil infra.
-	return comp, createPostgres(ctx, comp, configProvider, name, svc, nil)
+	return comp, createPostgres(ctx, comp, configProvider, inputs.ProjectName, name, svc, nil)
 }
 
 // createPostgres creates the Cloud SQL instance under an already-registered Postgres
@@ -70,13 +70,14 @@ func createPostgres(
 	ctx *pulumi.Context,
 	comp *PostgresOutputs,
 	configProvider compose.ConfigProvider,
+	projectName string,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *providergcp.SharedInfra,
 ) error {
 	childOpt := pulumi.Parent(comp)
 
-	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, serviceName, svc, infra, childOpt)
+	sqlResult, err := providergcp.CreateCloudSQL(ctx, configProvider, projectName, serviceName, svc, infra, childOpt)
 	if err != nil {
 		return fmt.Errorf("creating Cloud SQL for %s: %w", serviceName, err)
 	}

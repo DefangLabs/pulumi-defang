@@ -216,7 +216,7 @@ func buildService(
 		if err := ctx.RegisterComponentResource(PostgresComponentType, svcName, pgComp, svcChildOpts...); err != nil {
 			return pulumi.StringOutput{}, nil, nil, nil, fmt.Errorf("registering Cloud SQL component %s: %w", svcName, err)
 		}
-		if err := createPostgres(ctx, pgComp, configProvider, svcName, svc, infra); err != nil {
+		if err := createPostgres(ctx, pgComp, configProvider, projectName, svcName, svc, infra); err != nil {
 			return pulumi.StringOutput{}, nil, nil, nil, err
 		}
 		endpoint = pgComp.Endpoint

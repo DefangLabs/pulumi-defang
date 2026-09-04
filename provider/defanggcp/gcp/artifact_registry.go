@@ -170,7 +170,9 @@ func createBuildInfra(
 		Location:     pulumi.String(region),
 		Description:  pulumi.String("Docker images for " + projectName),
 		Format:       pulumi.String("DOCKER"),
-	}, opts...)
+	}, common.MergeOptions(opts,
+		// resourceName(project, config) with no extra parts in the legacy CD.
+		legacyAlias(legacyResourceName(ctx, projectName)))...)
 	if err != nil {
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)
 	}
