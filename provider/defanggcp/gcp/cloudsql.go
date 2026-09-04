@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/sql"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -122,9 +123,10 @@ func CreateCloudSQL(
 		return gcpPostgresVersion(v)
 	}).(pulumi.StringOutput)
 
-	var instanceOpt pulumi.ResourceOption = opt
+	instanceOpts := common.MergeOptions(
+		[]pulumi.ResourceOption{opt}, svc.AliasOptions(compose.AliasInstance)...)
 	if infra != nil && infra.ServiceConnection != nil {
-		instanceOpt = pulumi.Composite(opt,
+		instanceOpts = append(instanceOpts,
 			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}))
 	}
 
@@ -154,7 +156,7 @@ func CreateCloudSQL(
 			},
 		},
 		DeletionProtection: pulumi.Bool(DeletionProtection.Get(ctx)),
-	}, instanceOpt)
+	}, instanceOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cloud SQL instance: %w", err)
 	}
@@ -174,7 +176,8 @@ func CreateCloudSQL(
 			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
 			// redundant with the deletion policy, which already suppresses the API call.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, opt)
+		}, common.MergeOptions([]pulumi.ResourceOption{opt},
+			svc.AliasOptions(compose.AliasUser)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL user: %w", err)
 		}
@@ -190,7 +193,8 @@ func CreateCloudSQL(
 			Instance: instance.Name,
 			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, opt)
+		}, common.MergeOptions([]pulumi.ResourceOption{opt},
+			svc.AliasOptions(compose.AliasDatabase)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL database: %w", err)
 		}
