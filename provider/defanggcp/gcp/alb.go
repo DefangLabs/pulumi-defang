@@ -210,9 +210,14 @@ func createInternalLoadBalancer(
 				return err
 			}
 
+			// Named after the service, not "private-lb-cloudrun-backend": a
+			// constant is a duplicate URN as soon as a project has two private
+			// Cloud Run services. No role suffix -- this is the only
+			// RegionBackendService a Cloud Run service gets, and the branches
+			// below (single-port MIG, host mode) are mutually exclusive with it.
 			serviceBackend, err := compute.NewRegionBackendService(
 				ctx,
-				"private-lb-cloudrun-backend",
+				service.Name,
 				&compute.RegionBackendServiceArgs{
 					Region:              pulumi.String(config.Region),
 					Protocol:            pulumi.String("HTTPS"),
@@ -421,9 +426,11 @@ func createInternalLoadBalancer(
 					return err
 				}
 
-				hcPortStr := strconv.FormatUint(uint64(*tcpHealthCheckPort), 10)
+				// A host-mode service gets exactly one health check, so the port
+				// adds nothing -- and appended without a separator it made
+				// "worker" + "6379" indistinguishable from "worker6" + "379".
 				healthCheck, err := compute.NewHealthCheck(ctx,
-					service.Name+hcPortStr,
+					service.Name,
 					&compute.HealthCheckArgs{
 						CheckIntervalSec:   pulumi.Int(30),
 						TimeoutSec:         pulumi.Int(10),
@@ -685,13 +692,23 @@ func buildLBEntry(
 	return pulumi.IDOutput{}, nil, nil, nil
 }
 
+// publicLBName names a child of the external load balancer. The role marker is
+// not a type word: the internal load balancer creates resources of the same
+// types for the same service (a NEG, a health check), so without it the two
+// would claim one URN. Everything else the type token already says, and the
+// port is left out because an external entry only ever uses its first ingress
+// port.
+func publicLBName(serviceName string) string {
+	return serviceName + "-public"
+}
+
 func buildCloudRunLBEntry(
 	ctx *pulumi.Context,
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
-	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, entry.Name+"-neg",
+	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, publicLBName(entry.Name),
 		&compute.RegionNetworkEndpointGroupArgs{
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
 			Region:              pulumi.String(region),
@@ -703,7 +720,7 @@ func buildCloudRunLBEntry(
 		return pulumi.IDOutput{}, nil, nil, err
 	}
 
-	backend, err := compute.NewBackendService(ctx, entry.Name+"-backend",
+	backend, err := compute.NewBackendService(ctx, publicLBName(entry.Name),
 		&compute.BackendServiceArgs{
 			Protocol:            pulumi.String("HTTPS"),
 			LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
@@ -741,8 +758,7 @@ func buildMIGLBEntry(
 		if !port.IsIngress() {
 			continue
 		}
-		portStr := strconv.Itoa(int(port.Target))
-		hc, err := compute.NewHealthCheck(ctx, entry.Name+"-"+portStr+"-public-lb-hc",
+		hc, err := compute.NewHealthCheck(ctx, publicLBName(entry.Name),
 			&compute.HealthCheckArgs{
 				CheckIntervalSec: pulumi.Int(5),
 				TimeoutSec:       pulumi.Int(5),
@@ -754,7 +770,7 @@ func buildMIGLBEntry(
 			return pulumi.IDOutput{}, nil, nil, err
 		}
 
-		backend, err := compute.NewBackendService(ctx, entry.Name+"-"+portStr+"-gce-backend",
+		backend, err := compute.NewBackendService(ctx, publicLBName(entry.Name),
 			&compute.BackendServiceArgs{
 				Protocol:            pulumi.String("HTTP"),
 				LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),

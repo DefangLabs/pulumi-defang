@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -55,7 +56,7 @@ func TestCreateLoadBalancersMIGHostModeExternalBackendUsesRateAndPortName(t *tes
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
-	backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", "api-3000-gce-backend")
+	backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", "api-public")
 	requirePropertyString(t, backend.inputs, "portName", "port-tcp-3000")
 	backends := backend.inputs["backends"].ArrayValue()
 	require.Len(t, backends, 1)
@@ -81,7 +82,7 @@ func TestCreateLoadBalancersMIGSingleIngressLeavesBalancingModeUnset(t *testing.
 	}, pulumi.WithMocks("proj", "stack", mocks))
 	require.NoError(t, err)
 
-	backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", "api-3000-gce-backend")
+	backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", "api-public")
 	requirePropertyString(t, backend.inputs, "portName", "port-tcp-3000")
 	backendArgs := backend.inputs["backends"].ArrayValue()[0].ObjectValue()
 	require.False(t, backendArgs.HasValue("balancingMode"))
@@ -236,4 +237,37 @@ func requireResource(t *testing.T, resources []albResource, typ, name string) al
 	}
 	require.Failf(t, "missing resource", "type=%s name=%s resources=%v", typ, name, resources)
 	return albResource{}
+}
+
+// Two private Cloud Run services used to claim one URN: the internal backend
+// service was registered under the constant "private-lb-cloudrun-backend", so
+// the second registration was a duplicate and the deploy failed outright.
+func TestCreateLoadBalancersTwoPrivateCloudRunServices(t *testing.T) {
+	mocks := &albMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		entries := make([]LBServiceEntry, 0, 2)
+		for _, name := range []string{"api", "worker"} {
+			svc, err := cloudrunv2.NewService(ctx, name, &cloudrunv2.ServiceArgs{
+				Location: pulumi.String("us-central1"),
+				Template: &cloudrunv2.ServiceTemplateArgs{},
+			})
+			if err != nil {
+				return err
+			}
+			entries = append(entries, LBServiceEntry{
+				Name:            name,
+				CloudRunService: svc,
+				PrivateFqdn:     name + ".google.internal",
+				Config: compose.ServiceConfig{
+					Ports: []compose.ServicePortConfig{{Target: 3000, Mode: compose.PortModeIngress}},
+				},
+			})
+		}
+		return CreateLoadBalancers(ctx, "proj", entries, testInfra(ctx))
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	const backendType = "gcp:compute/regionBackendService:RegionBackendService"
+	requireResource(t, mocks.resources, backendType, "api")
+	requireResource(t, mocks.resources, backendType, "worker")
 }
