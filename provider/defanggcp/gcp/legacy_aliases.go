@@ -48,8 +48,19 @@ func legacyAlias(name string) pulumi.ResourceOption {
 
 // legacyResourceName mirrors resourceName(): "<prefix>-<project>-<stack>-<parts...>".
 func legacyResourceName(ctx *pulumi.Context, projectName string, parts ...string) string {
+	return legacyTrimmedName(ctx, 63-legacyPulumiSuffixLength, projectName, parts...)
+}
+
+// legacyRedisInstanceName mirrors redisInstanceName(), which built the same
+// name but trimmed it at 40 characters rather than 63, for Memorystore's own
+// limit.
+func legacyRedisInstanceName(ctx *pulumi.Context, projectName, serviceName string) string {
+	return legacyTrimmedName(ctx, 40-legacyPulumiSuffixLength, projectName, serviceName, "redis")
+}
+
+func legacyTrimmedName(ctx *pulumi.Context, maxLength int, projectName string, parts ...string) string {
 	all := append([]string{legacyPrefix, projectName, ctx.Stack()}, parts...)
-	return legacyHashTrim(legacySanitize(strings.Join(all, "-")), 63-legacyPulumiSuffixLength)
+	return legacyHashTrim(legacySanitize(strings.Join(all, "-")), maxLength)
 }
 
 // legacyPlainName mirrors the places the legacy CD joined names by hand,

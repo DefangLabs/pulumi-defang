@@ -67,6 +67,15 @@ func CreateMemoryStore(
 			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
 		}, opts...)
 	}
+	// Adopt the instance the legacy defang-mvp CD created (redis.go:38 there:
+	// redisInstanceName(project, service, config)). The compose project name
+	// comes from SharedInfra rather than a parameter because only a CD-driven
+	// project can have legacy state to adopt; a standalone Redis component has
+	// no infra and no history.
+	if infra != nil && infra.ProjectName != "" {
+		instanceOpts = append(instanceOpts,
+			legacyAlias(legacyRedisInstanceName(ctx, infra.ProjectName, serviceName)))
+	}
 
 	var authorizedNetwork pulumi.StringPtrInput
 	if infra != nil {
