@@ -3,6 +3,7 @@ package gcp
 import (
 	"testing"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,4 +63,58 @@ func TestLegacyNameSanitization(t *testing.T) {
 // A network name may not start with a non-letter; the legacy CD prefixed those.
 func TestLegacyNetworkNamePrefixesNonLetters(t *testing.T) {
 	assert.Equal(t, "net-9lives-vpc", legacyNetworkName("9lives-vpc"))
+}
+
+// The Memorystore instance is the other data resource a legacy defang-mvp
+// project owns; redisInstanceName() trimmed at 40 characters rather than 63.
+func TestLegacyRedisInstanceName(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		// 26 characters, so it survives whole.
+		assert.Equal(t, "defang-mig-cyc-cache-redis", legacyRedisInstanceName(ctx, "mig", "cache"))
+
+		// 40-8 characters is a tight budget: even a short project overflows it,
+		// and then the tail becomes a 6-character base36 hash.
+		trimmed := legacyRedisInstanceName(ctx, "martekio-mig", "cache")
+		assert.Len(t, trimmed, 32)
+		assert.Equal(t, "defang-martekio-mig-cyc-ca", trimmed[:26])
+		assert.Regexp(t, `^[a-z0-9]{6}$`, trimmed[26:])
+		return nil
+	}, pulumi.WithMocks("martekio-mig", "cyc", testMocks{}))
+	require.NoError(t, err)
+}
+
+// Without this alias an `up` over a legacy defang-mvp stack plans a create plus
+// a delete for the Memorystore instance rather than an update.
+func TestMemorystoreAdoptsLegacyMvpName(t *testing.T) {
+	spy := &aliasSpy{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := CreateMemoryStore(ctx, "cache", compose.ServiceConfig{
+			Image: pulumi.String("redis:7"),
+			Redis: &compose.RedisConfig{},
+		}, &SharedInfra{
+			ProjectName: "martekio-mig",
+			VpcId:       pulumi.String("projects/p/global/networks/vpc").ToStringOutput(),
+		}, pulumi.Parent(nil))
+		return err
+	}, pulumi.WithMocks("martekio-mig", "cyc", spy))
+	require.NoError(t, err)
+
+	assert.Contains(t, spy.aliases["cache"], "defang-martekio-mig-cyc-ca2jud8n",
+		"Memorystore instance would be replaced instead of adopted")
+}
+
+// A standalone Redis component has no infra and no legacy history, so it must
+// not claim a legacy name.
+func TestMemorystoreWithoutInfraDeclaresNoLegacyAlias(t *testing.T) {
+	spy := &aliasSpy{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := CreateMemoryStore(ctx, "cache", compose.ServiceConfig{
+			Image: pulumi.String("redis:7"),
+			Redis: &compose.RedisConfig{},
+		}, nil, pulumi.Parent(nil))
+		return err
+	}, pulumi.WithMocks("martekio-mig", "cyc", spy))
+	require.NoError(t, err)
+
+	assert.Empty(t, spy.aliases["cache"])
 }
