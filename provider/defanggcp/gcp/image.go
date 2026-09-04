@@ -103,9 +103,13 @@ func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pu
 		buildArgs = append(buildArgs, "--target", target)
 	}
 	// Values travel in the step's env rather than on the command line, so they
-	// stay out of the Pulumi state that records these steps. Sorted for a
-	// stable ordering: a map walk would reshuffle the args every run and make
-	// the Build resource look changed when it isn't.
+	// do not show up in the docker invocation Cloud Build logs. They are not
+	// hidden from Pulumi state: env is part of the same steps YAML that becomes
+	// the Build resource's steps input. Compose build args are not a secret
+	// channel — Docker bakes them into image history — so that is acceptable
+	// here; anything genuinely secret belongs in a BuildKit secret mount, not
+	// in build args. Sorted for a stable ordering: a map walk would reshuffle
+	// the args every run and make the Build resource look changed when it isn't.
 	var buildEnv []string
 	for k, v := range common.Sorted(build.Args) {
 		buildArgs = append(buildArgs, "--build-arg", k)
