@@ -81,6 +81,7 @@ type gcpBuildResource struct {
 type buildStep struct {
 	Name string   `yaml:"name"`
 	Args []string `yaml:"args"`
+	Env  []string `yaml:"env,omitempty"`
 }
 
 // generateBuildSteps returns a YAML-encoded Cloud Build step list that builds
@@ -97,6 +98,27 @@ func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pu
 		platform = build.Platforms[0]
 	}
 	buildArgs := []string{"buildx", "build", "--platform", platform}
+	buildArgs = append(buildArgs, "-f", build.GetDockerfile())
+	if target := build.GetTarget(); target != "" {
+		buildArgs = append(buildArgs, "--target", target)
+	}
+	// Values travel in the step's env rather than on the command line, so they
+	// do not show up in the docker invocation Cloud Build logs. They are not
+	// hidden from Pulumi state: env is part of the same steps YAML that becomes
+	// the Build resource's steps input. Compose build args are not a secret
+	// channel — Docker bakes them into image history — so that is acceptable
+	// here; anything genuinely secret belongs in a BuildKit secret mount, not
+	// in build args. Sorted for a stable ordering: a map walk would reshuffle
+	// the args every run and make the Build resource look changed when it isn't.
+	var buildEnv []string
+	for k, v := range common.Sorted(build.Args) {
+		buildArgs = append(buildArgs, "--build-arg", k)
+		// Cloud Build expands $VAR / ${VAR} substitutions in steps.env before
+		// running the step, so a literal $ in the value (e.g. an arg that
+		// happens to read "$PROJECT_ID") must be escaped to $$ to survive as
+		// the literal Compose value rather than being substituted away.
+		buildEnv = append(buildEnv, k+"="+strings.ReplaceAll(v, "$", "$$"))
+	}
 	for _, c := range build.CacheFrom {
 		buildArgs = append(buildArgs, "--cache-from="+c)
 	}
@@ -118,6 +140,7 @@ func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pu
 			{
 				Name: "gcr.io/cloud-builders/docker",
 				Args: append(buildArgs, "-t", d, "--load", "."),
+				Env:  buildEnv,
 			},
 		}
 		b, err := yaml.Marshal(steps)

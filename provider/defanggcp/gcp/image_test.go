@@ -461,3 +461,116 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 	assert.True(t, hasBucketIAMDep,
 		"Build resource must depend on BucketIAMMember (got deps: %v)", spy.buildDeps)
 }
+
+// renderBuildSteps runs generateBuildSteps and returns the decoded step list.
+func renderBuildSteps(t *testing.T, build *compose.BuildConfig) []buildStep {
+	t.Helper()
+	const dest = "us-central1-docker.pkg.dev/my-project/my-repo/app:latest"
+
+	var steps []buildStep
+	var unmarshalErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		out := generateBuildSteps(build, pulumi.String(dest).ToStringOutput())
+		out.ApplyT(func(stepsYAML string) string {
+			defer wg.Done()
+			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
+			return stepsYAML
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", testMocks{}))
+	require.NoError(t, err)
+	wg.Wait()
+	require.NoError(t, unmarshalErr)
+	require.Len(t, steps, 2)
+	return steps
+}
+
+// argValue returns the token following flag in args.
+func argValue(t *testing.T, args []string, flag string) string {
+	t.Helper()
+	for i, a := range args {
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	t.Fatalf("flag %q not found in %v", flag, args)
+	return ""
+}
+
+// A compose service is free to name its Dockerfile something other than
+// "Dockerfile" (`dockerfile: api.Dockerfile`). Without -f, buildx looks for
+// <context>/Dockerfile and the build dies with
+// "failed to read dockerfile: open Dockerfile: no such file or directory".
+func TestGenerateBuildStepsPassesDockerfile(t *testing.T) {
+	dockerfile := "api.Dockerfile"
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context:    pulumi.String("."),
+		Dockerfile: &dockerfile,
+	})
+
+	assert.Equal(t, dockerfile, argValue(t, steps[1].Args, "-f"))
+}
+
+// Unset dockerfile still has to be passed explicitly; GetDockerfile defaults it.
+func TestGenerateBuildStepsDefaultsDockerfile(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{Context: pulumi.String("./app")})
+
+	assert.Equal(t, "Dockerfile", argValue(t, steps[1].Args, "-f"))
+}
+
+// Build args reach the build as --build-arg KEY with the value in the step's
+// env, so values are absent from the docker invocation in the Cloud Build log
+// (they are not hidden from Pulumi state: env is part of the same steps YAML
+// that becomes the Build resource's steps input). Ordering is sorted so an
+// unchanged build does not look changed.
+func TestGenerateBuildStepsPassesBuildArgsInEnv(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Args:    map[string]string{"MODE": "production", "API_URL": "https://example.invalid"},
+	})
+
+	assert.Equal(t, []string{"API_URL=https://example.invalid", "MODE=production"}, steps[1].Env)
+	assert.Equal(t, []string{
+		"buildx", "build", "--platform", "linux/amd64",
+		"-f", "Dockerfile",
+		"--build-arg", "API_URL", "--build-arg", "MODE",
+		"-t", "us-central1-docker.pkg.dev/my-project/my-repo/app:latest", "--load", ".",
+	}, steps[1].Args, "--build-arg flags must pair with their sorted keys, in order")
+	argsLine := strings.Join(steps[1].Args, " ")
+	assert.NotContains(t, argsLine, "production",
+		"build arg values must not appear on the command line")
+	assert.NotContains(t, argsLine, "https://example.invalid",
+		"build arg values must not appear on the command line")
+}
+
+// Cloud Build expands $VAR / ${VAR} substitutions in steps.env before running
+// the step, so a literal $ in a build arg value must be escaped to $$ or it
+// is silently replaced (e.g. by the actual project ID) rather than reaching
+// Docker as the Compose value.
+func TestGenerateBuildStepsEscapesDollarInBuildArgValues(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Args:    map[string]string{"REF": "$PROJECT_ID"},
+	})
+
+	assert.Equal(t, []string{"REF=$$PROJECT_ID"}, steps[1].Env)
+}
+
+func TestGenerateBuildStepsPassesTarget(t *testing.T) {
+	target := "runtime"
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Target:  &target,
+	})
+
+	assert.Equal(t, target, argValue(t, steps[1].Args, "--target"))
+}
+
+func TestGenerateBuildStepsOmitsTargetWhenUnset(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{Context: pulumi.String("./app")})
+
+	assert.NotContains(t, steps[1].Args, "--target")
+	assert.Empty(t, steps[1].Env)
+}
