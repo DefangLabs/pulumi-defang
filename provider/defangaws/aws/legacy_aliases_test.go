@@ -107,6 +107,11 @@ func (m *legacyAliasSpy) NewResource(args pulumi.MockResourceArgs) (string, reso
 	return args.Name + "_id", args.Inputs, nil
 }
 
+// specs returns the legacy identities one registered resource declared.
+func (m *legacyAliasSpy) specs(typeToken, name string) []legacyAliasSpec {
+	return m.aliases[legacyResourceKey{typeToken: typeToken, name: name}]
+}
+
 // Without these aliases an `up` over a legacy defang-mvp stack plans a create
 // plus a delete for the database rather than an update, and the delete takes
 // the data with it.
@@ -127,13 +132,13 @@ func TestRDSAdoptsLegacyMvpNames(t *testing.T) {
 	}, pulumi.WithMocks("myproject", "prod1", spy))
 	require.NoError(t, err)
 
-	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:rds/instance:Instance", "postgres"}], legacyAliasSpec{
+	assert.Contains(t, spy.specs("aws:rds/instance:Instance", "postgres"), legacyAliasSpec{
 		name: "defang-cd-prod1-postgres", project: legacyProject, noParent: true,
 	}, "RDS instance would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:ec2/securityGroup:SecurityGroup", "postgres"}], legacyAliasSpec{
+	assert.Contains(t, spy.specs("aws:ec2/securityGroup:SecurityGroup", "postgres"), legacyAliasSpec{
 		name: "Defang-cd-prod1-postgres", project: legacyProject, noParent: true,
 	}, "RDS security group would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:rds/subnetGroup:SubnetGroup", "postgres"}], legacyAliasSpec{
+	assert.Contains(t, spy.specs("aws:rds/subnetGroup:SubnetGroup", "postgres"), legacyAliasSpec{
 		name: "postgres", project: legacyProject, noParent: true,
 	}, "RDS subnet group would be replaced instead of adopted")
 }
@@ -153,13 +158,13 @@ func TestElasticacheAdoptsLegacyMvpNames(t *testing.T) {
 	}, pulumi.WithMocks("myproject", "prod1", spy))
 	require.NoError(t, err)
 
-	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:elasticache/replicationGroup:ReplicationGroup", service}], legacyAliasSpec{
+	assert.Contains(t, spy.specs("aws:elasticache/replicationGroup:ReplicationGroup", service), legacyAliasSpec{
 		name: service, project: legacyProject, noParent: true,
 	}, "replication group would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:elasticache/subnetGroup:SubnetGroup", service}], legacyAliasSpec{
+	assert.Contains(t, spy.specs("aws:elasticache/subnetGroup:SubnetGroup", service), legacyAliasSpec{
 		name: "Defang-cd-prod1-" + service, project: legacyProject, noParent: true,
 	}, "ElastiCache subnet group would be replaced instead of adopted")
-	assert.Contains(t, spy.aliases[legacyResourceKey{"aws:ec2/securityGroup:SecurityGroup", service}], legacyAliasSpec{
+	assert.Contains(t, spy.specs("aws:ec2/securityGroup:SecurityGroup", service), legacyAliasSpec{
 		name: "Defang-cd-prod1-" + service, project: legacyProject, noParent: true,
 	}, "ElastiCache security group would be replaced instead of adopted")
 }
