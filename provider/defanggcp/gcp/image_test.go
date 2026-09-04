@@ -521,8 +521,10 @@ func TestGenerateBuildStepsDefaultsDockerfile(t *testing.T) {
 }
 
 // Build args reach the build as --build-arg KEY with the value in the step's
-// env, so values stay out of the Pulumi state that stores these steps.
-// Ordering is sorted so an unchanged build does not look changed.
+// env, so values are absent from the docker invocation in the Cloud Build log
+// (they are not hidden from Pulumi state: env is part of the same steps YAML
+// that becomes the Build resource's steps input). Ordering is sorted so an
+// unchanged build does not look changed.
 func TestGenerateBuildStepsPassesBuildArgsInEnv(t *testing.T) {
 	steps := renderBuildSteps(t, &compose.BuildConfig{
 		Context: pulumi.String("./app"),
@@ -531,8 +533,24 @@ func TestGenerateBuildStepsPassesBuildArgsInEnv(t *testing.T) {
 
 	assert.Equal(t, []string{"API_URL=https://example.invalid", "MODE=production"}, steps[1].Env)
 	assert.Subset(t, steps[1].Args, []string{"--build-arg", "MODE", "API_URL"})
-	assert.NotContains(t, strings.Join(steps[1].Args, " "), "production",
+	argsLine := strings.Join(steps[1].Args, " ")
+	assert.NotContains(t, argsLine, "production",
 		"build arg values must not appear on the command line")
+	assert.NotContains(t, argsLine, "https://example.invalid",
+		"build arg values must not appear on the command line")
+}
+
+// Cloud Build expands $VAR / ${VAR} substitutions in steps.env before running
+// the step, so a literal $ in a build arg value must be escaped to $$ or it
+// is silently replaced (e.g. by the actual project ID) rather than reaching
+// Docker as the Compose value.
+func TestGenerateBuildStepsEscapesDollarInBuildArgValues(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Args:    map[string]string{"REF": "$PROJECT_ID"},
+	})
+
+	assert.Equal(t, []string{"REF=$$PROJECT_ID"}, steps[1].Env)
 }
 
 func TestGenerateBuildStepsPassesTarget(t *testing.T) {

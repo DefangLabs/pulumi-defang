@@ -113,7 +113,11 @@ func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pu
 	var buildEnv []string
 	for k, v := range common.Sorted(build.Args) {
 		buildArgs = append(buildArgs, "--build-arg", k)
-		buildEnv = append(buildEnv, k+"="+v)
+		// Cloud Build expands $VAR / ${VAR} substitutions in steps.env before
+		// running the step, so a literal $ in the value (e.g. an arg that
+		// happens to read "$PROJECT_ID") must be escaped to $$ to survive as
+		// the literal Compose value rather than being substituted away.
+		buildEnv = append(buildEnv, k+"="+strings.ReplaceAll(v, "$", "$$"))
 	}
 	for _, c := range build.CacheFrom {
 		buildArgs = append(buildArgs, "--cache-from="+c)
