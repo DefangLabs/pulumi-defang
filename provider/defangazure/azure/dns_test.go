@@ -18,12 +18,21 @@ type dnsResource struct {
 
 type dnsNameMocks struct {
 	resources []dnsResource
+	aliases   []dnsResource
 }
 
 func (m *dnsNameMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	switch args.TypeToken {
 	case "azure-native:privatedns:PrivateZone", "azure-native:privatedns:VirtualNetworkLink":
 		m.resources = append(m.resources, dnsResource{typeToken: args.TypeToken, name: args.Name})
+		for _, alias := range args.RegisterRPC.GetAliases() {
+			// The azure-native SDK attaches an alias per historical API version
+			// to every resource; those carry a type and no name. Only the ones
+			// this package adds name a previous logical name.
+			if spec := alias.GetSpec(); spec != nil && spec.GetName() != "" {
+				m.aliases = append(m.aliases, dnsResource{typeToken: args.TypeToken, name: spec.GetName()})
+			}
+		}
 	}
 	return args.Name + "_id", args.Inputs, nil
 }
@@ -88,4 +97,58 @@ func TestCreateDNSZonesNamesAreIndependentOfTheService(t *testing.T) {
 		require.False(t, seen[r], "duplicate logical name %q for type %s", r.name, r.typeToken)
 		seen[r] = true
 	}
+}
+
+// Azure runs in production, so the rename above must not drop the URNs the old
+// service-derived names created: each zone and link claims its old name as an
+// alias. Without them an `up` on a live project deletes the zone every server
+// and private endpoint resolves through.
+func TestCreateDNSZonesKeepTheOldServiceNamesAsAliases(t *testing.T) {
+	mocks := &dnsNameMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		rg, err := resources.NewResourceGroup(ctx, "project", &resources.ResourceGroupArgs{})
+		if err != nil {
+			return err
+		}
+		vnet, err := network.NewVirtualNetwork(ctx, "project", &network.VirtualNetworkArgs{
+			ResourceGroupName: rg.Name,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = CreateDNSZones(ctx, "project", "db", "cache",
+			&SharedInfra{ResourceGroup: rg}, &NetworkingResult{VNet: vnet})
+		return err
+	}, pulumi.WithMocks("project", "stack", mocks))
+	require.NoError(t, err)
+
+	const zone = "azure-native:privatedns:PrivateZone"
+	const link = "azure-native:privatedns:VirtualNetworkLink"
+	require.ElementsMatch(t, []dnsResource{
+		{zone, "db"}, {link, "db"}, {zone, "cache"}, {link, "cache"},
+	}, mocks.aliases)
+}
+
+// A project whose service is already called "postgres" needs no alias: the old
+// name and the new one are the same URN.
+func TestCreateDNSZonesDeclareNoSelfAlias(t *testing.T) {
+	mocks := &dnsNameMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		rg, err := resources.NewResourceGroup(ctx, "project", &resources.ResourceGroupArgs{})
+		if err != nil {
+			return err
+		}
+		vnet, err := network.NewVirtualNetwork(ctx, "project", &network.VirtualNetworkArgs{
+			ResourceGroupName: rg.Name,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = CreateDNSZones(ctx, "project", postgresName, redisName,
+			&SharedInfra{ResourceGroup: rg}, &NetworkingResult{VNet: vnet})
+		return err
+	}, pulumi.WithMocks("project", "stack", mocks))
+	require.NoError(t, err)
+
+	require.Empty(t, mocks.aliases)
 }
