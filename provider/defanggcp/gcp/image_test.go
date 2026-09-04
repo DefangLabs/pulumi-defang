@@ -532,7 +532,12 @@ func TestGenerateBuildStepsPassesBuildArgsInEnv(t *testing.T) {
 	})
 
 	assert.Equal(t, []string{"API_URL=https://example.invalid", "MODE=production"}, steps[1].Env)
-	assert.Subset(t, steps[1].Args, []string{"--build-arg", "MODE", "API_URL"})
+	assert.Equal(t, []string{
+		"buildx", "build", "--platform", "linux/amd64",
+		"-f", "Dockerfile",
+		"--build-arg", "API_URL", "--build-arg", "MODE",
+		"-t", "us-central1-docker.pkg.dev/my-project/my-repo/app:latest", "--load", ".",
+	}, steps[1].Args, "--build-arg flags must pair with their sorted keys, in order")
 	argsLine := strings.Join(steps[1].Args, " ")
 	assert.NotContains(t, argsLine, "production",
 		"build arg values must not appear on the command line")
