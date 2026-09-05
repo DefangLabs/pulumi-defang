@@ -76,9 +76,6 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 // lowercased) is prepended where one is still wanted.
 const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
 
-// autonamingPattern is the key of a per-resource autonaming rule.
-const autonamingPattern = "pattern"
-
 func setDefaultStackConfig(prefix string, config configMap) {
 	// defang:prefix holds the bare prefix (e.g. "Defang"); its consumers
 	// (common.Prefix, e.g. ProjectResourceGroupName) append their own "-"
@@ -90,7 +87,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 	}
 	lowerPrefix := strings.ToLower(prefix)
 	// Types that reject an uppercase physical name all share this pattern.
-	lowercased := map[string]string{autonamingPattern: lowerPrefix + defaultAutonamingSuffix}
+	lowercased := map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
 		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
