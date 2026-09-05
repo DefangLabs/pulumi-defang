@@ -25,10 +25,16 @@ const (
 	CdResourceGroup = "defang-cd"
 	cdJobName       = "defang-cd"
 
-	// selfDestructJobName is deterministic so every redeploy updates the same
-	// trigger in place (extending the stack's life). It is unique within the
-	// project resource group, which is itself per project/stack.
-	selfDestructJobName = "defang-self-destruct"
+	// selfDestructName is the Pulumi logical name and the container name inside
+	// the job. It is deliberately NOT set as the job's physical JobName: Container
+	// Apps requires job names to be unique within the MANAGED ENVIRONMENT, and every
+	// project's trigger job is created in the shared defang-cd environment. A fixed
+	// physical name therefore let only the first project in a subscription have a
+	// TTL; every later one failed the whole deploy with HTTP 409
+	// ContainerAppsJobNameConflictInCluster. Letting Pulumi auto-name keeps it unique
+	// per stack while staying stable across redeploys of the same stack, so a
+	// redeploy still updates the trigger in place and extends the stack's life.
+	selfDestructName = "defang-self-destruct"
 
 	// The trigger execution only STARTS the down (one ARM call); the down
 	// itself runs in the shared defang-cd job. It must not run the destroy
@@ -93,7 +99,7 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 	_ = pctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` on itself at %s (ttl %s); redeploying extends it",
 		fireAt.UTC().Format(time.RFC3339), ttl), nil)
 
-	job, err := app.NewJob(pctx, selfDestructJobName, args,
+	job, err := app.NewJob(pctx, selfDestructName, args,
 		append(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
 	if err != nil {
 		return err
@@ -146,7 +152,8 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 	}
 
 	args := &app.JobArgs{
-		JobName:           pulumi.String(selfDestructJobName),
+		// No JobName: Pulumi auto-names it, keeping it unique within the shared
+		// defang-cd managed environment. See selfDestructName above.
 		ResourceGroupName: pulumi.String(resourceGroup),
 		Location:          pulumi.String(*cdJob.Location), // must match the CD environment's region
 		EnvironmentId:     pulumi.String(*cdJob.Properties.EnvironmentID),
@@ -170,7 +177,7 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 		Template: app.JobTemplateArgs{
 			Containers: app.ContainerArray{
 				app.ContainerArgs{
-					Name:    pulumi.String(selfDestructJobName),
+					Name:    pulumi.String(selfDestructName),
 					Image:   pulumi.String(image),
 					Command: pulumi.ToStringArray([]string{"/app/cd"}),
 					Args:    pulumi.ToStringArray([]string{"trigger-down"}),

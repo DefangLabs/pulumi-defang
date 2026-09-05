@@ -592,10 +592,23 @@ func (*Project) Construct(
 	return comp, nil
 }
 
-// llmModelAlias finds the model alias for an LLM service by scanning dependent services'
-// environments. The CLI injects {UPPER(svcName)}_MODEL into every service that depends on
-// the LLM service. Returns the alias (e.g. "chat-default") or svcName as a fallback.
+// llmModelAlias finds the model alias for an LLM service, which becomes the name of
+// the Azure AI Foundry deployment. Dependent services send that name as the "model"
+// field, so getting it wrong yields DeploymentNotFound at runtime after a green deploy.
+//
+// The CLI writes the alias into the LLM service's own command ("--alias <alias>"), which
+// is authoritative: it is present whatever the dependents look like. Only if that is
+// missing do we fall back to scanning dependents for {UPPER(svcName)}_MODEL — the env
+// var the CLI injects by default. That scan alone is not enough, because compose lets a
+// dependent rename the variable (`models: {<svc>: {model_var: MODEL}}`), in which case
+// the lookup silently missed and we deployed under svcName while the CLI told the app to
+// ask for the alias.
 func llmModelAlias(svcName string, services compose.Services) string {
+	if svc, ok := services[svcName]; ok {
+		if alias := aliasFromCommand(svc.Command); alias != "" {
+			return alias
+		}
+	}
 	envKey := strings.ToUpper(svcName) + "_MODEL"
 	for _, svc := range services {
 		if sv, _ := compose.StaticEnvValue(svc.Environment[envKey]); sv != nil && *sv != "" {
@@ -603,6 +616,17 @@ func llmModelAlias(svcName string, services compose.Services) string {
 		}
 	}
 	return svcName // fallback: use service name as deployment name
+}
+
+// aliasFromCommand returns the value following "--alias" in the LiteLLM command the CLI
+// generates, or "" when absent.
+func aliasFromCommand(command []string) string {
+	for i, arg := range command {
+		if arg == "--alias" && i+1 < len(command) {
+			return command[i+1]
+		}
+	}
+	return ""
 }
 
 // fqdnToHTTPS converts a Container App FQDN to an https:// URL, or returns "" for empty FQDNs.
