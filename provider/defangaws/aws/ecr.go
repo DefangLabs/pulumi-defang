@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -42,6 +44,45 @@ type PullThroughCache struct {
 	CachePrefix pulumi.StringOutput
 }
 
+// maxCacheRepoLength is the longest ecrRepositoryPrefix AWS accepts.
+// It was 20 before https://github.com/hashicorp/terraform-provider-aws/pull/34716.
+const maxCacheRepoLength = 30
+
+// cachePrefixHashLength is how much of an over-long prefix is given over to a
+// hash of the whole of it.
+const cachePrefixHashLength = 6
+
+// cachePrefixSeparators are the characters AWS allows inside an
+// ecrRepositoryPrefix but not at its end.
+const cachePrefixSeparators = "._-/"
+
+// cachePrefixName fits a seed into ecrRepositoryPrefix's 30 characters.
+//
+// Plain truncation was not enough on two counts. AWS rejects a prefix that
+// ends in a separator, and cutting "defang-mastra-extended-e2eaws-mastra-
+// extended-ecr-public" at 30 characters produces exactly that -- the deploy
+// failed with "invalid value for ecr_repository_prefix", whose message lists
+// the allowed characters and so points away from the real cause. And the
+// prefix is an ACCOUNT-GLOBAL namespace, so two projects whose names agree for
+// the first 30 characters would otherwise claim one rule.
+//
+// Trading the tail for a hash of the full seed answers both. Seeds that fit
+// are returned unchanged, and existing rules keep their current prefix through
+// IgnoreChanges below, so nothing already deployed moves.
+func cachePrefixName(prefix string) string {
+	if len(prefix) <= maxCacheRepoLength {
+		return strings.TrimRight(prefix, cachePrefixSeparators)
+	}
+
+	digest := sha256.Sum256([]byte(prefix))
+	hash := hex.EncodeToString(digest[:])[:cachePrefixHashLength]
+	head := strings.TrimRight(prefix[:maxCacheRepoLength-cachePrefixHashLength-1], cachePrefixSeparators)
+	if head == "" {
+		return hash
+	}
+	return head + "-" + hash
+}
+
 // createEcrPullThroughCache creates an ECR pull-through cache rule for the given upstream registry.
 // Matches TS createEcrPullThroughCache in shared/aws/repos.ts. prefixSeed
 // seeds the repository prefix — an ACCOUNT-global namespace, so it must be
@@ -54,13 +95,8 @@ func createEcrPullThroughCache(
 	upstreamRegistryURL pulumi.StringInput,
 	opts ...pulumi.ResourceOption,
 ) (*PullThroughCache, error) {
-	const maxCacheRepoLength = 30 // was 20 https://github.com/hashicorp/terraform-provider-aws/pull/34716
 	// PullThroughCacheRule does not support autonaming, so we need to generate a unique and compliant prefix ourselves.
-	prefix := strings.ToLower(common.AutonamingPrefix(ctx, prefixSeed))
-	if len(prefix) > maxCacheRepoLength {
-		// 	TODO: hashTrim/truncate prefix smartly
-		prefix = prefix[:maxCacheRepoLength]
-	}
+	prefix := cachePrefixName(strings.ToLower(common.AutonamingPrefix(ctx, prefixSeed)))
 	rule, err := ecr.NewPullThroughCacheRule(ctx, name, &ecr.PullThroughCacheRuleArgs{
 		EcrRepositoryPrefix: pulumi.String(prefix),
 		UpstreamRegistryUrl: upstreamRegistryURL,
