@@ -76,6 +76,9 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 // lowercased) is prepended where one is still wanted.
 const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
 
+// autonamingPattern is the key of a per-resource autonaming rule.
+const autonamingPattern = "pattern"
+
 func setDefaultStackConfig(prefix string, config configMap) {
 	// defang:prefix holds the bare prefix (e.g. "Defang"); its consumers
 	// (common.Prefix, e.g. ProjectResourceGroupName) append their own "-"
@@ -86,6 +89,8 @@ func setDefaultStackConfig(prefix string, config configMap) {
 		prefix += "-"
 	}
 	lowerPrefix := strings.ToLower(prefix)
+	// Types that reject an uppercase physical name all share this pattern.
+	lowercased := map[string]string{autonamingPattern: lowerPrefix + defaultAutonamingSuffix}
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
 		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
@@ -95,10 +100,21 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					"aws:lb/targetGroup:TargetGroup":   map[string]string{"pattern": "${name}-${hex(4)}"},
 					// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
 					// full prefix already disambiguates it; no need to repeat it here.
-					"aws:ecs/service:Service":                 map[string]string{"pattern": "${name}-${hex(7)}"},
-					"aws:elasticache/subnetGroup:SubnetGroup": map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}, // lowercase
-					"aws:ecr/repository:Repository":           map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}, // lowercase
-					"aws:rds/subnetGroup:SubnetGroup":         map[string]string{"pattern": lowerPrefix + defaultAutonamingSuffix}, // lowercase
+					"aws:ecs/service:Service": map[string]string{"pattern": "${name}-${hex(7)}"},
+					// Every type below rejects an uppercase physical name, so the
+					// prefix is lowercased for them. The databases matter as much
+					// as the groups they sit in: a managed Postgres deploy failed
+					// with `only lowercase alphanumeric characters and hyphens
+					// allowed in "identifier"` because rds/instance was missing
+					// here and fell back to the capitalised default pattern.
+					"aws:ecr/repository:Repository":                     lowercased,
+					"aws:elasticache/replicationGroup:ReplicationGroup": lowercased,
+					"aws:elasticache/subnetGroup:SubnetGroup":           lowercased,
+					"aws:memorydb/cluster:Cluster":                      lowercased,
+					"aws:memorydb/parameterGroup:ParameterGroup":        lowercased,
+					"aws:memorydb/subnetGroup:SubnetGroup":              lowercased,
+					"aws:rds/instance:Instance":                         lowercased,
+					"aws:rds/subnetGroup:SubnetGroup":                   lowercased,
 				},
 			},
 			"azure-native": map[string]any{
@@ -182,7 +198,7 @@ func addStackConfigFromEnv(config configMap) error {
 	// that pass the generic REGION var for their own region fallback below —
 	// this is exactly what "conflicting cloud providers configured" fired on.
 	awsRegion := os.Getenv("AWS_REGION")
-	azureLocation := getenv("AZURE_LOCATION", region) // Azure only
+	azureLocation := getenv("AZURE_LOCATION", region)         // Azure only
 	azureSubscriptionId := os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only; the project RG and Key Vault names are derived from (project, stack, location) and (subscription, RG) respectively — see provider/defangazure/azure/azure.go
 	cdImage := os.Getenv("DEFANG_CD_IMAGE")                   // GCP only; for cleanup
 	delegationSetId := os.Getenv("DELEGATION_SET_ID")         // AWS only

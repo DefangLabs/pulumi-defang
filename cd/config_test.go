@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
+	"strings"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optdestroy"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
@@ -531,5 +533,35 @@ func unsetenv(t *testing.T, keys ...string) {
 			t.Setenv(key, "") // sets up restoration and checks for parallel test interference
 			os.Unsetenv(key)
 		}
+	}
+}
+
+// AWS rejects an uppercase physical name for these types. rds/instance was
+// missing from the recipe, so it fell back to the capitalised default pattern
+// and a real managed-Postgres deploy died with `only lowercase alphanumeric
+// characters and hyphens allowed in "identifier"` before any database existed.
+func Test_setDefaultStackConfigLowercasesAwsDatabaseNames(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("Defang", config)
+
+	autonamingMap := config["pulumi:autonaming"].Value.(map[string]any)
+	providers := autonamingMap["providers"].(map[string]any)
+	resources := providers["aws"].(map[string]any)["resources"].(map[string]any)
+
+	for _, typeToken := range []string{
+		"aws:ecr/repository:Repository",
+		"aws:elasticache/replicationGroup:ReplicationGroup",
+		"aws:elasticache/subnetGroup:SubnetGroup",
+		"aws:memorydb/cluster:Cluster",
+		"aws:memorydb/parameterGroup:ParameterGroup",
+		"aws:memorydb/subnetGroup:SubnetGroup",
+		"aws:rds/instance:Instance",
+		"aws:rds/subnetGroup:SubnetGroup",
+	} {
+		entry, ok := resources[typeToken]
+		require.True(t, ok, "%s has no autonaming pattern, so it inherits the capitalised default", typeToken)
+		pattern := entry.(map[string]string)["pattern"]
+		require.Equal(t, strings.ToLower(pattern), pattern,
+			"%s must be named in lowercase; AWS rejects the name otherwise", typeToken)
 	}
 }
