@@ -214,7 +214,7 @@ func CreateLLMDeployment(
 		},
 		Sku: &cognitiveservices.SkuArgs{
 			Name:     modelSKU,
-			Capacity: pulumi.Int(1),
+			Capacity: pulumi.Int(LLMDeploymentCapacity.Get(ctx)),
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {

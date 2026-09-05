@@ -11,8 +11,20 @@ var (
 	// consumes it yet. Add recipe.Bool("deletion-protection", false) here when it does.
 	GeoRedundantBackup = recipe.Bool("geo-redundant-backup", false)
 	HighAvailability   = recipe.Bool("high-availability", false)
-	LogRetentionDays   = recipe.Int("log-retention-days", 1)
-	LogWorkspaceSku    = recipe.String("log-workspace-sku", "PerGB2018")
+	// LLMDeploymentCapacity is the SKU capacity given to an Azure AI model
+	// deployment. Azure prices a Standard unit at 1,000 tokens per minute, so
+	// the default below is 10K TPM.
+	//
+	// It used to be 1, i.e. the smallest allocation Azure offers. That is below
+	// the cost of a SINGLE request for the most common use of x-defang-llm: a
+	// RAG app whose prompt carries retrieved context runs ~3K tokens, so every
+	// query failed with rate_limit_exceeded. The failure only appears at
+	// runtime, after a green deploy, and reads as a quota problem rather than a
+	// default — measured against a real app, a 2K prompt was rejected at
+	// capacity 1 and accepted at 10.
+	LLMDeploymentCapacity = recipe.Int("llm-deployment-capacity", 10)
+	LogRetentionDays      = recipe.Int("log-retention-days", 1)
+	LogWorkspaceSku       = recipe.String("log-workspace-sku", "PerGB2018")
 	// LogWorkspaceDailyQuotaGb caps daily ingestion in GB. 0 = no cap.
 	// Default 1 GB/day = ~30 GB/mo, ~$70 ceiling on PerGB2018 (~$2.30/GB).
 	// Chatty workloads (AI agents) override upward; an unbounded default
