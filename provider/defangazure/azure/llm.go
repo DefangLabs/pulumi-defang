@@ -163,17 +163,6 @@ func CreateLLMInfra(
 	}, nil
 }
 
-// defaultDeploymentCapacity is the SKU capacity given to a model deployment. Azure
-// prices a Standard unit at 1,000 tokens per minute, so this is 10K TPM.
-//
-// It used to be 1, i.e. the smallest allocation Azure offers. That is below the cost
-// of a SINGLE request for the most common use of x-defang-llm: a RAG app whose prompt
-// carries retrieved context runs ~3K tokens, so every query failed with
-// rate_limit_exceeded. The failure only appears at runtime, after a green deploy, and
-// reads as a quota problem rather than a default — measured against a real app, a 2K
-// prompt was rejected at capacity 1 and accepted at 10.
-const defaultDeploymentCapacity = 10
-
 // CreateLLMDeployment creates an Azure AI model deployment under the shared Foundry account.
 // deploymentName should be the Defang model alias (e.g. "chat-default", "embedding-default")
 // so that requests with model="{alias}" route to this deployment automatically.
@@ -225,7 +214,7 @@ func CreateLLMDeployment(
 		},
 		Sku: &cognitiveservices.SkuArgs{
 			Name:     modelSKU,
-			Capacity: pulumi.Int(defaultDeploymentCapacity),
+			Capacity: pulumi.Int(LLMDeploymentCapacity.Get(ctx)),
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
