@@ -122,16 +122,39 @@ func TestBuildEnvVarsInjectsDefangServiceEnv(t *testing.T) {
 // TestBuildProbesClampsInitialDelay covers the Azure ceiling on a probe's
 // InitialDelaySeconds. A compose file that is valid on ECS (start_period well over a
 // minute) used to fail the whole deploy with HTTP 400
-// ContainerAppProbeInitialDelaySecondsOutOfRange; it is now clamped instead.
+// ContainerAppProbeInitialDelaySecondsOutOfRange. It is now clamped, and the seconds
+// removed from the delay are moved into the retry window so the container keeps the
+// startup budget its author asked for.
 func TestBuildProbesClampsInitialDelay(t *testing.T) {
 	for _, tt := range []struct {
-		name        string
-		startPeriod int32
-		want        int
+		name                           string
+		startPeriod, interval, retries int32
+		wantDelay, wantThreshold       int
+		wantThresholdSet               bool
 	}{
-		{"over the ceiling is clamped", 240, maxProbeInitialDelaySeconds},
-		{"exactly at the ceiling is kept", 60, 60},
-		{"under the ceiling is kept", 15, 15},
+		{
+			name:        "under the ceiling is left alone",
+			startPeriod: 15, interval: 30, retries: 5,
+			wantDelay: 15, wantThreshold: 5, wantThresholdSet: true,
+		},
+		{
+			name:        "exactly at the ceiling is left alone",
+			startPeriod: 60, interval: 30, retries: 5,
+			wantDelay: 60, wantThreshold: 5, wantThresholdSet: true,
+		},
+		{
+			// 240 + 5*30 = 390s requested; 60 + 11*30 would be needed, so the
+			// threshold rises by ceil(180/30) = 6, from 5 to 11 -> capped at 10.
+			name:        "over the ceiling moves the lost grace into retries",
+			startPeriod: 240, interval: 30, retries: 5,
+			wantDelay: 60, wantThreshold: 10, wantThresholdSet: true,
+		},
+		{
+			// 120 + 2*60 = 240s requested; losing 60s needs ceil(60/60) = 1 more retry.
+			name:        "raises the threshold just enough",
+			startPeriod: 120, interval: 60, retries: 2,
+			wantDelay: 60, wantThreshold: 3, wantThresholdSet: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -140,13 +163,19 @@ func TestBuildProbesClampsInitialDelay(t *testing.T) {
 					HealthCheck: &compose.HealthCheckConfig{
 						Test:               []string{"CMD", "curl", "-f", "http://localhost:5050/"},
 						StartPeriodSeconds: tt.startPeriod,
+						IntervalSeconds:    tt.interval,
+						Retries:            tt.retries,
 					},
 				}
 				probes := buildProbes(ctx, "app", svc)
 				require.Len(t, probes, 1)
 				args, ok := probes[0].(app.ContainerAppProbeArgs)
 				require.True(t, ok)
-				assert.Equal(t, pulumi.Int(tt.want), args.InitialDelaySeconds)
+				assert.Equal(t, pulumi.Int(tt.wantDelay), args.InitialDelaySeconds)
+				assert.LessOrEqual(t, tt.wantDelay, maxProbeInitialDelaySeconds)
+				if tt.wantThresholdSet {
+					assert.Equal(t, pulumi.Int(tt.wantThreshold), args.FailureThreshold)
+				}
 				return nil
 			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
 			require.NoError(t, err)

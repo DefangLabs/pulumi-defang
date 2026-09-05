@@ -21,7 +21,15 @@ import (
 // maxProbeInitialDelaySeconds is Azure Container Apps' hard ceiling for a probe's
 // InitialDelaySeconds; exceeding it fails the deploy with HTTP 400
 // ContainerAppProbeInitialDelaySecondsOutOfRange.
-const maxProbeInitialDelaySeconds = 60
+const (
+	maxProbeInitialDelaySeconds = 60
+	// maxProbeFailureThreshold is Azure's ceiling for FailureThreshold, which bounds
+	// how much of a clamped start_period can be recovered into the retry window.
+	maxProbeFailureThreshold = 10
+	// Azure's own defaults, used when the compose file leaves them unset.
+	defaultProbePeriodSeconds    = 10
+	defaultProbeFailureThreshold = 3
+)
 
 // postgresURLEndpoint checks whether v is a postgres(ql):// URL whose host matches a managed
 // service in serviceEndpoints. If so it returns a new URL with:
@@ -576,15 +584,44 @@ func buildProbes(ctx *pulumi.Context, serviceName string, svc compose.ServiceCon
 		// Azure rejects anything above maxProbeInitialDelaySeconds with a 400
 		// (ContainerAppProbeInitialDelaySecondsOutOfRange), which fails the whole
 		// deploy. ECS allows far longer start periods, so a compose that is
-		// perfectly valid on AWS would otherwise be undeployable here. Clamp and
-		// warn instead: FailureThreshold * PeriodSeconds still governs how long a
-		// slow-starting container gets before it is declared unhealthy.
+		// perfectly valid on AWS would otherwise be undeployable here.
+		//
+		// Clamping alone would silently shorten the grace a slow-starting container
+		// gets, turning a deploy-time error into a restart loop. What the author
+		// actually asked for is a total startup budget: start_period grace plus
+		// retries * interval before the container is declared unhealthy. So move the
+		// clamped-off seconds into the retry window and keep that budget intact.
 		delay := svc.HealthCheck.StartPeriodSeconds
 		if delay > maxProbeInitialDelaySeconds {
-			ctx.Log.Warn(fmt.Sprintf(
-				"service %q: start_period %ds exceeds the Azure maximum of %ds; clamping. "+
-					"Increase healthcheck retries if the container needs longer to start.",
-				serviceName, delay, maxProbeInitialDelaySeconds), nil)
+			period := svc.HealthCheck.IntervalSeconds
+			if period <= 0 {
+				period = defaultProbePeriodSeconds
+			}
+			threshold := svc.HealthCheck.Retries
+			if threshold <= 0 {
+				threshold = defaultProbeFailureThreshold
+			}
+			// Round up: the budget may only grow, never shrink.
+			lost := delay - maxProbeInitialDelaySeconds
+			want := threshold + (lost+period-1)/period
+			if want > maxProbeFailureThreshold {
+				want = maxProbeFailureThreshold
+			}
+			budget := maxProbeInitialDelaySeconds + want*period
+			if budget < delay+threshold*period {
+				_ = ctx.Log.Warn(fmt.Sprintf(
+					"service %q: start_period %ds exceeds the Azure maximum of %ds. Clamped and raised "+
+						"healthcheck retries to %d, but that only reaches %ds of startup budget instead of "+
+						"the %ds requested; raise the healthcheck interval if the container needs longer.",
+					serviceName, delay, maxProbeInitialDelaySeconds, want, budget,
+					delay+threshold*period), nil)
+			} else {
+				_ = ctx.Log.Info(fmt.Sprintf(
+					"service %q: start_period %ds exceeds the Azure maximum of %ds; clamped and raised "+
+						"healthcheck retries from %d to %d, preserving %ds of startup budget.",
+					serviceName, delay, maxProbeInitialDelaySeconds, threshold, want, budget), nil)
+			}
+			probe.FailureThreshold = pulumi.Int(want)
 			delay = maxProbeInitialDelaySeconds
 		}
 		probe.InitialDelaySeconds = pulumi.Int(delay)
