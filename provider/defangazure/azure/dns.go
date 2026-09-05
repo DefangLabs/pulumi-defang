@@ -7,6 +7,24 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// renamedFrom preserves the URN a resource had before this package stopped
+// naming project-shared DNS resources after a service. Azure is in production,
+// so every rename here carries its old name; an empty or unchanged old name
+// yields no alias.
+// The logical names of the project-shared DNS resources. Both a zone and its
+// link may carry the same one: they differ in type, so their URNs differ.
+const (
+	postgresName = "postgres"
+	redisName    = "redis"
+)
+
+func renamedFrom(oldName, newName string) []pulumi.ResourceOption {
+	if oldName == "" || oldName == newName {
+		return nil
+	}
+	return []pulumi.ResourceOption{pulumi.Aliases([]pulumi.Alias{{Name: pulumi.String(oldName)}})}
+}
+
 // DNSResult holds private DNS zones for a project.
 type DNSResult struct {
 	// PostgresZoneName is the private DNS zone used by PostgreSQL Flexible Servers
@@ -33,8 +51,12 @@ type DNSResult struct {
 //  1. A postgres zone ("<project>.private.postgres.database.azure.com") for Flexible Server integration.
 //  2. The Redis Enterprise privatelink zone for private endpoint resolution.
 //
-// pgServiceName and redisServiceName are the compose service names used as
-// Pulumi logical names; pass empty to skip that kind's zone entirely.
+// pgServiceName and redisServiceName only select which zones are needed; pass
+// empty to skip that kind's zone entirely. They are deliberately NOT used as
+// logical names: both zones are project-shared, the caller picks the first
+// alphabetical service of each kind, and naming a shared resource after one of
+// its users means adding an earlier-sorting service replaces the zone the rest
+// of the project is already resolving through.
 func CreateDNSZones(
 	ctx *pulumi.Context,
 	projectName, pgServiceName, redisServiceName string,
@@ -47,23 +69,25 @@ func CreateDNSZones(
 	if pgServiceName != "" {
 		// Postgres private DNS zone — name must end in ".private.postgres.database.azure.com".
 		pgZoneName := projectName + ".private.postgres.database.azure.com"
-		pgZone, err := privatedns.NewPrivateZone(ctx, pgServiceName, &privatedns.PrivateZoneArgs{
+		pgZone, err := privatedns.NewPrivateZone(ctx, postgresName, &privatedns.PrivateZoneArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String("global"),
 			PrivateZoneName:   pulumi.String(pgZoneName),
-			Tags:              ServiceTags(pgServiceName),
-		}, opts...)
+		}, append(opts, renamedFrom(pgServiceName, postgresName)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating postgres private DNS zone: %w", err)
 		}
 
-		_, err = privatedns.NewVirtualNetworkLink(ctx, pgServiceName, &privatedns.VirtualNetworkLinkArgs{
+		// Named for its zone, not "link": a Pulumi URN inherits its parent's
+		// TYPE but not its name, so two links called "link" under two
+		// PrivateZone parents would produce one URN and fail the deploy.
+		_, err = privatedns.NewVirtualNetworkLink(ctx, postgresName, &privatedns.VirtualNetworkLinkArgs{
 			ResourceGroupName:   infra.ResourceGroup.Name,
 			PrivateZoneName:     pgZone.Name,
 			Location:            pulumi.String("global"),
 			RegistrationEnabled: pulumi.Bool(false),
 			VirtualNetwork:      &privatedns.SubResourceArgs{Id: networking.VNet.ID().ToStringOutput()},
-		}, append(opts, pulumi.Parent(pgZone))...)
+		}, append(append(opts, pulumi.Parent(pgZone)), renamedFrom(pgServiceName, postgresName)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating postgres DNS VNet link: %w", err)
 		}
@@ -76,23 +100,22 @@ func CreateDNSZones(
 		// Redis Enterprise private DNS zone — required for private endpoint DNS resolution.
 		// Azure resolves <cluster>.westus3.redis.azure.net → <cluster>.privatelink.redis.azure.net
 		// and this zone maps that to the private endpoint IP.
-		redisZone, err := privatedns.NewPrivateZone(ctx, redisServiceName, &privatedns.PrivateZoneArgs{
+		redisZone, err := privatedns.NewPrivateZone(ctx, redisName, &privatedns.PrivateZoneArgs{
 			ResourceGroupName: infra.ResourceGroup.Name,
 			Location:          pulumi.String("global"),
 			PrivateZoneName:   pulumi.String("privatelink.redis.azure.net"),
-			Tags:              ServiceTags(redisServiceName),
-		}, opts...)
+		}, append(opts, renamedFrom(redisServiceName, redisName)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Redis private DNS zone: %w", err)
 		}
 
-		redisLink, err := privatedns.NewVirtualNetworkLink(ctx, redisServiceName, &privatedns.VirtualNetworkLinkArgs{
+		redisLink, err := privatedns.NewVirtualNetworkLink(ctx, redisName, &privatedns.VirtualNetworkLinkArgs{
 			ResourceGroupName:   infra.ResourceGroup.Name,
 			PrivateZoneName:     redisZone.Name,
 			Location:            pulumi.String("global"),
 			RegistrationEnabled: pulumi.Bool(false),
 			VirtualNetwork:      &privatedns.SubResourceArgs{Id: networking.VNet.ID().ToStringOutput()},
-		}, append(opts, pulumi.Parent(redisZone))...)
+		}, append(append(opts, pulumi.Parent(redisZone)), renamedFrom(redisServiceName, redisName)...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating Redis DNS VNet link: %w", err)
 		}

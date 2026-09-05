@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -8,6 +10,10 @@ import (
 
 const autonamingSuffixLen = 5 // "-" + hex(4) from autonaming stack config
 const tgMaxNameLen = 32
+
+// tgNameHashLen is how much of a truncated service name is given over to a
+// hash of the whole of it.
+const tgNameHashLen = 6
 
 // targetGroupName builds a logical Pulumi resource name for a TargetGroup.
 // The physical name (with its 32-char AWS limit) is handled by autonaming config.
@@ -27,7 +33,12 @@ func targetGroupName(
 
 	maxService := tgMaxNameLen - autonamingSuffixLen - len(suffix)
 	if len(service) > maxService {
-		service = service[:maxService]
+		// Plain truncation made two long service names that share a prefix
+		// collide, and two target groups with one logical name is a duplicate
+		// URN that fails the whole deploy. Trade the tail for a hash of the
+		// full name; short names are untouched.
+		digest := sha256.Sum256([]byte(service))
+		service = service[:maxService-tgNameHashLen] + hex.EncodeToString(digest[:])[:tgNameHashLen]
 	}
 
 	return service + suffix

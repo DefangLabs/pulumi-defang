@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -55,4 +56,19 @@ func TestBuildVolumesFromQualifiesNames(t *testing.T) {
 	require.Len(t, vols, 1)
 	assert.Equal(t, "helper_kg7lqwrfnfxa", *vols[0].SourceContainer)
 	assert.True(t, *vols[0].ReadOnly)
+}
+
+// Two long service names that share a prefix must not collapse onto one target
+// group logical name: same type, same parent, one name is a duplicate URN.
+func TestTargetGroupNameLongPrefixesDoNotCollide(t *testing.T) {
+	prefix := strings.Repeat("service", 5)
+
+	first := targetGroupName(prefix+"-alpha", 3000, "", compose.PortListenerDefault)
+	second := targetGroupName(prefix+"-bravo", 3000, "", compose.PortListenerDefault)
+
+	require.LessOrEqual(t, len(first), tgMaxNameLen-autonamingSuffixLen)
+	require.LessOrEqual(t, len(second), tgMaxNameLen-autonamingSuffixLen)
+	assert.NotEqual(t, first, second)
+	assert.Equal(t, first, targetGroupName(prefix+"-alpha", 3000, "", compose.PortListenerDefault),
+		"target group names must be deterministic")
 }
