@@ -31,10 +31,13 @@ func TestLlmModelAlias(t *testing.T) {
 			want: "chat-default",
 		},
 		{
-			name: "alias comes from the command with the default env var too",
+			// Precedence: the command must win over the env var. The two carry
+			// different values here on purpose — identical ones would pass whichever
+			// source were consulted and prove nothing.
+			name: "the command wins over a conflicting env var",
 			services: compose.Services{
 				"llm": {Command: litellmCmd, LLM: &compose.LlmConfig{}},
-				"app": {Environment: compose.Environment{"LLM_MODEL": pulumi.String("chat-default")}},
+				"app": {Environment: compose.Environment{"LLM_MODEL": pulumi.String("stale-env-alias")}},
 			},
 			want: "chat-default",
 		},
