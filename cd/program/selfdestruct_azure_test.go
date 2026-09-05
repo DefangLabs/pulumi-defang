@@ -41,8 +41,8 @@ func TestAzureSelfDestructJobArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if args.JobName != pulumi.String(selfDestructJobName) {
-		t.Errorf("JobName = %v", args.JobName)
+	if args.JobName != nil {
+		t.Errorf("JobName must stay unset so Pulumi auto-names the job (a fixed name collides in the shared defang-cd environment), got %v", args.JobName)
 	}
 	if args.ResourceGroupName != pulumi.String("Defang-myproj-preview-rg") {
 		t.Errorf("ResourceGroupName = %v", args.ResourceGroupName)

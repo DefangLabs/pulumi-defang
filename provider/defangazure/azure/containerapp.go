@@ -18,6 +18,11 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// maxProbeInitialDelaySeconds is Azure Container Apps' hard ceiling for a probe's
+// InitialDelaySeconds; exceeding it fails the deploy with HTTP 400
+// ContainerAppProbeInitialDelaySecondsOutOfRange.
+const maxProbeInitialDelaySeconds = 60
+
 // postgresURLEndpoint checks whether v is a postgres(ql):// URL whose host matches a managed
 // service in serviceEndpoints. If so it returns a new URL with:
 //   - the hostname replaced by the managed service FQDN
@@ -272,7 +277,7 @@ func CreateContainerApp(
 		// readLiveCustomDomains.
 		ingress.CustomDomains = readLiveCustomDomains(ctx, infra, serviceName)
 	}
-	probes := buildProbes(svc)
+	probes := buildProbes(ctx, serviceName, svc)
 
 	var registries app.RegistryCredentialsArray
 	// Collect user-assigned identities the app needs: one for ACR pull (when
@@ -526,7 +531,7 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.Ing
 // `/`, which 404s for many services (Hasura is the canonical case) and puts
 // the container into a crash-loop. A TCP probe just checks the listener is
 // up, which is correct default behavior regardless of HTTP semantics.
-func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
+func buildProbes(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig) app.ContainerAppProbeArray {
 	if len(svc.Ports) == 0 {
 		return nil
 	}
@@ -568,7 +573,21 @@ func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
 		probe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 	}
 	if svc.HealthCheck.StartPeriodSeconds != 0 {
-		probe.InitialDelaySeconds = pulumi.Int(svc.HealthCheck.StartPeriodSeconds)
+		// Azure rejects anything above maxProbeInitialDelaySeconds with a 400
+		// (ContainerAppProbeInitialDelaySecondsOutOfRange), which fails the whole
+		// deploy. ECS allows far longer start periods, so a compose that is
+		// perfectly valid on AWS would otherwise be undeployable here. Clamp and
+		// warn instead: FailureThreshold * PeriodSeconds still governs how long a
+		// slow-starting container gets before it is declared unhealthy.
+		delay := svc.HealthCheck.StartPeriodSeconds
+		if delay > maxProbeInitialDelaySeconds {
+			ctx.Log.Warn(fmt.Sprintf(
+				"service %q: start_period %ds exceeds the Azure maximum of %ds; clamping. "+
+					"Increase healthcheck retries if the container needs longer to start.",
+				serviceName, delay, maxProbeInitialDelaySeconds), nil)
+			delay = maxProbeInitialDelaySeconds
+		}
+		probe.InitialDelaySeconds = pulumi.Int(delay)
 	}
 	return app.ContainerAppProbeArray{probe}
 }

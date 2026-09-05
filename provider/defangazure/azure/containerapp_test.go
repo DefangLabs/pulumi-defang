@@ -118,3 +118,38 @@ func TestBuildEnvVarsInjectsDefangServiceEnv(t *testing.T) {
 	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
 	require.NoError(t, err)
 }
+
+// TestBuildProbesClampsInitialDelay covers the Azure ceiling on a probe's
+// InitialDelaySeconds. A compose file that is valid on ECS (start_period well over a
+// minute) used to fail the whole deploy with HTTP 400
+// ContainerAppProbeInitialDelaySecondsOutOfRange; it is now clamped instead.
+func TestBuildProbesClampsInitialDelay(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		startPeriod int32
+		want        int
+	}{
+		{"over the ceiling is clamped", 240, maxProbeInitialDelaySeconds},
+		{"exactly at the ceiling is kept", 60, 60},
+		{"under the ceiling is kept", 15, 15},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				svc := compose.ServiceConfig{
+					Ports: []compose.ServicePortConfig{{Target: 5050}},
+					HealthCheck: &compose.HealthCheckConfig{
+						Test:               []string{"CMD", "curl", "-f", "http://localhost:5050/"},
+						StartPeriodSeconds: tt.startPeriod,
+					},
+				}
+				probes := buildProbes(ctx, "app", svc)
+				require.Len(t, probes, 1)
+				args, ok := probes[0].(app.ContainerAppProbeArgs)
+				require.True(t, ok)
+				assert.Equal(t, pulumi.Int(tt.want), args.InitialDelaySeconds)
+				return nil
+			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
+			require.NoError(t, err)
+		})
+	}
+}
