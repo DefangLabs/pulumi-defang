@@ -200,15 +200,19 @@ func BuildGlobalConfig(
 		cfg.PrivateZone = privateZone.Name.ToStringOutput().ToStringPtrOutput()
 	}
 
-	// The public delegate zone and wildcard cert only serve ingress (public)
-	// services, so skip them when the project exposes none — even if a delegate
-	// domain is configured. Domain is still recorded for FQDN construction.
-	if domain != "" {
+	// The public delegate zone and wildcard cert (the defang.app subdomain) are
+	// created whenever a domain is configured, unless the recipe opts out. When
+	// opted out, any service that would otherwise need a public FQDN (ingress
+	// port in a public network) must supply its own domainname — there is
+	// nothing else to give it a public domain under.
+	if !UseDefangAppSubdomain.Get(ctx) {
+		if err := common.EnsurePublicServicesHaveDomainName(networks, services); err != nil {
+			return nil, err
+		}
+	} else if domain != "" {
 		cfg.Domain = domain
-		if common.NeedPublicIngress(networks, services) {
-			if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
-				return nil, err
-			}
+		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
+			return nil, err
 		}
 	}
 

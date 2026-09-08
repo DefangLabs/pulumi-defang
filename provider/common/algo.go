@@ -1,11 +1,16 @@
 package common
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
+
+// ErrPublicServiceNeedsDomainName is wrapped by EnsurePublicServicesHaveDomainName's error.
+var ErrPublicServiceNeedsDomainName = errors.New("service needs a public domain but has none available")
 
 // Based on https://www.ietf.org/rfc/rfc3986.txt, using the pattern for query
 // (which is a superset of path's `pchar`) but removing the single quote.
@@ -49,6 +54,23 @@ func NeedPublicIngress(networks compose.Networks, services compose.Services) boo
 		}
 	}
 	return false
+}
+
+// EnsurePublicServicesHaveDomainName returns an error naming the first service that
+// needs a public domain (the same predicate as NeedPublicIngress: an ingress port in
+// a public network, and not a managed Postgres/Redis) but has no DomainName of its
+// own. Callers use this when the platform-provided public domain (e.g. the
+// defang.app subdomain) is deliberately not being created — a public-ingress
+// service with no domain of its own would otherwise get no public FQDN at all.
+func EnsurePublicServicesHaveDomainName(networks compose.Networks, services compose.Services) error {
+	for name, svc := range services {
+		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil &&
+			InPublicNetwork(networks, svc) && svc.DomainName == "" {
+			return fmt.Errorf("service %q needs a public domain (ingress port in a public network) "+
+				"but has no domainname and none is provided: %w", name, ErrPublicServiceNeedsDomainName)
+		}
+	}
+	return nil
 }
 
 // NeedPrivateZone reports whether the project needs a private DNS zone. A private

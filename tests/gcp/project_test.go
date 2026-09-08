@@ -168,7 +168,8 @@ func TestConstructProjectCreatesPrivateDNSZoneForHostModeService(t *testing.T) {
 	// Host-mode services (like managed Postgres/Redis) keep private A records in
 	// the zone for internal service discovery, so it is created.
 	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
-		return m.Get("visibility").AsString() == "private"
+		visibility := m.Get("visibility")
+		return visibility.IsString() && visibility.AsString() == "private"
 	})
 	require.NotNil(t, zone, "expected a private ManagedZone for a host-mode service")
 	assert.Equal(t, "google.internal.", zone.inputs.Get("dnsName").AsString())
@@ -191,7 +192,8 @@ func TestConstructProjectWithoutPrivateServicesSkipsPrivateDNSZone(t *testing.T)
 	// A project with only ingress/portless services and no managed database
 	// needs no private DNS records, so the private zone is skipped.
 	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
-		return m.Get("visibility").AsString() == "private"
+		visibility := m.Get("visibility")
+		return visibility.IsString() && visibility.AsString() == "private"
 	})
 	assert.Nil(t, zone, "expected no private ManagedZone without host-mode or managed-DB services")
 }
@@ -222,7 +224,14 @@ func TestConstructProjectWithDomainCreatesPublicDNSZone(t *testing.T) {
 	assert.Equal(t, "example.com.", zone.inputs.Get("dnsName").AsString())
 }
 
-func TestConstructProjectWithDomainButNoIngressSkipsPublicDNSZone(t *testing.T) {
+// TestConstructProjectWithDomainCreatesPublicDNSZoneRegardlessOfIngress covers
+// the recipe's default (use-defang-app-subdomain=true): the public delegate
+// zone is created whenever a domain is configured, full stop — not gated on
+// whether any current service happens to need ingress. That gate was removed
+// (pulumi-defang#380 review) because a per-deploy service scan can flip
+// between two `pulumi up`s and destroy/recreate the zone with new
+// nameservers, silently breaking any real DNS delegation pointed at it.
+func TestConstructProjectWithDomainCreatesPublicDNSZoneRegardlessOfIngress(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -240,13 +249,85 @@ func TestConstructProjectWithDomainButNoIngressSkipsPublicDNSZone(t *testing.T) 
 
 	require.NoError(t, err)
 
-	// The public delegate zone + wildcard cert only serve ingress services, so a
-	// domain with no public services creates neither.
 	zone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
 		return m.Get("dnsName").AsString() == "example.com."
 	})
-	assert.Nil(t, zone, "expected no public ManagedZone when no service has ingress ports")
+	require.NotNil(t, zone, "expected a public ManagedZone for example.com even without an ingress service")
+}
+
+// TestConstructProjectRecipeOptOutSkipsPublicDNSZone covers
+// use-defang-app-subdomain=false: no public zone or cert is created even
+// though a domain is configured, and no error since no service needs one.
+func TestConstructProjectRecipeOptOutSkipsPublicDNSZone(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang-gcp:use-defang-app-subdomain", "false"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"worker": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("myapp:worker"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
+}
+
+// TestConstructProjectRecipeOptOutAllowsPublicServiceWithDomainName covers
+// use-defang-app-subdomain=false when a public-ingress service supplies its
+// own domainname: no error, and still no defang.app zone/cert (opted out).
+func TestConstructProjectRecipeOptOutAllowsPublicServiceWithDomainName(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang-gcp:use-defang-app-subdomain", "false"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image":      property.New("nginx:latest"),
+					"ports":      property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+					"domainName": property.New("app.example.com"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+}
+
+// TestConstructProjectRecipeOptOutErrorsWhenPublicServiceLacksDomainName covers
+// use-defang-app-subdomain=false when a public-ingress service has no
+// domainname of its own: there is nothing to give it a public FQDN under, so
+// Construct must error instead of silently leaving it without one.
+func TestConstructProjectRecipeOptOutErrorsWhenPublicServiceLacksDomainName(t *testing.T) {
+	mock, _ := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang-gcp:use-defang-app-subdomain", "false"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, common.ErrPublicServiceNeedsDomainName.Error())
 }
 
 func TestConstructProjectWithDomainCreatesCAARecord(t *testing.T) {
@@ -1060,8 +1141,11 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing
 
 func TestConstructProjectPrivateNetworkIngressStaysPrivate(t *testing.T) {
 	// Networks (not port mode) decide reachability: a service with an ingress port
-	// but in a non-default (private) network is private — it gets no public delegate
-	// zone and no wildcard cert, but it does get a private zone for internal DNS.
+	// but in a non-default (private) network is private — it gets a private zone
+	// for internal DNS but no public A record of its own. The project's public
+	// delegate zone still exists (domain is set, recipe defaults to creating it
+	// regardless of any individual service's network placement — see
+	// TestConstructProjectWithDomainCreatesPublicDNSZoneRegardlessOfIngress).
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -1084,14 +1168,15 @@ func TestConstructProjectPrivateNetworkIngressStaysPrivate(t *testing.T) {
 
 	require.NoError(t, err)
 
-	publicZone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
-		return m.Get("dnsName").AsString() == "example.com."
+	publicA := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
+		name, typ := m.Get("name"), m.Get("type")
+		return name.IsString() && typ.IsString() && name.AsString() == "api.example.com." && typ.AsString() == "A"
 	})
-	assert.Nil(t, publicZone, "expected no public ManagedZone for an ingress service in a private network")
-	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
+	assert.Nil(t, publicA, "expected no public A record for an ingress service in a private network")
 
 	privateZone := findTypeWhere(*records, "gcp:dns/managedZone:ManagedZone", func(m property.Map) bool {
-		return m.Get("visibility").AsString() == "private"
+		visibility := m.Get("visibility")
+		return visibility.IsString() && visibility.AsString() == "private"
 	})
 	require.NotNil(t, privateZone, "expected a private ManagedZone for a private-network service")
 }

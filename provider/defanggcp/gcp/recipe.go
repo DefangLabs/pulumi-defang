@@ -16,4 +16,5 @@ var (
 	PointInTimeRecovery       = recipe.Bool("point-in-time-recovery", false)
 	SslMode                   = recipe.String("ssl-mode", "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
 	TransitEncryptionDisabled = recipe.Bool("transit-encryption-disabled", false)
+	UseDefangAppSubdomain     = recipe.Bool("use-defang-app-subdomain", true)
 )
