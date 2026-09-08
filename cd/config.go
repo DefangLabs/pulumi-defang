@@ -136,21 +136,9 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// https://learn.microsoft.com/en-us/azure/templates/microsoft.operationalinsights/workspaces?pivots=deployment-language-bicep#microsoftoperationalinsightsworkspaces
 					"azure-native:operationalinsights:Workspace": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
 					// Container Apps Job names must be 2-32 chars, lowercase alphanumeric
-					// and hyphens only. The default pattern (prefix-project-stack-name-hex7)
-					// repeats the self-destruct job's constant logical name ("defang-self-destruct",
-					// see selfDestructName in selfdestruct_azure.go) on top of an unbounded
-					// ${project}-${stack}, which overflowed 32 chars on a real deploy
-					// (ContainerAppInvalidName on "Defang-website-dev-defang-self-destruct-1a2b3c4").
-					// ${project}/${stack} aren't needed for uniqueness here anyway: every stack
-					// gets at most one of this job, and it only has to be unique within the
-					// shared defang-cd managed environment (see PR #536) -- ${hex(7)} alone
-					// (28 bits) already gives that. Drop prefix/${project}/${stack} and keep
-					// ${name}: it's the only azure-native:app:Job resource registered anywhere
-					// in this repo today, and its logical name is the fixed, already-lowercase
-					// 21-char "defang-self-destruct" constant, so "${name}-${hex(7)}" (29 chars)
-					// fits comfortably. This is NOT a general-purpose truncation scheme -- if a
-					// second azure-native:app:Job resource is ever registered with a longer
-					// logical name, this override will need revisiting.
+					// and hyphens only. ${project}-${stack} overflowed that on a real deploy,
+					// so drop them; ${name} is the only Job's fixed 21-char logical name
+					// today, so ${name}-${hex(7)} fits -- revisit if a longer-named Job shows up.
 					// https://learn.microsoft.com/en-us/rest/api/containerapps/jobs/create-or-update
 					"azure-native:app:Job": map[string]string{"pattern": "${name}-${hex(7)}"},
 				},

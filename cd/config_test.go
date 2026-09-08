@@ -93,17 +93,10 @@ func Test_setDefaultStackConfigGCPComputeOverrides(t *testing.T) {
 	}
 }
 
-// TestStackConfigAzureJobNameFitsLengthLimit guards against the
-// ContainerAppInvalidName failure surfaced live on defang-mvp's website-dev
-// stack: Container Apps Job names are capped at 32 chars, but the default
-// autonaming pattern includes the unbounded ${project} and ${stack} plus the
-// self-destruct job's own constant logical name, which overflows on anything
-// but the shortest project/stack combination. The override must stay within
-// the limit regardless of project/stack length -- it deliberately doesn't
-// interpolate either. It does keep ${name}, which is safe only because this
-// resource type has exactly one registration in the whole repo, with a fixed
-// logical name -- this test expands ${name} to that constant, not to an
-// arbitrary/worst-case string.
+// TestStackConfigAzureJobNameFitsLengthLimit guards against
+// ContainerAppInvalidName (Container Apps Job names are capped at 32 chars):
+// no ${project}/${stack}, and ${name} expands to the one real Job's fixed
+// logical name, not an arbitrary/worst-case string.
 func TestStackConfigAzureJobNameFitsLengthLimit(t *testing.T) {
 	config := configMap{}
 	setDefaultStackConfig("Defang", config)
