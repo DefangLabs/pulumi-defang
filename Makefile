@@ -168,8 +168,15 @@ pre-push: provider test image_all
 EXAMPLE_PROVIDERS  := aws gcp azure
 EXAMPLE_LANGUAGES  := go nodejs python dotnet
 
+# Install every provider before generating any example. pulumictl bakes a
+# "+dirty" suffix into a provider's version if the git tree isn't clean at
+# build time, and generating one provider's examples writes real diffs into
+# the tracked examples/ tree — so building providers one-at-a-time,
+# interleaved with generation, dirties the tree for every provider after the
+# first (see the aws-then-gcp-then-azure order below: aws always came out
+# clean, gcp and azure always came out "+dirty").
 .PHONY: examples
-examples: $(foreach p,$(EXAMPLE_PROVIDERS),gen_examples_$(p)) ## Generate language examples from YAML
+examples: $(foreach p,$(EXAMPLE_PROVIDERS),install_defang-$(p)) $(foreach p,$(EXAMPLE_PROVIDERS),gen_examples_$(p)) ## Generate language examples from YAML
 	$(MAKE) README.md
 
 define example_target
