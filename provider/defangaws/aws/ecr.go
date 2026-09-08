@@ -31,7 +31,7 @@ func createECRRepo(
 
 	// Without this the repository keeps every image ever pushed: the raw ECR
 	// resource has no default lifecycle policy of any kind.
-	policy, err := buildLifecyclePolicy(keepBuildImages)
+	policy, err := buildLifecyclePolicy(common.KeepBuildImages)
 	if err != nil {
 		return nil, fmt.Errorf("building ECR lifecycle policy: %w", err)
 	}
@@ -88,7 +88,7 @@ func createEcrPullThroughCache(
 	// repository resource here to attach a lifecycle policy to and the repos it
 	// creates have none. A creation template is the only mechanism that reaches
 	// them (DefangLabs/defang-mvp#1056).
-	cachePolicy, err := cacheLifecyclePolicy(keepCacheImages)
+	cachePolicy, err := cacheLifecyclePolicy(common.KeepCacheImages)
 	if err != nil {
 		return nil, fmt.Errorf("building ECR cache lifecycle policy: %w", err)
 	}

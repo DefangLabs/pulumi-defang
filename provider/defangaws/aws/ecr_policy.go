@@ -1,32 +1,24 @@
 package aws
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+)
 
 // ECR retention. Without a lifecycle policy an ECR repository keeps every image
 // forever: unlike awsx, the raw ecr.Repository resource applies no default at
 // all, not even for untagged images. Measured on the Defang org 2026-08-11:
 // 2.13 TB of ECR storage ($216/month) of which 90% was expirable, and one
 // repository (prod1/kaniko-build) held 11,351 images.
-// See DefangLabs/defang-global#112.
-const (
-	// keepBuildImages bounds a per-project build repo. In this provider the
-	// repo holds a single mutable :latest tag (codebuild.go pushes every
-	// service's build there; nothing is deployed by digest), so the live image
-	// is always the newest and a count rule can never expire it — the count is
-	// a cap on sub-24h untagged churn, not an in-use-image guard. A count is
-	// still preferred over an age rule so a rarely-rebuilt project keeps its
-	// tagged image indefinitely (elsewhere in the Defang org, live tasks
-	// reference images up to 742 days old).
-	keepBuildImages = 20
-
-	// keepCacheImages bounds each pull-through cache repo. Mirrored images can
-	// always be fetched again from upstream, so this can be small.
-	keepCacheImages = 10
-
-	// expireUntaggedDays clears superseded build layers quickly. Only applied to
-	// build repos: see cacheLifecyclePolicy for why caches must not have it.
-	expireUntaggedDays = 1
-)
+// See DefangLabs/defang-global#112. The retention shape (common.KeepBuildImages,
+// common.KeepCacheImages, common.ExpireUntaggedDays) is shared with the GCP and
+// Azure equivalents — this provider's specific note: the repo holds a single
+// mutable :latest tag (codebuild.go pushes every service's build there; nothing
+// is deployed by digest), so the live image is always the newest and a count
+// rule can never expire it — the count is a cap on sub-24h untagged churn, not
+// an in-use-image guard (elsewhere in the Defang org, live tasks reference
+// images up to 742 days old).
 
 type lifecycleSelection struct {
 	TagStatus   string `json:"tagStatus"`
@@ -65,7 +57,7 @@ func buildLifecyclePolicy(keepImages int) (string, error) {
 			TagStatus:   "untagged",
 			CountType:   "sinceImagePushed",
 			CountUnit:   "days",
-			CountNumber: expireUntaggedDays,
+			CountNumber: common.ExpireUntaggedDays,
 		}),
 		expireRule(2, "keep the newest images", lifecycleSelection{
 			TagStatus:   "any",

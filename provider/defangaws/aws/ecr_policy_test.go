@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ func cachePolicy(t *testing.T, keep int) string {
 }
 
 func TestBuildLifecyclePolicy(t *testing.T) {
-	policy := parsePolicy(t, buildPolicy(t, keepBuildImages))
+	policy := parsePolicy(t, buildPolicy(t, common.KeepBuildImages))
 	require.Len(t, policy.Rules, 2)
 
 	untagged := policy.Rules[0]
@@ -45,18 +46,18 @@ func TestBuildLifecyclePolicy(t *testing.T) {
 	assert.Equal(t, 2, keep.RulePriority)
 	assert.Equal(t, "any", keep.Selection.TagStatus)
 	assert.Equal(t, "imageCountMoreThan", keep.Selection.CountType)
-	assert.Equal(t, keepBuildImages, keep.Selection.CountNumber)
+	assert.Equal(t, common.KeepBuildImages, keep.Selection.CountNumber)
 	// Age would delete images that live-but-not-recently-rebuilt services need.
 	assert.Empty(t, keep.Selection.CountUnit)
 }
 
 func TestCacheLifecyclePolicyHasNoUntaggedRule(t *testing.T) {
-	policy := parsePolicy(t, cachePolicy(t, keepCacheImages))
+	policy := parsePolicy(t, cachePolicy(t, common.KeepCacheImages))
 	require.Len(t, policy.Rules, 1, "a cache needs exactly one count rule")
 
 	rule := policy.Rules[0]
 	assert.Equal(t, "any", rule.Selection.TagStatus)
-	assert.Equal(t, keepCacheImages, rule.Selection.CountNumber)
+	assert.Equal(t, common.KeepCacheImages, rule.Selection.CountNumber)
 
 	// Images pulled by digest arrive untagged, so an untagged rule would empty
 	// the cache and push every deploy onto the upstream registry's rate limits.
