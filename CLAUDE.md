@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Pulumi multi-cloud provider that deploys Docker Compose applications to AWS, GCP, and Azure. Written in Go, it generates SDKs for TypeScript, Python, Go, and .NET from provider schemas.
 
+## Cross-Provider Parity
+
+This repo has three providers (AWS, GCP, Azure) that are meant to behave the same way. When investigating a bug or a feature request against one provider, **always check whether the other two have the same gap or need the same feature** — don't assume it's AWS-only (or GCP/Azure-only) just because that's where it was reported. A missing lifecycle policy, a missing digest pin, a missing config knob — these tend to be a shape of problem, not a one-provider problem.
+
+When a fix or feature applies to more than one provider, **implement it for all applicable providers in the same PR** rather than filing follow-ups per provider, unless the other providers' fix is genuinely a separate design decision (e.g. it needs its own tradeoff sign-off, or a cloud API constraint forces a materially different approach there). Doing all providers together means:
+- the three implementations get built to look alike, instead of drifting apart because they were written months apart by different context
+- shared logic (constants, policy shapes, anything not cloud-API-specific) gets pulled into `provider/common` immediately, while all three call sites are in front of you, instead of waiting for a third occurrence to justify the extraction
+- a reviewer sees the whole shape of the change at once, instead of three PRs that each look like a narrow one-off
+
+This doesn't mean blocking a real, ready fix on speculative parity work — if one provider's equivalent needs a genuinely separate decision (cost tradeoff, missing platform feature, needs product sign-off), split it out explicitly and say why, the same way you'd flag any other out-of-scope finding.
+
 ## Build Commands
 
 ```bash
