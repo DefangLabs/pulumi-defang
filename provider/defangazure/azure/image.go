@@ -126,6 +126,15 @@ func CreateBuildInfra(
 		return nil, fmt.Errorf("creating AcrPull role assignment: %w", err)
 	}
 
+	// Basic/Standard SKUs (the default — see RegistrySku) have no native
+	// retention policy, unlike ECR/Artifact Registry; that's a Premium-only ACR
+	// feature. A scheduled purge task is the supported alternative.
+	if err := createRegistryPurgeTask(
+		ctx, registry, subID, infra.ResourceGroup.Name, SharedBuildRepo, opts...,
+	); err != nil {
+		return nil, fmt.Errorf("creating registry purge task: %w", err)
+	}
+
 	// Derive managedIdentityID from both the identity AND the role assignment so
 	// the Container App implicitly depends on the role assignment being active
 	// before it attempts to pull images from ACR.
