@@ -13,7 +13,6 @@ import (
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
-	"github.com/pulumi/pulumi-azure-native-sdk/v3/commontypesv5"
 	azconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -157,7 +156,7 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 		ResourceGroupName: pulumi.String(resourceGroup),
 		Location:          pulumi.String(*cdJob.Location), // must match the CD environment's region
 		EnvironmentId:     pulumi.String(*cdJob.Properties.EnvironmentID),
-		Identity: commontypesv5.ManagedServiceIdentityArgs{
+		Identity: app.ManagedServiceIdentityArgs{
 			Type: pulumi.String("SystemAssigned"),
 		},
 		Tags: pulumi.StringMap{
