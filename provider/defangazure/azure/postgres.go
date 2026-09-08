@@ -3,6 +3,7 @@ package azure
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -33,6 +34,23 @@ func sanitizePostgresName(name string) string {
 		s = strings.Trim(s[:50], "-")
 	}
 	return s
+}
+
+// azurePostgresMajorVersion reduces pg.Version to the bare major-version token
+// Azure's Flexible Server API expects (e.g. "18"). pg.Version carries whatever
+// the compose layer parsed out of the image tag, which keeps the minor version
+// when present (e.g. "18.6" from postgres:18.6-alpine); sent as-is, Azure
+// rejects it with a "should be in: []" error. Falls back to the input
+// unchanged if it doesn't parse as a version, matching prior behavior.
+func azurePostgresMajorVersion(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	major := compose.GetPostgresVersion(*v)
+	if major == 0 {
+		return v
+	}
+	return pulumi.StringRef(strconv.Itoa(major))
 }
 
 type postgresResult struct {
@@ -93,10 +111,12 @@ func buildPostgresServerArgs(
 		return prefix + "-" + s
 	}).(pulumi.StringOutput)
 
+	version := pg.Version.ToStringPtrOutput().ApplyT(azurePostgresMajorVersion).(pulumi.StringPtrOutput)
+
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ServerName:        serverName.ToStringPtrOutput(),
-		Version:           pg.Version,
+		Version:           version,
 		Tags:              ServiceTags(serviceName),
 		Sku: &dbforpostgresql.SkuArgs{
 			Name: pulumi.String(skuName),
