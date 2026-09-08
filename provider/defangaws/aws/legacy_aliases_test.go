@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -76,6 +77,7 @@ func (noopAWSMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error)
 // are all registered as "postgres"), so name alone can't tell them apart.
 type legacyAliasSpy struct {
 	noopAWSMocks
+	mu      sync.Mutex
 	aliases map[legacyResourceKey][]legacyAliasSpec
 }
 
@@ -90,7 +92,11 @@ type legacyAliasSpec struct {
 	noParent bool
 }
 
+// NewResource runs concurrently (one goroutine per resource registration), so
+// the map init and writes below must be synchronized.
 func (m *legacyAliasSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.aliases == nil {
 		m.aliases = map[legacyResourceKey][]legacyAliasSpec{}
 	}
@@ -109,6 +115,8 @@ func (m *legacyAliasSpy) NewResource(args pulumi.MockResourceArgs) (string, reso
 
 // specs returns the legacy identities one registered resource declared.
 func (m *legacyAliasSpy) specs(typeToken, name string) []legacyAliasSpec {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.aliases[legacyResourceKey{typeToken: typeToken, name: name}]
 }
 
