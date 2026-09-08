@@ -139,9 +139,46 @@ func TestBuildEnvVarsInjectsPolicyIdentityClientID(t *testing.T) {
 		require.True(t, ok, "AZURE_CLIENT_ID env var not found with a policy identity present")
 		assert.Equal(t, policyIdentity.ClientID, clientID.Value,
 			"AZURE_CLIENT_ID should carry the policy identity's client ID")
+
+		// A compose-declared AZURE_CLIENT_ID must win: two env entries with the
+		// same name make Container Apps reject the spec (or pick one
+		// nondeterministically).
+		svcWithOwnClientID := compose.ServiceConfig{
+			Environment: compose.Environment{"AZURE_CLIENT_ID": pulumi.String("user-supplied")},
+		}
+		result = buildEnvVars(ctx, "svc", svcWithOwnClientID, &SharedInfra{}, nil, nil, policyIdentity)
+		require.Equal(t, 1, countEnvVarsByName(result, "AZURE_CLIENT_ID"),
+			"exactly one AZURE_CLIENT_ID entry, not one from the compose file plus ours")
+		// The compose-loop path wraps even a literal value in a StringOutput
+		// (via compose.InterpolateEnvironmentVariable) — assert inside ApplyT
+		// so it runs after that (mock-synchronous) resolution completes.
+		userValue, ok := envVarsByName(result)["AZURE_CLIENT_ID"].Value.(pulumi.StringOutput)
+		require.True(t, ok)
+		userValue.ApplyT(func(v string) string {
+			assert.Equal(t, "user-supplied", v,
+				"the compose file's own AZURE_CLIENT_ID must not be overridden by the policy identity's")
+			return v
+		})
 		return nil
 	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
 	require.NoError(t, err)
+}
+
+// countEnvVarsByName counts raw env entries in result.Envs carrying name —
+// envVarsByName collapses duplicates into a map, hiding exactly the
+// double-entry bug this guards against, so this walks the slice directly.
+func countEnvVarsByName(result envResult, name string) int {
+	count := 0
+	for _, e := range result.Envs {
+		args, ok := e.(app.EnvironmentVarArgs)
+		if !ok {
+			continue
+		}
+		if n, ok := args.Name.(pulumi.String); ok && string(n) == name {
+			count++
+		}
+	}
+	return count
 }
 
 // TestBuildProbesClampsInitialDelay covers the Azure ceiling on a probe's

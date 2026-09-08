@@ -35,6 +35,14 @@ func isAzureRoleDefinitionID(policy string) bool {
 	return strings.HasPrefix(policy, "/")
 }
 
+// roleNameFilter builds the ARM $filter value for looking up a role
+// definition by name. OData escapes a single quote by doubling it; without
+// this, a role name containing "'" either breaks the filter or (crafted as
+// `foo' or roleName eq 'Owner`) widens the match to an unintended role.
+func roleNameFilter(policy string) string {
+	return fmt.Sprintf("roleName eq '%s'", strings.ReplaceAll(policy, "'", "''"))
+}
+
 // resolveRoleDefinitionID turns an x-defang-policies entry into a full
 // role-definition resource ID at scope. A full resource ID passes through
 // unchanged; a bare name (a built-in like "Contributor", or a custom role
@@ -59,7 +67,7 @@ func resolveRoleDefinitionID(ctx context.Context, scope, policy string) (string,
 		return "", fmt.Errorf("building role definitions client: %w", err)
 	}
 
-	filter := fmt.Sprintf("roleName eq '%s'", policy)
+	filter := roleNameFilter(policy)
 	pager := client.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{Filter: &filter})
 	for pager.More() {
 		page, err := pager.NextPage(ctx)

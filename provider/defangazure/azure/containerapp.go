@@ -167,10 +167,14 @@ func buildEnvVars(
 			Value: pulumi.String(serviceName),
 		},
 	}
-	if policyIdentity != nil {
+	if _, userSet := svc.Environment["AZURE_CLIENT_ID"]; policyIdentity != nil && !userSet {
 		// DefaultAzureCredential can't disambiguate when the Container App
 		// carries more than one user-assigned identity (e.g. this one plus a
 		// Key Vault identity) — tell it which one is x-defang-policies's.
+		// Skipped when the compose file already sets AZURE_CLIENT_ID: two
+		// entries with the same name make Container Apps reject the spec (or
+		// pick one nondeterministically), and the compose author's choice of
+		// identity should win over ours either way.
 		envs = append(envs, app.EnvironmentVarArgs{
 			Name:  pulumi.String("AZURE_CLIENT_ID"),
 			Value: policyIdentity.ClientID,
