@@ -64,9 +64,9 @@ func TestConstructGcpMemorystoreInstanceConfig(t *testing.T) {
 
 	inst := findTypeWhere(*records, gcpRedisInstanceType, func(m property.Map) bool { return true })
 	require.NotNil(t, inst, "expected a Redis instance")
-	assert.Equal(t, "STANDARD_HA", inst.inputs.Get("tier").AsString())
-	assert.Equal(t, "PRIVATE_SERVICE_ACCESS", inst.inputs.Get("connectMode").AsString())
-	assert.InDelta(t, 1.0, inst.inputs.Get("memorySizeGb").AsNumber(), 0)
+	assert.Equal(t, "STANDARD_HA", inst.Inputs.Get("tier").AsString())
+	assert.Equal(t, "PRIVATE_SERVICE_ACCESS", inst.Inputs.Get("connectMode").AsString())
+	assert.InDelta(t, 1.0, inst.Inputs.Get("memorySizeGb").AsNumber(), 0)
 }
 
 func TestConstructGcpMemorystoreVersionFromImage(t *testing.T) {
@@ -96,7 +96,7 @@ func TestConstructGcpMemorystoreVersionFromImage(t *testing.T) {
 			require.NoError(t, err)
 			inst := findTypeWhere(*records, gcpRedisInstanceType, func(m property.Map) bool { return true })
 			require.NotNil(t, inst)
-			assert.Equal(t, tc.wantVer, inst.inputs.Get("redisVersion").AsString())
+			assert.Equal(t, tc.wantVer, inst.Inputs.Get("redisVersion").AsString())
 		})
 	}
 }
@@ -116,7 +116,7 @@ func TestConstructGcpMemorystoreNoImageUsesDefaultVersion(t *testing.T) {
 	inst := findTypeWhere(*records, gcpRedisInstanceType, func(m property.Map) bool { return true })
 	require.NotNil(t, inst)
 	// No image tag → no redisVersion set, GCP picks the default
-	assert.True(t, inst.inputs.Get("redisVersion").IsNull(), "expected redisVersion to be unset when no image tag")
+	assert.True(t, inst.Inputs.Get("redisVersion").IsNull(), "expected redisVersion to be unset when no image tag")
 }
 
 // TestConstructGcpMemorystoreStandaloneNoVPCPeering verifies that the standalone Redis

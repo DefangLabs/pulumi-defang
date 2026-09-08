@@ -128,14 +128,14 @@ func TestComputeEnginePortlessServiceCreatesHTTPHealthCheckSidecar(t *testing.T)
 		return !m.Get("httpHealthCheck").IsNull()
 	})
 	require.NotNil(t, hc, "expected an HTTP health check for portless Compute Engine service")
-	assert.InDelta(t, 8080.0, hc.inputs.Get("httpHealthCheck").AsMap().Get("port").AsNumber(), 0,
+	assert.InDelta(t, 8080.0, hc.Inputs.Get("httpHealthCheck").AsMap().Get("port").AsNumber(), 0,
 		"HTTP health check should probe port 8080 (sidecar)")
 
 	// The health check sidecar systemd socket (port 8080) is enabled via cloud-init,
 	// not a separate GCP resource — verify the instance template's user-data contains it.
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it, "expected an instance template")
-	userData := it.inputs.Get("metadata").AsMap().Get("user-data").AsString()
+	userData := it.Inputs.Get("metadata").AsMap().Get("user-data").AsString()
 	assert.Contains(t, userData, "health.socket",
 		"cloud-init should include the health check socket unit for portless services")
 }
@@ -158,7 +158,7 @@ func TestComputeEngineWithPortCreatesTCPHealthCheck(t *testing.T) {
 		return !m.Get("tcpHealthCheck").IsNull()
 	})
 	require.NotNil(t, hc, "expected a TCP health check for Compute Engine service with port")
-	assert.InDelta(t, 5432.0, hc.inputs.Get("tcpHealthCheck").AsMap().Get("port").AsNumber(), 0)
+	assert.InDelta(t, 5432.0, hc.Inputs.Get("tcpHealthCheck").AsMap().Get("port").AsNumber(), 0)
 }
 
 func TestComputeEngineCreatesHealthCheckFirewallRule(t *testing.T) {
@@ -185,7 +185,7 @@ func TestComputeEngineCreatesHealthCheckFirewallRule(t *testing.T) {
 		return false
 	})
 	require.NotNil(t, hcFw, "expected a firewall rule allowing GCP health check source ranges")
-	assert.Equal(t, "INGRESS", hcFw.inputs.Get("direction").AsString())
+	assert.Equal(t, "INGRESS", hcFw.Inputs.Get("direction").AsString())
 }
 
 func TestComputeEngineUsesContainerOptimizedOS(t *testing.T) {
@@ -203,7 +203,7 @@ func TestComputeEngineUsesContainerOptimizedOS(t *testing.T) {
 
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it)
-	disks := it.inputs.Get("disks").AsArray()
+	disks := it.Inputs.Get("disks").AsArray()
 	require.Equal(t, 1, disks.Len())
 	sourceImage := disks.Get(0).AsMap().Get("sourceImage").AsString()
 	assert.Contains(t, sourceImage, "cos-cloud",
@@ -225,7 +225,7 @@ func TestComputeEngineCloudInitContainsImage(t *testing.T) {
 
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it)
-	userData := it.inputs.Get("metadata").AsMap().Get("user-data").AsString()
+	userData := it.Inputs.Get("metadata").AsMap().Get("user-data").AsString()
 	assert.Contains(t, userData, "myapp:worker",
 		"cloud-init user-data should contain the service image")
 	assert.Contains(t, userData, "docker run",
@@ -253,7 +253,7 @@ func TestComputeEngineCloudInitContainsEnvironment(t *testing.T) {
 
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it)
-	userData := it.inputs.Get("metadata").AsMap().Get("user-data").AsString()
+	userData := it.Inputs.Get("metadata").AsMap().Get("user-data").AsString()
 	assert.Contains(t, userData, "APP_ENV=production",
 		"cloud-init should embed APP_ENV in the service unit")
 	assert.Contains(t, userData, "LOG_LEVEL=info",
@@ -275,7 +275,7 @@ func TestComputeEngineMachineTypeDefaultsToE2MicroWhenNoReservations(t *testing.
 
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it)
-	assert.Equal(t, "e2-micro", it.inputs.Get("machineType").AsString())
+	assert.Equal(t, "e2-micro", it.Inputs.Get("machineType").AsString())
 }
 
 func TestComputeEngineMachineTypeSelectedFromReservations(t *testing.T) {
@@ -304,7 +304,7 @@ func TestComputeEngineMachineTypeSelectedFromReservations(t *testing.T) {
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it)
 	// 1 CPU + 512MiB fits e2-medium (1 vCPU, 4 GiB)
-	assert.Equal(t, "e2-medium", it.inputs.Get("machineType").AsString())
+	assert.Equal(t, "e2-medium", it.Inputs.Get("machineType").AsString())
 }
 
 func TestComputeEngineCreatesServiceAccount(t *testing.T) {
@@ -425,7 +425,7 @@ func TestComputeEngineWithIngressPortCreatesGCEBackendInLB(t *testing.T) {
 		return m.Get("protocol").AsString() == "HTTP"
 	})
 	require.NotNil(t, backend, "expected an HTTP backend service for Compute Engine with ingress port")
-	assert.Equal(t, "EXTERNAL_MANAGED", backend.inputs.Get("loadBalancingScheme").AsString())
+	assert.Equal(t, "EXTERNAL_MANAGED", backend.Inputs.Get("loadBalancingScheme").AsString())
 
 	// URL map and forwarding rules should be created
 	assert.Equal(t, 2, countType(*records, "gcp:compute/uRLMap:URLMap"))

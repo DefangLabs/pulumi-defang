@@ -201,15 +201,13 @@ func BuildGlobalConfig(
 	}
 
 	// The public delegate zone and wildcard cert (the defang.app subdomain) are
-	// created whenever a domain is configured, unless the recipe opts out. When
-	// opted out, any service that would otherwise need a public FQDN (ingress
-	// port in a public network) must supply its own domainname — there is
-	// nothing else to give it a public domain under.
-	if !UseDefangAppSubdomain.Get(ctx) {
-		if err := common.EnsurePublicServicesHaveDomainName(networks, services); err != nil {
-			return nil, err
-		}
-	} else if domain != "" {
+	// created whenever a domain is configured, unless the recipe opts out. Opted
+	// out, public services keep the Cloud Run URL Google assigns them, which is
+	// already what Endpoint reports; ProjectPublicDomain warns about that and
+	// returns "".
+	domain = common.ProjectPublicDomain(
+		ctx, UseDefangAppSubdomain.Get(ctx), domain, networks, services, "their Cloud Run URL")
+	if domain != "" {
 		cfg.Domain = domain
 		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
 			return nil, err

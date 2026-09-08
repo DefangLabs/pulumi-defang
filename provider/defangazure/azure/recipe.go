@@ -34,4 +34,8 @@ var (
 	PostgresTier             = recipe.String("postgres-tier", "burstable")
 	PostgresStorageSizeGB    = recipe.Int("storage-size-gb", 32)
 	RegistrySku              = recipe.String("registry-sku", "Basic")
+	// UseDefangAppSubdomain publishes public services under the project's
+	// delegate domain (the defang.app subdomain). Off, services keep their
+	// azurecontainerapps.io name; see common.ProjectPublicDomain.
+	UseDefangAppSubdomain = recipe.Bool(common.DefangAppSubdomainKey, true)
 )

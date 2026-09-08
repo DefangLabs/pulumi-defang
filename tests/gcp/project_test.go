@@ -22,62 +22,17 @@ import (
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
-type resourceRecord struct {
-	typ    string
-	name   string
-	inputs property.Map
-}
+// Package-local aliases for the shared resource-collecting mock, so the many
+// existing call sites below read unchanged. The implementation lives in
+// testutil because the AWS and Azure suites assert the same way.
+type resourceRecord = testutil.ResourceRecord
 
-// collectResources returns a mock and a pointer to the slice it populates.
-func collectResources() (*integration.MockResourceMonitor, *[]resourceRecord) {
-	var mu sync.Mutex
-	var records []resourceRecord
-	mock := &integration.MockResourceMonitor{
-		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
-			mu.Lock()
-			records = append(records, resourceRecord{
-				typ:    string(args.TypeToken),
-				name:   args.Name,
-				inputs: args.Inputs,
-			})
-			mu.Unlock()
-			return args.Name, args.Inputs, nil
-		},
-	}
-	return mock, &records
-}
-
-// countType returns how many records match the given type token.
-func countType(records []resourceRecord, typ string) int {
-	n := 0
-	for _, r := range records {
-		if r.typ == typ {
-			n++
-		}
-	}
-	return n
-}
-
-// findTypeWhere returns the first record matching the given type token and predicate, or nil.
-func findTypeWhere(records []resourceRecord, typ string, pred func(property.Map) bool) *resourceRecord {
-	for i := range records {
-		if records[i].typ == typ && pred(records[i].inputs) {
-			return &records[i]
-		}
-	}
-	return nil
-}
-
-// countTypeWhere returns how many records match the given type token and predicate.
-func countTypeWhere(records []resourceRecord, typ string, pred func(property.Map) bool) int {
-	n := 0
-	for _, r := range records {
-		if r.typ == typ && pred(r.inputs) {
-			n++
-		}
-	}
-	return n
-}
+var (
+	collectResources = testutil.CollectResources
+	countType        = testutil.CountType
+	countTypeWhere   = testutil.CountTypeWhere
+	findTypeWhere    = testutil.FindTypeWhere
+)
 
 func TestConstructProject(t *testing.T) {
 	mock, records := collectResources()
@@ -136,11 +91,11 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 		return ports.Len() == 1 && ports.Get(0).AsString() == "22"
 	})
 	require.NotNil(t, ssh, "expected an SSH firewall rule")
-	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
+	assert.Equal(t, "INGRESS", ssh.Inputs.Get("direction").AsString())
 	// Logical name must not re-embed the project name: Pulumi's default resource
 	// ID already prefixes <pulumi-project>-<stack>, which includes it, and
 	// doing so again pushed the physical name over GCP's 63-char limit.
-	assert.Equal(t, "allow-ssh", ssh.name)
+	assert.Equal(t, "allow-ssh", ssh.Name)
 
 	// ICMP firewall rule
 	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
@@ -148,8 +103,8 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 		return allows.Len() == 1 && allows.Get(0).AsMap().Get("protocol").AsString() == "icmp"
 	})
 	require.NotNil(t, icmp, "expected an ICMP firewall rule")
-	assert.Equal(t, "INGRESS", icmp.inputs.Get("direction").AsString())
-	assert.Equal(t, "allow-icmp", icmp.name)
+	assert.Equal(t, "INGRESS", icmp.Inputs.Get("direction").AsString())
+	assert.Equal(t, "allow-icmp", icmp.Name)
 }
 
 func TestConstructProjectCreatesPrivateDNSZoneForHostModeService(t *testing.T) {
@@ -172,7 +127,7 @@ func TestConstructProjectCreatesPrivateDNSZoneForHostModeService(t *testing.T) {
 		return visibility.IsString() && visibility.AsString() == "private"
 	})
 	require.NotNil(t, zone, "expected a private ManagedZone for a host-mode service")
-	assert.Equal(t, "google.internal.", zone.inputs.Get("dnsName").AsString())
+	assert.Equal(t, "google.internal.", zone.Inputs.Get("dnsName").AsString())
 }
 
 func TestConstructProjectWithoutPrivateServicesSkipsPrivateDNSZone(t *testing.T) {
@@ -221,7 +176,7 @@ func TestConstructProjectWithDomainCreatesPublicDNSZone(t *testing.T) {
 		return m.Get("dnsName").AsString() == "example.com."
 	})
 	require.NotNil(t, zone, "expected a public ManagedZone for example.com")
-	assert.Equal(t, "example.com.", zone.inputs.Get("dnsName").AsString())
+	assert.Equal(t, "example.com.", zone.Inputs.Get("dnsName").AsString())
 }
 
 // TestConstructProjectWithDomainCreatesPublicDNSZoneRegardlessOfIngress covers
@@ -305,18 +260,20 @@ func TestConstructProjectRecipeOptOutAllowsPublicServiceWithDomainName(t *testin
 	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
 }
 
-// TestConstructProjectRecipeOptOutErrorsWhenPublicServiceLacksDomainName covers
+// TestConstructProjectRecipeOptOutDegradesPublicServiceWithoutDomainName covers
 // use-defang-app-subdomain=false when a public-ingress service has no
-// domainname of its own: there is nothing to give it a public FQDN under, so
-// Construct must error instead of silently leaving it without one.
-func TestConstructProjectRecipeOptOutErrorsWhenPublicServiceLacksDomainName(t *testing.T) {
-	mock, _ := collectResources()
+// domainname of its own. That is a warning, not an error: the service keeps the
+// Cloud Run URL Google assigns it, which is what Endpoint reports anyway, so
+// Construct must succeed and simply create no public zone or cert.
+func TestConstructProjectRecipeOptOutDegradesPublicServiceWithoutDomainName(t *testing.T) {
+	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
 		Urn:    testutil.GcpURN("Project"),
 		Config: testutil.StackConfig("defang-gcp:use-defang-app-subdomain", "false"),
 		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
 			"services": property.New(property.NewMap(map[string]property.Value{
 				"app": property.New(property.NewMap(map[string]property.Value{
 					"image": property.New("nginx:latest"),
@@ -326,8 +283,9 @@ func TestConstructProjectRecipeOptOutErrorsWhenPublicServiceLacksDomainName(t *t
 		}),
 	})
 
-	require.Error(t, err)
-	assert.ErrorContains(t, err, common.ErrPublicServiceNeedsDomainName.Error())
+	require.NoError(t, err)
+	assert.Equal(t, 0, countType(*records, "gcp:dns/managedZone:ManagedZone"))
+	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificate:Certificate"))
 }
 
 func TestConstructProjectWithDomainCreatesCAARecord(t *testing.T) {
@@ -353,8 +311,8 @@ func TestConstructProjectWithDomainCreatesCAARecord(t *testing.T) {
 		return m.Get("type").AsString() == "CAA"
 	})
 	require.NotNil(t, caa, "expected a CAA RecordSet")
-	assert.Equal(t, "example.com.", caa.inputs.Get("name").AsString())
-	rrdatas := caa.inputs.Get("rrdatas").AsArray()
+	assert.Equal(t, "example.com.", caa.Inputs.Get("name").AsString())
+	rrdatas := caa.Inputs.Get("rrdatas").AsArray()
 	assert.Equal(t, 2, rrdatas.Len())
 }
 
@@ -418,7 +376,7 @@ func TestConstructProjectWithDomainNameSetsHostRule(t *testing.T) {
 		return !m.Get("pathMatchers").IsNull()
 	})
 	require.NotNil(t, urlMap, "expected a URLMap to be registered")
-	hostRules := urlMap.inputs.Get("hostRules").AsArray()
+	hostRules := urlMap.Inputs.Get("hostRules").AsArray()
 	require.Equal(t, 1, hostRules.Len(), "expected one host rule for the domain name")
 	hosts := hostRules.Get(0).AsMap().Get("hosts").AsArray()
 	require.Equal(t, 1, hosts.Len())
@@ -479,14 +437,14 @@ func TestConstructProjectWithDomainCreatesPublicARecords(t *testing.T) {
 		return m.Get("name").AsString() == "app.example.com." && m.Get("type").AsString() == "A"
 	})
 	require.NotNil(t, mainA, "expected an A record for app.example.com.")
-	assert.InDelta(t, 60.0, mainA.inputs.Get("ttl").AsNumber(), 0)
+	assert.InDelta(t, 60.0, mainA.Inputs.Get("ttl").AsNumber(), 0)
 
 	// Port-specific domain: app--80.example.com.
 	portA := findTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
 		return m.Get("name").AsString() == "app--80.example.com." && m.Get("type").AsString() == "A"
 	})
 	require.NotNil(t, portA, "expected an A record for app--80.example.com.")
-	assert.InDelta(t, 60.0, portA.inputs.Get("ttl").AsNumber(), 0)
+	assert.InDelta(t, 60.0, portA.Inputs.Get("ttl").AsNumber(), 0)
 }
 
 func TestConstructProjectWithoutDomainSkipsPublicARecords(t *testing.T) {
@@ -574,8 +532,8 @@ func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 		return true
 	})
 	require.NotNil(t, viewer, "expected a BucketIAMMember on the shared CD bucket")
-	assert.Equal(t, "defang-cd-test", viewer.inputs.Get("bucket").AsString())
-	assert.Equal(t, "roles/storage.objectViewer", viewer.inputs.Get("role").AsString())
+	assert.Equal(t, "defang-cd-test", viewer.Inputs.Get("bucket").AsString())
+	assert.Equal(t, "roles/storage.objectViewer", viewer.Inputs.Get("role").AsString())
 }
 
 // TestConstructProjectWithLocalBuildContextErrors asserts a clear error when a
@@ -642,8 +600,8 @@ func TestConstructProjectWithPostgresCreatesVPCPeering(t *testing.T) {
 		return !v.IsNull() && v.AsString() == gcpVPCPeeringPurpose
 	})
 	require.NotNil(t, peering, "expected a VPC_PEERING GlobalAddress for Cloud SQL private IP")
-	assert.Equal(t, "INTERNAL", peering.inputs.Get("addressType").AsString())
-	assert.InDelta(t, 16.0, peering.inputs.Get("prefixLength").AsNumber(), 0)
+	assert.Equal(t, "INTERNAL", peering.Inputs.Get("addressType").AsString())
+	assert.InDelta(t, 16.0, peering.Inputs.Get("prefixLength").AsNumber(), 0)
 
 	// Service networking connection
 	assert.Equal(t, 1, countType(*records, "gcp:servicenetworking/connection:Connection"))
@@ -656,7 +614,7 @@ func TestConstructProjectWithPostgresCreatesVPCPeering(t *testing.T) {
 		return m.Get("name").AsString() == "db.google.internal." && m.Get("type").AsString() == "A"
 	})
 	require.NotNil(t, dbDNS, "expected a private DNS A record for Cloud SQL")
-	assert.InDelta(t, 60.0, dbDNS.inputs.Get("ttl").AsNumber(), 0)
+	assert.InDelta(t, 60.0, dbDNS.Inputs.Get("ttl").AsNumber(), 0)
 	assert.Equal(t, 1, countTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
 		return m.Get("name").AsString() == "db.google.internal." && m.Get("type").AsString() == "A"
 	}), "expected exactly one private DNS A record for Cloud SQL")
@@ -703,7 +661,7 @@ func TestConstructProjectWithPostgresDatabaseInstanceHasPrivateNetwork(t *testin
 		return true
 	})
 	require.NotNil(t, instance, "expected a DatabaseInstance")
-	settings := instance.inputs.Get("settings").AsMap()
+	settings := instance.Inputs.Get("settings").AsMap()
 	ipCfg := settings.Get("ipConfiguration").AsMap()
 	assert.False(t, ipCfg.Get("privateNetwork").IsNull(), "expected privateNetwork to be set on DatabaseInstance")
 	assert.True(t, ipCfg.Get("ipv4Enabled").AsBool(), "expected ipv4Enabled to be true when no private-only network")
@@ -731,7 +689,7 @@ func TestConstructProjectWithRedisCreatesVPCPeering(t *testing.T) {
 		return !v.IsNull() && v.AsString() == gcpVPCPeeringPurpose
 	})
 	require.NotNil(t, peering, "expected a VPC_PEERING GlobalAddress for Memorystore private IP")
-	assert.Equal(t, "INTERNAL", peering.inputs.Get("addressType").AsString())
+	assert.Equal(t, "INTERNAL", peering.Inputs.Get("addressType").AsString())
 
 	// Service networking connection
 	assert.Equal(t, 1, countType(*records, "gcp:servicenetworking/connection:Connection"))
@@ -744,7 +702,7 @@ func TestConstructProjectWithRedisCreatesVPCPeering(t *testing.T) {
 		return m.Get("name").AsString() == "cache.google.internal." && m.Get("type").AsString() == "A"
 	})
 	require.NotNil(t, redisDNS, "expected a private DNS A record for Memorystore")
-	assert.InDelta(t, 60.0, redisDNS.inputs.Get("ttl").AsNumber(), 0)
+	assert.InDelta(t, 60.0, redisDNS.Inputs.Get("ttl").AsNumber(), 0)
 	assert.Equal(t, 1, countTypeWhere(*records, "gcp:dns/recordSet:RecordSet", func(m property.Map) bool {
 		return m.Get("name").AsString() == "cache.google.internal." && m.Get("type").AsString() == "A"
 	}), "expected exactly one private DNS A record for Memorystore")
@@ -768,9 +726,9 @@ func TestConstructProjectWithRedisCreatesMemorystoreInstance(t *testing.T) {
 
 	inst := findTypeWhere(*records, "gcp:redis/instance:Instance", func(m property.Map) bool { return true })
 	require.NotNil(t, inst, "expected a Memorystore Redis instance in Project")
-	assert.Equal(t, "STANDARD_HA", inst.inputs.Get("tier").AsString())
-	assert.Equal(t, "PRIVATE_SERVICE_ACCESS", inst.inputs.Get("connectMode").AsString())
-	assert.Equal(t, "REDIS_7_0", inst.inputs.Get("redisVersion").AsString())
+	assert.Equal(t, "STANDARD_HA", inst.Inputs.Get("tier").AsString())
+	assert.Equal(t, "PRIVATE_SERVICE_ACCESS", inst.Inputs.Get("connectMode").AsString())
+	assert.Equal(t, "REDIS_7_0", inst.Inputs.Get("redisVersion").AsString())
 }
 
 func TestConstructProjectDependencies(t *testing.T) {
@@ -1126,7 +1084,7 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing
 
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it, "expected a Compute Engine instance template")
-	userData := it.inputs.Get("metadata").AsMap().Get("user-data").AsString()
+	userData := it.Inputs.Get("metadata").AsMap().Get("user-data").AsString()
 
 	for _, envName := range []string{
 		"GOOGLE_VERTEX_PROJECT",
@@ -1290,16 +1248,16 @@ func TestConstructProjectNATSettings(t *testing.T) {
 
 	router := findTypeWhere(*records, "gcp:compute/router:Router", func(_ property.Map) bool { return true })
 	require.NotNil(t, router, "expected a Router to be created")
-	assert.Equal(t, "nat-router", router.name)
-	bgp := router.inputs.Get("bgp").AsMap()
+	assert.Equal(t, "nat-router", router.Name)
+	bgp := router.Inputs.Get("bgp").AsMap()
 	assert.InDelta(t, 64514.0, bgp.Get("asn").AsNumber(), 0, "expected BGP ASN 64514 (private ASN range)")
 
 	nat := findTypeWhere(*records, "gcp:compute/routerNat:RouterNat", func(_ property.Map) bool { return true })
 	require.NotNil(t, nat, "expected a RouterNat to be created")
-	assert.Equal(t, "nat", nat.name)
-	assert.Equal(t, "AUTO_ONLY", nat.inputs.Get("natIpAllocateOption").AsString())
-	assert.Equal(t, "ALL_SUBNETWORKS_ALL_IP_RANGES", nat.inputs.Get("sourceSubnetworkIpRangesToNat").AsString())
-	logCfg := nat.inputs.Get("logConfig").AsMap()
+	assert.Equal(t, "nat", nat.Name)
+	assert.Equal(t, "AUTO_ONLY", nat.Inputs.Get("natIpAllocateOption").AsString())
+	assert.Equal(t, "ALL_SUBNETWORKS_ALL_IP_RANGES", nat.Inputs.Get("sourceSubnetworkIpRangesToNat").AsString())
+	logCfg := nat.Inputs.Get("logConfig").AsMap()
 	assert.True(t, logCfg.Get("enable").AsBool(), "expected NAT log config to be enabled")
 	assert.Equal(t, "ERRORS_ONLY", logCfg.Get("filter").AsString())
 }

@@ -354,3 +354,68 @@ func TestConstructAwsProjectBuildCarriesPluginIdentity(t *testing.T) {
 
 	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
 }
+
+// TestConstructAwsProjectRecipeOptOutSkipsDelegateDomain covers
+// use-defang-app-subdomain=false: the wildcard ACM certificate and the public
+// A records that publish services under the delegate domain are not created,
+// even though projectDomain and publicZoneId are both supplied. The service
+// keeps the ALB's own DNS name, which is what its Endpoint already reports
+// when there is no project domain.
+func TestConstructAwsProjectRecipeOptOutSkipsDelegateDomain(t *testing.T) {
+	mock, records := testutil.CollectResources()
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.AwsURN("Project"),
+		Config: testutil.StackConfig("defang-aws:"+common.DefangAppSubdomainKey, "false"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"projectDomain": property.New("example.com"),
+				"publicZoneId":  property.New("Z123456789"),
+			})),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err, "opting out must degrade to the ALB DNS name, not fail the deploy")
+	assert.Equal(t, 0, testutil.CountType(*records, "aws:acm/certificate:Certificate"),
+		"no wildcard cert without the delegate domain")
+	assert.Equal(t, 0, testutil.CountType(*records, "aws:route53/record:Record"),
+		"no public A records without the delegate domain")
+	// The ALB is still created: the service has public ingress either way, and
+	// the ALB DNS name is exactly what it degrades to.
+	assert.Equal(t, 1, testutil.CountType(*records, "aws:lb/loadBalancer:LoadBalancer"))
+}
+
+// TestConstructAwsProjectDelegateDomainByDefault is the control for the test
+// above: with the recipe at its default the same inputs do create the wildcard
+// cert and the public records.
+func TestConstructAwsProjectDelegateDomainByDefault(t *testing.T) {
+	mock, records := testutil.CollectResources()
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"aws": property.New(property.NewMap(map[string]property.Value{
+				"projectDomain": property.New("example.com"),
+				"publicZoneId":  property.New("Z123456789"),
+			})),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Positive(t, testutil.CountType(*records, "aws:acm/certificate:Certificate"))
+	assert.Positive(t, testutil.CountType(*records, "aws:route53/record:Record"))
+}

@@ -6,11 +6,13 @@ package azure
 // App, Postgres, etc.) lives in their own dedicated test files.
 
 import (
+	"strings"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -162,4 +164,71 @@ func TestConstructAzureProjectBuildCarriesPluginIdentity(t *testing.T) {
 	require.NoError(t, err)
 
 	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
+}
+
+// TestConstructAzureProjectRecipeOptOutSkipsDelegateDomain covers
+// use-defang-app-subdomain=false: the delegate-domain DNS zone and the
+// per-service CNAME/asuid records that publish services under it are not
+// created, even though a domain is supplied. The service keeps its
+// azurecontainerapps.io name, which is what its Endpoint already reports.
+func TestConstructAzureProjectRecipeOptOutSkipsDelegateDomain(t *testing.T) {
+	mock, records := testutil.CollectResources()
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.AzureURN("Project"),
+		Config: testutil.StackConfig("defang-azure:"+common.DefangAppSubdomainKey, "false"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err, "opting out must degrade to the ACA hostname, not fail the deploy")
+	assert.Equal(t, 0, countAzureDNS(*records, "Zone"), "no delegate-domain zone when opted out")
+	assert.Equal(t, 0, countAzureDNS(*records, "RecordSet"), "no per-service CNAME/asuid records")
+}
+
+// TestConstructAzureProjectDelegateDomainByDefault is the control for the test
+// above: with the recipe at its default the same inputs do create the zone and
+// the per-service records.
+func TestConstructAzureProjectDelegateDomainByDefault(t *testing.T) {
+	mock, records := testutil.CollectResources()
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"app": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("nginx:latest"),
+					"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(80)})),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+	assert.Positive(t, countAzureDNS(*records, "RecordSet"),
+		"the delegate domain must publish the service by default")
+}
+
+// countAzureDNS counts azure-native DNS registrations of the given kind. The
+// azure-native provider stamps a dated API version into the type token
+// (azure-native:dns/vNNNNNNNN:RecordSet), so match on the suffix rather than
+// pinning a version the SDK bump would break.
+func countAzureDNS(records []testutil.ResourceRecord, kind string) int {
+	n := 0
+	for _, r := range records {
+		if strings.HasPrefix(r.Typ, "azure-native:dns") && strings.HasSuffix(r.Typ, ":"+kind) {
+			n++
+		}
+	}
+	return n
 }

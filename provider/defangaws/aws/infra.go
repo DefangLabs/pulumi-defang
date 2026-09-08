@@ -131,6 +131,18 @@ func CreateProjectInfra(
 		dnsOpts = append(dnsOpts, pulumi.Provider(dnsProvider))
 	}
 
+	// The delegate domain (the defang.app subdomain) publishes services under
+	// <service>.<domain>; the recipe can opt out, in which case public services
+	// keep the ALB's own DNS name, which is already what Endpoint reports when
+	// ProjectDomain is empty (see createECSService). Resolved before the ingress
+	// check so the warning fires even for a project with no public ingress.
+	configuredDomain := ""
+	if awsConfig != nil {
+		configuredDomain = awsConfig.ProjectDomain
+	}
+	configuredDomain = common.ProjectPublicDomain(
+		ctx, UseDefangAppSubdomain.Get(ctx), configuredDomain, networks, services, "the load balancer's DNS name")
+
 	var projectDomain string
 	var albRes *AlbResult
 	if common.NeedPublicIngress(networks, services) {
@@ -139,9 +151,9 @@ func CreateProjectInfra(
 		var publicZoneId pulumi.StringInput
 
 		// Create wildcard cert if a public zone is provided
-		if awsConfig != nil && awsConfig.PublicZoneId != nil && awsConfig.ProjectDomain != "" {
+		if awsConfig != nil && awsConfig.PublicZoneId != nil && configuredDomain != "" {
 			publicZoneId = awsConfig.PublicZoneId.ToStringPtrOutput().Elem() // TODO: look up?
-			projectDomain = awsConfig.ProjectDomain
+			projectDomain = configuredDomain
 
 			domains = []string{"*." + projectDomain}
 			if CreateApexRecord.Get(ctx) {
