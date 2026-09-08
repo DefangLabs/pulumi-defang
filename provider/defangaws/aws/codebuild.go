@@ -405,6 +405,7 @@ func createCodeBuildProject(
 	codeBuildRole *iam.Role,
 	logGroup *cloudwatch.LogGroup,
 	ecrRepoURL pulumix.Output[string],
+	imageTag pulumix.Output[string],
 	region string,
 	opts ...pulumi.ResourceOption,
 ) (*codeBuildResult, error) {
@@ -432,9 +433,14 @@ func createCodeBuildProject(
 
 	computeType := codeBuildComputeType(build.GetShmSizeBytes())
 
-	// Destination: repo:tag where we push the built image
-	destination := pulumix.Apply(ecrRepoURL, func(url string) string {
-		return url + ":latest"
+	// Destination: repo:tag where we push the built image. The tag is a
+	// content hash of the build inputs (BuildTriggerHash), not the mutable
+	// ":latest" -- Build.Create resolves the digest of what THIS build
+	// pushed by looking the tag back up in ECR after the build succeeds, and
+	// a shared/mutable tag could be overwritten by a concurrent build to the
+	// same ECR repo before that lookup runs, resolving to the wrong digest.
+	destination := pulumix.Apply2(ecrRepoURL, imageTag, func(url, tag string) string {
+		return url + ":" + tag
 	})
 
 	contextOutput := pulumix.Output[string](build.Context.ToStringOutput())

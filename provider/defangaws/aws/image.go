@@ -87,6 +87,11 @@ func buildServiceImage(
 
 	platform := svc.GetPlatform()
 
+	// Computed up front so the same hash both tags the pushed image (giving
+	// Build.Create's post-build ECR digest lookup a tag no other build could
+	// have overwritten) and triggers replacement of the Build resource below.
+	triggerHash := common.BuildTriggerHash(svc.Build)
+
 	cbResult, err := createCodeBuildProject(
 		ctx,
 		serviceName+"-image",
@@ -95,6 +100,7 @@ func buildServiceImage(
 		infra.codeBuildRole,
 		infra.logGroup,
 		infra.ecrRepoURL,
+		pulumix.Output[string](triggerHash),
 		infra.region,
 		opts...,
 	)
@@ -105,8 +111,6 @@ func buildServiceImage(
 	// Create the Build custom resource to trigger the actual build.
 	// This resource calls the AWS SDK to start the build, polls until done, and returns the image URL.
 	// If Create fails, the resource is not in state → next `pulumi up` retries automatically.
-	triggerHash := common.BuildTriggerHash(svc.Build)
-
 	// region, err := aws.GetRegion(ctx, &aws.GetRegionArgs{}, opts...)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("getting AWS region: %w", err)
