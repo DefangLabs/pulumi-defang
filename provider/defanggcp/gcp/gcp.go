@@ -27,12 +27,12 @@ type SharedInfra struct {
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
-	WildcardCertId    pulumi.StringInput // set when a domain is configured and the project has ingress
-	PublicZoneId      pulumi.StringInput // public managed zone name; set alongside WildcardCertId
+	WildcardCertId    pulumi.StringPtrInput // set when a domain is configured and the project has ingress
+	PublicZoneId      pulumi.StringPtrInput // public managed zone name; set alongside WildcardCertId
 	ProxySubnetId     string
 	BuildInfra        *BuildInfra                             // non-nil when at least one service has a build config
 	ServiceConnection *servicenetworking.Connection           // non-nil when any service uses managed Postgres or Redis
-	PrivateZone       pulumi.StringOutput                     // google.internal. zone; empty when not needed
+	PrivateZone       pulumi.StringPtrOutput                  // google.internal. zone; nil when not needed
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
 	ProjectName       string                                  // compose project name (defang-project log label)
@@ -97,8 +97,6 @@ func NewStandaloneGlobalConfig(ctx *pulumi.Context) *SharedInfra {
 // domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 // a public DNS managed zone, a wildcard DNS authorization, and a wildcard certificate
 // are created for that domain.
-//
-//nolint:funlen // sequential infra setup is clearer as one function
 func BuildGlobalConfig(
 	ctx *pulumi.Context,
 	projectName string,
@@ -199,7 +197,7 @@ func BuildGlobalConfig(
 		if err != nil {
 			return nil, err
 		}
-		cfg.PrivateZone = privateZone.Name.ToStringOutput()
+		cfg.PrivateZone = privateZone.Name.ToStringOutput().ToStringPtrOutput()
 	}
 
 	// The public delegate zone and wildcard cert only serve ingress (public)
@@ -207,7 +205,7 @@ func BuildGlobalConfig(
 	// domain is configured. Domain is still recorded for FQDN construction.
 	if domain != "" {
 		cfg.Domain = domain
-		if common.NeedIngress(networks, services) {
+		if common.NeedPublicIngress(networks, services) {
 			if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {
 				return nil, err
 			}

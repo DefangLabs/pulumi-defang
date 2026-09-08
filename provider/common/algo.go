@@ -37,12 +37,12 @@ func ParseHealthCheckPathPort(test []string) (string, int) {
 	return path, port
 }
 
-// NeedIngress returns true if the project needs a public load balancer: any
+// NeedPublicIngress returns true if the project needs a public load balancer: any
 // non-managed service that is in a public network AND exposes an ingress port.
 // Networks decide public vs private; the ingress port only selects load-balanced
 // exposure. A service with ingress ports in a private/internal network is NOT
 // public and does not need the public LB.
-func NeedIngress(networks compose.Networks, services compose.Services) bool {
+func NeedPublicIngress(networks compose.Networks, services compose.Services) bool {
 	for _, svc := range services {
 		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil && InPublicNetwork(networks, svc) {
 			return true

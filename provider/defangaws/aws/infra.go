@@ -133,7 +133,7 @@ func CreateProjectInfra(
 
 	var projectDomain string
 	var albRes *AlbResult
-	if common.NeedIngress(networks, services) {
+	if common.NeedPublicIngress(networks, services) {
 		var certArn pulumi.StringPtrInput
 		var domains []string
 		var publicZoneId pulumi.StringInput

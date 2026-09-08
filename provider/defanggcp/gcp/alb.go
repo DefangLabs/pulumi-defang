@@ -97,7 +97,9 @@ func createExternalLoadBalancers(
 		ip := pulumi.StringArray{config.PublicIP.Address}
 		for _, entry := range ingressEntries {
 			svcDomain := common.ServiceLabel(entry.Name) + "." + config.Domain
-			if err := CreatePublicDNSRecord(ctx, config.PublicZoneId, svcDomain, "A", pulumi.Int(60), ip, opts...); err != nil {
+			if err := CreatePublicDNSRecord(
+				ctx, config.PublicZoneId.ToStringPtrOutput().Elem(), svcDomain, "A", pulumi.Int(60), ip, opts...,
+			); err != nil {
 				return err
 			}
 			for _, port := range entry.Config.Ports {
@@ -106,7 +108,7 @@ func createExternalLoadBalancers(
 				}
 				portDomain := fmt.Sprintf("%s--%d.%s", common.ServiceLabel(entry.Name), port.Target, config.Domain)
 				if err := CreatePublicDNSRecord(
-					ctx, config.PublicZoneId, portDomain, "A", pulumi.Int(60), ip, opts...,
+					ctx, config.PublicZoneId.ToStringPtrOutput().Elem(), portDomain, "A", pulumi.Int(60), ip, opts...,
 				); err != nil {
 					return err
 				}
@@ -127,7 +129,7 @@ func createExternalLoadBalancers(
 		if _, err := certificatemanager.NewCertificateMapEntry(ctx, "cert-map-entry",
 			&certificatemanager.CertificateMapEntryArgs{
 				Map:          certMap.Name,
-				Certificates: pulumi.StringArray{config.WildcardCertId},
+				Certificates: pulumi.StringArray{config.WildcardCertId.ToStringPtrOutput().Elem()},
 				Matcher:      pulumi.String("PRIMARY"),
 			}, opts...); err != nil {
 			return err
@@ -172,7 +174,7 @@ func createInternalLoadBalancer(
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
-				ManagedZone: config.PrivateZone,
+				ManagedZone: config.PrivateZone.Elem(),
 				Rrdatas:     pulumi.StringArray{service.PostgresInstance.PrivateIpAddress},
 			}, opts...); err != nil {
 				return err
@@ -183,7 +185,7 @@ func createInternalLoadBalancer(
 				Name:        pulumi.String(internalServiceDns(service.Name)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
-				ManagedZone: config.PrivateZone,
+				ManagedZone: config.PrivateZone.Elem(),
 				Rrdatas:     pulumi.StringArray{service.RedisInstance.Host},
 			}, opts...); err != nil {
 				return err
@@ -515,7 +517,7 @@ func createInternalLoadBalancer(
 					Name:        pulumi.String(internalServiceDns(service.Name)),
 					Type:        pulumi.String("A"),
 					Ttl:         pulumi.Int(60),
-					ManagedZone: config.PrivateZone,
+					ManagedZone: config.PrivateZone.Elem(),
 					Rrdatas:     pulumi.StringArray{internalNlbIP.Address},
 				}, append(opts, pulumi.DependsOn([]pulumi.Resource{trafficFirewall}))...); err != nil {
 					return err
@@ -595,7 +597,7 @@ func createInternalLoadBalancer(
 				Name:        pulumi.String(internalServiceDns(serviceName)),
 				Type:        pulumi.String("A"),
 				Ttl:         pulumi.Int(60),
-				ManagedZone: config.PrivateZone,
+				ManagedZone: config.PrivateZone.Elem(),
 				Rrdatas:     pulumi.StringArray{forwardingRule.IpAddress},
 			}, opts...); err != nil {
 				return err

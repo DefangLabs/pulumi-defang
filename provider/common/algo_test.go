@@ -63,7 +63,7 @@ func TestNeedPrivateZone(t *testing.T) {
 	}
 }
 
-func TestNeedIngress(t *testing.T) {
+func TestNeedPublicIngress(t *testing.T) {
 	tests := []struct {
 		name     string
 		networks compose.Networks
@@ -104,8 +104,8 @@ func TestNeedIngress(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := NeedIngress(tt.networks, tt.services); got != tt.want {
-				t.Errorf("NeedIngress() = %v, want %v", got, tt.want)
+			if got := NeedPublicIngress(tt.networks, tt.services); got != tt.want {
+				t.Errorf("NeedPublicIngress() = %v, want %v", got, tt.want)
 			}
 		})
 	}
