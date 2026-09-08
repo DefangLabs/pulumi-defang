@@ -111,7 +111,13 @@ func buildPostgresServerArgs(
 		return prefix + "-" + s
 	}).(pulumi.StringOutput)
 
-	version := pg.Version.ToStringPtrOutput().ApplyT(azurePostgresMajorVersion).(pulumi.StringPtrOutput)
+	// pg.Version is nil when the service has no static image (e.g. built from
+	// a Dockerfile, or a dynamic image expression), so guard before calling
+	// ToStringPtrOutput on it.
+	var version pulumi.StringPtrInput
+	if pg.Version != nil {
+		version = pg.Version.ToStringPtrOutput().ApplyT(azurePostgresMajorVersion).(pulumi.StringPtrOutput)
+	}
 
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
