@@ -93,6 +93,55 @@ func Test_setDefaultStackConfigGCPComputeOverrides(t *testing.T) {
 	}
 }
 
+// TestStackConfigAzureJobNameFitsLengthLimit guards against
+// ContainerAppInvalidName (Container Apps Job names are capped at 32 chars):
+// no ${project}/${stack}, and ${name} expands to the one real Job's fixed
+// logical name, not an arbitrary/worst-case string.
+func TestStackConfigAzureJobNameFitsLengthLimit(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("Defang", config)
+
+	autonamingMap := config["pulumi:autonaming"].Value.(map[string]any)
+	providers := autonamingMap["providers"].(map[string]any)
+	azureNative := providers["azure-native"].(map[string]any)
+	resources := azureNative["resources"].(map[string]any)
+
+	override, ok := resources["azure-native:app:Job"].(map[string]string)
+	if !ok {
+		t.Fatal("missing override for azure-native:app:Job")
+	}
+	pattern := override["pattern"]
+
+	if strings.Contains(pattern, "${project}") || strings.Contains(pattern, "${stack}") {
+		t.Errorf("pattern %q must not depend on project/stack length", pattern)
+	}
+	// Exact match, not just "doesn't contain ${project}/${stack}": guards
+	// against ${name} regressing to a literal string, which the length/
+	// lowercase checks below wouldn't catch on their own.
+	if want := "${name}-${hex(7)}"; pattern != want {
+		t.Errorf("pattern = %q, want %q", pattern, want)
+	}
+
+	// selfDestructName in cd/program/selfdestruct_azure.go: the only logical
+	// name this pattern is ever applied to today. Not importable here (cd's
+	// "main" package vs. "program"), so kept in sync by hand.
+	const selfDestructName = "defang-self-destruct"
+	const hexLen = 7 // matches ${hex(7)} in the pattern; keep in sync if it changes
+	hexPlaceholder := strings.Repeat("a", hexLen)
+
+	expanded := strings.NewReplacer(
+		"${name}", selfDestructName,
+		"${hex(7)}", hexPlaceholder,
+	).Replace(pattern)
+
+	if len(expanded) > 32 {
+		t.Errorf("pattern %q expands to %q (%d chars), want <= 32", pattern, expanded, len(expanded))
+	}
+	if expanded != strings.ToLower(expanded) {
+		t.Errorf("pattern %q expands to %q, want all-lowercase: Container Apps Job names reject uppercase", pattern, expanded)
+	}
+}
+
 func TestStackConfigFromEnvAWS(t *testing.T) {
 	// Clear ambient env that could pick a second provider or override fallbacks.
 	unsetenv(t, "REGION", "GCP_PROJECT", "GCLOUD_PROJECT", "AZURE_SUBSCRIPTION_ID", "PULUMI_BACKEND_URL")

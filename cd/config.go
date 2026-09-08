@@ -135,6 +135,12 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// the project twice and overflows on longer names; drop ${name}.
 					// https://learn.microsoft.com/en-us/azure/templates/microsoft.operationalinsights/workspaces?pivots=deployment-language-bicep#microsoftoperationalinsightsworkspaces
 					"azure-native:operationalinsights:Workspace": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
+					// Container Apps Job names must be 2-32 chars, lowercase alphanumeric
+					// and hyphens only. ${project}-${stack} overflowed that on a real deploy,
+					// so drop them; ${name} is the only Job's fixed 21-char logical name
+					// today, so ${name}-${hex(7)} fits -- revisit if a longer-named Job shows up.
+					// https://learn.microsoft.com/en-us/rest/api/containerapps/jobs/create-or-update
+					"azure-native:app:Job": map[string]string{"pattern": "${name}-${hex(7)}"},
 				},
 			},
 			// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
