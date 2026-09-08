@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -19,17 +20,22 @@ type albResource struct {
 }
 
 type albMocks struct {
+	mu        sync.Mutex
 	resources []albResource
 }
 
+// NewResource runs concurrently (one goroutine per resource registration), so
+// the append to resources below must be synchronized.
 func (m *albMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	var parent string
 	if args.RegisterRPC != nil {
 		parent = args.RegisterRPC.GetParent()
 	}
+	m.mu.Lock()
 	m.resources = append(m.resources, albResource{
 		name: args.Name, typeof: args.TypeToken, inputs: args.Inputs, parent: parent,
 	})
+	m.mu.Unlock()
 	return args.Name + "_id", args.Inputs, nil
 }
 

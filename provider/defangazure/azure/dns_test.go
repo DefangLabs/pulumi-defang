@@ -2,6 +2,7 @@ package azure
 
 import (
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
@@ -17,13 +18,17 @@ type dnsResource struct {
 }
 
 type dnsNameMocks struct {
+	mu        sync.Mutex
 	resources []dnsResource
 	aliases   []dnsResource
 }
 
+// NewResource runs concurrently (one goroutine per resource registration), so
+// the slice appends below must be synchronized.
 func (m *dnsNameMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	switch args.TypeToken {
 	case "azure-native:privatedns:PrivateZone", "azure-native:privatedns:VirtualNetworkLink":
+		m.mu.Lock()
 		m.resources = append(m.resources, dnsResource{typeToken: args.TypeToken, name: args.Name})
 		for _, alias := range args.RegisterRPC.GetAliases() {
 			// The azure-native SDK attaches an alias per historical API version
@@ -33,6 +38,7 @@ func (m *dnsNameMocks) NewResource(args pulumi.MockResourceArgs) (string, resour
 				m.aliases = append(m.aliases, dnsResource{typeToken: args.TypeToken, name: spec.GetName()})
 			}
 		}
+		m.mu.Unlock()
 	}
 	return args.Name + "_id", args.Inputs, nil
 }

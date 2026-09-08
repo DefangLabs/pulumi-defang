@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -86,10 +87,15 @@ func TestCloudSQLResolvesConfigPasswordWithExplicitProvider(t *testing.T) {
 // aliasSpy records the legacy names each registered resource declared.
 type aliasSpy struct {
 	noopMocks
+	mu      sync.Mutex
 	aliases map[string][]string
 }
 
+// NewResource runs concurrently (one goroutine per resource registration), so
+// the map init and writes below must be synchronized.
 func (m *aliasSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.aliases == nil {
 		m.aliases = map[string][]string{}
 	}
