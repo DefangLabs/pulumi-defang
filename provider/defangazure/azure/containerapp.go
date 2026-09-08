@@ -13,7 +13,6 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
-	"github.com/pulumi/pulumi-azure-native-sdk/v3/commontypesv5"
 	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -306,9 +305,9 @@ func CreateContainerApp(
 	if len(result.Secrets) > 0 && infra.KeyVaultIdentityID != nil {
 		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
 	}
-	var identity *commontypesv5.ManagedServiceIdentityArgs
+	var identity *app.ManagedServiceIdentityArgs
 	if len(userIdentities) > 0 {
-		identity = &commontypesv5.ManagedServiceIdentityArgs{
+		identity = &app.ManagedServiceIdentityArgs{
 			Type:                   pulumi.String("UserAssigned"),
 			UserAssignedIdentities: userIdentities,
 		}

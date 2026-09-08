@@ -89,11 +89,23 @@ func CreateRedisEnterprise(
 		haValue = "Disabled"
 	}
 
+	// When a VNet private endpoint is available the cluster disables public network
+	// access (reached only via the private endpoint) and the database uses Plaintext
+	// protocol so apps can connect with a plain redis:// URL — the VNet provides
+	// network isolation so TLS is not required for security. Without a VNet, the
+	// cluster is reachable publicly and the database uses Encrypted (TLS).
+	useVNet := infra.Networking != nil && infra.DNS != nil && infra.DNS.RedisPrivateZone != nil
+	publicNetworkAccess := "Enabled"
+	if useVNet {
+		publicNetworkAccess = "Disabled"
+	}
+
 	cluster, err := redis.NewRedisEnterprise(ctx, serviceName, &redis.RedisEnterpriseArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.StringPtr(location),
-		MinimumTlsVersion: pulumi.String("1.2"),
-		HighAvailability:  pulumi.String(haValue),
+		MinimumTlsVersion:   pulumi.String("1.2"),
+		HighAvailability:    pulumi.String(haValue),
+		PublicNetworkAccess: pulumi.String(publicNetworkAccess),
 		Sku: redis.SkuArgs{
 			Name: pulumi.String(skuName),
 		},
@@ -108,11 +120,6 @@ func CreateRedisEnterprise(
 	// which is required for non-cluster-aware clients (Celery/Kombu, channels_redis).
 	// OSSCluster (the default) requires all keys in a pipeline to hash to the same slot,
 	// which breaks Celery's Kombu transport.
-	//
-	// When a VNet private endpoint is available the database uses Plaintext protocol so
-	// that apps can connect with a plain redis:// URL — the VNet provides network isolation
-	// so TLS is not required for security. Without a VNet, Encrypted (TLS) is used.
-	useVNet := infra.Networking != nil && infra.DNS != nil && infra.DNS.RedisPrivateZone != nil
 	clientProtocol := "Plaintext"
 	urlScheme := "redis"
 	if !useVNet {
