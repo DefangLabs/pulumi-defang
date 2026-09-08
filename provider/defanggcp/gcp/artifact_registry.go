@@ -112,10 +112,11 @@ func createBuildInfra(
 
 	ar, err := artifactregistry.NewRepository(ctx, "repo", &artifactregistry.RepositoryArgs{
 		// RepositoryId is required by the GCP API; unlike AWS, GCP does not auto-generate resource IDs.
-		RepositoryId: pulumi.String(sanitizeRepoName(projectName)),
-		Location:     pulumi.String(region),
-		Description:  pulumi.String("Docker images for " + projectName),
-		Format:       pulumi.String("DOCKER"),
+		RepositoryId:    pulumi.String(sanitizeRepoName(projectName)),
+		Location:        pulumi.String(region),
+		Description:     pulumi.String("Docker images for " + projectName),
+		Format:          pulumi.String("DOCKER"),
+		CleanupPolicies: buildCleanupPolicies(),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating artifact registry repository: %w", err)
