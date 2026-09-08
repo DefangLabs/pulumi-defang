@@ -154,6 +154,11 @@ func buildEnvVars(
 	infra *SharedInfra,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	policyIdentity *PolicyIdentity,
+	//nolint:unparam // no current caller supplies invoke options, but the
+	// param mirrors ConfigProvider.GetSecretRef's own signature (compose.ConfigProvider),
+	// which buildEnvVars forwards it to — kept for interface parity with the
+	// AWS worker, which does pass a real option (parentOpt) here.
 	opts ...pulumi.InvokeOption,
 ) envResult {
 	envs := app.EnvironmentVarArray{
@@ -161,6 +166,15 @@ func buildEnvVars(
 			Name:  pulumi.String("DEFANG_SERVICE"),
 			Value: pulumi.String(serviceName),
 		},
+	}
+	if policyIdentity != nil {
+		// DefaultAzureCredential can't disambiguate when the Container App
+		// carries more than one user-assigned identity (e.g. this one plus a
+		// Key Vault identity) — tell it which one is x-defang-policies's.
+		envs = append(envs, app.EnvironmentVarArgs{
+			Name:  pulumi.String("AZURE_CLIENT_ID"),
+			Value: policyIdentity.ClientID,
+		})
 	}
 	if infra.Etag != "" {
 		envs = append(envs, app.EnvironmentVarArgs{
@@ -261,9 +275,10 @@ func CreateContainerApp(
 	serviceEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
 	dnsZones map[string]string,
+	policyIdentity *PolicyIdentity,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
-	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts)
+	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts, policyIdentity)
 
 	// Resource limits
 	cpu, mem := containerAppCpuMemory(svc.GetCPUs(), svc.GetMemoryMiB())
@@ -304,6 +319,9 @@ func CreateContainerApp(
 	}
 	if len(result.Secrets) > 0 && infra.KeyVaultIdentityID != nil {
 		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
+	}
+	if policyIdentity != nil {
+		userIdentities = append(userIdentities, policyIdentity.ID)
 	}
 	var identity *app.ManagedServiceIdentityArgs
 	if len(userIdentities) > 0 {
