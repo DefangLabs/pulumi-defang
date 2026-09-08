@@ -331,7 +331,7 @@ func createService(
 		comp.ResourceName = ceResult.InstanceGroup.Name
 	}
 
-	if lbEntry != nil && svc.HasHostPorts() {
+	if lbEntry != nil && (common.InPrivateNetwork(infra.Networks, svc) || svc.HasHostPorts()) {
 		lbEntry.PrivateFqdn = fmt.Sprintf("%s.%s", common.ServiceLabel(serviceName), "google.internal")
 	}
 

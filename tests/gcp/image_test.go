@@ -70,11 +70,11 @@ func TestExternalRegistryRemoteRepoHasCorrectConfig(t *testing.T) {
 
 	repo := findTypeWhere(*records, gcpARRepositoryType, isRemoteRepo)
 	require.NotNil(t, repo, "expected an AR remote repo")
-	assert.Equal(t, remoteRepoPrefix+"ghcr-io", repo.inputs.Get("repositoryId").AsString(),
+	assert.Equal(t, remoteRepoPrefix+"ghcr-io", repo.Inputs.Get("repositoryId").AsString(),
 		"repo ID should include the project and stack-scoped naming prefix")
-	assert.Equal(t, "REMOTE_REPOSITORY", repo.inputs.Get("mode").AsString())
+	assert.Equal(t, "REMOTE_REPOSITORY", repo.Inputs.Get("mode").AsString())
 
-	uri := repo.inputs.
+	uri := repo.Inputs.
 		Get("remoteRepositoryConfig").AsMap().
 		Get("commonRepository").AsMap().
 		Get("uri").AsString()
@@ -180,7 +180,7 @@ func TestExternalRegistryImageIsRewrittenInCloudInit(t *testing.T) {
 	it := findTypeWhere(*records, gcpInstanceTemplateType, func(_ property.Map) bool { return true })
 	require.NotNil(t, it, "expected an instance template for Compute Engine service")
 
-	userData := it.inputs.Get("metadata").AsMap().Get("user-data").AsString()
+	userData := it.Inputs.Get("metadata").AsMap().Get("user-data").AsString()
 	assert.NotContains(t, userData, "ghcr.io",
 		"cloud-init should not reference ghcr.io directly; image should be rewritten to AR")
 	assert.Contains(t, userData, "docker.pkg.dev",
@@ -208,7 +208,7 @@ func TestExternalRegistryImageIsRewrittenForCloudRun(t *testing.T) {
 	cr := findTypeWhere(*records, gcpCloudRunServiceType, func(_ property.Map) bool { return true })
 	require.NotNil(t, cr, "expected a Cloud Run service")
 
-	containers := cr.inputs.Get("template").AsMap().Get("containers").AsArray()
+	containers := cr.Inputs.Get("template").AsMap().Get("containers").AsArray()
 	require.Equal(t, 1, containers.Len())
 	image := containers.Get(0).AsMap().Get("image").AsString()
 

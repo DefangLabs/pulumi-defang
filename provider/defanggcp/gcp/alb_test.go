@@ -201,7 +201,7 @@ func testInfra(ctx *pulumi.Context) *SharedInfra {
 		Region:         "us-central1",
 		VpcId:          pulumi.String("vpc").ToStringOutput(),
 		SubnetId:       pulumi.String("subnet").ToStringOutput(),
-		PrivateZone:    pulumi.String("private-zone").ToStringOutput(),
+		PrivateZone:    pulumi.String("private-zone").ToStringOutput().ToStringPtrOutput(),
 		ProxySubnetId:  "proxy-subnet",
 		PublicIP:       publicIP,
 		WildcardCertId: pulumi.String("wildcard-cert"),

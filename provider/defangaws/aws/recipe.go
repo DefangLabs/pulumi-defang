@@ -40,4 +40,8 @@ var (
 	RetainBucketOnDelete = recipe.Bool("retain-bucket-on-delete", false)
 	Route53SidecarLogs   = recipe.Bool("route53-sidecar-logs", false)
 	RetainDnsOnDelete    = recipe.Bool("retain-dns-on-delete", false)
+	// UseDefangAppSubdomain publishes public services under the caller-provided
+	// delegate domain (the defang.app subdomain). Off, services keep the ALB's
+	// own DNS name; see common.ProjectPublicDomain.
+	UseDefangAppSubdomain = recipe.Bool(common.DefangAppSubdomainKey, true)
 )

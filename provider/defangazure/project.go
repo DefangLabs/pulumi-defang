@@ -415,11 +415,21 @@ func setupSharedInfra(
 	kvName := providerazure.KeyVaultName(ctx, projectName)
 	keyVaultURL := "https://" + kvName + ".vault.azure.net"
 
+	// The delegate domain (the defang.app subdomain) gives each public service a
+	// <service>.<domain> CNAME onto its Container App; the recipe can opt out, in
+	// which case services keep the azurecontainerapps.io name, which is already
+	// what Endpoint reports. An empty Domain is the project's existing
+	// no-delegate-domain path: EnsureDomainZone and CreateCustomDomain both no-op.
+	domain := common.ProjectPublicDomain(
+		ctx, providerazure.UseDefangAppSubdomain.Get(ctx), inputs.Domain,
+		inputs.Networks, inputs.Services, "their azurecontainerapps.io name")
+
 	infra := &providerazure.SharedInfra{
 		ResourceGroup: rg,
+		Networks:      inputs.Networks,
 		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
 		Etag:          inputs.Etag,
-		Domain:        inputs.Domain,
+		Domain:        domain,
 	}
 	if ctx.DryRun() {
 		infra.ConfigProvider = &compose.DryRunConfigProvider{}

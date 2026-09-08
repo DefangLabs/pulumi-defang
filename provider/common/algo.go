@@ -1,10 +1,14 @@
 package common
 
 import (
+	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 // Based on https://www.ietf.org/rfc/rfc3986.txt, using the pattern for query
@@ -37,10 +41,105 @@ func ParseHealthCheckPathPort(test []string) (string, int) {
 	return path, port
 }
 
-// NeedIngress returns true if any non-managed service in the map has ingress ports.
-func NeedIngress(services compose.Services) bool {
+// NeedPublicIngress returns true if the project needs a public load balancer: any
+// non-managed service that is in a public network AND exposes an ingress port.
+// Networks decide public vs private; the ingress port only selects load-balanced
+// exposure. A service with ingress ports in a private/internal network is NOT
+// public and does not need the public LB.
+func NeedPublicIngress(networks compose.Networks, services compose.Services) bool {
 	for _, svc := range services {
-		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil {
+		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil && InPublicNetwork(networks, svc) {
+			return true
+		}
+	}
+	return false
+}
+
+// DefangAppSubdomainKey is the recipe key that turns the platform-provided
+// public subdomain (the defang.app delegate domain) off. Each provider declares
+// it in its own recipe namespace; the name is shared so the three clouds cannot
+// drift apart on the spelling.
+const DefangAppSubdomainKey = "use-defang-app-subdomain"
+
+// publicServicesWithoutDomain returns the sorted names of the services that would
+// be published under the platform-provided public domain — the same predicate as
+// NeedPublicIngress (an ingress port in a public network, and not a managed
+// Postgres/Redis) — but that have no domainname of their own. Sorted so a warning
+// built from it is deterministic across Go's randomized map iteration order.
+func publicServicesWithoutDomain(networks compose.Networks, services compose.Services) []string {
+	var degraded []string
+	for name, svc := range services {
+		if svc.HasIngressPorts() && svc.Postgres == nil && svc.Redis == nil &&
+			InPublicNetwork(networks, svc) && svc.DomainName == "" {
+			degraded = append(degraded, name)
+		}
+	}
+	slices.Sort(degraded)
+	return degraded
+}
+
+// ProjectPublicDomain returns the platform-provided public domain to publish this
+// project's services under, or "" when there is none to use.
+//
+// It is the single gate all three providers share, and it deliberately returns a
+// domain rather than a boolean: every downstream site already branches on
+// `domain != ""` (GCP's wildcard cert and delegate zone, AWS's wildcard ACM cert
+// and public A records, Azure's delegate zone and per-service CNAME), so an empty
+// return switches the whole project onto the no-public-domain path each cloud
+// already implements, with no new branching.
+//
+// When the recipe opts out, a service that would have been published under the
+// domain and has no domainname of its own is NOT an error: it keeps the hostname
+// its cloud assigns anyway — the ALB's DNS name on AWS, the Cloud Run URL on GCP,
+// the azurecontainerapps.io name on Azure — and that hostname is what the provider
+// already reports as the service's endpoint. So this warns and degrades. Failing
+// the deploy instead would reject a project that has a working public endpoint,
+// and an error raised from inside a Pulumi program surfaces as a stack failure
+// with a partial apply, which is a punishing way to report a cosmetic difference.
+//
+// nativeHostname describes, for the warning, what the services fall back to.
+func ProjectPublicDomain(
+	ctx *pulumi.Context,
+	useDefangAppSubdomain bool,
+	domain string,
+	networks compose.Networks,
+	services compose.Services,
+	nativeHostname string,
+) string {
+	if useDefangAppSubdomain {
+		return domain
+	}
+	if degraded := publicServicesWithoutDomain(networks, services); len(degraded) > 0 {
+		_ = ctx.Log.Warn(fmt.Sprintf(
+			"%q is disabled, so no defang.app subdomain is created: %s reachable only at %s. "+
+				"Set `domainname:` on a service to publish it under a domain you control.",
+			DefangAppSubdomainKey, describeServices(degraded), nativeHostname), nil)
+	}
+	return ""
+}
+
+// describeServices renders a service-name list for a log line: `service "a"` for
+// one, `services "a", "b"` for several, each quoted so an empty or odd name is
+// still visible.
+func describeServices(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = strconv.Quote(n)
+	}
+	if len(names) == 1 {
+		return "service " + quoted[0] + " is"
+	}
+	return "services " + strings.Join(quoted, ", ") + " are"
+}
+
+// NeedPrivateZone reports whether the project needs a private DNS zone. A private
+// zone holds internal records for: a service in a private network (networks
+// decide public/private), a host-mode service (transitional — kept so default-
+// network host services keep their internal name, see pulumi-defang#253), or a
+// managed Postgres/Redis. A project of only public ingress services needs none.
+func NeedPrivateZone(networks compose.Networks, services compose.Services) bool {
+	for _, svc := range services {
+		if InPrivateNetwork(networks, svc) || svc.HasHostPorts() || IsManagedService(svc) {
 			return true
 		}
 	}

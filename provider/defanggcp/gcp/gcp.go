@@ -27,15 +27,16 @@ type SharedInfra struct {
 	VpcId             pulumi.StringOutput
 	SubnetId          pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
-	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
-	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
+	WildcardCertId    pulumi.StringPtrInput // set when a domain is configured and the project has ingress
+	PublicZoneId      pulumi.StringPtrInput // public managed zone name; set alongside WildcardCertId
 	ProxySubnetId     string
 	BuildInfra        *BuildInfra                             // non-nil when at least one service has a build config
 	ServiceConnection *servicenetworking.Connection           // non-nil when any service uses managed Postgres or Redis
-	PrivateZone       pulumi.StringOutput                     // managed zone name for the private google.internal. zone
+	PrivateZone       pulumi.StringPtrOutput                  // google.internal. zone; nil when not needed
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
 	ProjectName       string                                  // compose project name (defang-project log label)
+	Networks          compose.Networks                        // classify services public vs private
 	Repos             map[string]*artifactregistry.Repository // non-empty when services reference external registries
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
@@ -100,6 +101,7 @@ func BuildGlobalConfig(
 	ctx *pulumi.Context,
 	projectName string,
 	domain string,
+	networks compose.Networks,
 	services map[string]compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*SharedInfra, error) {
@@ -177,15 +179,6 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	// Logical name deliberately omits projectName, same as the firewalls above and
-	// public-dns below: Pulumi's default resource ID already prefixes it with
-	// <pulumi-project>-<stack>, which includes projectName, so repeating it here
-	// risked exceeding GCP's 63-char resource ID limit.
-	privateZone, err := createPrivateZone(ctx, projectName, vpc, opts...)
-	if err != nil {
-		return nil, err
-	}
-
 	cfg := &SharedInfra{
 		Stack:       ctx.Stack(),
 		Region:      region,
@@ -194,9 +187,26 @@ func BuildGlobalConfig(
 		VpcId:       vpc.ID().ToStringOutput(),
 		SubnetId:    subnet.ID().ToStringOutput(),
 		PublicIP:    publicIP,
-		PrivateZone: privateZone.Name.ToStringOutput(),
+		Networks:    networks,
 	}
 
+	// The private zone only ever holds records for host-mode services and managed
+	// Postgres/Redis, so skip it (and save $$) when the project has none.
+	if common.NeedPrivateZone(networks, services) {
+		privateZone, err := createPrivateZone(ctx, projectName, vpc, opts...)
+		if err != nil {
+			return nil, err
+		}
+		cfg.PrivateZone = privateZone.Name.ToStringOutput().ToStringPtrOutput()
+	}
+
+	// The public delegate zone and wildcard cert (the defang.app subdomain) are
+	// created whenever a domain is configured, unless the recipe opts out. Opted
+	// out, public services keep the Cloud Run URL Google assigns them, which is
+	// already what Endpoint reports; ProjectPublicDomain warns about that and
+	// returns "".
+	domain = common.ProjectPublicDomain(
+		ctx, UseDefangAppSubdomain.Get(ctx), domain, networks, services, "their Cloud Run URL")
 	if domain != "" {
 		cfg.Domain = domain
 		if err := createWildcardCert(ctx, projectName, domain, cfg, opts...); err != nil {

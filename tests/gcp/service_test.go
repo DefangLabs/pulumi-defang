@@ -331,7 +331,7 @@ func constructGcpServiceEnvs(t *testing.T, env map[string]property.Value) ([]res
 	cr := findTypeWhere(*records, gcpCloudRunServiceType, func(property.Map) bool { return true })
 	require.NotNil(t, cr, "expected Cloud Run service to be registered")
 
-	containers := cr.inputs.Get("template").AsMap().Get("containers").AsArray()
+	containers := cr.Inputs.Get("template").AsMap().Get("containers").AsArray()
 	require.Equal(t, 1, containers.Len())
 	envs := containers.Get(0).AsMap().Get("envs").AsArray()
 
