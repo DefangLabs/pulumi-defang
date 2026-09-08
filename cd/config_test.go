@@ -100,7 +100,10 @@ func Test_setDefaultStackConfigGCPComputeOverrides(t *testing.T) {
 // self-destruct job's own constant logical name, which overflows on anything
 // but the shortest project/stack combination. The override must stay within
 // the limit regardless of project/stack length -- it deliberately doesn't
-// interpolate either.
+// interpolate either. It does keep ${name}, which is safe only because this
+// resource type has exactly one registration in the whole repo, with a fixed
+// logical name -- this test expands ${name} to that constant, not to an
+// arbitrary/worst-case string.
 func TestStackConfigAzureJobNameFitsLengthLimit(t *testing.T) {
 	config := configMap{}
 	setDefaultStackConfig("Defang", config)
@@ -119,15 +122,30 @@ func TestStackConfigAzureJobNameFitsLengthLimit(t *testing.T) {
 	if strings.Contains(pattern, "${project}") || strings.Contains(pattern, "${stack}") {
 		t.Errorf("pattern %q must not depend on project/stack length", pattern)
 	}
-	// Worst case: every non-token character plus the longest plausible ${hex(N)}
-	// expansion (the token itself names N). 32 is Container Apps Job's own limit.
-	hexLen := 7 // matches ${hex(7)} below; keep in sync if the pattern changes
-	literalLen := len(strings.NewReplacer("${hex(7)}", "").Replace(pattern))
-	if got := literalLen + hexLen; got > 32 {
-		t.Errorf("pattern %q expands to %d chars, want <= 32", pattern, got)
+	// Exact match, not just "doesn't contain ${project}/${stack}": guards
+	// against ${name} regressing to a literal string, which the length/
+	// lowercase checks below wouldn't catch on their own.
+	if want := "${name}-${hex(7)}"; pattern != want {
+		t.Errorf("pattern = %q, want %q", pattern, want)
 	}
-	if pattern != strings.ToLower(pattern) {
-		t.Errorf("pattern %q must be all lowercase: Container Apps Job names reject uppercase", pattern)
+
+	// selfDestructName in cd/program/selfdestruct_azure.go: the only logical
+	// name this pattern is ever applied to today. Not importable here (cd's
+	// "main" package vs. "program"), so kept in sync by hand.
+	const selfDestructName = "defang-self-destruct"
+	const hexLen = 7 // matches ${hex(7)} in the pattern; keep in sync if it changes
+	hexPlaceholder := strings.Repeat("a", hexLen)
+
+	expanded := strings.NewReplacer(
+		"${name}", selfDestructName,
+		"${hex(7)}", hexPlaceholder,
+	).Replace(pattern)
+
+	if len(expanded) > 32 {
+		t.Errorf("pattern %q expands to %q (%d chars), want <= 32", pattern, expanded, len(expanded))
+	}
+	if expanded != strings.ToLower(expanded) {
+		t.Errorf("pattern %q expands to %q, want all-lowercase: Container Apps Job names reject uppercase", pattern, expanded)
 	}
 }
 
