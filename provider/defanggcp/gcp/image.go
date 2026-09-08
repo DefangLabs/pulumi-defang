@@ -298,7 +298,13 @@ func buildServiceImage(
 	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
-	dest := pulumi.Sprintf("%s/%s:latest", infra.RepositoryURL, serviceName)
+	// Tag with the build's content hash rather than ":latest" -- shared,
+	// hardcoded tags are unnecessary churn in the repo and let this provider
+	// drift from what AWS and Azure now do (see #547/#551). Digest resolution
+	// itself doesn't depend on the tag: it comes straight from this specific
+	// Cloud Build run's own API result (buildRes.ImageDigest below), not a
+	// post-hoc lookup by tag, so this is a hygiene fix, not a correctness one.
+	dest := pulumi.Sprintf("%s/%s:%s", infra.RepositoryURL, serviceName, common.BuildTriggerHash(svc.Build))
 	steps := generateBuildSteps(svc.Build, dest)
 	shmBytes := svc.Build.GetShmSizeBytes()
 
