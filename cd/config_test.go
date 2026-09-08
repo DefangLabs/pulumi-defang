@@ -93,6 +93,44 @@ func Test_setDefaultStackConfigGCPComputeOverrides(t *testing.T) {
 	}
 }
 
+// TestStackConfigAzureJobNameFitsLengthLimit guards against the
+// ContainerAppInvalidName failure surfaced live on defang-mvp's website-dev
+// stack: Container Apps Job names are capped at 32 chars, but the default
+// autonaming pattern includes the unbounded ${project} and ${stack} plus the
+// self-destruct job's own constant logical name, which overflows on anything
+// but the shortest project/stack combination. The override must stay within
+// the limit regardless of project/stack length -- it deliberately doesn't
+// interpolate either.
+func TestStackConfigAzureJobNameFitsLengthLimit(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("Defang", config)
+
+	autonamingMap := config["pulumi:autonaming"].Value.(map[string]any)
+	providers := autonamingMap["providers"].(map[string]any)
+	azureNative := providers["azure-native"].(map[string]any)
+	resources := azureNative["resources"].(map[string]any)
+
+	override, ok := resources["azure-native:app:Job"].(map[string]string)
+	if !ok {
+		t.Fatal("missing override for azure-native:app:Job")
+	}
+	pattern := override["pattern"]
+
+	if strings.Contains(pattern, "${project}") || strings.Contains(pattern, "${stack}") {
+		t.Errorf("pattern %q must not depend on project/stack length", pattern)
+	}
+	// Worst case: every non-token character plus the longest plausible ${hex(N)}
+	// expansion (the token itself names N). 32 is Container Apps Job's own limit.
+	hexLen := 7 // matches ${hex(7)} below; keep in sync if the pattern changes
+	literalLen := len(strings.NewReplacer("${hex(7)}", "").Replace(pattern))
+	if got := literalLen + hexLen; got > 32 {
+		t.Errorf("pattern %q expands to %d chars, want <= 32", pattern, got)
+	}
+	if pattern != strings.ToLower(pattern) {
+		t.Errorf("pattern %q must be all lowercase: Container Apps Job names reject uppercase", pattern)
+	}
+}
+
 func TestStackConfigFromEnvAWS(t *testing.T) {
 	// Clear ambient env that could pick a second provider or override fallbacks.
 	unsetenv(t, "REGION", "GCP_PROJECT", "GCLOUD_PROJECT", "AZURE_SUBSCRIPTION_ID", "PULUMI_BACKEND_URL")

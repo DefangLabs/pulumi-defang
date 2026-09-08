@@ -135,6 +135,19 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// the project twice and overflows on longer names; drop ${name}.
 					// https://learn.microsoft.com/en-us/azure/templates/microsoft.operationalinsights/workspaces?pivots=deployment-language-bicep#microsoftoperationalinsightsworkspaces
 					"azure-native:operationalinsights:Workspace": map[string]string{"pattern": prefix + "${project}-${stack}-${hex(7)}"},
+					// Container Apps Job names must be 2-32 chars, lowercase alphanumeric
+					// and hyphens only. The default pattern (prefix-project-stack-name-hex7)
+					// repeats the self-destruct job's constant logical name ("defang-self-destruct",
+					// see selfdestruct_azure.go) on top of an unbounded ${project}-${stack},
+					// which overflowed 32 chars on a real deploy (ContainerAppInvalidName on
+					// "Defang-website-dev-defang-self-destruct-1a2b3c4"). ${project}/${stack}
+					// aren't needed for uniqueness here anyway: every stack gets at most one
+					// of this job, and it only has to be unique within the shared defang-cd
+					// managed environment (see PR #536) -- ${hex(7)} alone (28 bits) already
+					// gives that. Drop ${project}/${stack}/${name} and force lowercase to fit
+					// well within the limit regardless of project/stack name length.
+					// https://learn.microsoft.com/en-us/rest/api/containerapps/jobs/create-or-update
+					"azure-native:app:Job": map[string]string{"pattern": lowerPrefix + "self-destruct-${hex(7)}"},
 				},
 			},
 			// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
