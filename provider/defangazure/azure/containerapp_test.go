@@ -57,7 +57,7 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 			},
 		}
 
-		result := buildEnvVars(ctx, "svc", svc, infra, nil, nil)
+		result := buildEnvVars(ctx, "svc", svc, infra, nil, nil, nil)
 
 		// Exactly one Secret entry — deduped even though two env vars reference CONFIG.
 		require.Len(t, result.Secrets, 1,
@@ -106,7 +106,7 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 func TestBuildEnvVarsInjectsDefangServiceEnv(t *testing.T) {
 	const serviceName = "my-service"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		result := buildEnvVars(ctx, serviceName, compose.ServiceConfig{}, &SharedInfra{}, nil, nil)
+		result := buildEnvVars(ctx, serviceName, compose.ServiceConfig{}, &SharedInfra{}, nil, nil, nil)
 
 		defang, ok := envVarsByName(result)["DEFANG_SERVICE"]
 		require.True(t, ok, "DEFANG_SERVICE env var not found on Container App")
@@ -117,6 +117,68 @@ func TestBuildEnvVarsInjectsDefangServiceEnv(t *testing.T) {
 		return nil
 	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
 	require.NoError(t, err)
+}
+
+// TestBuildEnvVarsInjectsPolicyIdentityClientID verifies that AZURE_CLIENT_ID
+// is set to the x-defang-policies identity's client ID when one is present —
+// with more than one user-assigned identity on the Container App,
+// DefaultAzureCredential can't otherwise tell which one a self-redeploying
+// service should authenticate as (DefangLabs/pulumi-defang#326) — and is
+// absent for the (common) case of a service with no policies.
+func TestBuildEnvVarsInjectsPolicyIdentityClientID(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		result := buildEnvVars(ctx, "svc", compose.ServiceConfig{}, &SharedInfra{}, nil, nil, nil)
+		_, ok := envVarsByName(result)["AZURE_CLIENT_ID"]
+		assert.False(t, ok, "AZURE_CLIENT_ID should be absent without a policy identity")
+
+		policyIdentity := &PolicyIdentity{
+			ClientID: pulumi.String("11111111-1111-1111-1111-111111111111").ToStringOutput(),
+		}
+		result = buildEnvVars(ctx, "svc", compose.ServiceConfig{}, &SharedInfra{}, nil, nil, policyIdentity)
+		clientID, ok := envVarsByName(result)["AZURE_CLIENT_ID"]
+		require.True(t, ok, "AZURE_CLIENT_ID env var not found with a policy identity present")
+		assert.Equal(t, policyIdentity.ClientID, clientID.Value,
+			"AZURE_CLIENT_ID should carry the policy identity's client ID")
+
+		// A compose-declared AZURE_CLIENT_ID must win: two env entries with the
+		// same name make Container Apps reject the spec (or pick one
+		// nondeterministically).
+		svcWithOwnClientID := compose.ServiceConfig{
+			Environment: compose.Environment{"AZURE_CLIENT_ID": pulumi.String("user-supplied")},
+		}
+		result = buildEnvVars(ctx, "svc", svcWithOwnClientID, &SharedInfra{}, nil, nil, policyIdentity)
+		require.Equal(t, 1, countEnvVarsByName(result, "AZURE_CLIENT_ID"),
+			"exactly one AZURE_CLIENT_ID entry, not one from the compose file plus ours")
+		// The compose-loop path wraps even a literal value in a StringOutput
+		// (via compose.InterpolateEnvironmentVariable) — assert inside ApplyT
+		// so it runs after that (mock-synchronous) resolution completes.
+		userValue, ok := envVarsByName(result)["AZURE_CLIENT_ID"].Value.(pulumi.StringOutput)
+		require.True(t, ok)
+		userValue.ApplyT(func(v string) string {
+			assert.Equal(t, "user-supplied", v,
+				"the compose file's own AZURE_CLIENT_ID must not be overridden by the policy identity's")
+			return v
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
+// countEnvVarsByName counts raw env entries in result.Envs carrying name —
+// envVarsByName collapses duplicates into a map, hiding exactly the
+// double-entry bug this guards against, so this walks the slice directly.
+func countEnvVarsByName(result envResult, name string) int {
+	count := 0
+	for _, e := range result.Envs {
+		args, ok := e.(app.EnvironmentVarArgs)
+		if !ok {
+			continue
+		}
+		if n, ok := args.Name.(pulumi.String); ok && string(n) == name {
+			count++
+		}
+	}
+	return count
 }
 
 // TestBuildProbesClampsInitialDelay covers the Azure ceiling on a probe's

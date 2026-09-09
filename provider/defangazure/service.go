@@ -1,7 +1,6 @@
 package defangazure
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -11,8 +10,6 @@ import (
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
-
-var errPoliciesUnsupported = errors.New("x-defang-policies is not supported on Azure")
 
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
@@ -146,19 +143,20 @@ func createContainerApp(
 	serviceHosts map[string]pulumi.StringOutput,
 	dnsZones map[string]string,
 ) error {
-	// Policies aren't supported on Azure yet. Entries a stack leaves empty
-	// ("${EXTRA:-}") normalize away, so a compose file parameterized per
-	// stack still deploys here; a foreign-cloud literal gets the validation
-	// error (with the ${VAR} hint), any other entry the unsupported error.
+	// Entries a stack leaves empty ("${EXTRA:-}") normalize away, so a compose
+	// file parameterized per stack still deploys here; a foreign-cloud
+	// literal gets the validation error (with the ${VAR} hint).
 	policies := compose.NormalizePolicies(svc.Policies)
 	if err := compose.ValidatePolicies(compose.PolicyCloudAzure, policies); err != nil {
 		return fmt.Errorf("service %s: %w", serviceName, err)
 	}
-	if len(policies) > 0 {
-		return fmt.Errorf("service %s: %w", serviceName, errPoliciesUnsupported)
+	policyIdentity, err := azure.CreatePolicyIdentity(ctx, serviceName, policies, infra, pulumi.Parent(comp))
+	if err != nil {
+		return fmt.Errorf("granting policies for service %s: %w", serviceName, err)
 	}
 	caResult, err := azure.CreateContainerApp(
-		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones, pulumi.Parent(comp),
+		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones, policyIdentity,
+		pulumi.Parent(comp),
 	)
 	if err != nil {
 		return fmt.Errorf("creating Container App %s: %w", serviceName, err)

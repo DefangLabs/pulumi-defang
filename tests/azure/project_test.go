@@ -6,6 +6,7 @@ package azure
 // App, Postgres, etc.) lives in their own dedicated test files.
 
 import (
+	"sync"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
@@ -17,6 +18,41 @@ import (
 	defangazure "github.com/DefangLabs/pulumi-defang/provider/defangazure"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
+
+type resourceRecord struct {
+	typ    string
+	name   string
+	inputs property.Map
+}
+
+// collectResources returns a mock and a pointer to the slice it populates.
+func collectResources() (*integration.MockResourceMonitor, *[]resourceRecord) {
+	var mu sync.Mutex
+	var records []resourceRecord
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
+			records = append(records, resourceRecord{
+				typ:    string(args.TypeToken),
+				name:   args.Name,
+				inputs: args.Inputs,
+			})
+			mu.Unlock()
+			return args.Name, args.Inputs, nil
+		},
+	}
+	return mock, &records
+}
+
+// findTypeWhere returns the first record matching the given type token and predicate, or nil.
+func findTypeWhere(records []resourceRecord, typ string, pred func(property.Map) bool) *resourceRecord {
+	for i := range records {
+		if records[i].typ == typ && pred(records[i].inputs) {
+			return &records[i]
+		}
+	}
+	return nil
+}
 
 func TestConstructAzureProject(t *testing.T) {
 	server := testutil.MakeAzureTestServer()
@@ -112,25 +148,38 @@ func TestConstructAzureProjectEmptyPoliciesDeploy(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestConstructAzureProjectRejectsApplicablePolicies(t *testing.T) {
-	server := testutil.MakeAzureTestServer()
+// TestConstructAzureProjectServiceWithPoliciesGrantsRoles covers the
+// full-role-definition-ID form of an x-defang-policies entry: a
+// RoleAssignment is registered at the project's resource group scope,
+// granting the service's own managed identity. The bare-name form (resolved
+// by listing role definitions against live Azure — see
+// resolveRoleDefinitionID) isn't exercised here: unlike GCP's ResolvePolicyRole,
+// it needs a real ARM credential and can't run against the mock resource
+// monitor alone (see roleNameFilter's unit test for the pure escaping logic).
+func TestConstructAzureProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
 
-	// A bare name applies on the current cloud, and Azure doesn't support
-	// policies yet.
+	const roleDefID = "/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/deployer-guid"
+
 	_, err := server.Construct(p.ConstructRequest{
 		Urn: testutil.AzureURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
-			"app": property.New(property.NewMap(map[string]property.Value{
-				"image": property.New("myapp:latest"),
-				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+			"redeployer": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("defangio/cli:latest"),
 				"policies": property.New(property.NewArray([]property.Value{
-					property.New("Contributor"),
+					property.New(roleDefID),
 				})),
 			})),
 		}),
 	})
 
-	require.ErrorContains(t, err, "x-defang-policies is not supported on Azure")
+	require.NoError(t, err)
+
+	found := findTypeWhere(*records, "azure-native:authorization:RoleAssignment", func(m property.Map) bool {
+		return m.Get("roleDefinitionId").AsString() == roleDefID
+	})
+	require.NotNil(t, found, "expected a RoleAssignment for the x-defang-policies entry")
 }
 
 // TestConstructAzureProjectBuildCarriesPluginIdentity asserts that the Build
