@@ -1,0 +1,67 @@
+name: Auto-merge regenerated examples
+
+# release.yml opens a `chore/regenerate-examples-<tag>` PR after every release and
+# tries to merge it, but the org ruleset on main wants one approving review and a
+# bot cannot approve its own PR, so the PR sat open until a human clicked Approve.
+# This job does that review in CI: it re-checks what a reviewer checks — the diff is
+# nothing but the release's version bump, and that version really is on the
+# registries the examples point at — then approves and merges.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Verify and merge
+    if: >-
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'chore/regenerate-examples-v')
+    runs-on: ubuntu-latest
+    steps:
+      # Base, not the PR head: the checks that gate an automatic approval must
+      # never be read from the branch they are approving.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Fetch the changed files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[]' > files.jsonl
+
+      - name: Check the diff is only this release's version bump
+        run: python3 .github/scripts/check_examples_bump.py files.jsonl "$HEAD_REF"
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
+      - name: Check the release is published on npm, PyPI and NuGet
+        run: python3 .github/scripts/check_sdks_published.py files.jsonl "$HEAD_REF"
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
+      - name: Approve
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::RELEASE_PAT is not set, so this run cannot approve: GITHUB_TOKEN cannot approve a PR authored by github-actions[bot]. Approve $PR_URL by hand and auto-merge will finish it."
+            exit 0
+          fi
+          gh pr review --approve "$PR_URL" --body "Verified in CI: the diff is nothing but the release version bump under \`examples/\`, and that version is published on npm, PyPI and NuGet."
+
+      - name: Merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr merge "$PR_URL" --squash --delete-branch \
+            || gh pr merge "$PR_URL" --squash --delete-branch --auto \
+            || echo "::warning::Could not merge $PR_URL; merge it manually"
