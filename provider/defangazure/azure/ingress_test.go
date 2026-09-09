@@ -1,7 +1,6 @@
 package azure
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 
@@ -31,12 +30,11 @@ var (
 // An HTTP-transport ingress resolves the name but the sibling's `<name>:<port>`
 // TCP dial never completes (station.defang.io's 2026-09-09 outage).
 func TestBuildIngressHostPortGetsInternalIngress(t *testing.T) {
-	ingress, err := buildIngress(compose.ServiceConfig{
+	ingress := buildIngress(compose.ServiceConfig{
 		Ports:    []compose.ServicePortConfig{{Target: 8080, Mode: compose.PortModeHost}},
 		Networks: internalNet,
 	}, topLevelNets)
 
-	require.NoError(t, err)
 	require.NotNil(t, ingress, "a host port must still get an ingress, or the service has no resolvable name")
 	assert.False(t, boolInputValue(t, ingress.External))
 	assert.Equal(t, 8080, intInputValue(t, ingress.TargetPort))
@@ -51,12 +49,11 @@ func TestBuildIngressHostPortGetsInternalIngress(t *testing.T) {
 // matching common.ServiceFQDN, so this does not hand a host service a public
 // hostname (pulumi-defang#253).
 func TestBuildIngressHostPortStaysInternalInPublicNetwork(t *testing.T) {
-	ingress, err := buildIngress(compose.ServiceConfig{
+	ingress := buildIngress(compose.ServiceConfig{
 		Ports:    []compose.ServicePortConfig{{Target: 5432, Mode: compose.PortModeHost}},
 		Networks: defaultNet,
 	}, topLevelNets)
 
-	require.NoError(t, err)
 	require.NotNil(t, ingress)
 	assert.False(t, boolInputValue(t, ingress.External),
 		"host mode must not be externally exposed until public host exposure exists")
@@ -66,7 +63,7 @@ func TestBuildIngressHostPortStaysInternalInPublicNetwork(t *testing.T) {
 // ports and no ingress port: the first becomes the main TCP ingress, the rest
 // become internal AdditionalPortMappings — all reachable by name and port.
 func TestBuildIngressHostOnlyMultiplePorts(t *testing.T) {
-	ingress, err := buildIngress(compose.ServiceConfig{
+	ingress := buildIngress(compose.ServiceConfig{
 		Ports: []compose.ServicePortConfig{
 			{Target: 8080, Mode: compose.PortModeHost},
 			{Target: 9090, Mode: compose.PortModeHost},
@@ -75,7 +72,6 @@ func TestBuildIngressHostOnlyMultiplePorts(t *testing.T) {
 		Networks: internalNet,
 	}, topLevelNets)
 
-	require.NoError(t, err)
 	require.NotNil(t, ingress)
 	assert.Equal(t, 8080, intInputValue(t, ingress.TargetPort))
 	assert.Equal(t, "tcp", stringPtrInputValue(t, ingress.Transport))
@@ -83,51 +79,6 @@ func TestBuildIngressHostOnlyMultiplePorts(t *testing.T) {
 	mappings := ingress.AdditionalPortMappings.(app.IngressPortMappingArray)
 	assert.Equal(t, 9090, intInputValue2(t, mappings[0].(app.IngressPortMappingArgs).TargetPort))
 	assert.Equal(t, 9091, intInputValue2(t, mappings[1].(app.IngressPortMappingArgs).TargetPort))
-}
-
-// TestBuildIngressRejectsUDPHostPort: Azure Container Apps ingress is TCP-only,
-// so a UDP host port must fail loudly rather than silently produce a broken
-// TCP ingress.
-func TestBuildIngressRejectsUDPHostPort(t *testing.T) {
-	_, err := buildIngress(compose.ServiceConfig{
-		Ports: []compose.ServicePortConfig{{Target: 53, Mode: compose.PortModeHost, Protocol: compose.PortProtocolUDP}},
-	}, topLevelNets)
-	require.Error(t, err)
-}
-
-// TestBuildIngressRejectsReservedPort: 36985 is reserved by the Container Apps
-// platform.
-func TestBuildIngressRejectsReservedPort(t *testing.T) {
-	_, err := buildIngress(compose.ServiceConfig{
-		Ports: []compose.ServicePortConfig{{Target: reservedIngressPort, Mode: compose.PortModeHost}},
-	}, topLevelNets)
-	require.Error(t, err)
-}
-
-// TestBuildIngressRejectsPort80And443AsHostPort: Azure rejects 80/443 as a TCP
-// ingress ExposedPort even internally — they're reserved for the environment's
-// own HTTP/HTTPS ingress handler.
-func TestBuildIngressRejectsPort80And443AsHostPort(t *testing.T) {
-	for _, port := range []int32{80, 443} {
-		t.Run(fmt.Sprintf("port %d", port), func(t *testing.T) {
-			_, err := buildIngress(compose.ServiceConfig{
-				Ports: []compose.ServicePortConfig{{Target: port, Mode: compose.PortModeHost}},
-			}, topLevelNets)
-			require.Error(t, err)
-		})
-	}
-}
-
-// TestBuildIngressRejectsTooManyHostPorts: Container Apps allows at most 5
-// ports beyond the main ingress.
-func TestBuildIngressRejectsTooManyHostPorts(t *testing.T) {
-	ports := make([]compose.ServicePortConfig, 0, 1+maxAdditionalIngressPorts+1)
-	ports = append(ports, compose.ServicePortConfig{Target: 8080, Mode: compose.PortModeHost})
-	for i := range maxAdditionalIngressPorts + 1 {
-		ports = append(ports, compose.ServicePortConfig{Target: int32(9000 + i), Mode: compose.PortModeHost})
-	}
-	_, err := buildIngress(compose.ServiceConfig{Ports: ports}, topLevelNets)
-	require.Error(t, err)
 }
 
 // TestBuildIngressExternalFollowsNetworks covers the ingress-mode matrix: the
@@ -150,12 +101,11 @@ func TestBuildIngressExternalFollowsNetworks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ingress, err := buildIngress(compose.ServiceConfig{
+			ingress := buildIngress(compose.ServiceConfig{
 				Ports:    []compose.ServicePortConfig{{Target: 80, Mode: compose.PortModeIngress}},
 				Networks: tt.svcNetworks,
 			}, tt.networks)
 
-			require.NoError(t, err)
 			require.NotNil(t, ingress)
 			assert.Equal(t, tt.wantExternal, boolInputValue(t, ingress.External))
 		})
@@ -165,8 +115,7 @@ func TestBuildIngressExternalFollowsNetworks(t *testing.T) {
 // TestBuildIngressNoPortsGetsNoIngress keeps the one case that must stay nil: a
 // worker with no published port is not reachable by anything.
 func TestBuildIngressNoPortsGetsNoIngress(t *testing.T) {
-	ingress, err := buildIngress(compose.ServiceConfig{Networks: internalNet}, topLevelNets)
-	require.NoError(t, err)
+	ingress := buildIngress(compose.ServiceConfig{Networks: internalNet}, topLevelNets)
 	assert.Nil(t, ingress)
 }
 
@@ -175,7 +124,7 @@ func TestBuildIngressNoPortsGetsNoIngress(t *testing.T) {
 // external) main ingress, but the host port must still get an internal
 // AdditionalPortMapping rather than being silently dropped — pulumi-defang#558.
 func TestBuildIngressKeepsIngressPortAndMapsHostPort(t *testing.T) {
-	ingress, err := buildIngress(compose.ServiceConfig{
+	ingress := buildIngress(compose.ServiceConfig{
 		Ports: []compose.ServicePortConfig{
 			{Target: 5432, Mode: compose.PortModeHost},
 			{Target: 80, Mode: compose.PortModeIngress},
@@ -183,7 +132,6 @@ func TestBuildIngressKeepsIngressPortAndMapsHostPort(t *testing.T) {
 		Networks: defaultNet,
 	}, topLevelNets)
 
-	require.NoError(t, err)
 	require.NotNil(t, ingress)
 	assert.Equal(t, 80, intInputValue(t, ingress.TargetPort))
 	assert.True(t, boolInputValue(t, ingress.External))

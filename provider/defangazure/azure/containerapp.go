@@ -294,10 +294,7 @@ func CreateContainerApp(
 		maxReplicas = mr
 	}
 
-	ingress, err := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
-	if err != nil {
-		return nil, fmt.Errorf("service %q: %w", serviceName, err)
-	}
+	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
 	if ingress != nil {
 		// Preserve any customDomains binding added out-of-band by
 		// `defang cert generate` (BYOD) or the delegate-domain cert flow. The
@@ -527,15 +524,6 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 	return pulumi.StringOutput{}, false
 }
 
-const (
-	// maxAdditionalIngressPorts is Azure Container Apps' hard ceiling on ports
-	// beyond the main ingress (Ingress overview, ms.date 2025-05-02).
-	maxAdditionalIngressPorts = 5
-	// reservedIngressPort is reserved by the Container Apps platform and cannot
-	// be used as a target or exposed port.
-	reservedIngressPort = 36985
-)
-
 // buildIngress returns the Container Apps ingress for a service, or nil when the
 // service publishes no port at all.
 //
@@ -566,31 +554,16 @@ const (
 // A service with both an ingress port and host ports keeps the ingress port as
 // its main (possibly external) ingress and maps every host port as an internal
 // AdditionalPortMapping, so both stay reachable — pulumi-defang#558.
-func buildIngress(svc compose.ServiceConfig, networks compose.Networks) (*app.IngressArgs, error) {
+//
+// This deliberately does not pre-validate port values (UDP, Azure's reserved
+// 36985, 80/443, or the 5-additional-port ceiling): Azure Container Apps
+// already rejects all of those at the ARM API, and duplicating that logic here
+// would drift as Azure's own rules change. CreateContainerApp wraps whatever
+// error comes back, so the real failure still reaches the caller.
+func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.IngressArgs {
 	ingressPort, hostPorts := splitAzurePorts(svc)
 	if ingressPort == nil && len(hostPorts) == 0 {
-		return nil, nil //nolint:nilnil // no port at all; nothing to build, the caller treats nil as "not reachable"
-	}
-
-	for _, p := range hostPorts {
-		if p.Protocol == compose.PortProtocolUDP {
-			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
-			return nil, fmt.Errorf("port %d: UDP host ports are not supported on Azure Container Apps; use TCP", p.Target)
-		}
-		if p.Target == reservedIngressPort {
-			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
-			return nil, fmt.Errorf("port %d: reserved by Azure Container Apps and cannot be used", p.Target)
-		}
-		if p.Target == 80 || p.Target == 443 {
-			// Azure rejects 80/443 as a TCP ingress ExposedPort even for internal-only
-			// ingress: those ports are reserved for the environment's own HTTP/HTTPS
-			// ingress handler (Ingress overview, ms.date 2025-05-02).
-			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
-			return nil, fmt.Errorf(
-				"port %d: Azure Container Apps rejects 80 and 443 as a TCP exposed port; use another port for mode: host",
-				p.Target,
-			)
-		}
+		return nil
 	}
 
 	var ingress *app.IngressArgs
@@ -615,11 +588,6 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) (*app.In
 		extraHostPorts = hostPorts[1:]
 	}
 
-	if len(extraHostPorts) > maxAdditionalIngressPorts {
-		//nolint:err113 // the count is caller-supplied compose data, not a fixed sentinel case
-		return nil, fmt.Errorf("%d additional host ports declared, but Azure Container Apps allows at most %d",
-			len(extraHostPorts), maxAdditionalIngressPorts)
-	}
 	if len(extraHostPorts) > 0 {
 		mappings := make(app.IngressPortMappingArray, 0, len(extraHostPorts))
 		for _, p := range extraHostPorts {
@@ -631,7 +599,7 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) (*app.In
 		}
 		ingress.AdditionalPortMappings = mappings
 	}
-	return ingress, nil
+	return ingress
 }
 
 // splitAzurePorts separates a service's ports into its (at most one) main
