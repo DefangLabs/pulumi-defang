@@ -100,12 +100,58 @@ func TestNeedPublicIngress(t *testing.T) {
 			compose.Services{"pg": {Ports: []compose.ServicePortConfig{ingressPort}, Postgres: &compose.PostgresConfig{}}},
 			false,
 		},
+		{
+			// A service with no networks: of its own is implicitly in the default
+			// network, so an unrelated top-level network must not make it private.
+			// Regression: this returned false, which since the networks-based
+			// gating also costs the service its public LB attachment and FQDN.
+			"ingress service omitting networks: is public despite other top-level networks",
+			compose.Networks{"backend": {}},
+			compose.Services{"web": {Ports: []compose.ServicePortConfig{ingressPort}}},
+			true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := NeedPublicIngress(tt.networks, tt.services); got != tt.want {
 				t.Errorf("NeedPublicIngress() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInPublicNetwork(t *testing.T) {
+	tests := []struct {
+		name     string
+		networks compose.Networks
+		service  compose.ServiceConfig
+		want     bool
+	}{
+		{"no networks declared anywhere is public", nil, compose.ServiceConfig{}, true},
+		{"explicit default network is public", nil, compose.ServiceConfig{Networks: defaultNet}, true},
+		{"non-default network is private", nil, compose.ServiceConfig{Networks: backendNet}, false},
+		{
+			"internal default network is private",
+			internalDefault, compose.ServiceConfig{Networks: defaultNet}, false,
+		},
+		{
+			// The regression: the implicit-default rule was applied only when the
+			// project declared no networks at all.
+			"omitted service networks with unrelated top-level network is public",
+			compose.Networks{"backend": {}}, compose.ServiceConfig{}, true,
+		},
+		{
+			// ...and the implicit default is still subject to internal:true.
+			"omitted service networks with internal default is private",
+			internalDefault, compose.ServiceConfig{}, false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := InPublicNetwork(tt.networks, tt.service); got != tt.want {
+				t.Errorf("InPublicNetwork() = %v, want %v", got, tt.want)
 			}
 		})
 	}

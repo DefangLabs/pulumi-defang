@@ -165,11 +165,16 @@ func IsNetworkInternal(networks compose.Networks, networkId compose.NetworkID) b
 
 func InPublicNetwork(networks compose.Networks, service compose.ServiceConfig) bool {
 	_, inDefaultNetwork := service.Networks[compose.DefaultNetwork]
-	if len(networks) == 0 {
-		// No explicit networks defined; services with no explicit network membership
-		// are implicitly in the non-internal "default" network (compose-spec normalization).
-		return inDefaultNetwork || len(service.Networks) == 0
-	}
+	// A service with no `networks:` section is implicitly in the "default" network
+	// (compose-spec normalization), whether or not the project declares any
+	// networks of its own. Applying that rule only when the project declared none
+	// made an otherwise-public service read as non-public purely because some
+	// unrelated network existed, which since this PR also gates its public
+	// load-balancer attachment and FQDN, not just its DNS zone.
+	inDefaultNetwork = inDefaultNetwork || len(service.Networks) == 0
+	// A nil networks map reads Internal as false, so this also covers the
+	// no-declared-networks case: the default network is public unless the project
+	// declared it internal.
 	return inDefaultNetwork && !IsNetworkInternal(networks, compose.DefaultNetwork)
 }
 
