@@ -294,7 +294,10 @@ func CreateContainerApp(
 		maxReplicas = mr
 	}
 
-	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
+	ingress, err := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
+	if err != nil {
+		return nil, fmt.Errorf("service %q: %w", serviceName, err)
+	}
 	if ingress != nil {
 		// Preserve any customDomains binding added out-of-band by
 		// `defang cert generate` (BYOD) or the delegate-domain cert flow. The
@@ -524,14 +527,32 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 	return pulumi.StringOutput{}, false
 }
 
+const (
+	// maxAdditionalIngressPorts is Azure Container Apps' hard ceiling on ports
+	// beyond the main ingress (Ingress overview, ms.date 2025-05-02).
+	maxAdditionalIngressPorts = 5
+	// reservedIngressPort is reserved by the Container Apps platform and cannot
+	// be used as a target or exposed port.
+	reservedIngressPort = 36985
+)
+
 // buildIngress returns the Container Apps ingress for a service, or nil when the
 // service publishes no port at all.
 //
 // Container Apps has no equivalent of a direct host port: an app is reachable by
 // name — even from a sibling app in the same environment — only if it has an
-// ingress block. So a host-mode port must map to an INTERNAL ingress rather than
-// to no ingress, or the service gets no resolvable name and a sibling that
-// addresses it by service name fails DNS resolution outright.
+// ingress block. So a host-mode port must map to an ingress rather than to none
+// at all, or the service gets no resolvable name and a sibling that addresses it
+// by service name fails DNS resolution outright.
+//
+// A host-only service's main ingress must additionally be TCP-transport with an
+// explicit ExposedPort. Azure's `<name>:<port>` service-to-service addressing
+// (the contract the CLI already rewrites env var references to, and the one
+// AWS/GCP already implement — pulumi-defang#558) works only for TCP ingress; an
+// HTTP-transport ingress expects the app's FQDN and host-based routing, so a
+// sibling dialing the bare name and port resolves a name but the TCP handshake
+// never completes (station.defang.io's 2026-09-09 outage: DNS resolved, `dial
+// tcp <ip>:8080: i/o timeout` on every route).
 //
 // Port mode therefore selects the exposure type and networks decide visibility:
 //   - an ingress port is externally exposed when the service is in a public
@@ -541,37 +562,83 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 //     service keeps an internal-only name until public host exposure is
 //     implemented (pulumi-defang#253). This deliberately does not give a
 //     default-network host service a public hostname.
-func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.IngressArgs {
-	publishedPort, ok := azureIngressPort(svc)
-	if !ok {
-		return nil
+//
+// A service with both an ingress port and host ports keeps the ingress port as
+// its main (possibly external) ingress and maps every host port as an internal
+// AdditionalPortMapping, so both stay reachable — pulumi-defang#558.
+func buildIngress(svc compose.ServiceConfig, networks compose.Networks) (*app.IngressArgs, error) {
+	ingressPort, hostPorts := splitAzurePorts(svc)
+	if ingressPort == nil && len(hostPorts) == 0 {
+		return nil, nil //nolint:nilnil // no port at all; nothing to build, the caller treats nil as "not reachable"
 	}
-	ingress := &app.IngressArgs{
-		External:   pulumi.Bool(svc.HasIngressPorts() && common.InPublicNetwork(networks, svc)),
-		TargetPort: pulumi.Int(publishedPort.Target),
+
+	for _, p := range hostPorts {
+		if p.Protocol == compose.PortProtocolUDP {
+			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
+			return nil, fmt.Errorf("port %d: UDP host ports are not supported on Azure Container Apps; use TCP", p.Target)
+		}
+		if p.Target == reservedIngressPort {
+			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
+			return nil, fmt.Errorf("port %d: reserved by Azure Container Apps and cannot be used", p.Target)
+		}
 	}
-	if publishedPort.AppProtocol == compose.PortAppProtocolGRPC ||
-		publishedPort.AppProtocol == compose.PortAppProtocolHTTP2 {
-		ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodHttp2))
+
+	var ingress *app.IngressArgs
+	extraHostPorts := hostPorts
+	if ingressPort != nil {
+		ingress = &app.IngressArgs{
+			External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
+			TargetPort: pulumi.Int(ingressPort.Target),
+		}
+		if ingressPort.AppProtocol == compose.PortAppProtocolGRPC ||
+			ingressPort.AppProtocol == compose.PortAppProtocolHTTP2 {
+			ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodHttp2))
+		}
+	} else {
+		main := hostPorts[0]
+		ingress = &app.IngressArgs{
+			External:    pulumi.Bool(false),
+			TargetPort:  pulumi.Int(main.Target),
+			ExposedPort: pulumi.IntPtr(int(main.Target)),
+			Transport:   pulumi.StringPtr(string(app.IngressTransportMethodTcp)),
+		}
+		extraHostPorts = hostPorts[1:]
 	}
-	return ingress
+
+	if len(extraHostPorts) > maxAdditionalIngressPorts {
+		//nolint:err113 // the count is caller-supplied compose data, not a fixed sentinel case
+		return nil, fmt.Errorf("%d additional host ports declared, but Azure Container Apps allows at most %d",
+			len(extraHostPorts), maxAdditionalIngressPorts)
+	}
+	if len(extraHostPorts) > 0 {
+		mappings := make(app.IngressPortMappingArray, 0, len(extraHostPorts))
+		for _, p := range extraHostPorts {
+			mappings = append(mappings, app.IngressPortMappingArgs{
+				External:    pulumi.Bool(false),
+				TargetPort:  pulumi.Int(p.Target),
+				ExposedPort: pulumi.IntPtr(int(p.Target)),
+			})
+		}
+		ingress.AdditionalPortMappings = mappings
+	}
+	return ingress, nil
 }
 
-// azureIngressPort picks the single port a Container App publishes. Ingress ports
-// win over host ports: a service with both is asking to be load-balanced, and
-// only ingress can be external. Returns false when the service publishes nothing.
-func azureIngressPort(svc compose.ServiceConfig) (compose.ServicePortConfig, bool) {
-	for _, p := range svc.Ports {
-		if p.IsIngress() {
-			return p, true // TODO: support more than one ingress port
+// splitAzurePorts separates a service's ports into its (at most one) main
+// ingress port and its host-mode ports. TODO: support more than one ingress
+// port.
+func splitAzurePorts(svc compose.ServiceConfig) (*compose.ServicePortConfig, []compose.ServicePortConfig) {
+	var ingressPort *compose.ServicePortConfig
+	var hostPorts []compose.ServicePortConfig
+	for i, p := range svc.Ports {
+		switch {
+		case p.IsIngress() && ingressPort == nil:
+			ingressPort = &svc.Ports[i]
+		case p.IsHost():
+			hostPorts = append(hostPorts, p)
 		}
 	}
-	for _, p := range svc.Ports {
-		if p.IsHost() {
-			return p, true
-		}
-	}
-	return compose.ServicePortConfig{}, false
+	return ingressPort, hostPorts
 }
 
 // buildProbes returns the liveness probe(s) for a Container App.

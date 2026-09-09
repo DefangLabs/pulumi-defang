@@ -1,9 +1,11 @@
 package azure
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,20 +19,30 @@ var (
 	topLevelNets = compose.Networks{compose.DefaultNetwork: {}, "internal": {}}
 )
 
-// TestBuildIngressHostPortGetsInternalIngress is the case that motivated this
-// change: on Container Apps a service is resolvable by name only if it has an
-// ingress block, so a host-mode port must produce an internal ingress rather
+// TestBuildIngressHostPortGetsInternalIngress is the case that motivated
+// pulumi-defang#555: on Container Apps a service is resolvable by name only if
+// it has an ingress block, so a host-mode port must produce an ingress rather
 // than none at all. Without it a sibling app addressing the service by name
 // fails DNS resolution and the caller 502s.
+//
+// It must also be TCP-transport with an explicit ExposedPort matching the
+// target: that's pulumi-defang#558, the follow-up bug that shipped with #555.
+// An HTTP-transport ingress resolves the name but the sibling's `<name>:<port>`
+// TCP dial never completes (station.defang.io's 2026-09-09 outage).
 func TestBuildIngressHostPortGetsInternalIngress(t *testing.T) {
-	ingress := buildIngress(compose.ServiceConfig{
+	ingress, err := buildIngress(compose.ServiceConfig{
 		Ports:    []compose.ServicePortConfig{{Target: 8080, Mode: compose.PortModeHost}},
 		Networks: internalNet,
 	}, topLevelNets)
 
+	require.NoError(t, err)
 	require.NotNil(t, ingress, "a host port must still get an ingress, or the service has no resolvable name")
 	assert.False(t, boolInputValue(t, ingress.External))
 	assert.Equal(t, 8080, intInputValue(t, ingress.TargetPort))
+	assert.Equal(t, "tcp", stringPtrInputValue(t, ingress.Transport),
+		"host-only ingress must be TCP transport, or <name>:<port> dials from a sibling never complete")
+	assert.Equal(t, 8080, intPtrInputValue(t, ingress.ExposedPort),
+		"ExposedPort must be set explicitly so <name>:<port> addressing matches the compose port")
 }
 
 // TestBuildIngressHostPortStaysInternalInPublicNetwork pins the transitional
@@ -38,14 +50,69 @@ func TestBuildIngressHostPortGetsInternalIngress(t *testing.T) {
 // matching common.ServiceFQDN, so this does not hand a host service a public
 // hostname (pulumi-defang#253).
 func TestBuildIngressHostPortStaysInternalInPublicNetwork(t *testing.T) {
-	ingress := buildIngress(compose.ServiceConfig{
+	ingress, err := buildIngress(compose.ServiceConfig{
 		Ports:    []compose.ServicePortConfig{{Target: 5432, Mode: compose.PortModeHost}},
 		Networks: defaultNet,
 	}, topLevelNets)
 
+	require.NoError(t, err)
 	require.NotNil(t, ingress)
 	assert.False(t, boolInputValue(t, ingress.External),
 		"host mode must not be externally exposed until public host exposure exists")
+}
+
+// TestBuildIngressHostOnlyMultiplePorts covers a service with several host
+// ports and no ingress port: the first becomes the main TCP ingress, the rest
+// become internal AdditionalPortMappings — all reachable by name and port.
+func TestBuildIngressHostOnlyMultiplePorts(t *testing.T) {
+	ingress, err := buildIngress(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{
+			{Target: 8080, Mode: compose.PortModeHost},
+			{Target: 9090, Mode: compose.PortModeHost},
+			{Target: 9091, Mode: compose.PortModeHost},
+		},
+		Networks: internalNet,
+	}, topLevelNets)
+
+	require.NoError(t, err)
+	require.NotNil(t, ingress)
+	assert.Equal(t, 8080, intInputValue(t, ingress.TargetPort))
+	assert.Equal(t, "tcp", stringPtrInputValue(t, ingress.Transport))
+	require.Len(t, ingress.AdditionalPortMappings, 2)
+	mappings := ingress.AdditionalPortMappings.(app.IngressPortMappingArray)
+	assert.Equal(t, 9090, intInputValue2(t, mappings[0].(app.IngressPortMappingArgs).TargetPort))
+	assert.Equal(t, 9091, intInputValue2(t, mappings[1].(app.IngressPortMappingArgs).TargetPort))
+}
+
+// TestBuildIngressRejectsUDPHostPort: Azure Container Apps ingress is TCP-only,
+// so a UDP host port must fail loudly rather than silently produce a broken
+// TCP ingress.
+func TestBuildIngressRejectsUDPHostPort(t *testing.T) {
+	_, err := buildIngress(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 53, Mode: compose.PortModeHost, Protocol: compose.PortProtocolUDP}},
+	}, topLevelNets)
+	require.Error(t, err)
+}
+
+// TestBuildIngressRejectsReservedPort: 36985 is reserved by the Container Apps
+// platform.
+func TestBuildIngressRejectsReservedPort(t *testing.T) {
+	_, err := buildIngress(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: reservedIngressPort, Mode: compose.PortModeHost}},
+	}, topLevelNets)
+	require.Error(t, err)
+}
+
+// TestBuildIngressRejectsTooManyHostPorts: Container Apps allows at most 5
+// ports beyond the main ingress.
+func TestBuildIngressRejectsTooManyHostPorts(t *testing.T) {
+	ports := make([]compose.ServicePortConfig, 0, 1+maxAdditionalIngressPorts+1)
+	ports = append(ports, compose.ServicePortConfig{Target: 8080, Mode: compose.PortModeHost})
+	for i := range maxAdditionalIngressPorts + 1 {
+		ports = append(ports, compose.ServicePortConfig{Target: int32(9000 + i), Mode: compose.PortModeHost})
+	}
+	_, err := buildIngress(compose.ServiceConfig{Ports: ports}, topLevelNets)
+	require.Error(t, err)
 }
 
 // TestBuildIngressExternalFollowsNetworks covers the ingress-mode matrix: the
@@ -68,11 +135,12 @@ func TestBuildIngressExternalFollowsNetworks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ingress := buildIngress(compose.ServiceConfig{
+			ingress, err := buildIngress(compose.ServiceConfig{
 				Ports:    []compose.ServicePortConfig{{Target: 80, Mode: compose.PortModeIngress}},
 				Networks: tt.svcNetworks,
 			}, tt.networks)
 
+			require.NoError(t, err)
 			require.NotNil(t, ingress)
 			assert.Equal(t, tt.wantExternal, boolInputValue(t, ingress.External))
 		})
@@ -82,13 +150,17 @@ func TestBuildIngressExternalFollowsNetworks(t *testing.T) {
 // TestBuildIngressNoPortsGetsNoIngress keeps the one case that must stay nil: a
 // worker with no published port is not reachable by anything.
 func TestBuildIngressNoPortsGetsNoIngress(t *testing.T) {
-	assert.Nil(t, buildIngress(compose.ServiceConfig{Networks: internalNet}, topLevelNets))
+	ingress, err := buildIngress(compose.ServiceConfig{Networks: internalNet}, topLevelNets)
+	require.NoError(t, err)
+	assert.Nil(t, ingress)
 }
 
-// TestBuildIngressPrefersIngressPortOverHostPort: a service asking for both is
-// asking to be load-balanced, and only an ingress port can be external.
-func TestBuildIngressPrefersIngressPortOverHostPort(t *testing.T) {
-	ingress := buildIngress(compose.ServiceConfig{
+// TestBuildIngressKeepsIngressPortAndMapsHostPort: a service with both an
+// ingress port and a host port keeps the ingress port as its (possibly
+// external) main ingress, but the host port must still get an internal
+// AdditionalPortMapping rather than being silently dropped — pulumi-defang#558.
+func TestBuildIngressKeepsIngressPortAndMapsHostPort(t *testing.T) {
+	ingress, err := buildIngress(compose.ServiceConfig{
 		Ports: []compose.ServicePortConfig{
 			{Target: 5432, Mode: compose.PortModeHost},
 			{Target: 80, Mode: compose.PortModeIngress},
@@ -96,9 +168,14 @@ func TestBuildIngressPrefersIngressPortOverHostPort(t *testing.T) {
 		Networks: defaultNet,
 	}, topLevelNets)
 
+	require.NoError(t, err)
 	require.NotNil(t, ingress)
 	assert.Equal(t, 80, intInputValue(t, ingress.TargetPort))
 	assert.True(t, boolInputValue(t, ingress.External))
+	require.Len(t, ingress.AdditionalPortMappings, 1, "the host port must still be reachable, not dropped")
+	mapping := ingress.AdditionalPortMappings.(app.IngressPortMappingArray)[0].(app.IngressPortMappingArgs)
+	assert.Equal(t, 5432, intInputValue2(t, mapping.TargetPort))
+	assert.False(t, boolInputValue2(t, mapping.External))
 }
 
 // buildIngress builds its args from plain literals, so the inputs are the
@@ -116,4 +193,35 @@ func intInputValue(t *testing.T, input pulumi.IntPtrInput) int {
 	i, ok := input.(pulumi.Int)
 	require.True(t, ok, "expected a pulumi.Int, got %T", input)
 	return int(i)
+}
+
+// intPtrInputValue reads back the value pulumi.IntPtr(v) wraps. pulumi.IntPtr's
+// concrete type is package-private, so this dereferences via reflection instead
+// of a type assertion (the same approach stringPtrInputValue uses below).
+func intPtrInputValue(t *testing.T, input pulumi.IntPtrInput) int {
+	t.Helper()
+	require.NotNil(t, input)
+
+	value := reflect.ValueOf(input)
+	require.Equal(t, reflect.Pointer, value.Kind())
+	require.False(t, value.IsNil())
+	require.Equal(t, reflect.Int, value.Elem().Kind())
+	return int(value.Elem().Int())
+}
+
+// intInputValue2/boolInputValue2 read the non-pointer Int/Bool inputs used by
+// IngressPortMappingArgs (TargetPort, External), as opposed to the *PtrInput
+// fields on IngressArgs itself.
+func intInputValue2(t *testing.T, input pulumi.IntInput) int {
+	t.Helper()
+	i, ok := input.(pulumi.Int)
+	require.True(t, ok, "expected a pulumi.Int, got %T", input)
+	return int(i)
+}
+
+func boolInputValue2(t *testing.T, input pulumi.BoolInput) bool {
+	t.Helper()
+	b, ok := input.(pulumi.Bool)
+	require.True(t, ok, "expected a pulumi.Bool, got %T", input)
+	return bool(b)
 }

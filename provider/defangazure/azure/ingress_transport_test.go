@@ -19,7 +19,7 @@ func TestBuildIngressSetsHttp2TransportForExplicitGrpcAndHttp2(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ingress := buildIngress(compose.ServiceConfig{
+			ingress, err := buildIngress(compose.ServiceConfig{
 				Ports: []compose.ServicePortConfig{{
 					Target:      3005,
 					Mode:        compose.PortModeIngress,
@@ -27,6 +27,7 @@ func TestBuildIngressSetsHttp2TransportForExplicitGrpcAndHttp2(t *testing.T) {
 				}},
 			}, nil)
 
+			require.NoError(t, err)
 			require.NotNil(t, ingress)
 			assert.Equal(t, "http2", stringPtrInputValue(t, ingress.Transport))
 		})
@@ -64,8 +65,9 @@ func TestBuildIngressPreservesDefaultTransport(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ingress := buildIngress(compose.ServiceConfig{Ports: []compose.ServicePortConfig{tt.port}}, nil)
+			ingress, err := buildIngress(compose.ServiceConfig{Ports: []compose.ServicePortConfig{tt.port}}, nil)
 
+			require.NoError(t, err)
 			require.NotNil(t, ingress)
 			assert.Nil(t, ingress.Transport)
 		})
