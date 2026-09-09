@@ -583,7 +583,14 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.Ing
 			External:    pulumi.Bool(false),
 			TargetPort:  pulumi.Int(main.Target),
 			ExposedPort: pulumi.IntPtr(int(main.Target)),
-			Transport:   pulumi.StringPtr(string(app.IngressTransportMethodTcp)),
+		}
+		// TCP is required for <name>:<port> addressing (pulumi-defang#558); Azure
+		// Container Apps ingress has no UDP transport, so a UDP host port is left
+		// without one, like the ingress-port branch above leaves it unset for its
+		// non-grpc/http2 case — the ARM API rejects it with its own error rather
+		// than this code mislabeling it as TCP.
+		if main.Protocol != compose.PortProtocolUDP {
+			ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodTcp))
 		}
 		extraHostPorts = hostPorts[1:]
 	}
@@ -605,9 +612,11 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.Ing
 // splitAzurePorts separates a service's ports into its (at most one) main
 // ingress port and its host-mode ports. TODO: support more than one ingress
 // port.
-func splitAzurePorts(svc compose.ServiceConfig) (*compose.ServicePortConfig, []compose.ServicePortConfig) {
-	var ingressPort *compose.ServicePortConfig
-	var hostPorts []compose.ServicePortConfig
+//
+//nolint:nonamedreturns // names document which slice is which at every call site
+func splitAzurePorts(svc compose.ServiceConfig) (
+	ingressPort *compose.ServicePortConfig, hostPorts []compose.ServicePortConfig,
+) {
 	for i, p := range svc.Ports {
 		switch {
 		case p.IsIngress() && ingressPort == nil:

@@ -81,6 +81,19 @@ func TestBuildIngressHostOnlyMultiplePorts(t *testing.T) {
 	assert.Equal(t, 9091, intInputValue2(t, mappings[1].(app.IngressPortMappingArgs).TargetPort))
 }
 
+// TestBuildIngressHostOnlyUDPPortLeavesTransportUnset: Azure Container Apps
+// ingress has no UDP transport, so a UDP host-only port must not be mislabeled
+// as TCP — leave Transport unset and let the ARM API reject it with its own
+// error, same as the non-grpc/http2 case in the ingress-port branch.
+func TestBuildIngressHostOnlyUDPPortLeavesTransportUnset(t *testing.T) {
+	ingress := buildIngress(compose.ServiceConfig{
+		Ports: []compose.ServicePortConfig{{Target: 53, Mode: compose.PortModeHost, Protocol: compose.PortProtocolUDP}},
+	}, topLevelNets)
+
+	require.NotNil(t, ingress)
+	assert.Nil(t, ingress.Transport)
+}
+
 // TestBuildIngressExternalFollowsNetworks covers the ingress-mode matrix: the
 // port mode asks for load-balanced exposure, the networks decide whether that
 // exposure is public.
