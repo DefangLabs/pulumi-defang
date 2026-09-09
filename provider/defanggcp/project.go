@@ -66,8 +66,9 @@ func (*Project) Construct(
 	childOpt := pulumi.Parent(comp)
 
 	// The engine gives Construct the plugin identity for our own package;
-	// children do not inherit it, so carry it to the Build registration.
-	pluginID := common.PluginIdentityFrom(Version, opts)
+	// children do not inherit it, so carry it to the Build registration. No
+	// version is pinned on purpose — see common.PluginIdentityFrom.
+	pluginID := common.PluginIdentityFrom(opts)
 
 	result, err := buildProject(ctx, name, inputs, pluginID, childOpt)
 	if err != nil {

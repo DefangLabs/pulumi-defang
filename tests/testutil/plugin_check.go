@@ -65,16 +65,22 @@ func (pt *PluginTracker) Records() []PluginRecord {
 }
 
 // AssertOwnCustomResourcesCarryPluginIdentity asserts that every CUSTOM
-// resource we register from one of our own packages tells the engine both
-// where to fetch the plugin from and which version of it to use.
+// resource we register from one of our own packages tells the engine where to
+// fetch the plugin from, and pins the version wantVersion — which for our own
+// registrations is "".
 //
 // Without the URL the engine synthesises a bare default provider and falls
 // back to github.com/pulumi/pulumi-<name>, which does not exist for our
-// packages. Without the version the checkpoint does not record which plugin
-// built the resource, so later operations resolve whatever is newest and pay
-// an unauthenticated GitHub API call to ask what "latest" is. Both faults are
-// invisible during an up and strand the stack on destroy. See
-// common.PluginIdentityFrom.
+// packages: invisible during an up, and it strands the stack on the first
+// operation that has to fetch the plugin.
+//
+// A version is the opposite problem. Pulumi resolves a versioned request by
+// exact match, so a pinned version is written into the checkpoint and can
+// afterwards only be served by a plugin of precisely that version — the build
+// that wrote it, or a GitHub release tagged with it. Every build except a
+// tagged release stamps a version that was never published (the Dockerfile's
+// 0.0.1 placeholder, a pulumictl pre-release string), so pinning one strands
+// the stack permanently. See common.PluginIdentityFrom.
 //
 // Component resources are exempt: the engine deletes them without loading a
 // plugin, so they never trigger the lookup.

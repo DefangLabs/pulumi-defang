@@ -183,14 +183,20 @@ func TestConstructAzureProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
 }
 
 // TestConstructAzureProjectBuildCarriesPluginIdentity asserts that the Build
-// resource the provider registers for itself tells the engine both where to
-// fetch the plugin from and which version of it to use. Registrations that go
-// through a generated SDK get both for free; the ones we make with a raw
-// ctx.RegisterResource do not, and omitting them strands the stack on destroy.
-// See common.PluginIdentityFrom.
+// resource the provider registers for itself tells the engine where to fetch
+// the plugin from, and that it pins no version. Registrations that go through a
+// generated SDK get the URL for free; the ones we make with a raw
+// ctx.RegisterResource do not, and omitting it strands the stack on any
+// operation run from a workspace whose plugin cache is empty.
+//
+// The version has to stay empty even when this build carries one. A pinned
+// version is recorded in the checkpoint and can afterwards only be resolved by
+// a plugin of exactly that version — which, for every build except a tagged
+// release, names a GitHub release that does not exist. See
+// common.PluginIdentityFrom.
 func TestConstructAzureProjectBuildCarriesPluginIdentity(t *testing.T) {
-	// Pin a version the way the linker does for a release build, so the
-	// assertion covers the version as well as the URL.
+	// Stamp a version the way the linker does, to prove it does not leak into
+	// the registration.
 	prev := defangazure.Version
 	defangazure.Version = "9.9.9"
 	t.Cleanup(func() { defangazure.Version = prev })
@@ -210,5 +216,5 @@ func TestConstructAzureProjectBuildCarriesPluginIdentity(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
+	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "")
 }
