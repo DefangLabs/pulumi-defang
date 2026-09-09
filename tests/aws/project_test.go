@@ -354,3 +354,44 @@ func TestConstructAwsProjectBuildCarriesPluginIdentity(t *testing.T) {
 
 	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "9.9.9")
 }
+
+// TestConstructAwsProjectPrivateZoneForcesDestroy pins forceDestroy on the
+// project's private hosted zone. The zone's records are not all Pulumi's to
+// delete — the route53 sidecar writes each task's A record straight through the
+// Route53 API — so without this a zone that Pulumi's state believes is empty
+// fails to delete with HostedZoneNotEmpty, taking the deploy down with it.
+func TestConstructAwsProjectPrivateZoneForcesDestroy(t *testing.T) {
+	// NewResourceF runs concurrently, so the capture is mutex-guarded.
+	var mu sync.Mutex
+	var zones []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:route53/zone:Zone" {
+				mu.Lock()
+				zones = append(zones, args.Inputs)
+				mu.Unlock()
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+		}),
+	})
+	require.NoError(t, err)
+
+	var private *property.Map
+	for i := range zones {
+		if zones[i].Get("vpcs").IsArray() { // the private zone is the VPC-attached one
+			private = &zones[i]
+			break
+		}
+	}
+	require.NotNil(t, private, "expected a VPC-attached private hosted zone")
+	assert.True(t, private.Get("forceDestroy").AsBool(),
+		"the private zone must force-destroy: the route53 sidecar writes records Pulumi cannot see")
+}

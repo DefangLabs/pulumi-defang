@@ -20,13 +20,27 @@ var (
 	// ConfigPath is the SSM path prefix ("/…/") for ${VAR} config resolution;
 	// empty means the default "/Defang/<project>/<stack>/". Lets deployments
 	// keep consuming parameters at a pre-existing path.
-	ConfigPath                = recipe.String("config-path", "")
-	CreateApexRecord          = recipe.Bool("create-apex-record", true)
-	DeletionProtection        = recipe.Bool("deletion-protection", false)
-	DeregistrationDelay       = recipe.Int("deregistration-delay", 0)
-	FargateCapacityProvider   = recipe.String("fargate-capacity-provider", "FARGATE_SPOT")
-	ForceDestroyBucket        = recipe.Bool("force-destroy-bucket", true)
-	ForceDestroyHostedzone    = recipe.Bool("force-destroy-hostedzone", false)
+	ConfigPath              = recipe.String("config-path", "")
+	CreateApexRecord        = recipe.Bool("create-apex-record", true)
+	DeletionProtection      = recipe.Bool("deletion-protection", false)
+	DeregistrationDelay     = recipe.Int("deregistration-delay", 0)
+	FargateCapacityProvider = recipe.String("fargate-capacity-provider", "FARGATE_SPOT")
+	ForceDestroyBucket      = recipe.Bool("force-destroy-bucket", true)
+	// ForceDestroyHostedzone deletes the records in the project's private hosted
+	// zone along with the zone itself. It must default true, because the zone's
+	// records are not all Pulumi's to delete: the route53 sidecar writes each
+	// task's A record directly through the Route53 API, so Pulumi's state can
+	// show an empty zone that Route53 refuses to delete with
+	// HostedZoneNotEmpty. ForceDestroy is the only thing reconciling that — the
+	// provider has no record sweep and the sidecar's shutdown deregistration is
+	// best-effort.
+	//
+	// The zone is internal and entirely provider-owned, so there is nothing of
+	// the user's to lose; ForceDestroyBucket above already defaults true for a
+	// resource that can hold user data. A production recipe that would rather
+	// leak the zone than have its records deleted can set this false, which is
+	// what the legacy TypeScript CD did via `forceDestroy: IS_DEV`.
+	ForceDestroyHostedzone    = recipe.Bool("force-destroy-hostedzone", true)
 	HealthCheckInterval       = recipe.Int("health-check-interval", 5)
 	HealthCheckThreshold      = recipe.Int("health-check-threshold", 2)
 	HttpRedirectToHttps       = recipe.String("http-redirect-to-https", "HTTP_302")
