@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail unless the version the examples now point at is really on the registries.
 
-Usage: check_sdks_published.py FILES_JSONL BRANCH
+Usage: check_sdks_published.py FILES_JSONL VERSION
 
 Which registries get checked follows the example directories the PR touched:
 examples/<cloud>-<language>/... . Go is skipped: the Go examples resolve through
@@ -21,13 +21,15 @@ import urllib.request
 ATTEMPTS = int(os.environ.get("SDK_CHECK_ATTEMPTS", "5"))
 DELAY = int(os.environ.get("SDK_CHECK_DELAY", "30"))
 
+# "exists": the URL is the version itself, so 200 means published and 404 does not.
+# "listed": NuGet has no per-version JSON endpoint, so read its index instead.
 REGISTRIES = {
-    "nodejs": ("npm", "https://registry.npmjs.org/@defang-io/pulumi-defang-{cloud}",
-               lambda d: list(d.get("versions", {}))),
-    "python": ("PyPI", "https://pypi.org/pypi/pulumi-defang-{cloud}/json",
-               lambda d: list(d.get("releases", {}))),
-    "dotnet": ("NuGet", "https://api.nuget.org/v3-flatcontainer/defanglabs.defang{cloud}/index.json",
-               lambda d: d.get("versions", [])),
+    "nodejs": ("npm", "exists",
+               "https://registry.npmjs.org/@defang-io/pulumi-defang-{cloud}/{version}"),
+    "python": ("PyPI", "exists",
+               "https://pypi.org/pypi/pulumi-defang-{cloud}/{version}/json"),
+    "dotnet": ("NuGet", "listed",
+               "https://api.nuget.org/v3-flatcontainer/defanglabs.defang{cloud}/index.json"),
 }
 
 
@@ -36,20 +38,26 @@ def fail(msg):
     sys.exit(1)
 
 
-def versions(url, extract):
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        return extract(json.load(resp))
+def published(url, kind, version):
+    """Return (published, why-not). Every failure is retried: a package can appear."""
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            if kind == "exists":
+                return True, None
+            listed = json.load(resp).get("versions", [])
+            return version in listed, f"{version} not listed yet"
+    except urllib.error.HTTPError as err:
+        return False, "not published yet" if err.code == 404 else str(err)
+    except (urllib.error.URLError, OSError, ValueError) as err:
+        return False, str(err)
 
 
-def check(name, url, extract, version):
+def check(name, url, kind, version):
     for attempt in range(1, ATTEMPTS + 1):
-        try:
-            if version in versions(url, extract):
-                print(f"  {name}: {version} published")
-                return
-            why = f"{version} not listed yet"
-        except (urllib.error.URLError, OSError, ValueError) as err:
-            why = str(err)
+        ok, why = published(url, kind, version)
+        if ok:
+            print(f"  {name}: {version} published")
+            return
         if attempt < ATTEMPTS:
             print(f"  {name}: {why}; retrying in {DELAY}s ({attempt}/{ATTEMPTS})")
             time.sleep(DELAY)
@@ -58,11 +66,10 @@ def check(name, url, extract, version):
 
 def main():
     if len(sys.argv) != 3:
-        fail("usage: check_sdks_published.py FILES_JSONL BRANCH")
-    version = re.fullmatch(r"chore/regenerate-examples-v(\d+\.\d+\.\d+)", sys.argv[2])
-    if not version:
-        fail(f"branch {sys.argv[2]!r} is not chore/regenerate-examples-vX.Y.Z")
-    version = version.group(1)
+        fail("usage: check_sdks_published.py FILES_JSONL VERSION")
+    version = sys.argv[2]
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        fail(f"{version!r} is not a plain X.Y.Z release version")
 
     with open(sys.argv[1]) as fh:
         paths = [json.loads(line)["filename"] for line in fh if line.strip()]
@@ -78,8 +85,8 @@ def main():
         if language not in REGISTRIES:
             print(f"  {cloud}-{language}: no registry check")
             continue
-        name, url, extract = REGISTRIES[language]
-        check(f"{name} {cloud}", url.format(cloud=cloud), extract, version)
+        name, kind, url = REGISTRIES[language]
+        check(f"{name} {cloud}", url.format(cloud=cloud, version=version), kind, version)
         checked += 1
 
     if not checked:

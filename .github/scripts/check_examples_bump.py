@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fail unless a regenerate-examples PR is only this release's version bump.
 
-Usage: check_examples_bump.py FILES_JSONL BRANCH
+Usage: check_examples_bump.py FILES_JSONL VERSION
 
-FILES_JSONL is one JSON object per line from the pulls/N/files API; BRANCH is the
-PR's head ref, `chore/regenerate-examples-vX.Y.Z`.
+FILES_JSONL is one JSON object per line from the pulls/N/files API; VERSION is the
+release the examples must now point at, X.Y.Z.
 """
 
 import json
@@ -21,11 +21,11 @@ def fail(msg):
     sys.exit(1)
 
 
-def version_from_branch(branch):
-    m = re.fullmatch(r"chore/regenerate-examples-v(\d+\.\d+\.\d+)", branch)
-    if not m:
-        fail(f"branch {branch!r} is not chore/regenerate-examples-vX.Y.Z")
-    return m.group(1)
+def checked_version(version):
+    # An empty or odd version would make the "line bumps to VERSION" test vacuous.
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        fail(f"{version!r} is not a plain X.Y.Z release version")
+    return version
 
 
 def check_patch(path, patch, version):
@@ -51,8 +51,8 @@ def check_patch(path, patch, version):
 
 def main():
     if len(sys.argv) != 3:
-        fail("usage: check_examples_bump.py FILES_JSONL BRANCH")
-    version = version_from_branch(sys.argv[2])
+        fail("usage: check_examples_bump.py FILES_JSONL VERSION")
+    version = checked_version(sys.argv[2])
 
     with open(sys.argv[1]) as fh:
         files = [json.loads(line) for line in fh if line.strip()]
