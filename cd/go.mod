@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang/cd
 
-go 1.25.11
+go 1.26.6
 
 replace (
 	github.com/DefangLabs/pulumi-defang => ../
@@ -31,7 +31,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.27.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.35.1
-	github.com/pulumi/pulumi/sdk/v3 v3.259.0
+	github.com/pulumi/pulumi/sdk/v3 v3.261.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sync v0.22.0
@@ -100,6 +100,7 @@ require (
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/compose-spec/compose-go/v2 v2.14.0 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
+	github.com/deckarep/golang-set/v2 v2.5.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/djherbis/times v1.5.0 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
