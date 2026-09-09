@@ -524,26 +524,54 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 	return pulumi.StringOutput{}, false
 }
 
+// buildIngress returns the Container Apps ingress for a service, or nil when the
+// service publishes no port at all.
+//
+// Container Apps has no equivalent of a direct host port: an app is reachable by
+// name — even from a sibling app in the same environment — only if it has an
+// ingress block. So a host-mode port must map to an INTERNAL ingress rather than
+// to no ingress, or the service gets no resolvable name and a sibling that
+// addresses it by service name fails DNS resolution outright.
+//
+// Port mode therefore selects the exposure type and networks decide visibility:
+//   - an ingress port is externally exposed when the service is in a public
+//     network, internal otherwise;
+//   - a host port is always internal. Host is treated as private transitionally,
+//     the same choice common.ServiceFQDN documents, so a default-network host
+//     service keeps an internal-only name until public host exposure is
+//     implemented (pulumi-defang#253). This deliberately does not give a
+//     default-network host service a public hostname.
 func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.IngressArgs {
-	if !svc.HasIngressPorts() {
+	publishedPort, ok := azureIngressPort(svc)
+	if !ok {
 		return nil
 	}
-	var ingressPort compose.ServicePortConfig
-	for _, p := range svc.Ports {
-		if p.IsIngress() {
-			ingressPort = p
-			break // TODO: support more than one ingress port
-		}
-	}
 	ingress := &app.IngressArgs{
-		External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
-		TargetPort: pulumi.Int(ingressPort.Target),
+		External:   pulumi.Bool(svc.HasIngressPorts() && common.InPublicNetwork(networks, svc)),
+		TargetPort: pulumi.Int(publishedPort.Target),
 	}
-	if ingressPort.AppProtocol == compose.PortAppProtocolGRPC ||
-		ingressPort.AppProtocol == compose.PortAppProtocolHTTP2 {
+	if publishedPort.AppProtocol == compose.PortAppProtocolGRPC ||
+		publishedPort.AppProtocol == compose.PortAppProtocolHTTP2 {
 		ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodHttp2))
 	}
 	return ingress
+}
+
+// azureIngressPort picks the single port a Container App publishes. Ingress ports
+// win over host ports: a service with both is asking to be load-balanced, and
+// only ingress can be external. Returns false when the service publishes nothing.
+func azureIngressPort(svc compose.ServiceConfig) (compose.ServicePortConfig, bool) {
+	for _, p := range svc.Ports {
+		if p.IsIngress() {
+			return p, true // TODO: support more than one ingress port
+		}
+	}
+	for _, p := range svc.Ports {
+		if p.IsHost() {
+			return p, true
+		}
+	}
+	return compose.ServicePortConfig{}, false
 }
 
 // buildProbes returns the liveness probe(s) for a Container App.
