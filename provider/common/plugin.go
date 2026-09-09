@@ -1,6 +1,10 @@
 package common
 
-import "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+import (
+	"strings"
+
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
 
 // PluginDownloadURL is where Pulumi fetches this plugin from when it is not
 // already in the local plugin cache. Each provider's schema metadata publishes
@@ -61,7 +65,7 @@ type PluginIdentity struct {
 // neighbouring aws:/gcp:/azure: resource would send the engine looking for
 // that provider at our version.
 func PluginIdentityFrom(fallbackVersion string, opts ...pulumi.ResourceOption) PluginIdentity {
-	id := PluginIdentity{DownloadURL: PluginDownloadURL, Version: fallbackVersion}
+	id := PluginIdentity{DownloadURL: PluginDownloadURL, Version: pulumiPluginVersion(fallbackVersion)}
 	snapshot, err := pulumi.NewResourceOptions(opts...)
 	if err != nil {
 		// Malformed options are the caller's problem and will resurface at
@@ -72,9 +76,18 @@ func PluginIdentityFrom(fallbackVersion string, opts ...pulumi.ResourceOption) P
 		id.DownloadURL = snapshot.PluginDownloadURL
 	}
 	if snapshot.Version != "" {
-		id.Version = snapshot.Version
+		id.Version = pulumiPluginVersion(snapshot.Version)
 	}
 	return id
+}
+
+// pulumiPluginVersion converts a Git tag-shaped version to the semver string
+// expected by pulumi.Version. Release builds inject tags such as "v2.7.1";
+// passing that prefix through makes the engine's strict parser reject the
+// child resource registration with "Invalid character(s) found in major
+// number \"v2\"".
+func pulumiPluginVersion(version string) string {
+	return strings.TrimPrefix(version, "v")
 }
 
 // ResourceOptions prefixes opts with this identity, for registering one of our
