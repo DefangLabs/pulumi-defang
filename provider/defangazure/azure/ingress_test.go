@@ -29,7 +29,7 @@ func TestBuildIngressHostPortGetsInternalIngress(t *testing.T) {
 	}, topLevelNets)
 
 	require.NotNil(t, ingress, "a host port must still get an ingress, or the service has no resolvable name")
-	assert.Equal(t, false, boolInputValue(t, ingress.External))
+	assert.False(t, boolInputValue(t, ingress.External))
 	assert.Equal(t, 8080, intInputValue(t, ingress.TargetPort))
 }
 
@@ -44,7 +44,7 @@ func TestBuildIngressHostPortStaysInternalInPublicNetwork(t *testing.T) {
 	}, topLevelNets)
 
 	require.NotNil(t, ingress)
-	assert.Equal(t, false, boolInputValue(t, ingress.External),
+	assert.False(t, boolInputValue(t, ingress.External),
 		"host mode must not be externally exposed until public host exposure exists")
 }
 
@@ -98,7 +98,7 @@ func TestBuildIngressPrefersIngressPortOverHostPort(t *testing.T) {
 
 	require.NotNil(t, ingress)
 	assert.Equal(t, 80, intInputValue(t, ingress.TargetPort))
-	assert.Equal(t, true, boolInputValue(t, ingress.External))
+	assert.True(t, boolInputValue(t, ingress.External))
 }
 
 // buildIngress builds its args from plain literals, so the inputs are the
