@@ -581,6 +581,16 @@ func buildIngress(svc compose.ServiceConfig, networks compose.Networks) (*app.In
 			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
 			return nil, fmt.Errorf("port %d: reserved by Azure Container Apps and cannot be used", p.Target)
 		}
+		if p.Target == 80 || p.Target == 443 {
+			// Azure rejects 80/443 as a TCP ingress ExposedPort even for internal-only
+			// ingress: those ports are reserved for the environment's own HTTP/HTTPS
+			// ingress handler (Ingress overview, ms.date 2025-05-02).
+			//nolint:err113 // the port is caller-supplied compose data, not a fixed sentinel case
+			return nil, fmt.Errorf(
+				"port %d: Azure Container Apps rejects 80 and 443 as a TCP exposed port; use another port for mode: host",
+				p.Target,
+			)
+		}
 	}
 
 	var ingress *app.IngressArgs

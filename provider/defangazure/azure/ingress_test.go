@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -101,6 +102,20 @@ func TestBuildIngressRejectsReservedPort(t *testing.T) {
 		Ports: []compose.ServicePortConfig{{Target: reservedIngressPort, Mode: compose.PortModeHost}},
 	}, topLevelNets)
 	require.Error(t, err)
+}
+
+// TestBuildIngressRejectsPort80And443AsHostPort: Azure rejects 80/443 as a TCP
+// ingress ExposedPort even internally — they're reserved for the environment's
+// own HTTP/HTTPS ingress handler.
+func TestBuildIngressRejectsPort80And443AsHostPort(t *testing.T) {
+	for _, port := range []int32{80, 443} {
+		t.Run(fmt.Sprintf("port %d", port), func(t *testing.T) {
+			_, err := buildIngress(compose.ServiceConfig{
+				Ports: []compose.ServicePortConfig{{Target: port, Mode: compose.PortModeHost}},
+			}, topLevelNets)
+			require.Error(t, err)
+		})
+	}
 }
 
 // TestBuildIngressRejectsTooManyHostPorts: Container Apps allows at most 5
