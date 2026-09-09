@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang
 
-go 1.25.11
+go 1.26.6
 
 replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 
@@ -44,7 +44,7 @@ require (
 	github.com/pulumi/pulumi-go-provider v1.6.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.1
 	github.com/pulumi/pulumi/pkg/v3 v3.259.0
-	github.com/pulumi/pulumi/sdk/v3 v3.259.0
+	github.com/pulumi/pulumi/sdk/v3 v3.261.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.293.0
 	google.golang.org/grpc v1.83.2
