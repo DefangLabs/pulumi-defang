@@ -20,13 +20,16 @@ var (
 	// ConfigPath is the SSM path prefix ("/…/") for ${VAR} config resolution;
 	// empty means the default "/Defang/<project>/<stack>/". Lets deployments
 	// keep consuming parameters at a pre-existing path.
-	ConfigPath                = recipe.String("config-path", "")
-	CreateApexRecord          = recipe.Bool("create-apex-record", true)
-	DeletionProtection        = recipe.Bool("deletion-protection", false)
-	DeregistrationDelay       = recipe.Int("deregistration-delay", 0)
-	FargateCapacityProvider   = recipe.String("fargate-capacity-provider", "FARGATE_SPOT")
-	ForceDestroyBucket        = recipe.Bool("force-destroy-bucket", true)
-	ForceDestroyHostedzone    = recipe.Bool("force-destroy-hostedzone", false)
+	ConfigPath              = recipe.String("config-path", "")
+	CreateApexRecord        = recipe.Bool("create-apex-record", true)
+	DeletionProtection      = recipe.Bool("deletion-protection", false)
+	DeregistrationDelay     = recipe.Int("deregistration-delay", 0)
+	FargateCapacityProvider = recipe.String("fargate-capacity-provider", "FARGATE_SPOT")
+	ForceDestroyBucket      = recipe.Bool("force-destroy-bucket", true)
+	// ForceDestroyHostedzone must default true: the route53 sidecar writes A
+	// records outside Pulumi's state, so Route53 refuses to delete a zone
+	// Pulumi believes is empty. See PR #556 for the full rationale.
+	ForceDestroyHostedzone    = recipe.Bool("force-destroy-hostedzone", true)
 	HealthCheckInterval       = recipe.Int("health-check-interval", 5)
 	HealthCheckThreshold      = recipe.Int("health-check-threshold", 2)
 	HttpRedirectToHttps       = recipe.String("http-redirect-to-https", "HTTP_302")
