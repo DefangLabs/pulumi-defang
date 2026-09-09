@@ -40,7 +40,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.27.0
-	github.com/pulumi/pulumi-gcp/sdk/v9 v9.35.1
+	github.com/pulumi/pulumi-gcp/sdk/v9 v9.36.0
 	github.com/pulumi/pulumi-go-provider v1.6.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.1
 	github.com/pulumi/pulumi/pkg/v3 v3.259.0
