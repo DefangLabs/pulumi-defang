@@ -19,7 +19,7 @@ require (
 	github.com/DefangLabs/defang/src v0.0.0-20260903213614-b3aaa2b11a9e
 	github.com/aws/aws-sdk-go-v2/config v1.32.39
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.76.0
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.90.4
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.94.0
 	github.com/aws/smithy-go v1.28.1
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/compose-spec/compose-go/v2 v2.14.0
