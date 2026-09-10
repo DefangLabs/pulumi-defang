@@ -234,14 +234,18 @@ func TestConstructAzureProjectServicePoliciesHonorScope(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	// Both predicates also match on the role, so an unrelated grant made by
+	// the shared infra (Key Vault, ACR) cannot stand in for either entry.
 	wide := findTypeWhere(records, "azure-native:authorization:RoleAssignment", func(m property.Map) bool {
-		return m.Get("scope").AsString() == "/subscriptions/"+subID
+		return m.Get("roleDefinitionId").AsString() == roleDefID &&
+			m.Get("scope").AsString() == "/subscriptions/"+subID
 	})
 	require.NotNil(t, wide, "expected a subscription-scoped RoleAssignment for the @subscription entry")
 
 	narrow := findTypeWhere(records, "azure-native:authorization:RoleAssignment", func(m property.Map) bool {
 		scope := m.Get("scope").AsString()
-		return scope != "/subscriptions/"+subID && strings.Contains(scope, "/resourceGroups/")
+		return m.Get("roleDefinitionId").AsString() == roleDefID &&
+			scope != "/subscriptions/"+subID && strings.Contains(scope, "/resourceGroups/")
 	})
 	require.NotNil(t, narrow, "expected the unscoped entry to stay on the project resource group")
 

@@ -44,7 +44,10 @@ const (
 // SplitPolicyScope splits "ROLE@SCOPE" into the role and the scope. An entry
 // with no separator yields an empty scope, which the provider reads as its own
 // default (on Azure, the project's resource group). Splits at the LAST
-// separator, so a custom role whose own name contains one still parses.
+// separator, so a scoped custom role whose own name contains one still parses
+// ("team@corp reader@subscription"). An unscoped Azure role whose name
+// contains "@" cannot be written as a bare name — it would read as a scope —
+// so name it by its full role-definition ID instead.
 func SplitPolicyScope(entry string) (string, string) {
 	if i := strings.LastIndex(entry, PolicyScopeSeparator); i >= 0 {
 		return entry[:i], entry[i+len(PolicyScopeSeparator):]
@@ -111,16 +114,19 @@ func NormalizePolicies(entries []string) []string {
 // current cloud.
 func ClassifyPolicy(entry string) PolicyCloud {
 	switch {
-	case strings.Contains(entry, PolicyScopeSeparator):
-		// Only Azure takes a scope, so the suffix identifies the cloud on its
-		// own — including for a bare role name that would otherwise be "any".
-		return PolicyCloudAzure
 	case strings.HasPrefix(entry, "arn:"):
 		return PolicyCloudAWS
 	case strings.HasPrefix(entry, "roles/"),
 		strings.HasPrefix(entry, "projects/"),
 		strings.HasPrefix(entry, "organizations/"):
 		return PolicyCloudGCP
+	case strings.Contains(entry, PolicyScopeSeparator):
+		// Only Azure takes a scope, so the separator identifies the cloud on
+		// its own — including for a bare role name that would otherwise be
+		// "any". Checked after the qualified AWS and GCP forms, because an AWS
+		// policy name may itself contain "@" (IAM's PolicyName pattern is
+		// [\w+=,.@-]+), which would otherwise read as an Azure scope.
+		return PolicyCloudAzure
 	case strings.HasPrefix(entry, "/"):
 		// Azure role-definition resource IDs: /subscriptions/… or /providers/…
 		return PolicyCloudAzure
@@ -141,14 +147,17 @@ func ValidatePolicies(cloud PolicyCloud, policies []string) error {
 			return fmt.Errorf("x-defang-policies entry %q has an unresolved variable: %w",
 				entry, ErrPolicyUnresolvedVariable)
 		}
-		if c := ClassifyPolicy(entry); c != cloud && c != PolicyCloudAny {
+		c := ClassifyPolicy(entry)
+		if c != cloud && c != PolicyCloudAny {
 			return fmt.Errorf("x-defang-policies entry %q is a %s identifier but this deployment targets %s: %w",
 				entry, c, cloud, ErrPolicyForeignCloud)
 		}
-		if strings.Contains(entry, PolicyScopeSeparator) {
-			// The scope keywords themselves are the provider's to know; only
-			// the shape is checked here. Which scope a role may be granted at
-			// is the cloud's own answer, reported when the grant is made.
+		if c == PolicyCloudAzure && strings.Contains(entry, PolicyScopeSeparator) {
+			// Only an entry whose "@" is a scope separator — not an AWS policy
+			// name that happens to contain one. The scope keywords themselves
+			// are the provider's to know; only the shape is checked here.
+			// Which scope a role may be granted at is the cloud's own answer,
+			// reported when the grant is made.
 			if role, scope := SplitPolicyScope(entry); role == "" || scope == "" {
 				return fmt.Errorf("x-defang-policies entry %q: %w", entry, ErrPolicyMalformedScope)
 			}

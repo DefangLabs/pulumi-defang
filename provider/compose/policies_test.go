@@ -26,6 +26,10 @@ func TestClassifyPolicy(t *testing.T) {
 		// for a role name that would otherwise be "any".
 		{"Contributor@subscription", PolicyCloudAzure},
 		{"deployer@/subscriptions/sub-id/resourceGroups/rg", PolicyCloudAzure},
+		// …but a qualified identifier wins over it: IAM's PolicyName pattern
+		// ([\w+=,.@-]+) allows "@", so an ARN carrying one is still AWS.
+		{"arn:aws:iam::123456789012:policy/team@corp", PolicyCloudAWS},
+		{"projects/my-proj/roles/team@corp", PolicyCloudGCP},
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, ClassifyPolicy(tt.entry), "entry %q", tt.entry)
@@ -91,6 +95,16 @@ func TestValidatePolicies(t *testing.T) {
 	require.ErrorContains(t, err, "ROLE@SCOPE")
 	err = ValidatePolicies(PolicyCloudAzure, []string{"@subscription"})
 	require.ErrorContains(t, err, "ROLE@SCOPE")
+
+	// An AWS policy name containing "@" is not a scoped entry: it must pass on
+	// AWS (in both spellings, including the one that looks half-written) and
+	// stay a foreign identifier on Azure.
+	require.NoError(t, ValidatePolicies(PolicyCloudAWS, []string{
+		"arn:aws:iam::123456789012:policy/team@corp",
+		"arn:aws:iam::123456789012:policy/team@",
+	}))
+	err = ValidatePolicies(PolicyCloudAzure, []string{"arn:aws:iam::123456789012:policy/team@corp"})
+	require.ErrorContains(t, err, "aws identifier")
 }
 
 func TestSplitPolicyScope(t *testing.T) {
