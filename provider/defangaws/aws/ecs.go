@@ -537,8 +537,8 @@ func CreateECSService(
 		// literals by now — compose variables were interpolated before the
 		// project reached the provider — so anything unresolved or qualified
 		// for a different cloud is a hard error.
-		policies := compose.NormalizePolicies(svc.Policies)
-		if err := compose.ValidatePolicies(compose.PolicyCloudAWS, policies); err != nil {
+		policies, err := ParsePolicies(svc.Policies)
+		if err != nil {
 			return nil, fmt.Errorf("service %s: %w", serviceName, err)
 		}
 		// Dedup repeated entries: the attachment URN embeds policyName(policy),

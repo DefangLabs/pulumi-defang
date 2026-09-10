@@ -1253,8 +1253,8 @@ func TestConstructGcpProjectRejectsForeignPolicies(t *testing.T) {
 			})),
 		}),
 	})
-	require.ErrorContains(t, err, "aws identifier")
-	require.ErrorContains(t, err, "targets gcp")
+	require.ErrorContains(t, err, "a GCP role is")
+	require.ErrorContains(t, err, "${VAR}")
 }
 
 func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing.T) {

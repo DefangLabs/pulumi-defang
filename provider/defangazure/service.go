@@ -144,10 +144,10 @@ func createContainerApp(
 	dnsZones map[string]string,
 ) error {
 	// Entries a stack leaves empty ("${EXTRA:-}") normalize away, so a compose
-	// file parameterized per stack still deploys here; a foreign-cloud
-	// literal gets the validation error (with the ${VAR} hint).
-	policies := compose.NormalizePolicies(svc.Policies)
-	if err := compose.ValidatePolicies(compose.PolicyCloudAzure, policies); err != nil {
+	// file parameterized per stack still deploys here; one that is not an
+	// Azure identifier gets the parse error (with the ${VAR} hint).
+	policies, err := azure.ParsePolicies(svc.Policies)
+	if err != nil {
 		return fmt.Errorf("service %s: %w", serviceName, err)
 	}
 	policyIdentity, err := azure.CreatePolicyIdentity(ctx, serviceName, policies, infra, pulumi.Parent(comp))

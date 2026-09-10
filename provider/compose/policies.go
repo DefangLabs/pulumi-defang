@@ -8,37 +8,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var (
-	// ErrPolicyUnresolvedVariable rejects entries still containing `${…}`:
-	// compose variables are interpolated before the project reaches the
-	// provider (a CLI concern, e.g. from the stack's env files), and `defang
-	// config` is deliberately not supported for policies.
-	ErrPolicyUnresolvedVariable = errors.New(
-		"policy variables must be resolved when the compose file is loaded; " +
-			"`defang config` is not supported for policies")
-	// ErrPolicyForeignCloud rejects an identifier whose syntax belongs to a
-	// different cloud: there is no cross-cloud filtering.
-	ErrPolicyForeignCloud = errors.New(
-		"use a ${VAR} entry whose per-stack value carries the identifier for the targeted cloud")
-)
-
-// PolicyCloud identifies which cloud an x-defang-policies entry targets.
-type PolicyCloud string
-
-const (
-	PolicyCloudAWS   PolicyCloud = "aws"
-	PolicyCloudGCP   PolicyCloud = "gcp"
-	PolicyCloudAzure PolicyCloud = "azure"
-	// PolicyCloudAny is a bare name: a custom policy/role in the current
-	// account/project, applicable on whichever cloud is being deployed.
-	PolicyCloudAny PolicyCloud = "any"
-)
+// ErrPolicyUnresolvedVariable rejects entries still containing `${…}`:
+// compose variables are interpolated before the project reaches the
+// provider (a CLI concern, e.g. from the stack's env files), and `defang
+// config` is deliberately not supported for policies.
+var ErrPolicyUnresolvedVariable = errors.New(
+	"policy variables must be resolved when the compose file is loaded; " +
+		"`defang config` is not supported for policies")
 
 // PolicyList holds x-defang-policies entries. In YAML it accepts a sequence
 // or a single scalar, and entries may hold several comma-separated
 // identifiers — so one `${VAR}` interpolated at compose-load time can carry
 // a variable-length list. Empty entries (a "${VAR:-}" the stack leaves
 // unset) are dropped.
+//
+// What an entry means is the target cloud's business: each provider parses
+// x-defang-policies in its own package (aws.ParsePolicies,
+// gcp.ParsePolicies, azure.ParsePolicies), because a policy identifier is
+// cloud-specific and nothing here can say which cloud a bare name belongs
+// to. This file holds only what is true of every cloud: the YAML shape, and
+// that an entry must be a literal by the time a provider sees it.
 type PolicyList []string
 
 // UnmarshalYAML accepts `x-defang-policies: ${POLICIES}` (scalar) in addition
@@ -75,42 +64,27 @@ func NormalizePolicies(entries []string) []string {
 	return out
 }
 
-// ClassifyPolicy determines the target cloud of an x-defang-policies entry
-// from its qualified form: AWS ARNs, GCP role names, and Azure resource IDs
-// are self-identifying; anything else is a bare name that resolves on the
-// current cloud.
-func ClassifyPolicy(entry string) PolicyCloud {
-	switch {
-	case strings.HasPrefix(entry, "arn:"):
-		return PolicyCloudAWS
-	case strings.HasPrefix(entry, "roles/"),
-		strings.HasPrefix(entry, "projects/"),
-		strings.HasPrefix(entry, "organizations/"):
-		return PolicyCloudGCP
-	case strings.HasPrefix(entry, "/"):
-		// Azure role-definition resource IDs: /subscriptions/… or /providers/…
-		return PolicyCloudAzure
-	}
-	return PolicyCloudAny
-}
-
-// ValidatePolicies rejects x-defang-policies entries that cannot apply on the
-// given cloud. Entries must be literals by the time they reach the provider:
-// compose variables are interpolated at compose-load time — by the CLI, not
-// by the CD/providers — and `defang config` is deliberately not supported
-// for policies, so an unresolved variable is an error, as is an identifier
-// whose syntax belongs to a different cloud (there is no cross-cloud
-// filtering; vary the variable's per-stack value instead).
-func ValidatePolicies(cloud PolicyCloud, policies []string) error {
+// NormalizeLiteralPolicies normalizes entries and rejects any that is not a
+// literal. Every provider's own ParsePolicies starts here, because compose
+// interpolation is a property of the compose file rather than of any cloud:
+// variables are substituted at compose-load time by the CLI, not by the
+// CD/providers, so a `${…}` still present means the stack had no value for
+// it and the deployment would otherwise attach a policy named after the
+// variable.
+func NormalizeLiteralPolicies(entries []string) ([]string, error) {
+	policies := NormalizePolicies(entries)
 	for _, entry := range policies {
 		if strings.Contains(entry, "${") {
-			return fmt.Errorf("x-defang-policies entry %q has an unresolved variable: %w",
+			return nil, fmt.Errorf("x-defang-policies entry %q has an unresolved variable: %w",
 				entry, ErrPolicyUnresolvedVariable)
 		}
-		if c := ClassifyPolicy(entry); c != cloud && c != PolicyCloudAny {
-			return fmt.Errorf("x-defang-policies entry %q is a %s identifier but this deployment targets %s: %w",
-				entry, c, cloud, ErrPolicyForeignCloud)
-		}
 	}
-	return nil
+	return policies, nil
 }
+
+// PolicyVarHint is the tail of a provider's "this is not one of mine" error.
+// A single compose file can target several clouds, and the entries that do
+// not apply to all of them belong in a variable whose per-stack value carries
+// the right identifier — there is no cross-cloud filtering of a literal list.
+const PolicyVarHint = "; a compose file deployed to more than one cloud should carry " +
+	"cloud-specific policies in a ${VAR} whose per-stack value is the identifier for that cloud"

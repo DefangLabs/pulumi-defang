@@ -232,8 +232,8 @@ func TestConstructAwsProjectRejectsForeignPolicies(t *testing.T) {
 			})),
 		}),
 	})
-	require.ErrorContains(t, err, "gcp identifier")
-	require.ErrorContains(t, err, "targets aws")
+	require.ErrorContains(t, err, "is a full ARN")
+	require.ErrorContains(t, err, "${VAR}")
 }
 
 func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {

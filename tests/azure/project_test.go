@@ -6,6 +6,7 @@ package azure
 // App, Postgres, etc.) lives in their own dedicated test files.
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -123,8 +124,8 @@ func TestConstructAzureProjectRejectsForeignPolicies(t *testing.T) {
 		}),
 	})
 
-	require.ErrorContains(t, err, "aws identifier")
-	require.ErrorContains(t, err, "targets azure")
+	require.ErrorContains(t, err, "an Azure policy is")
+	require.ErrorContains(t, err, "${VAR}")
 }
 
 func TestConstructAzureProjectEmptyPoliciesDeploy(t *testing.T) {
@@ -180,6 +181,77 @@ func TestConstructAzureProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
 		return m.Get("roleDefinitionId").AsString() == roleDefID
 	})
 	require.NotNil(t, found, "expected a RoleAssignment for the x-defang-policies entry")
+}
+
+// TestConstructAzureProjectServicePoliciesHonorScope covers the scope half of
+// an x-defang-policies entry: `ROLE@subscription` is granted at the whole
+// subscription, an entry with no scope keeps landing on the project's resource
+// group, and both grants go to the same service identity. This is what a
+// service that manages resources outside its own project needs — creating a
+// resource group is a write at subscription scope (DefangLabs/station#41).
+func TestConstructAzureProjectServicePoliciesHonorScope(t *testing.T) {
+	const (
+		roleDefID = "/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/deployer-guid"
+		subID     = "0000-1111-2222"
+	)
+
+	var mu sync.Mutex
+	var records []resourceRecord
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
+			records = append(records, resourceRecord{
+				typ:    string(args.TypeToken),
+				name:   args.Name,
+				inputs: args.Inputs,
+			})
+			mu.Unlock()
+			// The subscription is read off the project resource group's own
+			// ARM ID, so this mock has to answer with one — collectResources
+			// returns the resource's name as its ID, which has no
+			// subscription in it.
+			if string(args.TypeToken) == "azure-native:resources:ResourceGroup" {
+				return "/subscriptions/" + subID + "/resourceGroups/" + args.Name, args.Inputs, nil
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"redeployer": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("defangio/cli:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(roleDefID + "@subscription"),
+					property.New(roleDefID),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Both predicates also match on the role, so an unrelated grant made by
+	// the shared infra (Key Vault, ACR) cannot stand in for either entry.
+	wide := findTypeWhere(records, "azure-native:authorization:RoleAssignment", func(m property.Map) bool {
+		return m.Get("roleDefinitionId").AsString() == roleDefID &&
+			m.Get("scope").AsString() == "/subscriptions/"+subID
+	})
+	require.NotNil(t, wide, "expected a subscription-scoped RoleAssignment for the @subscription entry")
+
+	narrow := findTypeWhere(records, "azure-native:authorization:RoleAssignment", func(m property.Map) bool {
+		scope := m.Get("scope").AsString()
+		return m.Get("roleDefinitionId").AsString() == roleDefID &&
+			scope != "/subscriptions/"+subID && strings.Contains(scope, "/resourceGroups/")
+	})
+	require.NotNil(t, narrow, "expected the unscoped entry to stay on the project resource group")
+
+	// One identity, both grants: the scope widens the reach of a role, it does
+	// not split the service into two principals.
+	require.Equal(t, wide.inputs.Get("principalId").AsString(), narrow.inputs.Get("principalId").AsString())
 }
 
 // TestConstructAzureProjectBuildCarriesPluginIdentity asserts that the Build

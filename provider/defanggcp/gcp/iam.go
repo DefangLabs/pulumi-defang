@@ -1,11 +1,63 @@
 package gcp
 
 import (
+	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+// ErrPolicyNotGCP rejects an x-defang-policies entry that cannot be a GCP
+// role name.
+var ErrPolicyNotGCP = errors.New(
+	"a GCP role is `roles/…`, `projects/…/roles/…`, `organizations/…/roles/…`, " +
+		"or the bare ID of a custom role in this project")
+
+// gcpRoleID matches the ID half of a role name: a GCP role ID holds letters,
+// digits, "_" and "." and nothing else, which is what makes another cloud's
+// identifier recognizable as not-a-role here.
+var gcpRoleID = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
+
+// isGCPRole reports whether policy is a role this deployment could bind:
+// a predefined `roles/<id>`, a custom `projects/<project>/roles/<id>` or
+// `organizations/<org>/roles/<id>`, or the bare `<id>` of a custom role in
+// the deployment's own project. Whether the role exists is IAM's answer, not
+// this function's; the shape is ours, because a value that is not a role
+// name at all would otherwise be bound as one.
+func isGCPRole(policy string) bool {
+	parts := strings.Split(policy, "/")
+	switch {
+	case len(parts) == 1: // bare custom-role ID
+		return gcpRoleID.MatchString(parts[0])
+	case len(parts) == 2: // roles/<id>
+		return parts[0] == "roles" && gcpRoleID.MatchString(parts[1])
+	case len(parts) == 4: // projects|organizations/<parent>/roles/<id>
+		return (parts[0] == "projects" || parts[0] == "organizations") &&
+			parts[1] != "" && parts[2] == "roles" && gcpRoleID.MatchString(parts[3])
+	}
+	return false
+}
+
+// ParsePolicies normalizes x-defang-policies for a GCP deployment and rejects
+// what GCP cannot name — most often another cloud's identifier, in a compose
+// file deployed to several.
+func ParsePolicies(entries []string) ([]string, error) {
+	policies, err := compose.NormalizeLiteralPolicies(entries)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range policies {
+		if !isGCPRole(policy) {
+			return nil, fmt.Errorf("x-defang-policies entry %q: %w%s",
+				policy, ErrPolicyNotGCP, compose.PolicyVarHint)
+		}
+	}
+	return policies, nil
+}
 
 // ResolvePolicyRole turns an x-defang-policies entry into an IAM role name for
 // a project-level binding. Qualified names (`roles/…`, `projects/…/roles/…`,
