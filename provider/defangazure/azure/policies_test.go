@@ -94,6 +94,23 @@ func TestParsePolicies(t *testing.T) {
 	require.ErrorIs(t, err, compose.ErrPolicyUnresolvedVariable)
 }
 
+// TestPolicyGrantString checks that a grant reconstructs the compose entry it
+// was parsed from: the errors raised while granting name it with %q, and the
+// value the author wrote is more useful there than the struct.
+func TestPolicyGrantString(t *testing.T) {
+	assert.Equal(t, "Contributor", PolicyGrant{Role: "Contributor"}.String())
+	assert.Equal(t, "Contributor@subscription",
+		PolicyGrant{Role: "Contributor", Scope: "subscription"}.String())
+	assert.Equal(t, "Reader@/subscriptions/sub/resourceGroups/rg",
+		PolicyGrant{Role: "Reader", Scope: "/subscriptions/sub/resourceGroups/rg"}.String())
+
+	// Round-trips through the parser, which is what makes the reconstruction
+	// worth trusting in an error message.
+	grants, err := ParsePolicies([]string{"Contributor@subscription"})
+	require.NoError(t, err)
+	assert.Equal(t, "Contributor@subscription", grants[0].String())
+}
+
 // TestSubscriptionScope checks the reduction of a resource group's own ARM ID
 // to the subscription scope above it — the source of the `subscription`
 // keyword's scope, chosen so no stack config has to be set for it to be right.

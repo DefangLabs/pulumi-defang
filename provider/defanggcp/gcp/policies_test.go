@@ -25,13 +25,22 @@ func TestParsePolicies(t *testing.T) {
 		"deployer",
 	}, got)
 
-	// A bare role ID holds letters, digits, "_" and "." only, so an
-	// identifier belonging to another cloud is rejected here rather than
-	// resolved into "projects/<proj>/roles/<other cloud's ARN>".
+	// A role ID holds letters, digits, "_" and "." only, and a qualified
+	// name is one of exactly three shapes — so anything else is rejected
+	// here rather than resolved into "projects/<proj>/roles/<not a role>".
 	for _, entry := range []string{
 		"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
 		"/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/x",
 		"Contributor@/subscriptions/sub/resourceGroups/rg",
+		// An Azure scope suffix holds no "/" or ":", so the shape of the ID
+		// itself is what rules it out rather than a stray character.
+		"Contributor@subscription",
+		// Prefix-only values that are not role paths: a bare prefix match
+		// would have let these through to be bound as roles.
+		"projects/my-proj",
+		"roles/",
+		"organizations/123/roles/",
+		"projects/my-proj/deployer",
 	} {
 		_, err := ParsePolicies([]string{entry})
 		require.ErrorIs(t, err, ErrPolicyNotGCP, "entry %q", entry)

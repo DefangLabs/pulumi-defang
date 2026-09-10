@@ -50,6 +50,15 @@ type PolicyGrant struct {
 	Scope string
 }
 
+// String reconstructs the compose entry this grant was parsed from, so an
+// error names the value its author wrote rather than the struct.
+func (p PolicyGrant) String() string {
+	if p.Scope == "" {
+		return p.Role
+	}
+	return p.Role + "@" + p.Scope
+}
+
 // ParsePolicies normalizes x-defang-policies for an Azure deployment and
 // splits each entry into its role and scope halves.
 //
@@ -220,7 +229,7 @@ func CreatePolicyIdentity(
 	for i, policy := range policies {
 		scopeID, err := resolvePolicyScope(resourceGroupID, policy.Scope)
 		if err != nil {
-			return nil, fmt.Errorf("granting policy %q: %w", policy.Role, err)
+			return nil, fmt.Errorf("granting policy %q: %w", policy, err)
 		}
 		// The role is looked up at the scope it is granted at: a list there
 		// returns both the built-ins (which every scope inherits) and any
