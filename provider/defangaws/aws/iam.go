@@ -2,9 +2,11 @@ package aws
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -207,6 +209,34 @@ func attachObjectStorePolicy(
 		Role:   taskRole.Name,
 		Policy: policyJson,
 	}, opts...)
+}
+
+// ErrPolicyNotAWS rejects an x-defang-policies entry that cannot be an AWS
+// policy identifier.
+var ErrPolicyNotAWS = errors.New(
+	"an AWS policy is a full ARN (arn:…) or the name of a customer-managed policy in this account")
+
+// ParsePolicies normalizes x-defang-policies for an AWS deployment and
+// rejects what AWS cannot name. Anything but a full ARN is a policy name, and
+// IAM policy names cannot contain "/" or ":" (PolicyName is [\w+=,.@-]+), so
+// an entry carrying either is not an AWS identifier at all — most often
+// another cloud's, in a compose file deployed to several. Whether a
+// well-formed name exists is IAM's answer, not this function's.
+func ParsePolicies(entries []string) ([]string, error) {
+	policies, err := compose.NormalizeLiteralPolicies(entries)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range policies {
+		if strings.HasPrefix(policy, "arn:") {
+			continue
+		}
+		if strings.ContainsAny(policy, "/:") {
+			return nil, fmt.Errorf("x-defang-policies entry %q: %w%s",
+				policy, ErrPolicyNotAWS, compose.PolicyVarHint)
+		}
+	}
+	return policies, nil
 }
 
 // resolvePolicyArn turns an x-defang-policies entry into a policy ARN. Full

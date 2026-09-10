@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
+
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,6 +52,46 @@ func TestRoleNameFilterEscapesQuotes(t *testing.T) {
 			assert.Equal(t, tt.want, roleNameFilter(tt.policy))
 		})
 	}
+}
+
+func TestParsePolicies(t *testing.T) {
+	// Role names, role-definition IDs, and either with a scope; normalized,
+	// with empty entries (a "${VAR:-}" the stack leaves unset) dropped.
+	const roleDefID = "/subscriptions/sub/providers/Microsoft.Authorization/roleDefinitions/guid"
+	got, err := ParsePolicies([]string{
+		"Contributor@subscription, Storage Blob Data Contributor",
+		"",
+		roleDefID,
+		roleDefID + "@subscription",
+		"Reader@/subscriptions/sub/resourceGroups/other",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []PolicyGrant{
+		{Role: "Contributor", Scope: "subscription"},
+		{Role: "Storage Blob Data Contributor"},
+		{Role: roleDefID},
+		{Role: roleDefID, Scope: "subscription"},
+		{Role: "Reader", Scope: "/subscriptions/sub/resourceGroups/other"},
+	}, got)
+
+	// A role name is free-form, so the shapes ruled out are the ones that
+	// look like a path without being a role-definition ID — which is what
+	// another cloud's identifier looks like here — plus a half-written scope.
+	for _, entry := range []string{
+		"arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+		"roles/run.developer",
+		"projects/my-proj/roles/deployer",
+		"Contributor@",
+		"@subscription",
+	} {
+		_, err := ParsePolicies([]string{entry})
+		require.ErrorIs(t, err, ErrPolicyNotAzure, "entry %q", entry)
+		require.ErrorContains(t, err, "@SCOPE", "entry %q", entry)
+	}
+
+	// The literal check is shared, and reported as the compose-level error.
+	_, err = ParsePolicies([]string{"${POLICIES}"})
+	require.ErrorIs(t, err, compose.ErrPolicyUnresolvedVariable)
 }
 
 // TestSubscriptionScope checks the reduction of a resource group's own ARM ID

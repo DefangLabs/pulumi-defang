@@ -124,8 +124,8 @@ func TestConstructAzureProjectRejectsForeignPolicies(t *testing.T) {
 		}),
 	})
 
-	require.ErrorContains(t, err, "aws identifier")
-	require.ErrorContains(t, err, "targets azure")
+	require.ErrorContains(t, err, "an Azure policy is")
+	require.ErrorContains(t, err, "${VAR}")
 }
 
 func TestConstructAzureProjectEmptyPoliciesDeploy(t *testing.T) {

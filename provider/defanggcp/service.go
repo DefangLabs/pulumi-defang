@@ -201,8 +201,8 @@ func grantPolicies(
 	infra *providergcp.SharedInfra,
 	opts []pulumi.ResourceOption,
 ) ([]pulumi.Resource, error) {
-	policies = compose.NormalizePolicies(policies)
-	if err := compose.ValidatePolicies(compose.PolicyCloudGCP, policies); err != nil {
+	policies, err := providergcp.ParsePolicies(policies)
+	if err != nil {
 		return nil, fmt.Errorf("service %s: %w", serviceName, err)
 	}
 	if len(policies) == 0 {
