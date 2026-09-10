@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -41,6 +42,48 @@ func isAzureRoleDefinitionID(policy string) bool {
 // `foo' or roleName eq 'Owner`) widens the match to an unintended role.
 func roleNameFilter(policy string) string {
 	return fmt.Sprintf("roleName eq '%s'", strings.ReplaceAll(policy, "'", "''"))
+}
+
+// subscriptionScope reduces a resource group's own ARM ID
+// (/subscriptions/<sub>/resourceGroups/<rg>) to the subscription scope above
+// it. Reading the subscription off the group this deployment already owns
+// makes it right by construction, where azure-native's stack config has to
+// be set to be right (see readLiveCustomDomains, which has to cope with it
+// being unset).
+func subscriptionScope(resourceGroupID string) (string, error) {
+	// A leading "/" makes parts[0] empty: "", "subscriptions", "<sub>", …
+	parts := strings.Split(resourceGroupID, "/")
+	if len(parts) < 3 || !strings.EqualFold(parts[1], "subscriptions") || parts[2] == "" {
+		//nolint:err113 // reports the malformed ID itself, not a case a caller branches on
+		return "", fmt.Errorf("no subscription in resource group ID %q", resourceGroupID)
+	}
+	return "/subscriptions/" + parts[2], nil
+}
+
+// resolvePolicyScope turns the scope half of an x-defang-policies entry into
+// the ARM scope its role assignment is created at.
+//
+// An empty scope — an entry written without one, which is every entry
+// predating this — stays the project's resource group, where all of a
+// project's own Defang-managed resources live. `subscription` widens it to
+// the whole subscription, for a service that manages resources outside its
+// project: creating a resource group is a write at subscription scope, and no
+// role granted on the project's group can authorize it. Anything else must
+// already be a full ARM scope resource ID, which is how a specific group,
+// resource or management group is named.
+func resolvePolicyScope(resourceGroupID pulumi.StringOutput, scope string) (pulumi.StringOutput, error) {
+	switch {
+	case scope == "":
+		return resourceGroupID, nil
+	case scope == compose.PolicyScopeSubscription:
+		return resourceGroupID.ApplyT(subscriptionScope).(pulumi.StringOutput), nil
+	case strings.HasPrefix(scope, "/"):
+		return pulumi.String(scope).ToStringOutput(), nil
+	}
+	//nolint:err113 // the scope is caller-supplied compose data, not a fixed sentinel case
+	return pulumi.StringOutput{}, fmt.Errorf(
+		"unknown policy scope %q: use %q or a full Azure scope resource ID starting with %q",
+		scope, compose.PolicyScopeSubscription, "/")
 }
 
 // resolveRoleDefinitionID turns an x-defang-policies entry into a full
@@ -87,9 +130,11 @@ func resolveRoleDefinitionID(ctx context.Context, scope, policy string) (string,
 // CreatePolicyIdentity creates a per-service user-assigned managed identity
 // and grants it the x-defang-policies roles (already normalized and
 // validated against PolicyCloudAzure by the caller). Roles are capability
-// lists only on Azure — the scope decides what they apply to — so the grant
-// is made at the project's resource group, where every Defang-managed
-// resource for the project lives (see DefangLabs/pulumi-defang#326).
+// lists only on Azure — the scope decides what they apply to — so each entry
+// may name its own scope (`Contributor@subscription`, see
+// resolvePolicyScope), and one that doesn't is granted at the project's
+// resource group, where every Defang-managed resource for the project lives
+// (see DefangLabs/pulumi-defang#326).
 //
 // Returns (nil, nil) when policies is empty: no identity, no role
 // assignments, nothing for the caller to attach — the common case, since
@@ -118,11 +163,19 @@ func CreatePolicyIdentity(
 		return nil, fmt.Errorf("creating policy managed identity: %w", err)
 	}
 
-	scopeID := infra.ResourceGroup.ID().ToStringOutput()
+	resourceGroupID := infra.ResourceGroup.ID().ToStringOutput()
 	var lastAssignmentID pulumi.IDOutput
 	for i, policy := range policies {
+		role, scopeSpec := compose.SplitPolicyScope(policy)
+		scopeID, err := resolvePolicyScope(resourceGroupID, scopeSpec)
+		if err != nil {
+			return nil, fmt.Errorf("granting policy %q: %w", policy, err)
+		}
+		// The role is looked up at the scope it is granted at: a list there
+		// returns both the built-ins (which every scope inherits) and any
+		// custom role defined at or above it.
 		roleDefID := scopeID.ApplyT(func(scope string) (string, error) {
-			return resolveRoleDefinitionID(ctx.Context(), scope, policy)
+			return resolveRoleDefinitionID(ctx.Context(), scope, role)
 		}).(pulumi.StringOutput)
 
 		assignment, err := authorization.NewRoleAssignment(

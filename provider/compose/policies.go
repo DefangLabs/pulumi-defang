@@ -20,7 +20,37 @@ var (
 	// different cloud: there is no cross-cloud filtering.
 	ErrPolicyForeignCloud = errors.New(
 		"use a ${VAR} entry whose per-stack value carries the identifier for the targeted cloud")
+	// ErrPolicyMalformedScope rejects a scoped entry with an empty half:
+	// "Contributor@" names no scope, "@subscription" names no role.
+	ErrPolicyMalformedScope = errors.New(
+		"a scoped policy is written ROLE@SCOPE, where SCOPE is `subscription` or a full Azure scope resource ID")
 )
+
+const (
+	// PolicyScopeSeparator separates an entry's role from the scope the role
+	// is granted at: "Contributor@subscription". Azure-only syntax, because
+	// Azure is the only one of the three clouds where a role is a capability
+	// list with no reach of its own — an AWS managed policy applies wherever
+	// it is attached, and a GCP role binds at the project.
+	PolicyScopeSeparator = "@"
+	// PolicyScopeSubscription grants at the whole subscription the deployment
+	// runs in, rather than at the project's own resource group. Needed by a
+	// service that manages resources outside its project: creating a resource
+	// group is a write at subscription scope, which a resource-group-scoped
+	// Contributor cannot do however broad the role is.
+	PolicyScopeSubscription = "subscription"
+)
+
+// SplitPolicyScope splits "ROLE@SCOPE" into the role and the scope. An entry
+// with no separator yields an empty scope, which the provider reads as its own
+// default (on Azure, the project's resource group). Splits at the LAST
+// separator, so a custom role whose own name contains one still parses.
+func SplitPolicyScope(entry string) (string, string) {
+	if i := strings.LastIndex(entry, PolicyScopeSeparator); i >= 0 {
+		return entry[:i], entry[i+len(PolicyScopeSeparator):]
+	}
+	return entry, ""
+}
 
 // PolicyCloud identifies which cloud an x-defang-policies entry targets.
 type PolicyCloud string
@@ -81,6 +111,10 @@ func NormalizePolicies(entries []string) []string {
 // current cloud.
 func ClassifyPolicy(entry string) PolicyCloud {
 	switch {
+	case strings.Contains(entry, PolicyScopeSeparator):
+		// Only Azure takes a scope, so the suffix identifies the cloud on its
+		// own — including for a bare role name that would otherwise be "any".
+		return PolicyCloudAzure
 	case strings.HasPrefix(entry, "arn:"):
 		return PolicyCloudAWS
 	case strings.HasPrefix(entry, "roles/"),
@@ -110,6 +144,14 @@ func ValidatePolicies(cloud PolicyCloud, policies []string) error {
 		if c := ClassifyPolicy(entry); c != cloud && c != PolicyCloudAny {
 			return fmt.Errorf("x-defang-policies entry %q is a %s identifier but this deployment targets %s: %w",
 				entry, c, cloud, ErrPolicyForeignCloud)
+		}
+		if strings.Contains(entry, PolicyScopeSeparator) {
+			// The scope keywords themselves are the provider's to know; only
+			// the shape is checked here. Which scope a role may be granted at
+			// is the cloud's own answer, reported when the grant is made.
+			if role, scope := SplitPolicyScope(entry); role == "" || scope == "" {
+				return fmt.Errorf("x-defang-policies entry %q: %w", entry, ErrPolicyMalformedScope)
+			}
 		}
 	}
 	return nil
