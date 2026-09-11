@@ -109,7 +109,7 @@ func (*Build) Create(
 
 	var image string
 	if inputs.Destination != "" {
-		image, err = resolveECRDigest(ctx, inputs.Region, inputs.Destination)
+		image, err = resolveECRDigest(ctx, inputs.Destination)
 		if err != nil {
 			return infer.CreateResponse[BuildState]{}, fmt.Errorf("resolving digest of pushed image: %w", err)
 		}
@@ -128,8 +128,10 @@ func (*Build) Create(
 // ecrRegistryRE matches a private ECR registry hostname
 // ("<12-digit-account-id>.dkr.ecr.<region>.amazonaws.com", ".com.cn" in
 // China regions) -- excludes lookalikes like ghcr.io or docker.io, which
-// DescribeImages cannot resolve a digest against.
-var ecrRegistryRE = regexp.MustCompile(`^\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$`)
+// DescribeImages cannot resolve a digest against. Captures the region so
+// callers can target the registry's own region rather than assume it
+// matches the build's.
+var ecrRegistryRE = regexp.MustCompile(`^\d{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`)
 
 // loadAWSConfig loads the default AWS config, optionally pinned to region.
 func loadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
@@ -150,11 +152,15 @@ func loadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
 // tag shared with other builds (e.g. ":latest") could be overwritten by a
 // concurrent build between this build's push completing and this lookup
 // running, which would resolve to the wrong digest.
-func resolveECRDigest(ctx context.Context, region, destination string) (string, error) {
+func resolveECRDigest(ctx context.Context, destination string) (string, error) {
 	img := common.ParseImage(destination)
-	if !ecrRegistryRE.MatchString(img.Registry) || img.Repo == "" || img.Tag == "" {
+	m := ecrRegistryRE.FindStringSubmatch(img.Registry)
+	if m == nil || img.Repo == "" || img.Tag == "" {
 		return "", fmt.Errorf("%w: got %q", ErrNotECRReference, destination)
 	}
+	// The pushed image's registry is the source of truth for which region to
+	// query -- it may differ from the build's own region.
+	region := m[1]
 
 	cfg, err := loadAWSConfig(ctx, region)
 	if err != nil {
