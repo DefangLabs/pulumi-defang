@@ -462,6 +462,65 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 		"Build resource must depend on BucketIAMMember (got deps: %v)", spy.buildDeps)
 }
 
+// TestBuildServiceImageTagIsNotLatest verifies the pushed image is tagged with
+// the build's content hash rather than the mutable ":latest" (see #547/#551):
+// two services with different build content must get different tags.
+func TestBuildServiceImageTagIsNotLatest(t *testing.T) {
+	tag := func(t *testing.T, context string) string {
+		t.Helper()
+		var images resource.PropertyValue
+		mocks := &imagesSpy{onBuild: func(inputs resource.PropertyMap) {
+			images = inputs["images"]
+		}}
+
+		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+			sa, err := serviceaccount.NewAccount(ctx, "build-sa", &serviceaccount.AccountArgs{
+				AccountId: pulumi.String("build-sa"),
+			})
+			if err != nil {
+				return err
+			}
+			infra := &BuildInfra{
+				ServiceAccount: sa,
+				RepositoryURL:  pulumi.String("us-central1-docker.pkg.dev/proj/repo").ToStringOutput(),
+				Region:         "us-central1",
+				GcpProject:     "proj",
+			}
+			svc := compose.ServiceConfig{
+				Build: &compose.BuildConfig{Context: pulumi.String(context)},
+			}
+			_, err = buildServiceImage(ctx, "my-svc", svc, infra, common.PluginIdentity{})
+			return err
+		}, pulumi.WithMocks("proj", "stack", mocks))
+		require.NoError(t, err)
+
+		require.True(t, images.HasValue() && images.IsArray(), "Build resource's images input was not recorded")
+		return images.ArrayValue()[0].StringValue()
+	}
+
+	image1 := tag(t, "gs://defang-cd-test/uploads/one.tar.gz")
+	image2 := tag(t, "gs://defang-cd-test/uploads/two.tar.gz")
+
+	assert.False(t, strings.HasSuffix(image1, ":latest"), "got %q, tag must not be the mutable :latest", image1)
+	assert.NotEqual(t, image1, image2, "different build content must produce different tags")
+}
+
+// imagesSpy records the "images" input of the Build custom resource.
+type imagesSpy struct {
+	onBuild func(inputs resource.PropertyMap)
+}
+
+func (m *imagesSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if args.TypeToken == "defang-gcp:defanggcp:Build" {
+		m.onBuild(args.Inputs)
+	}
+	return args.Name + "_id", args.Inputs, nil
+}
+
+func (m *imagesSpy) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
+
 // renderBuildSteps runs generateBuildSteps and returns the decoded step list.
 func renderBuildSteps(t *testing.T, build *compose.BuildConfig) []buildStep {
 	t.Helper()
