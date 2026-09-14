@@ -159,3 +159,15 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 	assert.Equal(t, map[string]int{azureProtocolTCP: 1, azureProtocolUDP: 1}, protocols)
 	require.Len(t, mocks.byTypeSuffix(":VirtualMachineScaleSet"), 1)
 }
+
+func TestVMComputerNamePrefix(t *testing.T) {
+	tests := map[string]string{
+		"dns":                      "dns",
+		"DNS_Server":               "dns-server",
+		"a-very-long-service-name": "a-very-long-ser",
+		"exactly-fifteen":          "exactly-fifteen",
+	}
+	for input, want := range tests {
+		assert.Equal(t, want, vmComputerNamePrefix(input))
+	}
+}

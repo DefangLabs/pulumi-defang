@@ -74,6 +74,14 @@ func virtualMachineSize(svc compose.ServiceConfig) string {
 	return azureVMSizes[len(azureVMSizes)-1].name
 }
 
+func vmComputerNamePrefix(serviceName string) string {
+	prefix := common.ServiceLabel(serviceName)
+	if len(prefix) > 15 {
+		prefix = prefix[:15]
+	}
+	return strings.TrimRight(prefix, "-")
+}
+
 func azureProtocol(port compose.ServicePortConfig) string {
 	if port.GetProtocol() == compose.PortProtocolUDP {
 		return azureProtocolUDP
@@ -493,9 +501,10 @@ func CreateVirtualMachineService(
 		UpgradePolicy: &compute.UpgradePolicyArgs{Mode: compute.UpgradeModeAutomatic},
 		VirtualMachineProfile: &compute.VirtualMachineScaleSetVMProfileArgs{
 			OsProfile: &compute.VirtualMachineScaleSetOSProfileArgs{
-				AdminUsername: pulumi.StringPtr("defang"),
-				AdminPassword: password.Result,
-				CustomData:    customData.ToStringPtrOutput(),
+				AdminUsername:      pulumi.StringPtr("defang"),
+				ComputerNamePrefix: pulumi.StringPtr(vmComputerNamePrefix(serviceName)),
+				AdminPassword:      password.Result,
+				CustomData:         customData.ToStringPtrOutput(),
 				LinuxConfiguration: &compute.LinuxConfigurationArgs{
 					DisablePasswordAuthentication: pulumi.BoolPtr(false),
 					ProvisionVMAgent:              pulumi.BoolPtr(true),
