@@ -50,6 +50,81 @@ func TestVMDockerFlagsPreserveTCPAndUDPOnSamePort(t *testing.T) {
 	assert.Contains(t, flags, "53:53/udp")
 }
 
+func TestSystemdArgEscapesExecExpansions(t *testing.T) {
+	assert.Equal(t, `"a'b $$HOME 100%% c\\d\n"`, systemdArg("a'b $HOME 100% c\\d\n"))
+}
+
+func TestVMDockerFlagsUseSystemdQuoting(t *testing.T) {
+	svc := compose.ServiceConfig{
+		Entrypoint: []string{"/bin/sh", "can't $HOME"},
+		Command:    []string{"echo", "100% ready"},
+	}
+	flags, command := vmDockerFlags(svc)
+	assert.Contains(t, flags, `--entrypoint "/bin/sh"`)
+	assert.Contains(t, command, `"can't $$HOME"`)
+	assert.Contains(t, command, `"100%% ready"`)
+	assert.NotContains(t, command, `'"'"'`)
+}
+
+func TestClassifyVMEnvironment(t *testing.T) {
+	env := compose.Environment{
+		"BARE":  pulumi.String("${API_KEY}"),
+		"MIXED": pulumi.String("prefix-${API_KEY}"),
+		"NULL":  nil,
+		"PLAIN": pulumi.String("literal"),
+	}
+	plan, err := classifyVMEnvironment(nil, NewConfigProvider("https://vault.vault.azure.net"), env)
+	require.NoError(t, err)
+
+	require.Equal(t, []vmSecretEnv{
+		{envKey: "BARE", secretURL: "https://vault.vault.azure.net/secrets/API-KEY"}, //nolint:gosec
+		{envKey: "NULL", secretURL: "https://vault.vault.azure.net/secrets/NULL"},    //nolint:gosec
+	}, plan.secretRefs)
+	assert.Equal(t, pulumi.String("prefix-${API_KEY}"), plan.inline["MIXED"])
+	assert.Equal(t, pulumi.String("literal"), plan.inline["PLAIN"])
+	assert.NotContains(t, plan.inline, "BARE")
+	assert.NotContains(t, plan.inline, "NULL")
+
+	nilPlan, err := classifyVMEnvironment(nil, nil, env)
+	require.NoError(t, err)
+	assert.Equal(t, env, nilPlan.inline)
+	assert.Empty(t, nilPlan.secretRefs)
+
+	_, err = classifyVMEnvironment(nil, &compose.PulumiConfigProvider{}, env)
+	assert.Error(t, err)
+}
+
+func TestVMSecretFetchFile(t *testing.T) {
+	const identityID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kv"
+	refs := []vmSecretEnv{
+		{envKey: "API_KEY", secretURL: "https://vault.vault.azure.net/secrets/API-KEY"}, //nolint:gosec
+	}
+	var writeFile string
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		out := vmSecretFetchFile("dns", pulumi.String(identityID).ToStringPtrOutput(), refs)
+		out.ApplyT(func(value string) string {
+			defer wg.Done()
+			writeFile = value
+			return value
+		})
+		return nil
+	}, pulumi.WithMocks("project", "stack", &recordVMMocks{resources: make(map[string][]resource.PropertyMap)}))
+	require.NoError(t, err)
+	wg.Wait()
+
+	assert.Contains(t, writeFile, "path: /usr/local/sbin/defang-dns-secrets")
+	assert.Contains(t, writeFile, `permissions: "0700"`)
+	assert.Contains(t, writeFile, "umask 077")
+	assert.Contains(t, writeFile, "resource=https://vault.azure.net")
+	assert.Contains(t, writeFile, identityID)
+	assert.Contains(t, writeFile, "https://vault.vault.azure.net/secrets/API-KEY?api-version=7.4")
+	assert.Contains(t, writeFile, `printf '%s=%s\n' 'API_KEY' "$value"`)
+	assert.Contains(t, writeFile, "} > \"$tmp\"")
+	assert.Contains(t, writeFile, "mv \"$tmp\" /run/defang/dns.env")
+}
+
 func TestVirtualMachineSize(t *testing.T) {
 	tests := []struct {
 		name string
@@ -130,15 +205,23 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 		svc := compose.ServiceConfig{Ports: []compose.ServicePortConfig{
 			{Target: 53, Mode: compose.PortModeIngress, Protocol: compose.PortProtocolTCP},
 			{Target: 53, Mode: compose.PortModeIngress, Protocol: compose.PortProtocolUDP},
+		}, Environment: compose.Environment{
+			"PLAIN":      pulumi.String("visible"),
+			"SECRET_ENV": pulumi.String("${API_KEY}"),
 		}}
+		kvIdentityID := pulumi.String(
+			"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kv",
+		)
 		_, err = CreateVirtualMachineService(
 			ctx,
 			"dns",
 			pulumi.String("cunnie/sslip.io-dns-server:latest"),
 			svc,
 			&SharedInfra{
-				ResourceGroup: rg,
-				Networking:    &NetworkingResult{VNet: vnet, ComputeSubnet: subnet},
+				ResourceGroup:      rg,
+				Networking:         &NetworkingResult{VNet: vnet, ComputeSubnet: subnet},
+				ConfigProvider:     NewConfigProvider("https://vault.vault.azure.net"),
+				KeyVaultIdentityID: kvIdentityID.ToStringPtrOutput(),
 			},
 			nil,
 		)
@@ -175,6 +258,17 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 		strings.Index(cloudConfig, "systemctl restart docker"),
 		"the DNS stub must release port 53 before Docker starts the service",
 	)
+	assert.Contains(t, cloudConfig, "ExecStartPre=/usr/local/sbin/defang-dns-secrets")
+	assert.Contains(t, cloudConfig, "--env-file /run/defang/dns.env")
+	assert.Contains(t, cloudConfig, "https://vault.vault.azure.net/secrets/API-KEY?api-version=7.4")
+	assert.Contains(t, cloudConfig, `--env "PLAIN=visible"`)
+	assert.NotContains(t, cloudConfig, "${API_KEY}")
+
+	identity := vmScaleSets[0][resource.PropertyKey("identity")].ObjectValue()
+	assigned := identity[resource.PropertyKey("userAssignedIdentities")].ArrayValue()
+	require.Len(t, assigned, 1)
+	assert.Equal(t, "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kv",
+		assigned[0].StringValue())
 }
 
 func TestVMComputerNamePrefix(t *testing.T) {

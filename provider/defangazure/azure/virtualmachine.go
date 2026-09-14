@@ -28,6 +28,8 @@ var (
 	errPrivateVMServiceUnsupported      = errors.New("private Azure VM services are not supported yet")
 	errVMIngressRequired                = errors.New("azure VM load-balanced ports require mode: ingress")
 	errArmVMServiceUnsupported          = errors.New("azure VM services do not support arm64 yet")
+	errVMSecretsRequireKeyVault         = errors.New("azure VM secret references require a Key Vault identity")
+	errEmptyVMSecretURL                 = errors.New("empty Key Vault secret URL")
 )
 
 // VirtualMachineServiceResult contains the stable endpoint and the VM scale set
@@ -93,17 +95,27 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
+// systemdArg quotes one argument in an Exec line. systemd applies $ variable
+// and % specifier expansion after parsing quotes, so both must be doubled even
+// inside a quoted argument. strconv.Quote emits the C-style escapes accepted
+// by systemd.syntax(7).
+func systemdArg(s string) string {
+	s = strings.ReplaceAll(s, "$", "$$")
+	s = strings.ReplaceAll(s, "%", "%%")
+	return strconv.Quote(s)
+}
+
 func vmDockerFlags(svc compose.ServiceConfig) (string, string) {
 	flags := make([]string, 0, 2*len(svc.Ports)+4)
 	command := make([]string, 0, len(svc.Command)+len(svc.Entrypoint))
 	if len(svc.Entrypoint) > 0 {
-		flags = append(flags, "--entrypoint", shellQuote(svc.Entrypoint[0]))
+		flags = append(flags, "--entrypoint", systemdArg(svc.Entrypoint[0]))
 		for _, arg := range svc.Entrypoint[1:] {
-			command = append(command, shellQuote(arg))
+			command = append(command, systemdArg(arg))
 		}
 	}
 	for _, arg := range svc.Command {
-		command = append(command, shellQuote(arg))
+		command = append(command, systemdArg(arg))
 	}
 	for _, port := range svc.Ports {
 		flags = append(flags, "--publish", fmt.Sprintf("%d:%d/%s", port.Target, port.Target, port.GetProtocol()))
@@ -117,13 +129,13 @@ func vmEnvironment(
 	etag string,
 	policyIdentity *PolicyIdentity,
 ) pulumi.StringOutput {
-	parts := []pulumi.StringInput{pulumi.String("--env " + shellQuote("DEFANG_SERVICE="+serviceName))}
+	parts := []pulumi.StringInput{pulumi.String("--env " + systemdArg("DEFANG_SERVICE="+serviceName))}
 	if etag != "" {
-		parts = append(parts, pulumi.String("--env "+shellQuote("DEFANG_ETAG="+etag)))
+		parts = append(parts, pulumi.String("--env "+systemdArg("DEFANG_ETAG="+etag)))
 	}
 	if policyIdentity != nil {
 		parts = append(parts, policyIdentity.ClientID.ApplyT(func(clientID string) string {
-			return "--env " + shellQuote("AZURE_CLIENT_ID="+clientID)
+			return "--env " + systemdArg("AZURE_CLIENT_ID="+clientID)
 		}).(pulumi.StringOutput))
 	}
 	for key, value := range common.Sorted(svc.Environment) {
@@ -132,18 +144,117 @@ func vmEnvironment(
 			if static != nil {
 				resolved = *static
 			}
-			parts = append(parts, pulumi.String("--env "+shellQuote(key+"="+resolved)))
+			parts = append(parts, pulumi.String("--env "+systemdArg(key+"="+resolved)))
 			continue
 		}
 		parts = append(parts, value.ToStringPtrOutput().ApplyT(func(resolved *string) string {
 			if resolved == nil {
-				return "--env " + shellQuote(key+"=")
+				return "--env " + systemdArg(key+"=")
 			}
-			return "--env " + shellQuote(key+"="+*resolved)
+			return "--env " + systemdArg(key+"="+*resolved)
 		}).(pulumi.StringOutput))
 	}
 	return pulumi.StringArray(parts).ToStringArrayOutput().ApplyT(func(values []string) string {
 		return strings.Join(values, " ")
+	}).(pulumi.StringOutput)
+}
+
+type vmSecretEnv struct {
+	envKey    string
+	secretURL string
+}
+
+type vmEnvironmentPlan struct {
+	inline     compose.Environment
+	secretRefs []vmSecretEnv
+}
+
+// classifyVMEnvironment keeps ordinary values inline but turns bare config
+// references (FOO=${SECRET}, or a null FOO:) into Key Vault references that
+// the VM resolves at container start. Secret values therefore never enter
+// VMSS customData or Docker's command line.
+func classifyVMEnvironment(
+	ctx *pulumi.Context, cp compose.ConfigProvider, env compose.Environment,
+) (vmEnvironmentPlan, error) {
+	if cp == nil {
+		return vmEnvironmentPlan{inline: env}, nil
+	}
+	plan := vmEnvironmentPlan{inline: make(compose.Environment, len(env))}
+	for key, value := range common.Sorted(env) {
+		if configKey := compose.GetConfigName2(key, value); configKey != "" {
+			secretURL, err := cp.GetSecretRef(ctx, configKey)
+			if err != nil {
+				return vmEnvironmentPlan{}, fmt.Errorf("resolving Key Vault reference for %s: %w", key, err)
+			}
+			if secretURL == "" {
+				return vmEnvironmentPlan{}, fmt.Errorf("resolving Key Vault reference for %s: %w", key, errEmptyVMSecretURL)
+			}
+			plan.secretRefs = append(plan.secretRefs, vmSecretEnv{envKey: key, secretURL: secretURL})
+			continue
+		}
+		plan.inline[key] = value
+	}
+	return plan, nil
+}
+
+// vmSecretFetchFile emits a root-only boot script that authenticates with the
+// VM's user-assigned identity, fetches Key Vault values, and writes Docker's
+// env file under /run (tmpfs). The secret values never appear in customData.
+// Docker env files are line-oriented, so multiline secrets need file mounts
+// rather than environment variables.
+func vmSecretFetchFile(serviceName string, identityID pulumi.StringPtrInput, refs []vmSecretEnv) pulumi.StringOutput {
+	if len(refs) == 0 {
+		return pulumi.String("").ToStringOutput()
+	}
+	unit := common.ServiceLabel(serviceName)
+	scriptPath := "/usr/local/sbin/defang-" + unit + "-secrets"
+	envFile := "/run/defang/" + unit + ".env"
+	return identityID.ToStringPtrOutput().ApplyT(func(identityID *string) string {
+		var script strings.Builder
+		script.WriteString("#!/bin/bash\nset -euo pipefail\numask 077\nmkdir -p -m 0700 /run/defang\n")
+		script.WriteString("curl_retry() {\n" +
+			"  local attempt=1 max=5 delay=2\n" +
+			"  while ! curl -fsS --connect-timeout 5 --max-time 30 \"$@\"; do\n" +
+			"    [ \"$attempt\" -ge \"$max\" ] && return 1\n" +
+			"    sleep \"$delay\"\n" +
+			"    delay=$((delay * 2))\n" +
+			"    attempt=$((attempt + 1))\n" +
+			"  done\n" +
+			"}\n")
+		id := ""
+		if identityID != nil {
+			id = *identityID
+		}
+		fmt.Fprintf(&script, "identity_id=%s\n", shellQuote(id))
+		script.WriteString(`token=$(curl_retry --get -H Metadata:true \
+  --data-urlencode api-version=2018-02-01 \
+  --data-urlencode resource=https://vault.azure.net \
+  --data-urlencode mi_res_id="$identity_id" \
+  http://169.254.169.254/metadata/identity/oauth2/token | jq -er .access_token)
+`)
+		script.WriteString(`[ -n "$token" ] || { echo "defang: empty metadata token" >&2; exit 1; }
+`)
+		fmt.Fprintf(&script, "tmp=$(mktemp %s.XXXXXX)\n", envFile)
+		script.WriteString(`trap 'rm -f "$tmp"' EXIT
+{
+`)
+		for _, ref := range refs {
+			fmt.Fprintf(&script,
+				"  value=$(curl_retry -H \"Authorization: Bearer $token\" %s | jq -er .value)\n",
+				shellQuote(ref.secretURL+"?api-version=7.4"))
+			fmt.Fprintf(&script, "  printf '%%s=%%s\\n' %s \"$value\"\n", shellQuote(ref.envKey))
+		}
+		fmt.Fprintf(&script, "} > \"$tmp\"\nmv \"$tmp\" %s\ntrap - EXIT\n", envFile)
+
+		var writeFile strings.Builder
+		fmt.Fprintf(&writeFile,
+			"  - path: %s\n    permissions: \"0700\"\n    owner: root\n    content: |\n", scriptPath)
+		for _, line := range strings.Split(strings.TrimRight(script.String(), "\n"), "\n") {
+			writeFile.WriteString("      ")
+			writeFile.WriteString(line)
+			writeFile.WriteByte('\n')
+		}
+		return writeFile.String()
 	}).(pulumi.StringOutput)
 }
 
@@ -186,12 +297,23 @@ func virtualMachineCloudInit(
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
 	policyIdentity *PolicyIdentity,
+	envPlan vmEnvironmentPlan,
 ) pulumi.StringOutput {
 	containerName := svc.GetContainerName(serviceName)
 	dockerFlags, command := vmDockerFlags(svc)
-	env := vmEnvironment(serviceName, svc, infra.Etag, policyIdentity)
+	inlineSvc := svc
+	inlineSvc.Environment = envPlan.inline
+	env := vmEnvironment(serviceName, inlineSvc, infra.Etag, policyIdentity)
 	login := acrLoginScript(infra, svc)
-	quotedImage := image.ToStringOutput().ApplyT(shellQuote).(pulumi.StringOutput)
+	quotedImage := image.ToStringOutput().ApplyT(systemdArg).(pulumi.StringOutput)
+	secretWriteFile := vmSecretFetchFile(serviceName, infra.KeyVaultIdentityID, envPlan.secretRefs)
+	secretExecPre := ""
+	secretEnvFlag := ""
+	if len(envPlan.secretRefs) > 0 {
+		unit := common.ServiceLabel(serviceName)
+		secretExecPre = "      ExecStartPre=/usr/local/sbin/defang-" + unit + "-secrets\n"
+		secretEnvFlag = "--env-file /run/defang/" + unit + ".env"
+	}
 
 	template := `#cloud-config
 package_update: true
@@ -200,6 +322,7 @@ packages:
   - curl
   - jq
 write_files:
+%s
   - path: /etc/docker/daemon.json
     permissions: "0644"
     content: |
@@ -267,8 +390,9 @@ write_files:
       Restart=always
       RestartSec=10
       ExecStartPre=/usr/local/sbin/defang-acr-login
+%s
       ExecStartPre=-/usr/bin/docker rm -f %s
-      ExecStart=/usr/bin/docker run --pull=always --rm --name=%s %s %s %s %s
+      ExecStart=/usr/bin/docker run --pull=always --rm --name=%s %s %s %s %s %s
       ExecStop=/usr/bin/docker stop -t 30 %s
       StandardOutput=journal+console
       StandardError=journal+console
@@ -290,19 +414,22 @@ runcmd:
 		}
 		return strings.Join(lines, "\n")
 	}
-	return pulumi.All(login, env, quotedImage).ApplyT(func(values []any) string {
+	return pulumi.All(secretWriteFile, login, env, quotedImage).ApplyT(func(values []any) string {
 		return fmt.Sprintf(
 			template,
-			indent(values[0].(string)),
+			values[0].(string),
+			indent(values[1].(string)),
 			strconv.Quote(containerName),
 			vmHealthPort,
 			serviceName,
 			serviceName,
+			secretExecPre,
 			containerName,
 			containerName,
 			dockerFlags,
-			values[1].(string),
 			values[2].(string),
+			secretEnvFlag,
+			values[3].(string),
 			command,
 			containerName,
 			serviceName,
@@ -335,6 +462,13 @@ func CreateVirtualMachineService(
 	}
 	if strings.Contains(svc.GetPlatform(), "arm64") {
 		return nil, fmt.Errorf("service %s: %w", serviceName, errArmVMServiceUnsupported)
+	}
+	envPlan, err := classifyVMEnvironment(ctx, infra.ConfigProvider, svc.Environment)
+	if err != nil {
+		return nil, fmt.Errorf("service %s environment: %w", serviceName, err)
+	}
+	if len(envPlan.secretRefs) > 0 && infra.KeyVaultIdentityID == nil {
+		return nil, fmt.Errorf("service %s: %w", serviceName, errVMSecretsRequireKeyVault)
 	}
 
 	publicIP, err := network.NewPublicIPAddress(ctx, serviceName, &network.PublicIPAddressArgs{
@@ -472,7 +606,7 @@ func CreateVirtualMachineService(
 		return nil, fmt.Errorf("creating VM credential for %s: %w", serviceName, err)
 	}
 
-	cloudInit := virtualMachineCloudInit(serviceName, image, svc, infra, policyIdentity)
+	cloudInit := virtualMachineCloudInit(serviceName, image, svc, infra, policyIdentity, envPlan)
 	customData := cloudInit.ApplyT(func(value string) string {
 		return base64.StdEncoding.EncodeToString([]byte(value))
 	}).(pulumi.StringOutput)
@@ -483,6 +617,9 @@ func CreateVirtualMachineService(
 	}
 	if policyIdentity != nil {
 		identities = append(identities, policyIdentity.ID)
+	}
+	if len(envPlan.secretRefs) > 0 {
+		identities = append(identities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
 	}
 	var identity *compute.VirtualMachineScaleSetIdentityArgs
 	if len(identities) > 0 {
