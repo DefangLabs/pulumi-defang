@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"encoding/base64"
 	"strings"
 	"sync"
 	"testing"
@@ -157,7 +158,23 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 		protocols[props[resource.PropertyKey("protocol")].StringValue()]++
 	}
 	assert.Equal(t, map[string]int{azureProtocolTCP: 1, azureProtocolUDP: 1}, protocols)
-	require.Len(t, mocks.byTypeSuffix(":VirtualMachineScaleSet"), 1)
+
+	vmScaleSets := mocks.byTypeSuffix(":VirtualMachineScaleSet")
+	require.Len(t, vmScaleSets, 1)
+	vmProfile := vmScaleSets[0][resource.PropertyKey("virtualMachineProfile")].ObjectValue()
+	osProfile := vmProfile[resource.PropertyKey("osProfile")].ObjectValue()
+	customData := osProfile[resource.PropertyKey("customData")].StringValue()
+	cloudConfigBytes, err := base64.StdEncoding.DecodeString(customData)
+	require.NoError(t, err)
+	cloudConfig := string(cloudConfigBytes)
+	assert.Contains(t, cloudConfig, "path: /etc/systemd/resolved.conf.d/defang.conf")
+	assert.Contains(t, cloudConfig, "DNSStubListener=no")
+	assert.Contains(t, cloudConfig, "ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf")
+	assert.Less(t,
+		strings.Index(cloudConfig, "systemctl restart systemd-resolved"),
+		strings.Index(cloudConfig, "systemctl restart docker"),
+		"the DNS stub must release port 53 before Docker starts the service",
+	)
 }
 
 func TestVMComputerNamePrefix(t *testing.T) {

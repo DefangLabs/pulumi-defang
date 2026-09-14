@@ -204,6 +204,11 @@ write_files:
     permissions: "0644"
     content: |
       {"userland-proxy": false}
+  - path: /etc/systemd/resolved.conf.d/defang.conf
+    permissions: "0644"
+    content: |
+      [Resolve]
+      DNSStubListener=no
   - path: /usr/local/sbin/defang-acr-login
     permissions: "0700"
     content: |
@@ -271,6 +276,8 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 runcmd:
+  - ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+  - systemctl restart systemd-resolved
   - systemctl restart docker
   - systemctl daemon-reload
   - systemctl enable --now defang-health.service

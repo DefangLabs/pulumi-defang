@@ -32,6 +32,15 @@ func TestCollectCertJobs(t *testing.T) {
 			want:     []certJob{{service: web, hostname: "web." + shard}},
 		},
 		{
+			name: "VM-backed UDP ingress does not request a Container Apps certificate",
+			services: compose.Services{"dns": {Ports: []compose.ServicePortConfig{
+				{Target: 53, Mode: compose.PortModeIngress, Protocol: compose.PortProtocolTCP},
+				{Target: 53, Mode: compose.PortModeIngress, Protocol: compose.PortProtocolUDP},
+			}}},
+			domain: shard,
+			want:   nil,
+		},
+		{
 			name:     "BYOD subdomain adds a second job for the same service",
 			services: compose.Services{web: {Ports: ingress, DomainName: byod}},
 			domain:   shard,

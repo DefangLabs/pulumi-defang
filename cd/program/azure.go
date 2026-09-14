@@ -209,13 +209,13 @@ func collectCertJobs(cf *compose.Project, domain string, dnsZones map[string]str
 	var jobs []certJob
 	if domain != "" {
 		for name, svc := range cf.Services {
-			if svc.HasIngressPorts() {
+			if svc.HasIngressPorts() && !providerazure.IsVirtualMachineService(&svc) {
 				jobs = append(jobs, certJob{service: name, hostname: name + "." + domain})
 			}
 		}
 	}
 	for name, svc := range cf.Services {
-		if !svc.HasIngressPorts() {
+		if !svc.HasIngressPorts() || providerazure.IsVirtualMachineService(&svc) {
 			continue
 		}
 		for _, hostname := range common.ByodHostnames(svc) {
