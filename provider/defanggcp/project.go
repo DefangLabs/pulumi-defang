@@ -100,8 +100,11 @@ func buildProject(
 	parentOpt pulumi.ResourceOption,
 ) (*projectResult, error) {
 	childOpts := []pulumi.ResourceOption{parentOpt}
+	// Older CLIs rewrote UDP ingress to host mode. Normalize here so projects
+	// produced by old and new CLIs create the same GCP resources.
+	services := compose.UDPIngressAsHost(args.Services)
 
-	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, args.Services, childOpts...)
+	config, err := providergcp.BuildGlobalConfig(ctx, projectName, args.Domain, services, childOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
@@ -123,7 +126,7 @@ func buildProject(
 	}
 	var lbEntries []providergcp.LBServiceEntry
 
-	if common.IsProjectUsingLLM(args.Services) {
+	if common.IsProjectUsingLLM(services) {
 		// FIXME: create dependency between this NewService and the services that need this API
 		_, err := projects.NewService(ctx, projectName+"-defang-llm", &projects.ServiceArgs{
 			Project:          pulumi.StringPtr(config.GcpProject),
@@ -135,8 +138,8 @@ func buildProject(
 		}
 	}
 
-	for _, svcName := range common.TopologicalSort(args.Services) {
-		svc := args.Services[svcName]
+	for _, svcName := range common.TopologicalSort(services) {
+		svc := services[svcName]
 
 		// Collect dependency resources from services this one depends on
 		var deps []pulumi.Resource
@@ -161,7 +164,7 @@ func buildProject(
 		}
 	}
 
-	if providergcp.NeedNATGateway(args.Networks, args.Services) {
+	if providergcp.NeedNATGateway(args.Networks, services) {
 		if err := providergcp.CreateNAT(ctx, config.VpcId, *config, childOpts...); err != nil {
 			return nil, err
 		}

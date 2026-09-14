@@ -187,7 +187,11 @@ func buildProject(
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*projectResult, error) {
 	awsConfig := (*provideraws.AWSConfig)(args.AWS)
-	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, args.Services, parentOpt)
+	// Older CLIs rewrote UDP ingress to host mode. Normalize here so projects
+	// produced by old and new CLIs create the same AWS resources.
+	services := compose.UDPIngressAsHost(args.Services)
+
+	infra, err := provideraws.CreateProjectInfra(ctx, projectName, awsConfig, services, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
@@ -219,7 +223,7 @@ func buildProject(
 		configProvider = provideraws.NewConfigProvider(projectName)
 	}
 
-	standalone, sidecars, err := partitionSidecars(args.Services)
+	standalone, sidecars, err := partitionSidecars(services)
 	if err != nil {
 		return nil, err
 	}

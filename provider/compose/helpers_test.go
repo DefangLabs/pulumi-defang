@@ -53,6 +53,48 @@ func TestToPulumiStringArray(t *testing.T) {
 	})
 }
 
+func TestUDPIngressAsHost(t *testing.T) {
+	tcpIngress := ServicePortConfig{
+		Target: 53, Mode: PortModeIngress, Protocol: PortProtocolTCP,
+	}
+	udpHost := ServicePortConfig{
+		Target: 53, Mode: PortModeHost, Protocol: PortProtocolUDP,
+	}
+	udpIngress := ServicePortConfig{
+		Target: 53, Mode: PortModeIngress, Protocol: PortProtocolUDP,
+	}
+
+	oldCLI := Services{
+		"dns": {Ports: []ServicePortConfig{tcpIngress, udpHost}},
+	}
+	newCLI := Services{
+		"dns": {Ports: []ServicePortConfig{tcpIngress, udpIngress}},
+	}
+
+	normalizedOld := UDPIngressAsHost(oldCLI)
+	normalizedNew := UDPIngressAsHost(newCLI)
+
+	assert.Equal(t, normalizedOld, normalizedNew,
+		"old and new CLI inputs must produce the same provider configuration")
+	assert.Equal(t, PortModeIngress, normalizedNew["dns"].Ports[0].Mode,
+		"TCP ingress must remain ingress")
+	assert.Equal(t, PortModeHost, normalizedNew["dns"].Ports[1].Mode,
+		"UDP ingress must use the established host fallback")
+	assert.Equal(t, PortModeIngress, newCLI["dns"].Ports[1].Mode,
+		"normalization must not mutate provider inputs")
+
+	t.Run("unset mode defaults to ingress", func(t *testing.T) {
+		services := Services{"dns": {
+			Ports: []ServicePortConfig{{Target: 53, Protocol: PortProtocolUDP}},
+		}}
+		assert.Equal(t, PortModeHost, UDPIngressAsHost(services)["dns"].Ports[0].Mode)
+	})
+
+	t.Run("nil stays nil", func(t *testing.T) {
+		assert.Nil(t, UDPIngressAsHost(nil))
+	})
+}
+
 func TestGetConfigOrEnvValue(t *testing.T) {
 	tests := []struct {
 		name         string
