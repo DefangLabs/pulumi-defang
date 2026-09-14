@@ -493,7 +493,12 @@ func CreateVirtualMachineService(
 	}
 
 	vmOpts := append([]pulumi.ResourceOption{}, opts...)
-	vmOpts = append(vmOpts, pulumi.DependsOn([]pulumi.Resource{lb}))
+	vmOpts = append(vmOpts,
+		pulumi.DependsOn([]pulumi.Resource{lb}),
+		pulumi.ReplaceOnChanges([]string{"virtualMachineProfile.osProfile.customData"}),
+		// The VMSS has an explicit cloud name, so create-before-delete cannot succeed.
+		pulumi.DeleteBeforeReplace(true),
+	)
 	scaleSet, err := compute.NewVirtualMachineScaleSet(ctx, serviceName, &compute.VirtualMachineScaleSetArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		VmScaleSetName:    pulumi.StringPtr(serviceName),
