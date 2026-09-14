@@ -21,6 +21,7 @@ type SharedInfra struct {
 	Environment        *app.ManagedEnvironment
 	BuildInfra         *BuildInfra            // nil when no services require image builds
 	Networking         *NetworkingResult      // nil when no VNet-integrated services are present
+	Networks           compose.Networks       // top-level Compose networks, used to determine service visibility
 	DNS                *DNSResult             // nil when no VNet-integrated services are present
 	LLMInfra           *LLMInfra              // nil when no LLM services are present
 	ConfigProvider     compose.ConfigProvider // reads project secrets (set via `defang config set`)

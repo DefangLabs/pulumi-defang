@@ -14,7 +14,7 @@ import (
 // Service is the controller struct for the defang-azure:index:Service component.
 type Service struct{}
 
-// ServiceInputs defines the inputs for a standalone Azure Container App.
+// ServiceInputs defines the inputs for a standalone Azure container service.
 // Build-from-source is deliberately unsupported — images must be pre-built and supplied
 // via Image. Build orchestration belongs to the Project component.
 //
@@ -30,7 +30,7 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"projectName,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment compose.Environment             `pulumi:"environment,optional"`
+	Environment compose.Environment         `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -47,8 +47,8 @@ type ServiceInputs struct {
 
 	// Infra is an optional shared Azure project infrastructure. When non-nil, the
 	// Service reuses it (resource group, managed environment, networking, DNS,
-	// Key Vault wiring). When nil, the Service runs standalone with a fresh
-	// resource group and managed environment and no VNet/DNS/KV wiring. Untagged
+	// Key Vault wiring). When nil, the Service creates the minimal infrastructure
+	// for its selected runtime, without shared DNS or Key Vault wiring. Untagged
 	// because SharedInfra contains Pulumi Output and resource-pointer fields
 	// that aren't schema-compatible; the project dispatcher passes it in Go.
 	Infra *azure.SharedInfra
@@ -58,7 +58,7 @@ type ServiceInputs struct {
 type ServiceOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
-	// AppID is the Container App's ARM resource ID, surfaced through the
+	// AppID is the backing resource's ARM resource ID, surfaced through the
 	// Project's serviceIds output. Untagged — not part of the SDK schema.
 	AppID pulumi.StringOutput
 }
@@ -92,32 +92,41 @@ func (*Service) Construct(
 
 	infra := inputs.Infra
 	if infra == nil {
-		// Standalone path: build minimal infra (RG + ManagedEnvironment) since
-		// there's no project-shared infra to reuse. No networking, DNS, log
-		// analytics, or Key Vault wiring.
+		// Standalone path: build only the infrastructure needed by the selected
+		// runtime. VM services need a VNet; Container Apps needs a managed
+		// environment.
 		var err error
-		infra, err = newStandaloneInfra(ctx, name, pulumi.Parent(comp))
+		infra, err = newStandaloneInfra(ctx, name, azure.IsVirtualMachineService(&svc), pulumi.Parent(comp))
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if err := createContainerApp(ctx, comp, name, svc, infra, inputs.Image, nil, nil, inputs.DnsZones); err != nil {
+	if err := createContainerService(ctx, comp, name, svc, infra, inputs.Image, nil, nil, inputs.DnsZones); err != nil {
 		return nil, err
 	}
 	return comp, nil
 }
 
-// newStandaloneInfra builds a minimal SharedInfra (ResourceGroup +
-// ManagedEnvironment) for a Service deployed without a Project.
+// newStandaloneInfra builds minimal runtime-specific infrastructure for a
+// Service deployed without a Project.
 func newStandaloneInfra(
-	ctx *pulumi.Context, name string, parentOpt pulumi.ResourceOption,
+	ctx *pulumi.Context, name string, virtualMachine bool, parentOpt pulumi.ResourceOption,
 ) (*azure.SharedInfra, error) {
 	rg, err := resources.NewResourceGroup(ctx, name, &resources.ResourceGroupArgs{
 		// Location: pulumi.String(location),
 	}, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating resource group: %w", err)
+	}
+	infra := &azure.SharedInfra{ResourceGroup: rg}
+	if virtualMachine {
+		networking, err := azure.CreateNetworking(ctx, name, infra, parentOpt)
+		if err != nil {
+			return nil, fmt.Errorf("creating VM networking: %w", err)
+		}
+		infra.Networking = networking
+		return infra, nil
 	}
 	env, err := azureapp.NewManagedEnvironment(ctx, name, &azureapp.ManagedEnvironmentArgs{
 		ResourceGroupName: rg.Name,
@@ -126,13 +135,13 @@ func newStandaloneInfra(
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
-	return &azure.SharedInfra{ResourceGroup: rg, Environment: env}, nil
+	infra.Environment = env
+	return infra, nil
 }
 
-// createContainerApp creates the Azure Container App under an already-registered
-// Service component, populates its Endpoint, and registers its outputs. Shared
-// between Construct and the project-level dispatcher.
-func createContainerApp(
+// createContainerService selects the Azure runtime under an already-registered
+// Service component, populates its Endpoint, and registers its outputs.
+func createContainerService(
 	ctx *pulumi.Context,
 	comp *ServiceOutputs,
 	serviceName string,
@@ -154,15 +163,31 @@ func createContainerApp(
 	if err != nil {
 		return fmt.Errorf("granting policies for service %s: %w", serviceName, err)
 	}
-	caResult, err := azure.CreateContainerApp(
-		ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones, policyIdentity,
-		pulumi.Parent(comp),
-	)
-	if err != nil {
-		return fmt.Errorf("creating Container App %s: %w", serviceName, err)
+	if azure.IsVirtualMachineService(&svc) {
+		vmResult, err := azure.CreateVirtualMachineService(
+			ctx, serviceName, imageURI, svc, infra, policyIdentity, pulumi.Parent(comp),
+		)
+		if err != nil {
+			return fmt.Errorf("creating VM service %s: %w", serviceName, err)
+		}
+		comp.Endpoint = vmResult.PublicIPAddress.IpAddress.ApplyT(func(ip *string) string {
+			if ip == nil {
+				return ""
+			}
+			return *ip
+		}).(pulumi.StringOutput)
+		comp.AppID = vmResult.ScaleSet.ID().ToStringOutput()
+	} else {
+		caResult, err := azure.CreateContainerApp(
+			ctx, serviceName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones, policyIdentity,
+			pulumi.Parent(comp),
+		)
+		if err != nil {
+			return fmt.Errorf("creating Container App %s: %w", serviceName, err)
+		}
+		comp.Endpoint = caResult.App.LatestRevisionFqdn.ApplyT(fqdnToHTTPS).(pulumi.StringOutput)
+		comp.AppID = caResult.App.ID().ToStringOutput()
 	}
-	comp.Endpoint = caResult.App.LatestRevisionFqdn.ApplyT(fqdnToHTTPS).(pulumi.StringOutput)
-	comp.AppID = caResult.App.ID().ToStringOutput()
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoint": comp.Endpoint,
 	}); err != nil {

@@ -124,7 +124,7 @@ func HasWildcardHostname(services compose.Services) bool {
 // A service with no ingress ports gets none: Front Door needs a public origin to
 // forward to, and an internal-only service has no reachable hostname to offer.
 func wildcardHostnames(svc compose.ServiceConfig) []string {
-	if !svc.HasIngressPorts() {
+	if !svc.HasIngressPorts() || IsVirtualMachineService(&svc) {
 		return nil
 	}
 	var wildcards []string

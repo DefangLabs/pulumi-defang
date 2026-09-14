@@ -79,8 +79,10 @@ type ProjectOutputs struct {
 // kind, used as Pulumi logical names for project-shared DNS zones. Empty when
 // that kind has no services.
 type serviceTypes struct {
+	hasContainerApp  bool
 	hasBuild         bool
 	hasLLM           bool
+	hasVM            bool
 	pgServiceName    string
 	redisServiceName string
 	llmModels        map[string]string // LLM service name → model alias
@@ -114,6 +116,12 @@ func detectServiceTypes(services compose.Services) serviceTypes {
 		if svc.LLM != nil {
 			result.hasLLM = true
 			result.llmModels[svcName] = llmModelAlias(svcName, services)
+		}
+		if svc.Postgres == nil && svc.Redis == nil && svc.LLM == nil && !providerazure.IsVirtualMachineService(&svc) {
+			result.hasContainerApp = true
+		}
+		if providerazure.IsVirtualMachineService(&svc) {
+			result.hasVM = true
 		}
 	}
 	return result
@@ -277,7 +285,7 @@ func createServiceResources(
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-		err = createContainerApp(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones)
+		err = createContainerService(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -420,6 +428,7 @@ func setupSharedInfra(
 		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
 		Etag:          inputs.Etag,
 		Domain:        inputs.Domain,
+		Networks:      inputs.Networks,
 	}
 	if ctx.DryRun() {
 		infra.ConfigProvider = &compose.DryRunConfigProvider{}
@@ -436,7 +445,7 @@ func setupSharedInfra(
 	}
 	infra.DomainZone = domainZone
 
-	if types.pgServiceName != "" || types.redisServiceName != "" {
+	if types.pgServiceName != "" || types.redisServiceName != "" || types.hasVM {
 		networking, err := providerazure.CreateNetworking(ctx, projectName, infra, parentOpt)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating networking: %w", err)
@@ -452,11 +461,13 @@ func setupSharedInfra(
 		infra.DNS = dns
 	}
 
-	env, err := createManagedEnvironment(ctx, projectName, infra, parentOpt)
-	if err != nil {
-		return nil, nil, err
+	if types.hasContainerApp {
+		env, err := createManagedEnvironment(ctx, projectName, infra, parentOpt)
+		if err != nil {
+			return nil, nil, err
+		}
+		infra.Environment = env
 	}
-	infra.Environment = env
 
 	// Wildcard hostnames can't be bound on a Container App, so they get an Azure
 	// Front Door profile in front of it. Nothing is created — and nothing is

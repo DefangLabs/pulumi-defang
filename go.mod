@@ -31,6 +31,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.27.0
+	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.27.0
 	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.27.0
