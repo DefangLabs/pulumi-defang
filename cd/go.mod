@@ -171,6 +171,7 @@ require (
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.9.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.27.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.27.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.27.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.27.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.27.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.27.0 // indirect

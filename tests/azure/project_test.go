@@ -290,3 +290,48 @@ func TestConstructAzureProjectBuildCarriesPluginIdentity(t *testing.T) {
 
 	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "")
 }
+
+func TestConstructAzureProjectUDPUsesVMScaleSet(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	port := func(protocol string) property.Value {
+		return property.New(property.NewMap(map[string]property.Value{
+			"target":   property.New(53.0),
+			"mode":     property.New("ingress"),
+			"protocol": property.New(protocol),
+		}))
+	}
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"dns": testutil.ServiceWithPorts(
+				"cunnie/sslip.io-dns-server:latest",
+				port("tcp"),
+				port("udp"),
+			),
+		}),
+	})
+	require.NoError(t, err)
+
+	find := func(typ string) *resourceRecord {
+		return findTypeWhere(*records, typ, func(property.Map) bool { return true })
+	}
+	require.NotNil(t, find("azure-native:compute:VirtualMachineScaleSet"))
+	require.NotNil(t, find("azure-native:network:LoadBalancer"))
+	require.NotNil(t, find("azure-native:network:PublicIPAddress"))
+	require.Nil(t, find("azure-native:app:ContainerApp"))
+	require.Nil(t, find("azure-native:app:ManagedEnvironment"),
+		"a VM-only project should not provision unused Container Apps infrastructure")
+
+	lb := find("azure-native:network:LoadBalancer")
+	rules := lb.inputs.Get("loadBalancingRules").AsArray()
+	require.Equal(t, 2, rules.Len())
+	protocols := map[string]int{}
+	for i := range rules.Len() {
+		inputs := rules.Get(i).AsMap()
+		require.InDelta(t, 53, inputs.Get("frontendPort").AsNumber(), 0)
+		protocols[inputs.Get("protocol").AsString()]++
+	}
+	require.Equal(t, map[string]int{"Tcp": 1, "Udp": 1}, protocols)
+}

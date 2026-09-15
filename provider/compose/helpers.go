@@ -35,6 +35,29 @@ func (p ServicePortConfig) GetAppProtocol() PortAppProtocol {
 	return PortAppProtocolHTTP
 }
 
+// UDPIngressAsHost returns a copy of services in which UDP ingress ports use
+// host mode. AWS and GCP use this at their project boundary to preserve the
+// deployment behavior produced by older CLIs, which rewrote UDP ingress to
+// host mode before invoking the Pulumi provider.
+func UDPIngressAsHost(services Services) Services {
+	if services == nil {
+		return nil
+	}
+
+	normalized := make(Services, len(services))
+	for name, service := range services {
+		service.Ports = append([]ServicePortConfig(nil), service.Ports...)
+		for i := range service.Ports {
+			port := &service.Ports[i]
+			if port.GetProtocol() == PortProtocolUDP && port.IsIngress() {
+				port.Mode = PortModeHost
+			}
+		}
+		normalized[name] = service
+	}
+	return normalized
+}
+
 // ParseMemoryMiB parses a memory string into MiB.
 // Accepts raw bytes (compose-go normalized), or suffixes: b, k, m, g, t, kb, mb, gb, tb, ki, mi, gi, ti.
 func ParseMemoryMiB(s string) int {

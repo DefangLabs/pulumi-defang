@@ -373,6 +373,8 @@ github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.27.0 h1:aS+zWsCHTFSNvJJpeVV4
 github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.27.0/go.mod h1:ikSzbgFIKUAz5jukFrxuQmPTM/t5h2e+xLm2dpZgteQ=
 github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.27.0 h1:5iF5uQTOFwqEOkB8AvLbMa6z/kCiUSj4izdAEmzu+C8=
 github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.27.0/go.mod h1:7WmiQP/pveKkrflIZZWHSQisfmnpKPfHqfY8xqbf77M=
+github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.27.0 h1:DqKiQZGbEevlDtAFvnYZ67zZ3WphPfAFdISlNR+ZEW4=
+github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.27.0/go.mod h1:z+ezTazcuv2IYoYOmPt//WsOgbQJwwkZGxaZVvUNo88=
 github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.27.0 h1:2Qh4qSpdW7USFs5xhBVYOKtDDPwSsVwGOZO6tR7I0QI=
 github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.27.0/go.mod h1:2GoulwVPnNrQKHUyllMOLxWstfvT05DaCRdP0i136PY=
 github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.27.0 h1:jd3VUn1N16EHeNuKgdlxxqQb3oUWOMFbOoiNjdt+zXs=
