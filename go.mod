@@ -24,7 +24,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.96.0
 	github.com/aws/smithy-go v1.28.1
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/compose-spec/compose-go/v2 v2.14.0
+	github.com/compose-spec/compose-go/v2 v2.15.0
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.45.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.9.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.27.0
@@ -160,7 +160,7 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/encoding v0.3.6 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
-	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
