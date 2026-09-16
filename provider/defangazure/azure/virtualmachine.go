@@ -266,7 +266,16 @@ func acrLoginScript(infra *SharedInfra, svc compose.ServiceConfig) pulumi.String
 		func(values []any) string {
 			registry := values[0].(string)
 			identityID := values[1].(string)
-			return fmt.Sprintf(`#!/bin/bash
+			return renderAcrLoginScript(registry, identityID)
+		},
+	).(pulumi.StringOutput)
+}
+
+// renderAcrLoginScript is a plain function (no Pulumi Outputs) so it's unit-testable:
+// it's the ExecStartPre of the VM's systemd unit, so a broken script never surfaces as
+// a Pulumi error, only as a container that silently never starts.
+func renderAcrLoginScript(registry, identityID string) string {
+	return fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
 registry=%s
 identity_id=%s
@@ -277,7 +286,14 @@ aad_json=$(curl -fsS --get -H Metadata:true \
   http://169.254.169.254/metadata/identity/oauth2/token)
 aad=$(printf '%%s' "$aad_json" | jq -er .access_token)
 payload=$(printf '%%s' "$aad" | cut -d. -f2 | tr '_-' '/+')
-tenant=$(printf '%%s===' "$payload" | base64 -d 2>/dev/null | jq -er .tid)
+# A JWT payload segment's base64 length is essentially never a multiple of 4
+# (valid padding is 0-2 '=' chars, never 3), so blindly appending '===' always
+# leaves trailing bytes GNU base64 rejects with "invalid input" (exit 1) even
+# though it decodes the real payload to stdout correctly beforehand. Under
+# 'set -e -o pipefail' that exit code, not any actual decoding failure, was
+# killing this script on every single run before it ever reached the ACR
+# token exchange below.
+tenant=$(printf '%%s===' "$payload" | { base64 -d 2>/dev/null || true; } | jq -er .tid)
 refresh=$(curl -fsS -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=access_token \
   --data-urlencode "service=$registry" \
@@ -286,8 +302,6 @@ refresh=$(curl -fsS -X POST -H 'Content-Type: application/x-www-form-urlencoded'
   "https://$registry/oauth2/exchange" | jq -er .refresh_token)
 printf '%%s' "$refresh" | docker login "$registry" --username 00000000-0000-0000-0000-000000000000 --password-stdin
 `, shellQuote(registry), shellQuote(identityID))
-		},
-	).(pulumi.StringOutput)
 }
 
 //nolint:funlen // the cloud-init document is clearer when kept as one template
