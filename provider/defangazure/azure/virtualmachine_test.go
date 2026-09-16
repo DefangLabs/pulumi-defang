@@ -2,6 +2,10 @@ package azure
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -269,6 +273,63 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 	require.Len(t, assigned, 1)
 	assert.Equal(t, "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kv",
 		assigned[0].StringValue())
+}
+
+// TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR
+// login script (the VM's dns.service ExecStartPre) against a real bash, with
+// curl/docker stubbed out. It reproduces the production incident this fixed:
+// a JWT payload's base64 segment is essentially never a multiple of 4 chars
+// (valid padding is 0-2 '=', never 3), so blindly appending '===' left
+// trailing bytes that made GNU base64 exit 1 -- despite decoding the tenant
+// JSON to stdout correctly first. Under 'set -e -o pipefail' that killed the
+// script before the ACR token exchange ran, so the DNS container never
+// started, on every single VM boot. This never surfaced as a Pulumi error:
+// the script only runs later, as a systemd ExecStartPre inside the VM.
+func TestAcrLoginScriptSurvivesUnpaddedJWTBase64(t *testing.T) {
+	tenantID := "11111111-2222-3333-4444-555555555555"
+	claims, err := json.Marshal(map[string]string{"tid": tenantID})
+	require.NoError(t, err)
+	// A real AAD access token has three dot-separated parts; only the
+	// payload (claims) segment matters here. RawURLEncoding matches AAD's
+	// own encoding: no padding, '-'/'_' instead of '+'/'/'.
+	fakeJWT := "header." + base64.RawURLEncoding.EncodeToString(claims) + ".sig"
+
+	captureFile := t.TempDir() + "/exchange-args"
+	script := renderAcrLoginScript("myregistry.azurecr.io", "/subscriptions/sub/.../identity")
+
+	harness := `
+curl() {
+  case "$*" in
+  *169.254.169.254*) echo '{"access_token":"` + fakeJWT + `"}' ;;
+  *oauth2/exchange*) printf '%s' "$*" > '` + captureFile + `'; echo '{"refresh_token":"fake-refresh-token"}' ;;
+  *) echo "unexpected curl invocation: $*" >&2; return 1 ;;
+  esac
+}
+export -f curl
+docker() {
+  case "$1 $2" in
+  "login myregistry.azurecr.io") cat >/dev/null; echo "Login Succeeded" ;;
+  *) echo "unexpected docker invocation: $*" >&2; return 1 ;;
+  esac
+}
+export -f docker
+` + script
+
+	//nolint:gosec // G204: script is test-authored, not external input
+	out, err := exec.CommandContext(t.Context(), "bash", "-c", harness).CombinedOutput()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		t.Fatalf("acr-login script failed: %v\noutput: %s", err, out)
+	}
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "Login Succeeded")
+
+	//nolint:gosec // G304: captureFile is t.TempDir()-derived, not external input
+	exchangeArgsBytes, err := os.ReadFile(captureFile)
+	exchangeArgs := string(exchangeArgsBytes)
+	require.NoError(t, err, "the ACR token exchange must run -- it never did before this fix")
+	assert.Contains(t, exchangeArgs, "tenant="+tenantID,
+		"the tenant extracted from the JWT payload must reach the exchange request")
 }
 
 func TestVMComputerNamePrefix(t *testing.T) {
