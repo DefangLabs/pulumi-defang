@@ -1,2 +1,2 @@
-pulumi-defang-gcp==2.9.1-alpha+0010175c
+pulumi-defang-gcp==2.9.1
 pulumi>=3.0.0,<4.0.0
