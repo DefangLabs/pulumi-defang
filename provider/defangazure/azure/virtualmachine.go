@@ -666,7 +666,7 @@ func CreateVirtualMachineService(
 			RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
 				MaxBatchInstancePercent:               pulumi.IntPtr(50),
 				MaxSurge:                              pulumi.BoolPtr(true),
-				MaxUnhealthyInstancePercent:           pulumi.IntPtr(50),
+				MaxUnhealthyInstancePercent:           pulumi.IntPtr(5),
 				MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
 				RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
 			},

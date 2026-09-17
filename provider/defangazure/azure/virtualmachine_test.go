@@ -253,7 +253,7 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 	rollingPolicy := upgradePolicy[resource.PropertyKey("rollingUpgradePolicy")].ObjectValue()
 	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxBatchInstancePercent")].NumberValue(), 0)
 	assert.True(t, rollingPolicy[resource.PropertyKey("maxSurge")].BoolValue())
-	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
+	assert.InDelta(t, 5, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
 	assert.InDelta(t, 0, rollingPolicy[resource.PropertyKey("maxUnhealthyUpgradedInstancePercent")].NumberValue(), 0)
 	assert.True(t, rollingPolicy[resource.PropertyKey("rollbackFailedInstancesOnPolicyBreach")].BoolValue())
 	vmProfile := vmScaleSets[0][resource.PropertyKey("virtualMachineProfile")].ObjectValue()
