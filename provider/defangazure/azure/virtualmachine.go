@@ -661,6 +661,8 @@ func CreateVirtualMachineService(
 		// customData changes must reimage VMSS instances for cloud-init to run.
 		// A rolling max-surge upgrade creates a healthy replacement before it
 		// deletes the old instance, keeping the load-balanced endpoint available.
+		// Azure falls back to in-place upgrade if surge capacity (quota/IP/subnet)
+		// isn't available, which can interrupt a single-replica service's endpoint.
 		UpgradePolicy: &compute.UpgradePolicyArgs{
 			Mode: compute.UpgradeModeRolling,
 			RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
