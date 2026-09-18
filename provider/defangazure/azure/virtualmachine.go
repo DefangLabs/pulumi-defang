@@ -84,6 +84,20 @@ func vmComputerNamePrefix(serviceName string) string {
 	return strings.TrimRight(prefix, "-")
 }
 
+// rollingUpgradeMaxUnhealthyInstancePercent picks the VMSS rolling-upgrade
+// health gate the same way postgres.go and redis.go pick their HA mode: the
+// affordable default favors fast iteration over strict availability (mirrors
+// AWS's MinHealthyPercent affordable default of 0, and GCP's permissive
+// MIG update policy); HighAvailability opts into Azure's strictest allowed
+// value, halting a rollout if any meaningful fraction of the pool is already
+// unhealthy.
+func rollingUpgradeMaxUnhealthyInstancePercent(ctx *pulumi.Context) int {
+	if HighAvailability.Get(ctx) {
+		return 5
+	}
+	return 100
+}
+
 func azureProtocol(port compose.ServicePortConfig) string {
 	if port.GetProtocol() == compose.PortProtocolUDP {
 		return azureProtocolUDP
@@ -668,7 +682,7 @@ func CreateVirtualMachineService(
 			RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
 				MaxBatchInstancePercent:               pulumi.IntPtr(50),
 				MaxSurge:                              pulumi.BoolPtr(true),
-				MaxUnhealthyInstancePercent:           pulumi.IntPtr(5),
+				MaxUnhealthyInstancePercent:           pulumi.IntPtr(rollingUpgradeMaxUnhealthyInstancePercent(ctx)),
 				MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
 				RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
 			},
