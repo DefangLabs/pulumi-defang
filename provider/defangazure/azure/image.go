@@ -174,7 +174,6 @@ func buildServiceImage(
 		ctx,
 		serviceName,
 		encodedYAML,
-		svc.Build.Context,
 		infra.registry,
 		sharedInfra,
 		opts...,
