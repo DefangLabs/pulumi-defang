@@ -64,7 +64,7 @@ jobs:
       # a bash step instead of the jlumbroso/free-disk-space action, since the
       # subset of its cleanup we use is a few `rm -rf`s, not worth the dep.
       - name: Free disk space
-        run: sudo rm -rf "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+        run: sudo rm -rf "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
 
       - name: Checkout Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
