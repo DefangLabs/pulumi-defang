@@ -60,17 +60,11 @@ jobs:
 
       # The runner's root partition (~14GB free) can't hold the 18 cross-compiled
       # binaries (3 providers x 3 OS x 2 arch) linking the huge pulumi-{aws,gcp,azure}
-      # SDKs. Reclaim ~25GB of unused preinstalled toolchains before building.
+      # SDKs. Reclaim ~25GB of unused preinstalled toolchains before building —
+      # a bash step instead of the jlumbroso/free-disk-space action, since the
+      # subset of its cleanup we use is a few `rm -rf`s, not worth the dep.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false # slow to remove; the reclaim above is enough
-          docker-images: false
-          swap-storage: false
+        run: sudo rm -rf "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
 
       - name: Checkout Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
