@@ -34,7 +34,7 @@ require (
 	github.com/pulumi/pulumi/sdk/v3 v3.261.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	google.golang.org/protobuf v1.36.12
 )
 
