@@ -205,7 +205,10 @@ func GetConfigOrEnvValue(
 			value = *sv
 		}
 		// Resolve any $VAR / ${VAR} interpolations; empty string passes through as-is.
-		return InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)
+		// GetConfigOrEnvValue's callers don't distinguish secret-backed output
+		// from plaintext, so the "was anything substituted" flag isn't needed here.
+		resolved, _ := InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)
+		return resolved
 	}
 	// Key not in environment at all: use the provided default.
 	return pulumi.String(defaultValue).ToStringOutput()
@@ -223,15 +226,23 @@ func ToPulumiStringArray(ss []string) pulumi.StringArray {
 	return arr
 }
 
+// InterpolateEnvironmentVariable resolves ${VAR} / $VAR references in value
+// against configProvider. The second return value is true when at least one
+// variable was actually substituted — callers that expose the result as a
+// plaintext resource property (rather than a native secret reference) should
+// treat that as "this value embeds a config-provided secret" and keep it out
+// of plaintext state/properties instead (e.g. buildEnvVars in the Azure
+// provider, which wraps such values as Container App secrets — see
+// DefangLabs/station#198).
 func InterpolateEnvironmentVariable(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
 	value string,
 	opts ...pulumi.InvokeOption,
-) pulumi.StringOutput {
+) (pulumi.StringOutput, bool) {
 	if configProvider == nil {
 		// No config provider, so we can't resolve any variables. Return the raw string.
-		return pulumi.String(value).ToStringOutput()
+		return pulumi.String(value).ToStringOutput(), false
 	}
 	// First pass: discover variables and set up config resolution.
 	// A second pass inside ApplyT is unavoidable because Pulumi outputs are async.
@@ -249,13 +260,13 @@ func InterpolateEnvironmentVariable(
 
 	if len(names) == 0 {
 		if err != nil {
-			return pulumi.String(value).ToStringOutput()
+			return pulumi.String(value).ToStringOutput(), false
 		}
-		return pulumi.String(escaped).ToStringOutput()
+		return pulumi.String(escaped).ToStringOutput(), false
 	}
 
 	// Wait for all resolutions, then let compose-go do the full substitution
-	return pulumi.All(outputs...).ApplyT(func(resolved []interface{}) (string, error) {
+	result := pulumi.All(outputs...).ApplyT(func(resolved []interface{}) (string, error) {
 		mapping := make(map[string]string, len(names))
 		for i, name := range names {
 			mapping[name] = resolved[i].(string)
@@ -265,6 +276,7 @@ func InterpolateEnvironmentVariable(
 			return v, ok
 		}, template.WithoutLogging)
 	}).(pulumi.StringOutput)
+	return result, true
 }
 
 // healthcheckURLRegex matches `http://localhost:PORT/PATH` (or 127.0.0.1) inside

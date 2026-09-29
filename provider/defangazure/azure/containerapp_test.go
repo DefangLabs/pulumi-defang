@@ -30,9 +30,13 @@ func envVarsByName(result envResult) map[string]app.EnvironmentVarArgs {
 }
 
 // TestBuildEnvVarsEmitsSecretRefs verifies that env vars matching the bare
-// ${VAR} pattern (per compose.GetConfigName) are emitted as Container App
-// secret references (separate Secret entry + EnvironmentVar.SecretRef),
-// NOT as inline plain values (which would leak plaintext into state).
+// ${VAR} pattern (per compose.GetConfigName) are emitted as Key Vault-backed
+// Container App secret references (separate Secret entry +
+// EnvironmentVar.SecretRef), NOT as inline plain values (which would leak
+// plaintext into state); and that a composite value which embeds the same
+// config var (not a bare match) still avoids a plaintext Value by getting a
+// Container App-native (value-backed, non-Key-Vault) secret instead — see
+// DefangLabs/station#198.
 //
 // Lives at the provider package level (vs. tests/azure/) because buildEnvVars
 // is package-private and this lets us supply a fully-populated SharedInfra
@@ -51,17 +55,19 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 		svc := compose.ServiceConfig{
 			Environment: compose.Environment{
 				"LITERAL": pulumi.String("plain-value"),
-				"SECRET":  pulumi.String("${CONFIG}"),             // bare ref → secret entry + SecretRef
+				"SECRET":  pulumi.String("${CONFIG}"),             // bare ref → Key Vault secret entry + SecretRef
 				"OTHER":   pulumi.String("${CONFIG}"),             // same secret, second env var → shared entry
-				"MIXED":   pulumi.String("prefix${CONFIG}suffix"), // not bare → plain Value, no Secret entry
+				"MIXED":   pulumi.String("prefix${CONFIG}suffix"), // not bare, but embeds CONFIG → computed secret + SecretRef
 			},
 		}
 
 		result := buildEnvVars(ctx, "svc", svc, infra, nil, nil, nil)
 
-		// Exactly one Secret entry — deduped even though two env vars reference CONFIG.
-		require.Len(t, result.Secrets, 1,
-			"expected exactly one Secret entry per unique referenced ConfigProvider key")
+		// One Key Vault-backed Secret entry (deduped across SECRET/OTHER) plus
+		// one computed (value-backed) entry for MIXED.
+		require.Len(t, result.Secrets, 2,
+			"expected one Key-Vault-backed entry (deduped) plus one computed entry for MIXED")
+		assert.True(t, result.HasKeyVaultSecret, "a Key Vault-backed secret was created")
 
 		envByName := envVarsByName(result)
 
@@ -89,11 +95,125 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 		assert.Equal(t, string(secRef), string(otherRef),
 			"two env vars pointing at the same secret should share a SecretRef")
 
-		// MIXED: "prefix${CONFIG}suffix" is not a bare ref → plain Value (interpolated)
+		// MIXED: "prefix${CONFIG}suffix" embeds a config secret — must be a
+		// SecretRef, never a plaintext Value, even though it isn't a bare match.
 		mixed, ok := envByName["MIXED"]
 		require.True(t, ok, "MIXED missing")
-		assert.NotNil(t, mixed.Value, "MIXED should have interpolated Value")
-		assert.Nil(t, mixed.SecretRef, "MIXED is not a bare ref; no SecretRef")
+		assert.Nil(t, mixed.Value,
+			"MIXED embeds a config secret and must not have inline Value")
+		require.NotNil(t, mixed.SecretRef, "MIXED must be a SecretRef")
+
+		// The MIXED secret must be value-backed (no KeyVaultUrl): buildEnvVars
+		// only has the fully-interpolated string, not a fresh Key Vault entry
+		// to point at.
+		mixedRef := mixed.SecretRef.(pulumi.String)
+		var mixedSecret app.SecretArgs
+		var mixedSecretFound bool
+		for _, entry := range result.Secrets {
+			if s, ok := entry.(app.SecretArgs); ok && s.Name.(pulumi.String) == mixedRef {
+				mixedSecret, mixedSecretFound = s, true
+				break
+			}
+		}
+		require.True(t, mixedSecretFound, "no Secret entry found for MIXED's SecretRef")
+		assert.NotNil(t, mixedSecret.Value, "MIXED's secret should carry the computed value")
+		assert.Nil(t, mixedSecret.KeyVaultUrl, "MIXED's secret is computed, not Key-Vault-backed")
+
+		return nil
+	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
+// TestPostgresURLEndpointFlagsEmbeddedSecret verifies that postgresURLEndpoint
+// reports hasSecret=true when the DSN's credentials interpolate a
+// config-provided value (e.g. ${POSTGRES_PASSWORD}) — the exact shape of
+// station's compose.yaml DATABASE_URL — so callers keep the resolved password
+// out of the Container App's plaintext env. See DefangLabs/station#198.
+func TestPostgresURLEndpointFlagsEmbeddedSecret(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		cp := NewConfigProvider("https://myvault.vault.azure.net")
+		// Pre-seed the cache (as TestGetConfigValue_ReturnsCachedValue does) so
+		// GetConfigValue doesn't attempt a real Key Vault fetch in this test.
+		cp.cache["POSTGRES_PASSWORD"] = pulumi.ToSecret(pulumi.String("hunter2").ToStringOutput()).(pulumi.StringOutput)
+		cp.fetched = true
+
+		serviceEndpoints := map[string]pulumi.StringOutput{
+			"db": pulumi.String("mystation.postgres.database.azure.com:5432").ToStringOutput(),
+		}
+
+		dsn := "postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/station?sslmode=require"
+		out, matched, hasSecret := postgresURLEndpoint(ctx, dsn, serviceEndpoints, cp)
+		require.True(t, matched, "DSN host matches a managed service")
+		assert.True(t, hasSecret, "DSN embeds ${POSTGRES_PASSWORD}; must be flagged as secret-bearing")
+
+		out.ApplyT(func(got string) string {
+			assert.Equal(t,
+				"postgresql://postgres:hunter2@mystation.postgres.database.azure.com:5432/station?sslmode=require",
+				got)
+			return got
+		})
+
+		// A DSN with no ${VAR} at all matches but interpolates nothing, so it
+		// isn't secret-bearing even though the branch runs.
+		//nolint:gosec // test fixture, not a credential
+		plainDSN := "postgresql://postgres:plaintext@db:5432/station?sslmode=require"
+		_, matched2, hasSecret2 := postgresURLEndpoint(ctx, plainDSN, serviceEndpoints, cp)
+		require.True(t, matched2)
+		assert.False(t, hasSecret2, "no ${VAR} in the DSN; nothing was substituted")
+
+		return nil
+	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
+// TestBuildEnvVarsKeepsPostgresDSNPasswordOutOfPlaintext reproduces
+// DefangLabs/station#198 end-to-end through buildEnvVars: a DATABASE_URL
+// shaped exactly like station's compose.yaml (a static string that embeds
+// ${POSTGRES_PASSWORD}, so GetConfigName2 doesn't treat it as a bare secret
+// ref) must still come out of buildEnvVars as a SecretRef, never as an
+// EnvironmentVarArgs.Value carrying the password in clear.
+func TestBuildEnvVarsKeepsPostgresDSNPasswordOutOfPlaintext(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		const vaultURL = "https://myvault.vault.azure.net"
+		cp := NewConfigProvider(vaultURL)
+		cp.cache["POSTGRES_PASSWORD"] = pulumi.ToSecret(pulumi.String("hunter2").ToStringOutput()).(pulumi.StringOutput)
+		cp.fetched = true
+
+		infra := &SharedInfra{ConfigProvider: cp, KeyVaultURL: vaultURL}
+		serviceEndpoints := map[string]pulumi.StringOutput{
+			"db": pulumi.String("mystation.postgres.database.azure.com:5432").ToStringOutput(),
+		}
+		svc := compose.ServiceConfig{
+			Environment: compose.Environment{
+				// Same shape as station's compose.yaml: a static DSN with a bare
+				// ${POSTGRES_PASSWORD} reference, not itself a bare secret ref.
+				"DATABASE_URL":      pulumi.String("postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/station?sslmode=require"),
+				"POSTGRES_PASSWORD": nil, // bare key ("POSTGRES_PASSWORD:" in compose): its own Key Vault secret ref
+			},
+		}
+
+		result := buildEnvVars(ctx, "api", svc, infra, serviceEndpoints, nil, nil)
+		envByName := envVarsByName(result)
+
+		dbURL, ok := envByName["DATABASE_URL"]
+		require.True(t, ok, "DATABASE_URL missing")
+		assert.Nil(t, dbURL.Value,
+			"DATABASE_URL must not carry the resolved password as a plaintext env Value")
+		require.NotNil(t, dbURL.SecretRef, "DATABASE_URL must be a SecretRef")
+
+		// Confirm no plaintext env value anywhere in the result contains the password.
+		for name, args := range envByName {
+			if args.Value == nil {
+				continue
+			}
+			args.Value.ToStringPtrOutput().ApplyT(func(v *string) *string {
+				if v != nil {
+					assert.NotContains(t, *v, "hunter2",
+						"env var %q leaks the resolved password in plaintext", name)
+				}
+				return v
+			})
+		}
 
 		return nil
 	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
