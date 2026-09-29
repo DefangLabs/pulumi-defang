@@ -124,6 +124,73 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName covers a
+// naming collision CodeRabbit flagged on the initial version of this fix
+// (pulumi-defang#637): a bare ${VAR} reference and a composite value can
+// derive the same toContainerAppSecretName when a config var's name matches
+// another env var's own key. Concretely:
+//
+//	A: "${B}"        // bare ref → Key Vault secret named "b"
+//	B: "prefix${C}"  // composite → would also derive secret name "b"
+//
+// Without a distinct namespace for composite secrets, B's computed value
+// would be dropped (seenSecrets already has "b") and B would silently read
+// A's Key Vault secret instead of its own interpolated value — the deploy
+// succeeds, so nothing surfaces the wrong value at deploy time.
+func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		const vaultURL = "https://myvault.vault.azure.net"
+		cp := NewConfigProvider(vaultURL)
+		cp.cache["C"] = pulumi.ToSecret(pulumi.String("c-value").ToStringOutput()).(pulumi.StringOutput)
+		cp.fetched = true
+
+		infra := &SharedInfra{ConfigProvider: cp, KeyVaultURL: vaultURL}
+		svc := compose.ServiceConfig{
+			Environment: compose.Environment{
+				"A": pulumi.String("${B}"),
+				"B": pulumi.String("prefix${C}"),
+			},
+		}
+
+		result := buildEnvVars(ctx, "svc", svc, infra, nil, nil, nil)
+		envByName := envVarsByName(result)
+
+		a, ok := envByName["A"]
+		require.True(t, ok, "A missing")
+		require.NotNil(t, a.SecretRef, "A must be a SecretRef")
+
+		b, ok := envByName["B"]
+		require.True(t, ok, "B missing")
+		require.NotNil(t, b.SecretRef, "B must be a SecretRef")
+
+		aRef := string(a.SecretRef.(pulumi.String))
+		bRef := string(b.SecretRef.(pulumi.String))
+		assert.NotEqual(t, aRef, bRef,
+			"A (Key Vault ref to config var B) and B (composite value) must not share a secret name")
+
+		// B's own secret must carry its interpolated value, not A's Key Vault ref.
+		var bSecret app.SecretArgs
+		var bSecretFound bool
+		for _, entry := range result.Secrets {
+			if s, ok := entry.(app.SecretArgs); ok && s.Name.(pulumi.String) == pulumi.String(bRef) {
+				bSecret, bSecretFound = s, true
+				break
+			}
+		}
+		require.True(t, bSecretFound, "no Secret entry found for B's SecretRef")
+		assert.Nil(t, bSecret.KeyVaultUrl, "B's secret is computed, not Key-Vault-backed")
+		require.NotNil(t, bSecret.Value)
+		bSecret.Value.ToStringPtrOutput().ApplyT(func(v *string) *string {
+			require.NotNil(t, v)
+			assert.Equal(t, "prefixc-value", *v)
+			return v
+		})
+
+		return nil
+	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
 // TestPostgresURLEndpointFlagsEmbeddedSecret verifies that postgresURLEndpoint
 // reports hasSecret=true when the DSN's credentials interpolate a
 // config-provided value (e.g. ${POSTGRES_PASSWORD}) — the exact shape of

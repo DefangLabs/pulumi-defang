@@ -245,10 +245,11 @@ func buildEnvVars(
 	var hasKeyVaultSecret bool
 	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we
 	// need one Secret entry per unique secret but one EnvironmentVar per env
-	// var, so dedupe on the secret var name. Composite/computed secrets (see
-	// below) are keyed by env var name instead, in the same map — the two
-	// namespaces don't collide in practice (config var names vs. env var
-	// names in the same service).
+	// var, so dedupe on the secret var name (this map holds only Key
+	// Vault-backed names). Composite/computed secrets (see below) are named
+	// from the env var key in a distinct "env-" namespace instead — the two
+	// aren't deduped against each other, since a config var name and an env
+	// var name in the same service can otherwise collide.
 	seenSecrets := make(map[string]struct{})
 	for k, v := range common.Sorted(svc.Environment) {
 		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
@@ -287,14 +288,15 @@ func buildEnvVars(
 			}
 			value, hasSecret := resolveComposedEnvValue(ctx, raw, serviceEndpoints, serviceHosts, infra.ConfigProvider)
 			if hasSecret {
-				appSecretName := toContainerAppSecretName(k)
-				if _, ok := seenSecrets[appSecretName]; !ok {
-					seenSecrets[appSecretName] = struct{}{}
-					appSecrets = append(appSecrets, app.SecretArgs{
-						Name:  pulumi.String(appSecretName),
-						Value: value.ToStringPtrOutput(),
-					})
-				}
+				// "env-" namespaces this apart from the Key Vault-backed names in
+				// seenSecrets (those are derived from config var names, not env var
+				// names). One env var key always produces exactly one composite
+				// secret, so there's nothing to dedupe here.
+				appSecretName := "env-" + toContainerAppSecretName(k)
+				appSecrets = append(appSecrets, app.SecretArgs{
+					Name:  pulumi.String(appSecretName),
+					Value: value.ToStringPtrOutput(),
+				})
 				envs = append(envs, app.EnvironmentVarArgs{
 					Name:      pulumi.String(k),
 					SecretRef: pulumi.String(appSecretName),
