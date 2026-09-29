@@ -192,7 +192,14 @@ func buildEnvVars(
 			if sv != nil {
 				raw = *sv
 			}
-			value := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
+			// NOTE: like Azure before DefangLabs/station#198, a composite value that
+			// embeds a config-provided secret (e.g. a DSN built from ${DB_PASSWORD})
+			// still lands here as a plaintext Cloud Run env value; the returned bool
+			// (discarded) flags exactly that case. Azure now routes it through a
+			// native secret instead — GCP has an analogous Secret Manager mechanism
+			// (see the secretVar branch above) but composite values aren't wired to
+			// it yet. Left as a follow-up; out of scope for the Azure-specific fix.
+			value, _ := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 				Name:  pulumi.String(k),
 				Value: value,

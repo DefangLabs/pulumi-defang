@@ -34,12 +34,18 @@ const (
 // service in serviceEndpoints. If so it returns a new URL with:
 //   - the hostname replaced by the managed service FQDN
 //   - any ${VAR} credential/query references interpolated from configProvider
+//
+// The third return value is true when a config-provided secret (e.g. a
+// managed Postgres password) was interpolated into the URL — callers must
+// keep that value out of a plaintext resource property (Container Apps'
+// `env[].value` is readable by anyone with subscription Reader on a plain
+// GET; see DefangLabs/station#198) and instead wrap it as a native secret.
 func postgresURLEndpoint(
 	ctx *pulumi.Context,
 	v string,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	configProvider compose.ConfigProvider,
-) (pulumi.StringOutput, bool) {
+) (pulumi.StringOutput, bool, bool) {
 	var prefix string
 	switch {
 	case strings.HasPrefix(v, "postgresql://"):
@@ -47,14 +53,14 @@ func postgresURLEndpoint(
 	case strings.HasPrefix(v, "postgres://"):
 		prefix = "postgres://"
 	default:
-		return pulumi.StringOutput{}, false
+		return pulumi.StringOutput{}, false, false
 	}
 
 	rest := strings.TrimPrefix(v, prefix)
 	// Find the last "@" to split userinfo from host
 	atIdx := strings.LastIndex(rest, "@")
 	if atIdx < 0 {
-		return pulumi.StringOutput{}, false
+		return pulumi.StringOutput{}, false, false
 	}
 
 	hostAndRest := rest[atIdx+1:]
@@ -66,7 +72,7 @@ func postgresURLEndpoint(
 
 	ep, ok := serviceEndpoints[host]
 	if !ok {
-		return pulumi.StringOutput{}, false
+		return pulumi.StringOutput{}, false, false
 	}
 
 	// Split into: "scheme+userinfo@" and "afterhost" (port/path/query)
@@ -75,9 +81,10 @@ func postgresURLEndpoint(
 
 	// Interpolate ${VAR} in credentials and query parts if a config provider is available.
 	var beforeOut, afterOut pulumi.StringOutput
+	var beforeHasSecret, afterHasSecret bool
 	if configProvider != nil {
-		beforeOut = compose.InterpolateEnvironmentVariable(ctx, configProvider, beforeHost)
-		afterOut = compose.InterpolateEnvironmentVariable(ctx, configProvider, afterHost)
+		beforeOut, beforeHasSecret = compose.InterpolateEnvironmentVariable(ctx, configProvider, beforeHost)
+		afterOut, afterHasSecret = compose.InterpolateEnvironmentVariable(ctx, configProvider, afterHost)
 	} else {
 		beforeOut = pulumi.String(beforeHost).ToStringOutput()
 		afterOut = pulumi.String(afterHost).ToStringOutput()
@@ -92,7 +99,7 @@ func postgresURLEndpoint(
 		return before + epHost + after
 	}).(pulumi.StringOutput)
 
-	return result, true
+	return result, true, beforeHasSecret || afterHasSecret
 }
 
 type containerAppResult struct {
@@ -136,6 +143,12 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 type envResult struct {
 	Envs    app.EnvironmentVarArray
 	Secrets app.SecretArray
+	// HasKeyVaultSecret is true when Secrets contains at least one Key
+	// Vault-backed entry (KeyVaultUrl set), as opposed to a Container
+	// App-native value-backed one (see the composite-secret branch in
+	// buildEnvVars). Only a Key Vault-backed secret needs the app to carry
+	// the Key Vault reader identity.
+	HasKeyVaultSecret bool
 }
 
 // toContainerAppSecretName converts an env var name to a Container App secret
@@ -144,9 +157,73 @@ func toContainerAppSecretName(envKey string) string {
 	return strings.ToLower(strings.ReplaceAll(envKey, "_", "-"))
 }
 
+// secretNamer mints unique Container App secret names. buildEnvVars derives
+// names from two different, independently user-chosen sources — a config var
+// name (Key Vault-backed secrets) and an env var key (composite/computed
+// secrets) — that both go through toContainerAppSecretName and can therefore
+// coincide (e.g. a config var literally named "ENV_DB" normalizes the same
+// way a deliberately-prefixed composite name might). No fixed prefix is
+// provably disjoint from a user-chosen string, so instead every name minted
+// is checked against every other name minted so far and disambiguated with a
+// numeric suffix on collision — Container Apps' ARM API doesn't reject two
+// Secrets entries sharing a Name (behavior on a duplicate is unspecified/
+// last-wins), so this must never be allowed to happen.
+type secretNamer struct {
+	used map[string]struct{}
+}
+
+func newSecretNamer() *secretNamer {
+	return &secretNamer{used: make(map[string]struct{})}
+}
+
+// unique returns base, or base with a numeric suffix appended if base is
+// already taken, and marks the returned name as taken.
+func (n *secretNamer) unique(base string) string {
+	name := base
+	for i := 2; ; i++ {
+		if _, taken := n.used[name]; !taken {
+			n.used[name] = struct{}{}
+			return name
+		}
+		name = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+// resolveComposedEnvValue resolves a static compose env value that isn't a
+// bare secret ref (compose.GetConfigName2 returned ""): a managed-service
+// endpoint substitution (Redis/LLM/Postgres URL, or a bare service host name)
+// or, failing that, plain ${VAR} interpolation. hasSecret is true when the
+// result embeds a config-provided secret (currently only possible via the
+// Postgres URL branch or the interpolation fallback) — callers must keep such
+// a value out of a plaintext resource property. See DefangLabs/station#198.
+func resolveComposedEnvValue(
+	ctx *pulumi.Context,
+	raw string,
+	serviceEndpoints map[string]pulumi.StringOutput,
+	serviceHosts map[string]pulumi.StringOutput,
+	configProvider compose.ConfigProvider,
+) (pulumi.StringOutput, bool) {
+	if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
+		return ep, false
+	}
+	if ep, ok := llmURLEndpoint(raw, serviceEndpoints); ok {
+		return ep, false
+	}
+	if ep, ok, secret := postgresURLEndpoint(ctx, raw, serviceEndpoints, configProvider); ok {
+		return ep, secret
+	}
+	if host, ok := serviceHosts[raw]; ok {
+		return host, false
+	}
+	return compose.InterpolateEnvironmentVariable(ctx, configProvider, raw)
+}
+
 // buildEnvVars constructs the environment variable array for a Container App.
-// Pure config vars (empty value in compose) get Key Vault-backed secret references
-// when vault info is available; otherwise they fall back to inline values.
+// Pure config vars (empty value in compose) get Key Vault-backed secret
+// references when vault info is available. A composite value that embeds a
+// config-provided secret (e.g. a DSN built from ${POSTGRES_PASSWORD}) gets a
+// Container App-native secret instead (see DefangLabs/station#198); anything
+// else falls back to an inline value.
 func buildEnvVars(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -197,10 +274,14 @@ func buildEnvVars(
 	}
 
 	var appSecrets app.SecretArray
-	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we
-	// need one Secret entry per unique secret but one EnvironmentVar per env
-	// var, so dedupe on the secret var name.
-	seenSecrets := make(map[string]struct{})
+	var hasKeyVaultSecret bool
+	// namer guarantees every Container App secret name is unique — see its
+	// doc comment for why a fixed prefix can't do this safely. kvSecretNames
+	// dedupes the KV branch: multiple env vars can reference the same config
+	// var (FOO=${X}, BAR=${X}) and must share one Secret entry, so its name
+	// is minted once per secretVar and reused.
+	namer := newSecretNamer()
+	kvSecretNames := make(map[string]string)
 	for k, v := range common.Sorted(svc.Environment) {
 		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
 			envs = append(envs, app.EnvironmentVarArgs{
@@ -208,11 +289,12 @@ func buildEnvVars(
 				Value: infra.LLMInfra.APIKey,
 			})
 		} else if secretVar := compose.GetConfigName2(k, v); secretVar != "" && infra.ConfigProvider != nil {
-			secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
-			// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
-			appSecretName := toContainerAppSecretName(secretVar)
-			if _, ok := seenSecrets[appSecretName]; !ok {
-				seenSecrets[appSecretName] = struct{}{}
+			appSecretName, alreadyMinted := kvSecretNames[secretVar]
+			if !alreadyMinted {
+				appSecretName = namer.unique(toContainerAppSecretName(secretVar))
+				kvSecretNames[secretVar] = appSecretName
+				secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
+				// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
 				// Container Apps requires both KeyVaultUrl and Identity when
 				// referencing a Key Vault secret — the identity is what the
 				// runtime uses to authenticate the vault fetch.
@@ -221,6 +303,7 @@ func buildEnvVars(
 					KeyVaultUrl: pulumi.String(secretURL),
 					Identity:    infra.KeyVaultIdentityID,
 				})
+				hasKeyVaultSecret = true
 			}
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:      pulumi.String(k),
@@ -235,22 +318,27 @@ func buildEnvVars(
 			if sv != nil {
 				raw = *sv
 			}
-			var value pulumi.StringInput
-			if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
-				value = ep
-			} else if ep, ok := llmURLEndpoint(raw, serviceEndpoints); ok {
-				value = ep
-			} else if ep, ok := postgresURLEndpoint(ctx, raw, serviceEndpoints, infra.ConfigProvider); ok {
-				value = ep
-			} else if host, ok := serviceHosts[raw]; ok {
-				value = host
+			value, hasSecret := resolveComposedEnvValue(ctx, raw, serviceEndpoints, serviceHosts, infra.ConfigProvider)
+			if hasSecret {
+				// One env var key always produces exactly one composite
+				// secret (no sharing like the KV branch above), but its name
+				// can still collide with another env var's or config var's —
+				// namer disambiguates against every name minted so far.
+				appSecretName := namer.unique(toContainerAppSecretName(k))
+				appSecrets = append(appSecrets, app.SecretArgs{
+					Name:  pulumi.String(appSecretName),
+					Value: value.ToStringPtrOutput(),
+				})
+				envs = append(envs, app.EnvironmentVarArgs{
+					Name:      pulumi.String(k),
+					SecretRef: pulumi.String(appSecretName),
+				})
 			} else {
-				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, raw)
+				envs = append(envs, app.EnvironmentVarArgs{
+					Name:  pulumi.String(k),
+					Value: value,
+				})
 			}
-			envs = append(envs, app.EnvironmentVarArgs{
-				Name:  pulumi.String(k),
-				Value: value,
-			})
 		} else {
 			// Dynamic (Output) values pass through as-is; endpoint substitution
 			// and interpolation only apply to static text.
@@ -260,7 +348,7 @@ func buildEnvVars(
 			})
 		}
 	}
-	return envResult{Envs: envs, Secrets: appSecrets}
+	return envResult{Envs: envs, Secrets: appSecrets, HasKeyVaultSecret: hasKeyVaultSecret}
 }
 
 // CreateContainerApp creates an Azure Container App.
@@ -321,7 +409,7 @@ func CreateContainerApp(
 		}
 		userIdentities = append(userIdentities, identityID)
 	}
-	if len(result.Secrets) > 0 && infra.KeyVaultIdentityID != nil {
+	if result.HasKeyVaultSecret && infra.KeyVaultIdentityID != nil {
 		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
 	}
 	if policyIdentity != nil {

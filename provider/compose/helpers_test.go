@@ -196,6 +196,11 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 		value    string
 		configs  map[string]string
 		expected string
+		// substituted is the "at least one variable was resolved" flag callers
+		// (Azure's buildEnvVars) use to decide whether the result embeds a
+		// config-provided secret and must be kept out of a plaintext resource
+		// property — see DefangLabs/station#198.
+		substituted bool
 	}{
 		{
 			name:     "plain literal",
@@ -203,28 +208,32 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "hello",
 		},
 		{
-			name:     "single variable",
-			value:    "${MY_VAR}",
-			configs:  map[string]string{"MY_VAR": "secret"},
-			expected: "secret",
+			name:        "single variable",
+			value:       "${MY_VAR}",
+			configs:     map[string]string{"MY_VAR": "secret"},
+			expected:    "secret",
+			substituted: true,
 		},
 		{
-			name:     "variable with prefix and suffix",
-			value:    "prefix_${MY_VAR}_suffix",
-			configs:  map[string]string{"MY_VAR": "value"},
-			expected: "prefix_value_suffix",
+			name:        "variable with prefix and suffix",
+			value:       "prefix_${MY_VAR}_suffix",
+			configs:     map[string]string{"MY_VAR": "value"},
+			expected:    "prefix_value_suffix",
+			substituted: true,
 		},
 		{
-			name:     "multiple variables",
-			value:    "${VAR1}_${VAR2}",
-			configs:  map[string]string{"VAR1": "hello", "VAR2": "world"},
-			expected: "hello_world",
+			name:        "multiple variables",
+			value:       "${VAR1}_${VAR2}",
+			configs:     map[string]string{"VAR1": "hello", "VAR2": "world"},
+			expected:    "hello_world",
+			substituted: true,
 		},
 		{
-			name:     "unbraced variable",
-			value:    "$MY_VAR",
-			configs:  map[string]string{"MY_VAR": "secret"},
-			expected: "secret",
+			name:        "unbraced variable",
+			value:       "$MY_VAR",
+			configs:     map[string]string{"MY_VAR": "secret"},
+			expected:    "secret",
+			substituted: true,
 		},
 		{
 			name:     "escaped dollar produces literal dollar",
@@ -232,10 +241,11 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "${NOT_A_VAR}",
 		},
 		{
-			name:     "missing variable resolves from config",
-			value:    "${SECRET}",
-			configs:  map[string]string{"SECRET": "found"},
-			expected: "found",
+			name:        "missing variable resolves from config",
+			value:       "${SECRET}",
+			configs:     map[string]string{"SECRET": "found"},
+			expected:    "found",
+			substituted: true,
 		},
 		{
 			name:     "empty string",
@@ -243,10 +253,11 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "variable adjacent to text on both sides without separators",
-			value:    "arn:aws:iam::${ACCOUNT_ID}:role/my-role",
-			configs:  map[string]string{"ACCOUNT_ID": "123456789"},
-			expected: "arn:aws:iam::123456789:role/my-role",
+			name:        "variable adjacent to text on both sides without separators",
+			value:       "arn:aws:iam::${ACCOUNT_ID}:role/my-role",
+			configs:     map[string]string{"ACCOUNT_ID": "123456789"},
+			expected:    "arn:aws:iam::123456789:role/my-role",
+			substituted: true,
 		},
 	}
 
@@ -254,7 +265,8 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				provider := &mockConfigProvider{values: tt.configs}
-				out := InterpolateEnvironmentVariable(ctx, provider, tt.value)
+				out, substituted := InterpolateEnvironmentVariable(ctx, provider, tt.value)
+				assert.Equal(t, tt.substituted, substituted)
 
 				out.ApplyT(func(got string) string {
 					assert.Equal(t, tt.expected, got)
@@ -268,7 +280,8 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 
 	t.Run("nil config provider returns raw string", func(t *testing.T) {
 		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-			out := InterpolateEnvironmentVariable(ctx, nil, "value with ${VAR}")
+			out, substituted := InterpolateEnvironmentVariable(ctx, nil, "value with ${VAR}")
+			assert.False(t, substituted, "no config provider means nothing was substituted")
 
 			out.ApplyT(func(got string) string {
 				assert.Equal(t, "value with ${VAR}", got)
