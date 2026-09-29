@@ -125,7 +125,7 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 }
 
 // TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName covers a
-// naming collision CodeRabbit flagged on the initial version of this fix
+// naming collision CodeRabbit flagged on an earlier version of this fix
 // (pulumi-defang#637): a bare ${VAR} reference and a composite value can
 // derive the same toContainerAppSecretName when a config var's name matches
 // another env var's own key. Concretely:
@@ -133,10 +133,10 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 //	A: "${B}"        // bare ref → Key Vault secret named "b"
 //	B: "prefix${C}"  // composite → would also derive secret name "b"
 //
-// Without a distinct namespace for composite secrets, B's computed value
-// would be dropped (seenSecrets already has "b") and B would silently read
-// A's Key Vault secret instead of its own interpolated value — the deploy
-// succeeds, so nothing surfaces the wrong value at deploy time.
+// Without disambiguation, B's computed value would be dropped (seenSecrets
+// already has "b") and B would silently read A's Key Vault secret instead of
+// its own interpolated value — the deploy succeeds, so nothing surfaces the
+// wrong value at deploy time.
 func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		const vaultURL = "https://myvault.vault.azure.net"
@@ -185,6 +185,60 @@ func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *test
 			assert.Equal(t, "prefixc-value", *v)
 			return v
 		})
+
+		return nil
+	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
+// TestBuildEnvVarsDisambiguatesConfigVarNamedLikeEnvNamespace covers a deeper
+// version of the same collision class: a fixed namespace prefix on the
+// composite side isn't provably disjoint from the Key Vault side, because the
+// Key Vault side's name comes from a user-chosen config var name too. Here
+// the config var is literally named "ENV_DB", which toContainerAppSecretName
+// normalizes to "env-db" — the same string a composite env var named "DB"
+// would derive on its own (whatever prefixing scheme is used for it). Both
+// secrets must still end up with distinct names.
+func TestBuildEnvVarsDisambiguatesConfigVarNamedLikeEnvNamespace(t *testing.T) {
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		const vaultURL = "https://myvault.vault.azure.net"
+		cp := NewConfigProvider(vaultURL)
+		cp.cache["OTHER"] = pulumi.ToSecret(pulumi.String("other-value").ToStringOutput()).(pulumi.StringOutput)
+		cp.fetched = true
+
+		infra := &SharedInfra{ConfigProvider: cp, KeyVaultURL: vaultURL}
+		svc := compose.ServiceConfig{
+			Environment: compose.Environment{
+				"USES_ENV_DB": pulumi.String("${ENV_DB}"),      // bare ref → KV secret named "env-db"
+				"DB":          pulumi.String("prefix${OTHER}"), // composite → would also derive "env-db"-shaped name
+			},
+		}
+
+		result := buildEnvVars(ctx, "svc", svc, infra, nil, nil, nil)
+		envByName := envVarsByName(result)
+
+		usesEnvDB, ok := envByName["USES_ENV_DB"]
+		require.True(t, ok, "USES_ENV_DB missing")
+		require.NotNil(t, usesEnvDB.SecretRef)
+
+		db, ok := envByName["DB"]
+		require.True(t, ok, "DB missing")
+		require.NotNil(t, db.SecretRef)
+
+		usesEnvDBRef := string(usesEnvDB.SecretRef.(pulumi.String))
+		dbRef := string(db.SecretRef.(pulumi.String))
+		assert.NotEqual(t, usesEnvDBRef, dbRef,
+			"a Key Vault secret for config var ENV_DB and a composite secret for env var DB must not share a name")
+
+		// Every Secret entry's Name must be unique — the real invariant Azure needs.
+		seen := map[string]bool{}
+		for _, entry := range result.Secrets {
+			s, ok := entry.(app.SecretArgs)
+			require.True(t, ok)
+			name := string(s.Name.(pulumi.String))
+			assert.False(t, seen[name], "duplicate Container App secret name %q", name)
+			seen[name] = true
+		}
 
 		return nil
 	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
