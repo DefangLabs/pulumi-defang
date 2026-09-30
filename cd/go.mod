@@ -31,7 +31,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.28.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.28.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
-	github.com/pulumi/pulumi/sdk/v3 v3.263.0
+	github.com/pulumi/pulumi/sdk/v3 v3.264.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sync v0.23.0
@@ -160,7 +160,6 @@ require (
 	github.com/opentracing/basictracer-go v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pgavlin/fx v0.1.6 // indirect
-	github.com/pgavlin/fx/v2 v2.0.12 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -181,6 +180,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.28.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.28.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.28.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20260918.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.1 // indirect
