@@ -84,6 +84,20 @@ func vmComputerNamePrefix(serviceName string) string {
 	return strings.TrimRight(prefix, "-")
 }
 
+// rollingUpgradeMaxUnhealthyInstancePercent picks the VMSS rolling-upgrade
+// health gate the same way postgres.go and redis.go pick their HA mode: the
+// affordable default favors fast iteration over strict availability (mirrors
+// AWS's MinHealthyPercent affordable default of 0, and GCP's permissive
+// MIG update policy); HighAvailability opts into Azure's strictest allowed
+// value, halting a rollout if any meaningful fraction of the pool is already
+// unhealthy.
+func rollingUpgradeMaxUnhealthyInstancePercent(ctx *pulumi.Context) int {
+	if HighAvailability.Get(ctx) {
+		return 5
+	}
+	return 100
+}
+
 func azureProtocol(port compose.ServicePortConfig) string {
 	if port.GetProtocol() == compose.PortProtocolUDP {
 		return azureProtocolUDP
@@ -646,9 +660,6 @@ func CreateVirtualMachineService(
 	vmOpts := append([]pulumi.ResourceOption{}, opts...)
 	vmOpts = append(vmOpts,
 		pulumi.DependsOn([]pulumi.Resource{lb}),
-		pulumi.ReplaceOnChanges([]string{"virtualMachineProfile.osProfile.customData"}),
-		// The VMSS has an explicit cloud name, so create-before-delete cannot succeed.
-		pulumi.DeleteBeforeReplace(true),
 	)
 	scaleSet, err := compute.NewVirtualMachineScaleSet(ctx, serviceName, &compute.VirtualMachineScaleSetArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
@@ -661,7 +672,21 @@ func CreateVirtualMachineService(
 			Tier:     pulumi.StringPtr("Standard"),
 			Capacity: pulumi.Float64Ptr(float64(svc.GetReplicas())),
 		},
-		UpgradePolicy: &compute.UpgradePolicyArgs{Mode: compute.UpgradeModeAutomatic},
+		// customData changes must reimage VMSS instances for cloud-init to run.
+		// A rolling max-surge upgrade creates a healthy replacement before it
+		// deletes the old instance, keeping the load-balanced endpoint available.
+		// Azure falls back to in-place upgrade if surge capacity (quota/IP/subnet)
+		// isn't available, which can interrupt a single-replica service's endpoint.
+		UpgradePolicy: &compute.UpgradePolicyArgs{
+			Mode: compute.UpgradeModeRolling,
+			RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
+				MaxBatchInstancePercent:               pulumi.IntPtr(50),
+				MaxSurge:                              pulumi.BoolPtr(true),
+				MaxUnhealthyInstancePercent:           pulumi.IntPtr(rollingUpgradeMaxUnhealthyInstancePercent(ctx)),
+				MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
+				RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
+			},
+		},
 		VirtualMachineProfile: &compute.VirtualMachineScaleSetVMProfileArgs{
 			OsProfile: &compute.VirtualMachineScaleSetOSProfileArgs{
 				AdminUsername:      pulumi.StringPtr("defang"),
