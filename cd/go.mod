@@ -21,8 +21,8 @@ require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
-	github.com/aws/aws-sdk-go-v2/config v1.33.5
-	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.0
+	github.com/aws/aws-sdk-go-v2/config v1.33.6
+	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.48.0
@@ -31,7 +31,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.28.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.28.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
-	github.com/pulumi/pulumi/sdk/v3 v3.264.0
+	github.com/pulumi/pulumi/sdk/v3 v3.266.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sync v0.23.0
@@ -68,20 +68,20 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.5 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.0 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.6 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.99.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.99.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.38.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.10.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.38.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.1 // indirect
 	github.com/aws/smithy-go v1.28.2 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
@@ -98,7 +98,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/compose-spec/compose-go/v2 v2.15.0 // indirect
+	github.com/compose-spec/compose-go/v2 v2.16.1 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/deckarep/golang-set/v2 v2.9.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -128,7 +128,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.1 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -167,7 +167,7 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
-	github.com/pulumi/pulumi-awsx/sdk/v3 v3.9.0 // indirect
+	github.com/pulumi/pulumi-awsx/sdk/v3 v3.10.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.28.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.28.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.28.0 // indirect
@@ -180,7 +180,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.28.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.28.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-cloud-sdk/go v1.20260918.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20260924.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.2 // indirect
@@ -203,12 +203,12 @@ require (
 	github.com/zclconf/go-cty v1.16.3 // indirect
 	go.mongodb.org/mongo-driver v1.17.10 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.67.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.67.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.68.0 // indirect
+	go.opentelemetry.io/collector/pdata v1.68.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.44.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.22.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // indirect
@@ -231,11 +231,11 @@ require (
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/tools v0.50.0 // indirect
 	google.golang.org/api v0.299.0 // indirect
 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260921155816-b14227669459 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
