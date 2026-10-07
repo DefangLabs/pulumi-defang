@@ -44,7 +44,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.28.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.28.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
-	github.com/pulumi/pulumi-go-provider v1.6.0
+	github.com/pulumi/pulumi-go-provider v1.7.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.2
 	github.com/pulumi/pulumi/pkg/v3 v3.266.0
 	github.com/pulumi/pulumi/sdk/v3 v3.266.0
@@ -151,7 +151,7 @@ require (
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
-	github.com/pulumi/pulumi-cloud-sdk/go v1.20260918.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20260924.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
