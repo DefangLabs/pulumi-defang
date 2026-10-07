@@ -24,7 +24,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.99.0
 	github.com/aws/smithy-go v1.28.2
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/compose-spec/compose-go/v2 v2.15.0
+	github.com/compose-spec/compose-go/v2 v2.16.1
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.48.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.10.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.28.0
