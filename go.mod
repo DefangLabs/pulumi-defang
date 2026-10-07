@@ -17,7 +17,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.1
 	github.com/DefangLabs/defang/src v0.0.0-20260903213614-b3aaa2b11a9e
-	github.com/aws/aws-sdk-go-v2 v1.47.0
+	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.5
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.0
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.66.0
