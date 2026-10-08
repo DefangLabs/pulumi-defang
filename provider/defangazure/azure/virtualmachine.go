@@ -673,6 +673,14 @@ func CreateVirtualMachineService(
 	vmOpts = append(vmOpts,
 		pulumi.DependsOn([]pulumi.Resource{lb}),
 	)
+	minHealthyPercent := MinHealthyPercent.Get(ctx)
+	if minHealthyPercent == 0 {
+		vmOpts = append(vmOpts,
+			pulumi.ReplaceOnChanges([]string{"virtualMachineProfile.osProfile.customData"}),
+			// The VMSS has an explicit cloud name, so create-before-delete cannot succeed.
+			pulumi.DeleteBeforeReplace(true),
+		)
+	}
 	scaleSet, err := compute.NewVirtualMachineScaleSet(ctx, serviceName, &compute.VirtualMachineScaleSetArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		VmScaleSetName:    pulumi.StringPtr(serviceName),
@@ -684,12 +692,13 @@ func CreateVirtualMachineService(
 			Tier:     pulumi.StringPtr("Standard"),
 			Capacity: pulumi.Float64Ptr(float64(svc.GetReplicas())),
 		},
-		// customData changes must reimage VMSS instances for cloud-init to run.
-		// A positive min-healthy-percent uses rolling max-surge upgrades so Azure
+		// customData changes must reimage VMSS instances for cloud-init to run. A
+		// zero min-healthy-percent replaces the whole VMSS; a positive value uses
+		// rolling max-surge upgrades so Azure
 		// creates a healthy replacement before deleting the old instance. Azure
 		// falls back to an in-place upgrade if surge capacity (quota/IP/subnet) is
 		// unavailable, which can interrupt a single-replica service's endpoint.
-		UpgradePolicy: virtualMachineUpgradePolicy(MinHealthyPercent.Get(ctx)),
+		UpgradePolicy: virtualMachineUpgradePolicy(minHealthyPercent),
 		VirtualMachineProfile: &compute.VirtualMachineScaleSetVMProfileArgs{
 			OsProfile: &compute.VirtualMachineScaleSetOSProfileArgs{
 				AdminUsername:      pulumi.StringPtr("defang"),
