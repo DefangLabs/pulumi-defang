@@ -257,7 +257,8 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 	assert.True(t, rollingPolicy[resource.PropertyKey("maxSurge")].BoolValue())
 	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
 	assert.InDelta(t, 0, rollingPolicy[resource.PropertyKey("maxUnhealthyUpgradedInstancePercent")].NumberValue(), 0)
-	assert.True(t, rollingPolicy[resource.PropertyKey("rollbackFailedInstancesOnPolicyBreach")].BoolValue())
+	assert.False(t, rollingPolicy[resource.PropertyKey("rollbackFailedInstancesOnPolicyBreach")].BoolValue(),
+		"Azure rejects rollbackFailedInstancesOnPolicyBreach when maxSurge is enabled")
 	vmProfile := vmScaleSets[0][resource.PropertyKey("virtualMachineProfile")].ObjectValue()
 	osProfile := vmProfile[resource.PropertyKey("osProfile")].ObjectValue()
 	customData := osProfile[resource.PropertyKey("customData")].StringValue()
