@@ -84,18 +84,30 @@ func vmComputerNamePrefix(serviceName string) string {
 	return strings.TrimRight(prefix, "-")
 }
 
-// rollingUpgradeMaxUnhealthyInstancePercent picks the VMSS rolling-upgrade
-// health gate the same way postgres.go and redis.go pick their HA mode: the
-// affordable default favors fast iteration over strict availability (mirrors
-// AWS's MinHealthyPercent affordable default of 0, and GCP's permissive
-// MIG update policy); HighAvailability opts into Azure's strictest allowed
-// value, halting a rollout if any meaningful fraction of the pool is already
-// unhealthy.
-func rollingUpgradeMaxUnhealthyInstancePercent(ctx *pulumi.Context) int {
-	if HighAvailability.Get(ctx) {
-		return 5
+// virtualMachineUpgradePolicy translates the recipe's AWS-style minimum
+// healthy percentage into Azure's VMSS upgrade controls. Zero deliberately
+// keeps Azure's all-at-once Automatic mode. Positive values enable rolling,
+// max-surge upgrades; Azure expresses the health floor as the inverse maximum
+// unhealthy percentage and has a lower bound of 5 rather than allowing 0.
+func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyArgs {
+	if minHealthyPercent == 0 {
+		return &compute.UpgradePolicyArgs{Mode: compute.UpgradeModeAutomatic}
 	}
-	return 100
+
+	maxUnhealthyPercent := 100 - minHealthyPercent
+	if maxUnhealthyPercent >= 0 && maxUnhealthyPercent < 5 {
+		maxUnhealthyPercent = 5
+	}
+	return &compute.UpgradePolicyArgs{
+		Mode: compute.UpgradeModeRolling,
+		RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
+			MaxBatchInstancePercent:               pulumi.IntPtr(50),
+			MaxSurge:                              pulumi.BoolPtr(true),
+			MaxUnhealthyInstancePercent:           pulumi.IntPtr(maxUnhealthyPercent),
+			MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
+			RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
+		},
+	}
 }
 
 func azureProtocol(port compose.ServicePortConfig) string {
@@ -673,20 +685,11 @@ func CreateVirtualMachineService(
 			Capacity: pulumi.Float64Ptr(float64(svc.GetReplicas())),
 		},
 		// customData changes must reimage VMSS instances for cloud-init to run.
-		// A rolling max-surge upgrade creates a healthy replacement before it
-		// deletes the old instance, keeping the load-balanced endpoint available.
-		// Azure falls back to in-place upgrade if surge capacity (quota/IP/subnet)
-		// isn't available, which can interrupt a single-replica service's endpoint.
-		UpgradePolicy: &compute.UpgradePolicyArgs{
-			Mode: compute.UpgradeModeRolling,
-			RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
-				MaxBatchInstancePercent:               pulumi.IntPtr(50),
-				MaxSurge:                              pulumi.BoolPtr(true),
-				MaxUnhealthyInstancePercent:           pulumi.IntPtr(rollingUpgradeMaxUnhealthyInstancePercent(ctx)),
-				MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
-				RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
-			},
-		},
+		// A positive min-healthy-percent uses rolling max-surge upgrades so Azure
+		// creates a healthy replacement before deleting the old instance. Azure
+		// falls back to an in-place upgrade if surge capacity (quota/IP/subnet) is
+		// unavailable, which can interrupt a single-replica service's endpoint.
+		UpgradePolicy: virtualMachineUpgradePolicy(MinHealthyPercent.Get(ctx)),
 		VirtualMachineProfile: &compute.VirtualMachineScaleSetVMProfileArgs{
 			OsProfile: &compute.VirtualMachineScaleSetOSProfileArgs{
 				AdminUsername:      pulumi.StringPtr("defang"),

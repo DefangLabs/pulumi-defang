@@ -27,7 +27,7 @@ func TestBuildMIGUpdatePolicyMaxSurgeConstraint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			policy := buildMIGUpdatePolicy(tt.numZones, tt.targetSize)
+			policy := buildMIGUpdatePolicy(tt.numZones, tt.targetSize, 50)
 
 			// Percent-based policies (targetSize > 10) don't use fixed counts.
 			if policy.MaxSurgeFixed == nil {
@@ -47,6 +47,67 @@ func TestBuildMIGUpdatePolicyMaxSurgeConstraint(t *testing.T) {
 				"MaxSurgeFixed=%d must be 0 or >= numZones=%d", surgeFixed, effectiveZones)
 			assert.True(t, unavailFixed == 0 || unavailFixed >= effectiveZones,
 				"MaxUnavailableFixed=%d must be 0 or >= numZones=%d", unavailFixed, effectiveZones)
+		})
+	}
+}
+
+func TestBuildMIGUpdatePolicyFollowsMinHealthyPercent(t *testing.T) {
+	tests := []struct {
+		name                       string
+		numZones                   int
+		targetSize                 int
+		minHealthyPercent          int
+		wantSurge                  int
+		wantUnavailable            int
+		wantPercentBasedThresholds bool
+	}{
+		{
+			name:     "affordable small group permits teardown",
+			numZones: 4, targetSize: 2, minHealthyPercent: 0,
+			wantSurge: 0, wantUnavailable: 4,
+		},
+		{
+			name:     "balanced small group rounds toward availability",
+			numZones: 4, targetSize: 2, minHealthyPercent: 50,
+			wantSurge: 4, wantUnavailable: 0,
+		},
+		{
+			name:     "balanced small group permits half unavailable when valid",
+			numZones: 3, targetSize: 10, minHealthyPercent: 50,
+			wantSurge: 5, wantUnavailable: 5,
+		},
+		{
+			name:     "high availability small group permits none unavailable",
+			numZones: 3, targetSize: 10, minHealthyPercent: 100,
+			wantSurge: 5, wantUnavailable: 0,
+		},
+		{
+			name:     "affordable large group permits teardown",
+			numZones: 3, targetSize: 20, minHealthyPercent: 0,
+			wantSurge: 0, wantUnavailable: 100, wantPercentBasedThresholds: true,
+		},
+		{
+			name:     "balanced large group keeps half healthy",
+			numZones: 3, targetSize: 20, minHealthyPercent: 50,
+			wantSurge: 25, wantUnavailable: 50, wantPercentBasedThresholds: true,
+		},
+		{
+			name:     "high availability large group permits none unavailable",
+			numZones: 3, targetSize: 20, minHealthyPercent: 100,
+			wantSurge: 25, wantUnavailable: 0, wantPercentBasedThresholds: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := buildMIGUpdatePolicy(tt.numZones, tt.targetSize, tt.minHealthyPercent)
+			if tt.wantPercentBasedThresholds {
+				assert.Equal(t, tt.wantSurge, int(policy.MaxSurgePercent.(pulumi.Int)))
+				assert.Equal(t, tt.wantUnavailable, int(policy.MaxUnavailablePercent.(pulumi.Int)))
+				return
+			}
+			assert.Equal(t, tt.wantSurge, int(policy.MaxSurgeFixed.(pulumi.Int)))
+			assert.Equal(t, tt.wantUnavailable, int(policy.MaxUnavailableFixed.(pulumi.Int)))
 		})
 	}
 }

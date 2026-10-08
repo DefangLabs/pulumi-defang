@@ -31,6 +31,7 @@ var (
 	// has been seen to bill >$700/mo against a single workspace.
 	LogWorkspaceDailyQuotaGb = recipe.Int("log-workspace-daily-quota-gb", 1)
 	MaxReplicas              = recipe.Int("max-replicas", 0)
+	MinHealthyPercent        = recipe.Int("min-healthy-percent", 0)
 	PostgresTier             = recipe.String("postgres-tier", "burstable")
 	PostgresStorageSizeGB    = recipe.Int("storage-size-gb", 32)
 	RegistrySku              = recipe.String("registry-sku", "Basic")

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-azure-native-sdk/compute/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -186,6 +187,7 @@ func (m *recordVMMocks) byTypeSuffix(suffix string) []resource.PropertyMap {
 }
 
 func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing.T) {
+	t.Setenv("PULUMI_CONFIG", `{"defang-azure:min-healthy-percent": "50"}`)
 	mocks := &recordVMMocks{resources: make(map[string][]resource.PropertyMap)}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		rg, err := resources.NewResourceGroup(ctx, "rg", nil)
@@ -253,7 +255,7 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 	rollingPolicy := upgradePolicy[resource.PropertyKey("rollingUpgradePolicy")].ObjectValue()
 	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxBatchInstancePercent")].NumberValue(), 0)
 	assert.True(t, rollingPolicy[resource.PropertyKey("maxSurge")].BoolValue())
-	assert.InDelta(t, 100, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
+	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
 	assert.InDelta(t, 0, rollingPolicy[resource.PropertyKey("maxUnhealthyUpgradedInstancePercent")].NumberValue(), 0)
 	assert.True(t, rollingPolicy[resource.PropertyKey("rollbackFailedInstancesOnPolicyBreach")].BoolValue())
 	vmProfile := vmScaleSets[0][resource.PropertyKey("virtualMachineProfile")].ObjectValue()
@@ -283,56 +285,39 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 		assigned[0].StringValue())
 }
 
-// TestCreateVirtualMachineServiceHighAvailabilityTightensRollingUpgrade checks
-// that opting into the HighAvailability recipe setting swaps the affordable
-// (fast-iteration) rolling-upgrade health gate for Azure's strictest allowed
-// value. See rollingUpgradeMaxUnhealthyInstancePercent.
-func TestCreateVirtualMachineServiceHighAvailabilityTightensRollingUpgrade(t *testing.T) {
-	t.Setenv("PULUMI_CONFIG", `{"defang-azure:high-availability": "true"}`)
-	mocks := &recordVMMocks{resources: make(map[string][]resource.PropertyMap)}
-	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		rg, err := resources.NewResourceGroup(ctx, "rg", nil)
-		if err != nil {
-			return err
-		}
-		vnet, err := network.NewVirtualNetwork(ctx, "network", &network.VirtualNetworkArgs{
-			ResourceGroupName: rg.Name,
-		})
-		if err != nil {
-			return err
-		}
-		subnet, err := network.NewSubnet(ctx, "compute", &network.SubnetArgs{
-			ResourceGroupName:  rg.Name,
-			VirtualNetworkName: vnet.Name,
-			AddressPrefix:      pulumi.String("10.0.4.0/24"),
-		})
-		if err != nil {
-			return err
-		}
-		svc := compose.ServiceConfig{Ports: []compose.ServicePortConfig{
-			{Target: 80, Mode: compose.PortModeIngress, Protocol: compose.PortProtocolTCP},
-		}}
-		_, err = CreateVirtualMachineService(
-			ctx,
-			"dns",
-			pulumi.String("cunnie/sslip.io-dns-server:latest"),
-			svc,
-			&SharedInfra{
-				ResourceGroup:  rg,
-				Networking:     &NetworkingResult{VNet: vnet, ComputeSubnet: subnet},
-				ConfigProvider: NewConfigProvider("https://vault.vault.azure.net"),
-			},
-			nil,
-		)
-		return err
-	}, pulumi.WithMocks("project", "stack", mocks))
-	require.NoError(t, err)
+func TestVirtualMachineUpgradePolicyFollowsMinHealthyPercent(t *testing.T) {
+	tests := []struct {
+		name                string
+		minHealthyPercent   int
+		mode                compute.UpgradeMode
+		maxUnhealthyPercent int
+	}{
+		{name: "affordable permits teardown", minHealthyPercent: 0, mode: compute.UpgradeModeAutomatic},
+		{
+			name: "balanced rolls at fifty percent", minHealthyPercent: 50,
+			mode: compute.UpgradeModeRolling, maxUnhealthyPercent: 50,
+		},
+		{
+			name: "high availability uses Azure floor", minHealthyPercent: 100,
+			mode: compute.UpgradeModeRolling, maxUnhealthyPercent: 5,
+		},
+	}
 
-	vmScaleSets := mocks.byTypeSuffix(":VirtualMachineScaleSet")
-	require.Len(t, vmScaleSets, 1)
-	upgradePolicy := vmScaleSets[0][resource.PropertyKey("upgradePolicy")].ObjectValue()
-	rollingPolicy := upgradePolicy[resource.PropertyKey("rollingUpgradePolicy")].ObjectValue()
-	assert.InDelta(t, 5, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := virtualMachineUpgradePolicy(tt.minHealthyPercent)
+			assert.Equal(t, tt.mode, policy.Mode)
+			if tt.mode == compute.UpgradeModeAutomatic {
+				assert.Nil(t, policy.RollingUpgradePolicy)
+				return
+			}
+			require.NotNil(t, policy.RollingUpgradePolicy)
+			rollingPolicy, ok := policy.RollingUpgradePolicy.(*compute.RollingUpgradePolicyArgs)
+			require.True(t, ok, "expected RollingUpgradePolicyArgs, got %T", policy.RollingUpgradePolicy)
+			assert.Equal(t, tt.maxUnhealthyPercent,
+				intPtrInputValue(t, rollingPolicy.MaxUnhealthyInstancePercent))
+		})
+	}
 }
 
 // TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR

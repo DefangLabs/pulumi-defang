@@ -119,7 +119,8 @@ func CreateComputeEngine(
 	if err != nil {
 		return nil, err
 	}
-	updatePolicy := buildMIGUpdatePolicy(len(zoneNames), int(svc.GetReplicas()))
+	updatePolicy := buildMIGUpdatePolicy(
+		len(zoneNames), int(svc.GetReplicas()), MinHealthyPercent.Get(ctx))
 
 	migArgs := &compute.RegionInstanceGroupManagerArgs{
 		BaseInstanceName:    pulumi.String(serviceName), // FIXME: this resource does not support autonaming
@@ -365,30 +366,53 @@ func createMIGAutoHealing(
 	}, nil
 }
 
-// buildMIGUpdatePolicy returns update policy args for a regional MIG.
+// buildMIGUpdatePolicy returns update policy args for a regional MIG, using the
+// same minimum-healthy recipe contract as AWS ECS. Zero permits an all-at-once
+// replacement; positive values retain at least that percentage while rolling.
 //
 // GCP constraint: MaxSurgeFixed and MaxUnavailableFixed must each be either 0
-// or >= the number of zones in the region. We satisfy this by clamping the
-// batch size to at least numZones. numZones should be the number of zones in
-// the deployment region (from compute.GetZones); pass 1 if unknown.
-func buildMIGUpdatePolicy(numZones, targetSize int) *compute.RegionInstanceGroupManagerUpdatePolicyArgs {
+// or >= the number of zones in the region. Surge rounds up to that minimum;
+// unavailable rounds down to zero when rounding up would violate the requested
+// health floor. numZones should come from compute.GetZones; pass 1 if unknown.
+func buildMIGUpdatePolicy(
+	numZones, targetSize, minHealthyPercent int,
+) *compute.RegionInstanceGroupManagerUpdatePolicyArgs {
 	policy := &compute.RegionInstanceGroupManagerUpdatePolicyArgs{
 		Type: pulumi.String("PROACTIVE"),
 		// REPLACE, not RESTART: user-data metadata changes applied via RESTART
 		// don't re-run cloud-init, leaving stale systemd units on the instance.
 		MinimalAction: pulumi.String("REPLACE"),
 	}
+	if minHealthyPercent == 0 {
+		if targetSize > 10 {
+			policy.MaxSurgePercent = pulumi.Int(0)
+			policy.MaxUnavailablePercent = pulumi.Int(100)
+			return policy
+		}
+		if numZones < 1 {
+			numZones = 1
+		}
+		policy.MaxSurgeFixed = pulumi.Int(0)
+		policy.MaxUnavailableFixed = pulumi.Int(max(targetSize, numZones))
+		return policy
+	}
+
 	if targetSize > 10 {
 		policy.MaxSurgePercent = pulumi.Int(25)
-		policy.MaxUnavailablePercent = pulumi.Int(25)
+		policy.MaxUnavailablePercent = pulumi.Int(100 - minHealthyPercent)
 		return policy
 	}
 	if numZones < 1 {
 		numZones = 1
 	}
 	batchSize := max(targetSize/2, numZones)
+	minHealthyInstances := (targetSize*minHealthyPercent + 99) / 100
+	maxUnavailable := targetSize - minHealthyInstances
+	if maxUnavailable > 0 && maxUnavailable < numZones {
+		maxUnavailable = 0
+	}
 	policy.MaxSurgeFixed = pulumi.Int(batchSize)
-	policy.MaxUnavailableFixed = pulumi.Int(batchSize)
+	policy.MaxUnavailableFixed = pulumi.Int(maxUnavailable)
 	return policy
 }
 
