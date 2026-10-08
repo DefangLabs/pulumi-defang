@@ -84,6 +84,32 @@ func vmComputerNamePrefix(serviceName string) string {
 	return strings.TrimRight(prefix, "-")
 }
 
+// virtualMachineUpgradePolicy translates the recipe's AWS-style minimum
+// healthy percentage into Azure's VMSS upgrade controls. Zero deliberately
+// keeps Azure's all-at-once Automatic mode. Positive values enable rolling,
+// max-surge upgrades; Azure expresses the health floor as the inverse maximum
+// unhealthy percentage and has a lower bound of 5 rather than allowing 0.
+func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyArgs {
+	if minHealthyPercent == 0 {
+		return &compute.UpgradePolicyArgs{Mode: compute.UpgradeModeAutomatic}
+	}
+
+	maxUnhealthyPercent := 100 - minHealthyPercent
+	if maxUnhealthyPercent >= 0 && maxUnhealthyPercent < 5 {
+		maxUnhealthyPercent = 5
+	}
+	return &compute.UpgradePolicyArgs{
+		Mode: compute.UpgradeModeRolling,
+		RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
+			MaxBatchInstancePercent:               pulumi.IntPtr(50),
+			MaxSurge:                              pulumi.BoolPtr(true),
+			MaxUnhealthyInstancePercent:           pulumi.IntPtr(maxUnhealthyPercent),
+			MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
+			RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
+		},
+	}
+}
+
 func azureProtocol(port compose.ServicePortConfig) string {
 	if port.GetProtocol() == compose.PortProtocolUDP {
 		return azureProtocolUDP
@@ -646,10 +672,15 @@ func CreateVirtualMachineService(
 	vmOpts := append([]pulumi.ResourceOption{}, opts...)
 	vmOpts = append(vmOpts,
 		pulumi.DependsOn([]pulumi.Resource{lb}),
-		pulumi.ReplaceOnChanges([]string{"virtualMachineProfile.osProfile.customData"}),
-		// The VMSS has an explicit cloud name, so create-before-delete cannot succeed.
-		pulumi.DeleteBeforeReplace(true),
 	)
+	minHealthyPercent := MinHealthyPercent.Get(ctx)
+	if minHealthyPercent == 0 {
+		vmOpts = append(vmOpts,
+			pulumi.ReplaceOnChanges([]string{"virtualMachineProfile.osProfile.customData"}),
+			// The VMSS has an explicit cloud name, so create-before-delete cannot succeed.
+			pulumi.DeleteBeforeReplace(true),
+		)
+	}
 	scaleSet, err := compute.NewVirtualMachineScaleSet(ctx, serviceName, &compute.VirtualMachineScaleSetArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		VmScaleSetName:    pulumi.StringPtr(serviceName),
@@ -661,7 +692,13 @@ func CreateVirtualMachineService(
 			Tier:     pulumi.StringPtr("Standard"),
 			Capacity: pulumi.Float64Ptr(float64(svc.GetReplicas())),
 		},
-		UpgradePolicy: &compute.UpgradePolicyArgs{Mode: compute.UpgradeModeAutomatic},
+		// customData changes must reimage VMSS instances for cloud-init to run. A
+		// zero min-healthy-percent replaces the whole VMSS; a positive value uses
+		// rolling max-surge upgrades so Azure
+		// creates a healthy replacement before deleting the old instance. Azure
+		// falls back to an in-place upgrade if surge capacity (quota/IP/subnet) is
+		// unavailable, which can interrupt a single-replica service's endpoint.
+		UpgradePolicy: virtualMachineUpgradePolicy(minHealthyPercent),
 		VirtualMachineProfile: &compute.VirtualMachineScaleSetVMProfileArgs{
 			OsProfile: &compute.VirtualMachineScaleSetOSProfileArgs{
 				AdminUsername:      pulumi.StringPtr("defang"),

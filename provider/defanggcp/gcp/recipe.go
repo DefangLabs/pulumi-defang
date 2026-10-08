@@ -13,6 +13,7 @@ var (
 	Ingress                   = recipe.String("ingress", "INGRESS_TRAFFIC_ALL")
 	LaunchStage               = recipe.String("launch-stage", "")
 	MaxReplicas               = recipe.Int("max-replicas", 0)
+	MinHealthyPercent         = recipe.Int("min-healthy-percent", 0)
 	PointInTimeRecovery       = recipe.Bool("point-in-time-recovery", false)
 	SslMode                   = recipe.String("ssl-mode", "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
 	TransitEncryptionDisabled = recipe.Bool("transit-encryption-disabled", false)

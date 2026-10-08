@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-azure-native-sdk/compute/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -186,6 +187,7 @@ func (m *recordVMMocks) byTypeSuffix(suffix string) []resource.PropertyMap {
 }
 
 func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing.T) {
+	t.Setenv("PULUMI_CONFIG", `{"defang-azure:min-healthy-percent": "50"}`)
 	mocks := &recordVMMocks{resources: make(map[string][]resource.PropertyMap)}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		rg, err := resources.NewResourceGroup(ctx, "rg", nil)
@@ -248,6 +250,14 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 
 	vmScaleSets := mocks.byTypeSuffix(":VirtualMachineScaleSet")
 	require.Len(t, vmScaleSets, 1)
+	upgradePolicy := vmScaleSets[0][resource.PropertyKey("upgradePolicy")].ObjectValue()
+	assert.Equal(t, "Rolling", upgradePolicy[resource.PropertyKey("mode")].StringValue())
+	rollingPolicy := upgradePolicy[resource.PropertyKey("rollingUpgradePolicy")].ObjectValue()
+	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxBatchInstancePercent")].NumberValue(), 0)
+	assert.True(t, rollingPolicy[resource.PropertyKey("maxSurge")].BoolValue())
+	assert.InDelta(t, 50, rollingPolicy[resource.PropertyKey("maxUnhealthyInstancePercent")].NumberValue(), 0)
+	assert.InDelta(t, 0, rollingPolicy[resource.PropertyKey("maxUnhealthyUpgradedInstancePercent")].NumberValue(), 0)
+	assert.True(t, rollingPolicy[resource.PropertyKey("rollbackFailedInstancesOnPolicyBreach")].BoolValue())
 	vmProfile := vmScaleSets[0][resource.PropertyKey("virtualMachineProfile")].ObjectValue()
 	osProfile := vmProfile[resource.PropertyKey("osProfile")].ObjectValue()
 	customData := osProfile[resource.PropertyKey("customData")].StringValue()
@@ -273,6 +283,41 @@ func TestCreateVirtualMachineServiceRegistersDualProtocolLoadBalancer(t *testing
 	require.Len(t, assigned, 1)
 	assert.Equal(t, "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kv",
 		assigned[0].StringValue())
+}
+
+func TestVirtualMachineUpgradePolicyFollowsMinHealthyPercent(t *testing.T) {
+	tests := []struct {
+		name                string
+		minHealthyPercent   int
+		mode                compute.UpgradeMode
+		maxUnhealthyPercent int
+	}{
+		{name: "affordable permits teardown", minHealthyPercent: 0, mode: compute.UpgradeModeAutomatic},
+		{
+			name: "balanced rolls at fifty percent", minHealthyPercent: 50,
+			mode: compute.UpgradeModeRolling, maxUnhealthyPercent: 50,
+		},
+		{
+			name: "high availability uses Azure floor", minHealthyPercent: 100,
+			mode: compute.UpgradeModeRolling, maxUnhealthyPercent: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := virtualMachineUpgradePolicy(tt.minHealthyPercent)
+			assert.Equal(t, tt.mode, policy.Mode)
+			if tt.mode == compute.UpgradeModeAutomatic {
+				assert.Nil(t, policy.RollingUpgradePolicy)
+				return
+			}
+			require.NotNil(t, policy.RollingUpgradePolicy)
+			rollingPolicy, ok := policy.RollingUpgradePolicy.(*compute.RollingUpgradePolicyArgs)
+			require.True(t, ok, "expected RollingUpgradePolicyArgs, got %T", policy.RollingUpgradePolicy)
+			assert.Equal(t, tt.maxUnhealthyPercent,
+				intPtrInputValue(t, rollingPolicy.MaxUnhealthyInstancePercent))
+		})
+	}
 }
 
 // TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR
