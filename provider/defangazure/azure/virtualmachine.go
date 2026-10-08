@@ -98,6 +98,7 @@ func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyAr
 	if maxUnhealthyPercent >= 0 && maxUnhealthyPercent < 5 {
 		maxUnhealthyPercent = 5
 	}
+	// Azure rejects automatic rollback together with MaxSurge.
 	return &compute.UpgradePolicyArgs{
 		Mode: compute.UpgradeModeRolling,
 		RollingUpgradePolicy: &compute.RollingUpgradePolicyArgs{
@@ -105,7 +106,7 @@ func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyAr
 			MaxSurge:                              pulumi.BoolPtr(true),
 			MaxUnhealthyInstancePercent:           pulumi.IntPtr(maxUnhealthyPercent),
 			MaxUnhealthyUpgradedInstancePercent:   pulumi.IntPtr(0),
-			RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(true),
+			RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(false),
 		},
 	}
 }
