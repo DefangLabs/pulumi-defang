@@ -21,6 +21,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -469,6 +470,50 @@ func createServiceSG(
 	return sg, nil
 }
 
+// newComposedEnvSecret stores a compose env value that embeds a config-
+// provided secret (GetConfigOrEnvValue's hasSecret return — e.g. a DSN built
+// from ${POSTGRES_PASSWORD}) as a new SSM SecureString parameter and returns
+// its ARN. ECS resolves container `secrets` (valueFrom) at task startup, so
+// the value never appears in the task definition's plaintext Environment,
+// which is readable via ecs:DescribeTaskDefinition — the same protection a
+// bare ${VAR} reference already gets via ConfigProvider.GetSecretRef, which
+// only works for a pre-existing parameter and can't hold an arbitrary
+// computed value. See DefangLabs/pulumi-defang#638 (follow-up to the Azure
+// fix for #637 / DefangLabs/station#198). The execution role's AllowGetSecrets
+// policy (see CreateExecutionRole) already grants ssm:GetParameters on "*",
+// so no additional IAM wiring is needed for the new parameter.
+//
+// The ARN is built the same way ConfigProvider.GetSecretRef builds one for a
+// pre-existing parameter (region + account ID + the parameter name we chose
+// ourselves), rather than waiting on the created resource's own Arn output —
+// that keeps this synchronous like the bare-${VAR} path, instead of needing
+// to thread the result through the caller's async allInputs/ApplyT.
+func newComposedEnvSecret(
+	ctx *pulumi.Context,
+	containerName, key string,
+	value pulumi.StringOutput,
+	opt pulumi.ResourceOrInvokeOption,
+) (string, error) {
+	parameterName := fmt.Sprintf("/Defang/%s/%s/_env/%s/%s", ctx.Project(), ctx.Stack(), containerName, key)
+	resourceName := containerName + "-" + strings.ToLower(strings.ReplaceAll(key, "_", "-")) + "-env-secret"
+	if _, err := ssm.NewParameter(ctx, resourceName, &ssm.ParameterArgs{
+		Name:  pulumi.String(parameterName),
+		Type:  ssm.ParameterTypeSecureString,
+		Value: value.ToStringPtrOutput(),
+	}, opt); err != nil {
+		return "", fmt.Errorf("creating SSM parameter: %w", err)
+	}
+	region, err := getCallerRegion(ctx, opt)
+	if err != nil {
+		return "", fmt.Errorf("getting region for composed secret ARN: %w", err)
+	}
+	accountId, err := getCallerAccountId(ctx, opt)
+	if err != nil {
+		return "", fmt.Errorf("getting account ID for composed secret ARN: %w", err)
+	}
+	return fmt.Sprintf("arn:aws:ssm:%s:%s:parameter%s", region, accountId, parameterName), nil
+}
+
 // CreateECSService creates an ECS Fargate service for a container service.
 //
 //nolint:funlen,maintidx
@@ -643,8 +688,12 @@ func CreateECSService(
 	}
 
 	// Split env vars: bare ${VAR} references go to ECS Secrets (SSM ARN),
-	// all others go to Environment (resolved plaintext).
-	resolveEnv := func(svc compose.ServiceConfig) ([]envEntry, []Secret, error) {
+	// all others go to Environment (resolved plaintext) — unless the resolved
+	// value embeds a config-provided secret via interpolation (e.g. a DSN
+	// built from ${POSTGRES_PASSWORD}), in which case it's wrapped in a new
+	// SSM parameter and also routed to Secrets. See newComposedEnvSecret and
+	// DefangLabs/pulumi-defang#638.
+	resolveEnv := func(containerName string, svc compose.ServiceConfig) ([]envEntry, []Secret, error) {
 		var entries []envEntry
 		var secrets []Secret
 		for k, v := range common.Sorted(svc.Environment) {
@@ -654,16 +703,24 @@ func CreateECSService(
 					return nil, nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
 				}
 				secrets = append(secrets, Secret{Name: k, ValueFrom: ref})
-			} else {
-				resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
-				entries = append(entries, envEntry{name: k, idx: len(allInputs)})
-				allInputs = append(allInputs, resolved)
+				continue
 			}
+			resolved, hasSecret := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
+			if hasSecret {
+				arn, err := newComposedEnvSecret(ctx, containerName, k, resolved, parentOpt)
+				if err != nil {
+					return nil, nil, fmt.Errorf("creating composed secret for %q: %w", k, err)
+				}
+				secrets = append(secrets, Secret{Name: k, ValueFrom: arn})
+				continue
+			}
+			entries = append(entries, envEntry{name: k, idx: len(allInputs)})
+			allInputs = append(allInputs, resolved)
 		}
 		return entries, secrets, nil
 	}
 
-	envEntries, secretEntries, err := resolveEnv(svc)
+	envEntries, secretEntries, err := resolveEnv(serviceName, svc)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +741,7 @@ func CreateECSService(
 		if img := sc.StaticImage(); img != nil && *img == "" {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
 		}
-		scEnvEntries, scSecrets, err := resolveEnv(sc)
+		scEnvEntries, scSecrets, err := resolveEnv(scName, sc)
 		if err != nil {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, err)
 		}

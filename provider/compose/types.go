@@ -558,10 +558,10 @@ func (s ServiceConfig) ResolvePostgres(
 	if dbNameStr == nil || *dbNameStr == "" {
 		dbNameStr = ptr(DEFAULT_POSTGRES_DB)
 	}
-	dbName := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB, opt)
-	username := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER, opt)
+	dbName, _ := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_DB", DEFAULT_POSTGRES_DB, opt)
+	username, _ := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_USER", DEFAULT_POSTGRES_USER, opt)
 	// FIXME: should not default to ""
-	password := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "", opt)
+	password, _ := GetConfigOrEnvValue(ctx, configProvider, s, "POSTGRES_PASSWORD", "", opt)
 
 	allowDowntime := false
 	if s.Postgres.AllowDowntime != nil {
