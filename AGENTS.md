@@ -95,6 +95,19 @@ name actually does require lowercase+hyphens. Neither SSM parameter names nor
 GCP Secret Manager IDs have that constraint, so the naming and the munging
 were both dropped in favor of the resource's own auto-assigned identifier.
 
+**When there's no resource to auto-name at all**, apply the same principle
+one level down: don't derive a name from user-chosen text just because
+something has to be picked by hand. A Container App `Secret` is an inline
+field on the Container App spec, not a separate resource with a
+provider-assigned identifier to read back — so PR #672 also replaced Azure's
+`toContainerAppSecretName` (lowercase/hyphen-munging an env var or config var
+name, then disambiguating collisions between the two with a numeric suffix)
+with a plain sequential counter (`secretNamer.next`, `provider/defangazure/
+azure/containerapp.go`). A name with no semantic content can never collide
+and trivially satisfies the naming rule, which eliminated a whole class of
+"two independently user-chosen names landed on the same munged string" bugs
+(and the tests written to catch them) rather than just papering over it.
+
 ## Architecture
 
 ### Provider Pattern

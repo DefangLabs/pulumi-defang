@@ -151,42 +151,31 @@ type envResult struct {
 	HasKeyVaultSecret bool
 }
 
-// toContainerAppSecretName converts an env var name to a Container App secret
-// name (lowercase, hyphens instead of underscores).
-func toContainerAppSecretName(envKey string) string {
-	return strings.ToLower(strings.ReplaceAll(envKey, "_", "-"))
-}
-
-// secretNamer mints unique Container App secret names. buildEnvVars derives
-// names from two different, independently user-chosen sources — a config var
-// name (Key Vault-backed secrets) and an env var key (composite/computed
-// secrets) — that both go through toContainerAppSecretName and can therefore
-// coincide (e.g. a config var literally named "ENV_DB" normalizes the same
-// way a deliberately-prefixed composite name might). No fixed prefix is
-// provably disjoint from a user-chosen string, so instead every name minted
-// is checked against every other name minted so far and disambiguated with a
-// numeric suffix on collision — Container Apps' ARM API doesn't reject two
-// Secrets entries sharing a Name (behavior on a duplicate is unspecified/
-// last-wins), so this must never be allowed to happen.
+// secretNamer mints unique Container App secret names. A Container App
+// secret is an inline field on the Container App spec itself (see
+// buildEnvVars), not a separate resource with its own provider-assigned
+// name we could read back the way AWS SSM parameters or GCP Secret Manager
+// secrets let us — so instead of deriving a name from user-chosen text (a
+// config var name for a Key Vault-backed secret, an env var key for a
+// composite one) and munging it to fit Container Apps' lowercase-alphanumeric-
+// or-hyphen naming rule, this mints the simplest name that satisfies that
+// rule outright: a sequential counter. That also sidesteps two
+// independently user-chosen sources ever coinciding (Container Apps' ARM API
+// doesn't reject two Secrets entries sharing a Name — behavior on a
+// duplicate is unspecified/last-wins — so a collision must never be allowed
+// to happen).
 type secretNamer struct {
-	used map[string]struct{}
+	n int
 }
 
 func newSecretNamer() *secretNamer {
-	return &secretNamer{used: make(map[string]struct{})}
+	return &secretNamer{}
 }
 
-// unique returns base, or base with a numeric suffix appended if base is
-// already taken, and marks the returned name as taken.
-func (n *secretNamer) unique(base string) string {
-	name := base
-	for i := 2; ; i++ {
-		if _, taken := n.used[name]; !taken {
-			n.used[name] = struct{}{}
-			return name
-		}
-		name = fmt.Sprintf("%s-%d", base, i)
-	}
+// next mints the next unique Container App secret name.
+func (n *secretNamer) next() string {
+	n.n++
+	return fmt.Sprintf("env-secret-%d", n.n)
 }
 
 // resolveComposedEnvValue resolves a static compose env value that isn't a
@@ -291,7 +280,7 @@ func buildEnvVars(
 		} else if secretVar := compose.GetConfigName2(k, v); secretVar != "" && infra.ConfigProvider != nil {
 			appSecretName, alreadyMinted := kvSecretNames[secretVar]
 			if !alreadyMinted {
-				appSecretName = namer.unique(toContainerAppSecretName(secretVar))
+				appSecretName = namer.next()
 				kvSecretNames[secretVar] = appSecretName
 				secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
 				// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
@@ -321,10 +310,8 @@ func buildEnvVars(
 			value, hasSecret := resolveComposedEnvValue(ctx, raw, serviceEndpoints, serviceHosts, infra.ConfigProvider)
 			if hasSecret {
 				// One env var key always produces exactly one composite
-				// secret (no sharing like the KV branch above), but its name
-				// can still collide with another env var's or config var's —
-				// namer disambiguates against every name minted so far.
-				appSecretName := namer.unique(toContainerAppSecretName(k))
+				// secret (no sharing like the KV branch above).
+				appSecretName := namer.next()
 				appSecrets = append(appSecrets, app.SecretArgs{
 					Name:  pulumi.String(appSecretName),
 					Value: value.ToStringPtrOutput(),

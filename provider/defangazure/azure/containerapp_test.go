@@ -126,17 +126,18 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 
 // TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName covers a
 // naming collision CodeRabbit flagged on an earlier version of this fix
-// (pulumi-defang#637): a bare ${VAR} reference and a composite value can
-// derive the same toContainerAppSecretName when a config var's name matches
-// another env var's own key. Concretely:
+// (pulumi-defang#637), back when secret names were derived from user-chosen
+// text (a config var name, or an env var key) — a bare ${VAR} reference and a
+// composite value could derive the same name when a config var's name
+// matched another env var's own key:
 //
 //	A: "${B}"        // bare ref → Key Vault secret named "b"
 //	B: "prefix${C}"  // composite → would also derive secret name "b"
 //
-// Without disambiguation, B's computed value would be dropped (seenSecrets
-// already has "b") and B would silently read A's Key Vault secret instead of
-// its own interpolated value — the deploy succeeds, so nothing surfaces the
-// wrong value at deploy time.
+// secretNamer now mints sequential names instead of deriving them from that
+// text at all (see its doc comment), so this collision class can no longer
+// happen by construction; this test still exercises the same shape as a
+// regression guard.
 func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		const vaultURL = "https://myvault.vault.azure.net"
@@ -193,12 +194,11 @@ func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *test
 
 // TestBuildEnvVarsDisambiguatesConfigVarNamedLikeEnvNamespace covers a deeper
 // version of the same collision class: a fixed namespace prefix on the
-// composite side isn't provably disjoint from the Key Vault side, because the
-// Key Vault side's name comes from a user-chosen config var name too. Here
-// the config var is literally named "ENV_DB", which toContainerAppSecretName
-// normalizes to "env-db" — the same string a composite env var named "DB"
-// would derive on its own (whatever prefixing scheme is used for it). Both
-// secrets must still end up with distinct names.
+// composite side wouldn't have been provably disjoint from the Key Vault
+// side, because the Key Vault side's name came from a user-chosen config var
+// name too. secretNamer's sequential names make this impossible by
+// construction (see its doc comment); this test still exercises the same
+// shape as a regression guard.
 func TestBuildEnvVarsDisambiguatesConfigVarNamedLikeEnvNamespace(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		const vaultURL = "https://myvault.vault.azure.net"
