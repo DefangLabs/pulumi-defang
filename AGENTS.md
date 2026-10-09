@@ -69,6 +69,32 @@ added explicit checks for UDP host ports, Azure's reserved port 36985, and
 ports 80/443, duplicating validation Azure Container Apps' ARM API already
 performs. Removed in favor of letting the ARM error surface directly.
 
+## Avoid setting physical resource names
+
+Don't set an explicit physical name on a Pulumi resource (SSM parameter
+`Name`, GCP Secret Manager `SecretId`, etc.) unless something outside Pulumi
+needs to predict it before creation. Let the cloud provider auto-name it, and
+read the physical identifier back off the resource's own output (e.g.
+`param.Arn`, `secret.SecretId`, `version.Version`) instead of hand-computing
+it (region + account ID + path `Sprintf`, lowercasing/hyphen-munging, etc.).
+
+Two separate reasons this matters:
+- **Correctness** — a hand-built identifier is guesswork that can drift from
+  what the provider actually assigned, duplicating logic the cloud SDK's own
+  resource type already gets right.
+- **Dependency tracking** — referencing the resource's own output creates a
+  real Pulumi dependency edge on the resource that produced it, so downstream
+  consumers (e.g. a task definition's `secrets` list) wait for it
+  automatically, with no manual `pulumi.DependsOn` needed.
+
+This came up on PR #672 (AWS SSM / GCP Secret Manager secrets for composite
+env values): the initial implementation hand-built the SSM parameter name,
+`Sprintf`'d the ARN from region/account ID, and lowercased/hyphenated the GCP
+secret ID — copied from the Azure fix (#637), where Container Apps' secret
+name actually does require lowercase+hyphens. Neither SSM parameter names nor
+GCP Secret Manager IDs have that constraint, so the naming and the munging
+were both dropped in favor of the resource's own auto-assigned identifier.
+
 ## Architecture
 
 ### Provider Pattern
