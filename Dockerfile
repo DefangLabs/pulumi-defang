@@ -73,6 +73,11 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # Install Pulumi cloud-provider plugins (versions extracted from go.mod)
 # This stage runs on the target platform so pulumi downloads the correct plugin binaries.
 #
+# Adding a provider import of a new pulumi-owned plugin SDK? It needs a
+# matching `pulumi plugin install resource ...` line below, or it'll go
+# uncached and get downloaded at deploy time instead (DefangLabs/pulumi-defang#670).
+# scripts/check-dockerfile-plugins.sh (run in CI) catches a missing one.
+#
 # Both root go.mod and cd/go.mod are copied because plugin SDKs appear in
 # different places: pulumi-awsx and pulumi-random are only imported by the
 # provider packages (root go.mod); pulumi-gcp and pulumi-azure-native-sdk
