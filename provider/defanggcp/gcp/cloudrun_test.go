@@ -43,7 +43,7 @@ func TestBuildEnvVarsStripsReservedPort(t *testing.T) {
 					},
 					Ports: []compose.ServicePortConfig{{Target: 8080}},
 				}
-				envs, secretIds, err := buildEnvVars(ctx, nil, "app", "etag1", "", svc, nil)
+				envs, secretIds, _, err := buildEnvVars(ctx, nil, "app", "etag1", "", svc, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -211,7 +211,9 @@ func TestCreateCloudRunServiceScaling(t *testing.T) {
 }
 
 // secretManagerSpy records every Secret / SecretVersion resource buildEnvVars
-// creates for a composed (interpolated) secret.
+// creates for a composed (interpolated) secret, and synthesizes the
+// output-only fields (secretId, version) that nothing in Inputs sets since no
+// physical name is requested — see newComposedEnvSecret.
 type secretManagerSpy struct {
 	mu       sync.Mutex
 	secrets  []pulumi.MockResourceArgs
@@ -221,13 +223,23 @@ type secretManagerSpy struct {
 func (m *secretManagerSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Copy before mutating for outputs, so the recorded args (used to assert
+	// no physical name was requested) aren't contaminated by the synthesized
+	// output-only fields below.
+	outputs := make(resource.PropertyMap, len(args.Inputs)+1)
+	for k, v := range args.Inputs {
+		outputs[k] = v
+	}
 	switch args.TypeToken {
 	case "gcp:secretmanager/secret:Secret":
 		m.secrets = append(m.secrets, args)
+		outputs["secretId"] = resource.NewStringProperty("fake-" + args.Name)
+		outputs["name"] = resource.NewStringProperty("projects/p/secrets/fake-" + args.Name)
 	case "gcp:secretmanager/secretVersion:SecretVersion":
 		m.versions = append(m.versions, args)
+		outputs["version"] = resource.NewStringProperty("1")
 	}
-	return args.Name + "_id", args.Inputs, nil
+	return args.Name + "_id", outputs, nil
 }
 
 func (m *secretManagerSpy) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
@@ -253,8 +265,12 @@ func TestBuildEnvVarsKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 			},
 		}
 		configProvider := &mockSecretConfigProvider{prefix: "Defang_myproject_stack_"}
-		envs, secretIds, err := buildEnvVars(ctx, configProvider, "app", "", "", svc, nil)
+		envs, secretIds, composedSecrets, err := buildEnvVars(ctx, configProvider, "app", "", "", svc, nil)
 		require.NoError(t, err)
+		assert.Empty(t, secretIds,
+			"DATABASE_URL is composite, not a bare ref, so it must not appear in the pre-existing-secret list")
+		require.Len(t, composedSecrets, 1, "expected exactly one composed secret")
+		assert.Equal(t, "DATABASE_URL", composedSecrets[0].key)
 
 		var found bool
 		for _, e := range envs {
@@ -267,11 +283,18 @@ func TestBuildEnvVarsKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 			require.NotNil(t, args.ValueSource, "must be resolved via ValueSource.SecretKeyRef instead")
 			valueSource := args.ValueSource.(*cloudrunv2.ServiceTemplateContainerEnvValueSourceArgs)
 			secretRef := valueSource.SecretKeyRef.(*cloudrunv2.ServiceTemplateContainerEnvValueSourceSecretKeyRefArgs)
-			secretId := string(secretRef.Secret.(pulumi.String))
-			assert.Contains(t, secretId, "app")
-			assert.Contains(t, secretId, "DATABASE_URL")
-			assert.Contains(t, secretIds, secretId,
-				"the new secret must be in the IAM-grant list returned to the caller")
+
+			secretRef.Secret.ToStringOutput().ApplyT(func(id string) string {
+				assert.NotEmpty(t, id, "must reference the secret's own SecretId output")
+				assert.NotContains(t, id, password, "the secret ID must never embed the secret value")
+				return id
+			})
+			secretRef.Version.ToStringPtrOutput().ApplyT(func(v *string) *string {
+				require.NotNil(t, v)
+				assert.NotEqual(t, "latest", *v,
+					"must reference the concrete version, not the 'latest' alias, so a changed value forces a redeploy")
+				return v
+			})
 		}
 		assert.True(t, found, "DATABASE_URL env var not found")
 		return nil
@@ -280,10 +303,10 @@ func TestBuildEnvVarsKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 
 	require.Len(t, spy.secrets, 1, "expected exactly one new Secret Manager secret")
 	require.Len(t, spy.versions, 1, "expected exactly one new Secret Manager secret version")
+	_, hasSecretId := spy.secrets[0].Inputs["secretId"]
+	assert.False(t, hasSecretId, "no physical secret ID should be set; let GCP assign one")
 	valueInput := spy.versions[0].Inputs["secretData"]
 	require.True(t, valueInput.IsSecret(), "secret version data should be marked secret")
 	assert.Equal(t, "postgresql://postgres:"+password+"@db:5432/mydb",
 		valueInput.SecretValue().Element.StringValue())
-	assert.NotContains(t, spy.secrets[0].Inputs["secretId"].StringValue(), password,
-		"the secret ID must never embed the secret value")
 }

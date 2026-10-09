@@ -3,7 +3,6 @@ package gcp
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -47,13 +46,16 @@ func CreateCloudRunService(
 	extraIAMDeps []pulumi.Resource,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*CloudRunResult, error) {
-	template, secretIds, err := buildTemplate(ctx, configProvider, serviceName, image, svc, sa, gcpConfig, parentOpt)
+	template, secretIds, composedSecrets, err := buildTemplate(
+		ctx, configProvider, serviceName, image, svc, sa, gcpConfig, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("building service template: %w", err)
 	}
 
-	// Grant the service account access to each referenced secret
-	iamDeps := make([]pulumi.Resource, 0, len(secretIds)+len(extraIAMDeps))
+	// Grant the service account access to each referenced secret: pre-existing
+	// config secrets (bare ${VAR} references) by their known ID, and secrets
+	// newly created for composite values by their own SecretId output.
+	iamDeps := make([]pulumi.Resource, 0, len(secretIds)+len(composedSecrets)+len(extraIAMDeps))
 	iamDeps = append(iamDeps, extraIAMDeps...)
 	for _, sid := range secretIds {
 		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
@@ -64,6 +66,19 @@ func CreateCloudRunService(
 		}, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("granting secret access for %s: %w", sid, err)
+		}
+		iamDeps = append(iamDeps, member)
+	}
+	for _, cs := range composedSecrets {
+		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
+		resourceName := serviceName + "-env-secret-" + cs.key
+		member, err := secretmanager.NewSecretIamMember(ctx, resourceName, &secretmanager.SecretIamMemberArgs{
+			SecretId: cs.id,
+			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
+			Member:   pulumi.Sprintf("serviceAccount:%v", sa.Email),
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("granting secret access for %s: %w", cs.key, err)
 		}
 		iamDeps = append(iamDeps, member)
 	}
@@ -122,44 +137,64 @@ func minInstanceScaling(svc compose.ServiceConfig) *cloudrunv2.ServiceScalingArg
 	}
 }
 
+// composedEnvSecret is a new Secret Manager secret created for a composite
+// env value (as opposed to a bare ${VAR} reference, which points at a
+// pre-existing secret via ConfigProvider.GetSecretRef). id and version are
+// the created resources' own Outputs rather than strings built by hand:
+// referencing them gives Pulumi an automatic dependency edge (no explicit
+// pulumi.DependsOn needed before Cloud Run or the IAM grant can use them),
+// and referencing the concrete version — instead of the "latest" alias a bare
+// ${VAR} reference uses — means a changed value (which creates a new,
+// immutable version, since Secret Manager versions can't be updated in
+// place) changes the Cloud Run template's own inputs, so the revision
+// actually redeploys to pick it up.
+type composedEnvSecret struct {
+	key     string // env var key; used to name the IAM grant deterministically
+	id      pulumi.StringOutput
+	version pulumi.StringOutput
+}
+
 // newComposedEnvSecret stores a compose env value that embeds a config-
 // provided secret (InterpolateEnvironmentVariable's hasSecret return — e.g. a
-// DSN built from ${DB_PASSWORD}) as a new Secret Manager secret + version,
-// and returns its secret ID. The caller references it the same way a bare
-// ${VAR} reference does (ValueSource.SecretKeyRef) and grants the service
-// account IAM access to it (see the secretIds returned by buildEnvVars),
+// DSN built from ${DB_PASSWORD}) as a new Secret Manager secret + version.
+// The caller references it the same way a bare ${VAR} reference does
+// (ValueSource.SecretKeyRef) and grants the service account IAM access to it,
 // instead of the value landing as a plaintext Cloud Run env[].value, which is
 // readable via a plain services.get. See DefangLabs/pulumi-defang#638
 // (follow-up to the Azure fix for #637 / DefangLabs/station#198).
+//
+// No SecretId is set, so GCP assigns the secret's physical ID — the caller
+// never needs to construct or know one.
 func newComposedEnvSecret(
 	ctx *pulumi.Context,
 	serviceName, key string,
 	value pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
-) (string, error) {
-	secretId := fmt.Sprintf("Defang_%s_%s_env_%s_%s", ctx.Project(), ctx.Stack(), serviceName, key)
-	resourceName := serviceName + "-" + strings.ToLower(strings.ReplaceAll(key, "_", "-")) + "-env-secret"
+) (*composedEnvSecret, error) {
+	resourceName := serviceName + "-" + key + "-env-secret"
 	secret, err := secretmanager.NewSecret(ctx, resourceName, &secretmanager.SecretArgs{
-		SecretId: pulumi.String(secretId),
 		Replication: &secretmanager.SecretReplicationArgs{
 			Auto: &secretmanager.SecretReplicationAutoArgs{},
 		},
 	}, opts...)
 	if err != nil {
-		return "", fmt.Errorf("creating secret: %w", err)
+		return nil, fmt.Errorf("creating secret: %w", err)
 	}
-	if _, err := secretmanager.NewSecretVersion(ctx, resourceName+"-version", &secretmanager.SecretVersionArgs{
+	version, err := secretmanager.NewSecretVersion(ctx, resourceName+"-version", &secretmanager.SecretVersionArgs{
 		Secret:     secret.Name,
 		SecretData: value.ToStringPtrOutput(),
-	}, opts...); err != nil {
-		return "", fmt.Errorf("creating secret version: %w", err)
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating secret version: %w", err)
 	}
-	return secretId, nil
+	return &composedEnvSecret{key: key, id: secret.SecretId, version: version.Version}, nil
 }
 
 // buildEnvVars constructs Cloud Run env vars, using SecretKeyRef for secret references
-// (KEY=${KEY} pattern) and plaintext for everything else. Returns the env array and
-// the list of Secret Manager secret IDs that need IAM binding.
+// (KEY=${KEY} pattern) and plaintext for everything else. Returns the env array, the
+// list of pre-existing Secret Manager secret IDs that need IAM binding (bare ${VAR}
+// references), and the secrets newly created for composite values (see
+// newComposedEnvSecret), which also need IAM binding.
 func buildEnvVars(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -167,12 +202,13 @@ func buildEnvVars(
 	svc compose.ServiceConfig,
 	parentOpt pulumi.ResourceOrInvokeOption,
 	opts ...pulumi.InvokeOption,
-) (cloudrunv2.ServiceTemplateContainerEnvArray, []string, error) {
+) (cloudrunv2.ServiceTemplateContainerEnvArray, []string, []*composedEnvSecret, error) {
 	// Multiple env vars can reference the same secret (e.g. FOO=${X}, BAR=${X});
 	// the caller creates one SecretIamMember per ID so duplicates would cause a
 	// URN collision. Track seen IDs to return each only once.
 	seenSecretIds := make(map[string]struct{})
 	var secretIds []string
+	var composedSecrets []*composedEnvSecret
 
 	envs := cloudrunv2.ServiceTemplateContainerEnvArray{
 		&cloudrunv2.ServiceTemplateContainerEnvArgs{
@@ -240,23 +276,20 @@ func buildEnvVars(
 				// by wrapping it in a new Secret Manager secret, the same way
 				// a bare ${VAR} reference does. See newComposedEnvSecret and
 				// DefangLabs/pulumi-defang#638.
-				secretId, err := newComposedEnvSecret(ctx, serviceName, k, value, parentOpt)
+				cs, err := newComposedEnvSecret(ctx, serviceName, k, value, parentOpt)
 				if err != nil {
-					return nil, nil, fmt.Errorf("creating composed secret for %q: %w", k, err)
+					return nil, nil, nil, fmt.Errorf("creating composed secret for %q: %w", k, err)
 				}
 				envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
 					Name: pulumi.String(k),
 					ValueSource: &cloudrunv2.ServiceTemplateContainerEnvValueSourceArgs{
 						SecretKeyRef: &cloudrunv2.ServiceTemplateContainerEnvValueSourceSecretKeyRefArgs{
-							Secret:  pulumi.String(secretId),
-							Version: pulumi.String("latest"),
+							Secret:  cs.id,
+							Version: cs.version.ToStringPtrOutput(),
 						},
 					},
 				})
-				if _, ok := seenSecretIds[secretId]; !ok {
-					seenSecretIds[secretId] = struct{}{}
-					secretIds = append(secretIds, secretId)
-				}
+				composedSecrets = append(composedSecrets, cs)
 				continue
 			}
 			envs = append(envs, &cloudrunv2.ServiceTemplateContainerEnvArgs{
@@ -272,11 +305,12 @@ func buildEnvVars(
 			})
 		}
 	}
-	return envs, secretIds, nil
+	return envs, secretIds, composedSecrets, nil
 }
 
-// buildTemplate returns the Cloud Run service template and a list of Secret Manager
-// secret IDs that the service account needs access to (for IAM binding).
+// buildTemplate returns the Cloud Run service template, a list of pre-existing
+// Secret Manager secret IDs, and the secrets newly created for composite env
+// values — both need IAM binding.
 func buildTemplate(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
@@ -287,7 +321,7 @@ func buildTemplate(
 	gcpConfig *SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
 	opts ...pulumi.InvokeOption,
-) (*cloudrunv2.ServiceTemplateArgs, []string, error) {
+) (*cloudrunv2.ServiceTemplateArgs, []string, []*composedEnvSecret, error) {
 	var etag string
 	if gcpConfig != nil {
 		etag = gcpConfig.Etag
@@ -299,9 +333,10 @@ func buildTemplate(
 		domain = gcpConfig.Domain
 	}
 	fqdn := common.ServiceFQDN(serviceName, svc, domain, "")
-	envs, secretIds, err := buildEnvVars(ctx, configProvider, serviceName, etag, fqdn, svc, parentOpt, opts...)
+	envs, secretIds, composedSecrets, err := buildEnvVars(
+		ctx, configProvider, serviceName, etag, fqdn, svc, parentOpt, opts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Build port config
@@ -378,7 +413,7 @@ func buildTemplate(
 		template.VpcAccess = buildVpcAccess(gcpConfig)
 	}
 
-	return template, secretIds, nil
+	return template, secretIds, composedSecrets, nil
 }
 
 func buildVpcAccess(gcpConfig *SharedInfra) *cloudrunv2.ServiceTemplateVpcAccessArgs {
