@@ -2,8 +2,6 @@ package aws
 
 import (
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -490,53 +488,56 @@ func createServiceSG(
 // own Arn output (rather than building one by hand from project/stack/region/
 // account) also gives the caller an automatic Pulumi dependency edge: the
 // task definition that embeds this Arn in its Secrets waits for the
-// parameter to exist, with no explicit pulumi.DependsOn needed.
+// parameter to exist, with no explicit pulumi.DependsOn needed. The Version
+// output is returned too, so a caller that needs to force a redeploy on a
+// value change (see mergeComposedSecretsTrigger) can use SSM's own
+// auto-incrementing version instead of hashing the value itself.
 func newComposedEnvSecret(
 	ctx *pulumi.Context,
 	containerName, key string,
 	value pulumi.StringOutput,
 	opt pulumi.ResourceOrInvokeOption,
-) (pulumi.StringOutput, error) {
+) (pulumi.StringOutput, pulumi.IntOutput, error) {
 	resourceName := containerName + "-" + key + "-env-secret"
 	param, err := ssm.NewParameter(ctx, resourceName, &ssm.ParameterArgs{
 		Type:  ssm.ParameterTypeSecureString,
 		Value: value.ToStringPtrOutput(),
 	}, opt)
 	if err != nil {
-		return pulumi.StringOutput{}, fmt.Errorf("creating SSM parameter: %w", err)
+		return pulumi.StringOutput{}, pulumi.IntOutput{}, fmt.Errorf("creating SSM parameter: %w", err)
 	}
-	return param.Arn, nil
+	return param.Arn, param.Version, nil
 }
 
-// mergeComposedSecretsTrigger adds a single hash of every composed secret's
-// resolved value to triggers (caller-supplied, possibly nil), so an ECS
-// service redeploys when any of those values change even though the task
-// definition's own JSON doesn't (see newComposedEnvSecret). Only the hash is
-// exposed, never the plaintext values.
-func mergeComposedSecretsTrigger(triggers pulumi.StringMapInput, values []pulumi.StringOutput) pulumi.StringMapInput {
-	hashInputs := make([]interface{}, len(values))
-	for i, v := range values {
-		hashInputs[i] = v
+// mergeComposedSecretsTrigger adds a trigger tracking every composed secret's
+// current SSM parameter Version to triggers (caller-supplied, possibly nil),
+// so an ECS service redeploys when any of those versions changes even though
+// the task definition's own JSON doesn't (see newComposedEnvSecret). SSM
+// increments a parameter's Version on every write to its value, so this
+// needs no hash of the plaintext value itself.
+func mergeComposedSecretsTrigger(triggers pulumi.StringMapInput, versions []pulumi.IntOutput) pulumi.StringMapInput {
+	versionInputs := make([]interface{}, len(versions))
+	for i, v := range versions {
+		versionInputs[i] = v
 	}
-	hash := pulumi.All(hashInputs...).ApplyT(func(vals []any) string {
-		h := sha256.New()
-		for _, v := range vals {
-			h.Write([]byte(v.(string)))
-			h.Write([]byte{0})
+	joined := pulumi.All(versionInputs...).ApplyT(func(vals []any) string {
+		parts := make([]string, len(vals))
+		for i, v := range vals {
+			parts[i] = strconv.Itoa(v.(int))
 		}
-		return hex.EncodeToString(h.Sum(nil))
+		return strings.Join(parts, ",")
 	}).(pulumi.StringOutput)
 
 	if triggers == nil {
-		return pulumi.StringMap{"composedSecretsSha256": hash}
+		return pulumi.StringMap{"composedSecretsVersion": joined}
 	}
-	return pulumi.All(triggers.ToStringMapOutput(), hash).ApplyT(func(all []any) map[string]string {
+	return pulumi.All(triggers.ToStringMapOutput(), joined).ApplyT(func(all []any) map[string]string {
 		existing := all[0].(map[string]string)
 		merged := make(map[string]string, len(existing)+1)
 		for k, v := range existing {
 			merged[k] = v
 		}
-		merged["composedSecretsSha256"] = all[1].(string)
+		merged["composedSecretsVersion"] = all[1].(string)
 		return merged
 	}).(pulumi.StringMapOutput)
 }
@@ -719,13 +720,13 @@ func CreateECSService(
 		allInputs = append(allInputs, args.Environment)
 	}
 
-	// composedSecretValues collects the resolved (plaintext) value of every
+	// composedSecretVersions collects the SSM parameter Version of every
 	// composed secret (across the main container and sidecars). A changed
 	// value updates the SSM parameter in place without changing its Arn, so
 	// the task definition's Secrets entry — and thus its JSON — wouldn't
-	// otherwise change; a hash of these values feeds the service Triggers so
-	// such a change still forces a redeployment.
-	var composedSecretValues []pulumi.StringOutput
+	// otherwise change; these versions feed the service Triggers so such a
+	// change still forces a redeployment.
+	var composedSecretVersions []pulumi.IntOutput
 
 	// Split env vars: bare ${VAR} references go to ECS Secrets (SSM ARN),
 	// all others go to Environment (resolved plaintext) — unless the resolved
@@ -747,13 +748,13 @@ func CreateECSService(
 			}
 			resolved, hasSecret := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
 			if hasSecret {
-				arn, err := newComposedEnvSecret(ctx, containerName, k, resolved, parentOpt)
+				arn, version, err := newComposedEnvSecret(ctx, containerName, k, resolved, parentOpt)
 				if err != nil {
 					return nil, nil, fmt.Errorf("creating composed secret for %q: %w", k, err)
 				}
 				entries = append(entries, envEntry{name: k, idx: len(allInputs), isSecret: true})
 				allInputs = append(allInputs, arn)
-				composedSecretValues = append(composedSecretValues, resolved)
+				composedSecretVersions = append(composedSecretVersions, version)
 				continue
 			}
 			entries = append(entries, envEntry{name: k, idx: len(allInputs)})
@@ -1096,11 +1097,11 @@ func CreateECSService(
 	// A changed composed secret's value doesn't change the task definition's
 	// JSON (its Secrets entry holds a stable SSM parameter Arn, not the value
 	// — see newComposedEnvSecret), so without this the service would never
-	// redeploy to pick up a rotated value. Triggers gets a hash, never the
-	// plaintext value itself.
+	// redeploy to pick up a rotated value. Triggers gets each parameter's
+	// Version, which SSM increments on every write, never the plaintext value.
 	triggers := args.Triggers
-	if len(composedSecretValues) > 0 {
-		triggers = mergeComposedSecretsTrigger(args.Triggers, composedSecretValues)
+	if len(composedSecretVersions) > 0 {
+		triggers = mergeComposedSecretsTrigger(args.Triggers, composedSecretVersions)
 	}
 
 	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)

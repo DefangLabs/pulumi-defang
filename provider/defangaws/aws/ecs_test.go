@@ -34,7 +34,8 @@ func (f *fakeConfigProvider) GetSecretRef(_ *pulumi.Context, key string, _ ...pu
 // resource.Inputs sets it) so assertions against the real code path can check
 // its shape.
 type composedSecretMocks struct {
-	created []pulumi.MockResourceArgs
+	created   []pulumi.MockResourceArgs
+	ssmParams int // count of SSM parameters created so far, used to fake a distinct Version per one
 }
 
 func (m *composedSecretMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
@@ -42,6 +43,8 @@ func (m *composedSecretMocks) NewResource(args pulumi.MockResourceArgs) (string,
 	outputs := args.Inputs
 	if args.TypeToken == "aws:ssm/parameter:Parameter" {
 		outputs["arn"] = resource.NewStringProperty("arn:aws:ssm:us-west-2:123456789012:parameter" + args.Name)
+		m.ssmParams++
+		outputs["version"] = resource.NewNumberProperty(float64(m.ssmParams))
 	}
 	return args.Name + "_id", outputs, nil
 }
@@ -67,13 +70,17 @@ func TestNewComposedEnvSecret(t *testing.T) {
 	mocks := &composedSecretMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		value := pulumi.String(secretValue).ToStringOutput()
-		arnOutput, err := newComposedEnvSecret(ctx, "myservice", "DATABASE_URL", value, nil)
+		arnOutput, versionOutput, err := newComposedEnvSecret(ctx, "myservice", "DATABASE_URL", value, nil)
 		require.NoError(t, err)
 
 		arnOutput.ApplyT(func(arn string) string {
 			assert.True(t, strings.HasPrefix(arn, "arn:aws:ssm:"), "got %q", arn)
 			assert.NotContains(t, arn, "hunter2", "the ARN must never embed the secret value")
 			return arn
+		})
+		versionOutput.ApplyT(func(version int) int {
+			assert.Positive(t, version, "expected the parameter's Version output to be populated")
+			return version
 		})
 		return nil
 	}, pulumi.WithMocks("myproject", "stack", mocks))
@@ -159,45 +166,45 @@ func TestCreateECSServiceKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 	}
 	require.NotNil(t, serviceInputs, "expected an ECS Service to be created")
 	triggers := serviceInputs["triggers"]
-	require.True(t, triggers.IsObject(), "expected a composedSecretsSha256 trigger since a composed secret exists")
-	hash, ok := triggers.ObjectValue()["composedSecretsSha256"]
-	require.True(t, ok, "expected a composedSecretsSha256 trigger since a composed secret exists")
-	assert.NotContains(t, hash.StringValue(), password, "the trigger must be a hash, never the plaintext value")
+	require.True(t, triggers.IsObject(), "expected a composedSecretsVersion trigger since a composed secret exists")
+	version, ok := triggers.ObjectValue()["composedSecretsVersion"]
+	require.True(t, ok, "expected a composedSecretsVersion trigger since a composed secret exists")
+	assert.NotContains(t, version.StringValue(), password,
+		"the trigger must be a version number, never the plaintext value")
 }
 
-// TestMergeComposedSecretsTrigger verifies the Triggers-hash helper: it
-// merges a hash of the composed secret values into any caller-supplied
-// triggers without ever exposing the plaintext values themselves, and the
-// hash changes when a value changes — which is what makes a value rotation
-// force an ECS redeployment despite the task definition's own JSON staying
-// the same (its Secrets entry holds a stable parameter Arn, not the value;
-// see newComposedEnvSecret). See DefangLabs/pulumi-defang#638.
+// TestMergeComposedSecretsTrigger verifies the Triggers helper: it merges the
+// composed secrets' SSM parameter Versions into any caller-supplied triggers,
+// and the trigger value changes when a version changes — which is what makes
+// a value rotation force an ECS redeployment despite the task definition's
+// own JSON staying the same (its Secrets entry holds a stable parameter Arn,
+// not the value; see newComposedEnvSecret). See DefangLabs/pulumi-defang#638.
 func TestMergeComposedSecretsTrigger(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		v1 := pulumi.String("hunter2").ToStringOutput()
-		v2 := pulumi.String("hunter2-updated").ToStringOutput()
+		v1 := pulumi.Int(1).ToIntOutput()
+		v2 := pulumi.Int(2).ToIntOutput()
 
-		noCaller := mergeComposedSecretsTrigger(nil, []pulumi.StringOutput{v1}).ToStringMapOutput()
+		noCaller := mergeComposedSecretsTrigger(nil, []pulumi.IntOutput{v1}).ToStringMapOutput()
 		withCaller := mergeComposedSecretsTrigger(
-			pulumi.StringMap{"other": pulumi.String("kept")}, []pulumi.StringOutput{v1},
+			pulumi.StringMap{"other": pulumi.String("kept")}, []pulumi.IntOutput{v1},
 		).ToStringMapOutput()
-		changed := mergeComposedSecretsTrigger(nil, []pulumi.StringOutput{v2}).ToStringMapOutput()
+		changed := mergeComposedSecretsTrigger(nil, []pulumi.IntOutput{v2}).ToStringMapOutput()
 
 		pulumi.All(noCaller, withCaller, changed).ApplyT(func(all []any) error {
 			noCallerMap := all[0].(map[string]string)
 			withCallerMap := all[1].(map[string]string)
 			changedMap := all[2].(map[string]string)
 
-			hash, ok := noCallerMap["composedSecretsSha256"]
+			version, ok := noCallerMap["composedSecretsVersion"]
 			require.True(t, ok)
-			assert.NotContains(t, hash, "hunter2", "the trigger must be a hash, never the plaintext value")
+			assert.Equal(t, "1", version)
 
 			assert.Equal(t, "kept", withCallerMap["other"], "caller-supplied triggers must be preserved")
-			assert.Equal(t, hash, withCallerMap["composedSecretsSha256"],
-				"merging must not change the computed hash")
+			assert.Equal(t, version, withCallerMap["composedSecretsVersion"],
+				"merging must not change the computed trigger")
 
-			assert.NotEqual(t, hash, changedMap["composedSecretsSha256"],
-				"a changed composed value must change the hash, so a rotation still forces a redeploy")
+			assert.NotEqual(t, version, changedMap["composedSecretsVersion"],
+				"a changed composed secret's version must change the trigger, so a rotation still forces a redeploy")
 			return nil
 		})
 		return nil
