@@ -73,7 +73,7 @@ performs. Removed in favor of letting the ARM error surface directly.
 
 Don't set an explicit physical name on a Pulumi resource (SSM parameter
 `Name`, GCP Secret Manager `SecretId`, etc.) unless something outside Pulumi
-needs to predict it before creation. Let the cloud provider auto-name it, and
+needs to predict it before creation. Let the Pulumi provider auto-name it, and
 read the physical identifier back off the resource's own output (e.g.
 `param.Arn`, `secret.SecretId`, `version.Version`) instead of hand-computing
 it (region + account ID + path `Sprintf`, lowercasing/hyphen-munging, etc.).
@@ -95,18 +95,18 @@ name actually does require lowercase+hyphens. Neither SSM parameter names nor
 GCP Secret Manager IDs have that constraint, so the naming and the munging
 were both dropped in favor of the resource's own auto-assigned identifier.
 
-**When there's no resource to auto-name at all**, apply the same principle
-one level down: don't derive a name from user-chosen text just because
-something has to be picked by hand. A Container App `Secret` is an inline
-field on the Container App spec, not a separate resource with a
-provider-assigned identifier to read back — so PR #672 also replaced Azure's
-`toContainerAppSecretName` (lowercase/hyphen-munging an env var or config var
-name, then disambiguating collisions between the two with a numeric suffix)
-with a plain sequential counter (`secretNamer.next`, `provider/defangazure/
-azure/containerapp.go`). A name with no semantic content can never collide
-and trivially satisfies the naming rule, which eliminated a whole class of
-"two independently user-chosen names landed on the same munged string" bugs
-(and the tests written to catch them) rather than just papering over it.
+Logical names must remain stable and include the owning component's name:
+Pulumi URNs include parent types, not parent names. Sidecars therefore need
+the owning service's prefix too. Related resources of different types can
+share a logical name; type suffixes such as `-version` are unnecessary.
+
+Inline fields such as Azure Container App secrets have no Pulumi resource
+to auto-name. Their names still need stable identities across revisions:
+never use a sequential counter that reassigns an existing name when another
+secret is inserted or removed. Use separate namespaces for config references
+and composed env values. `containerAppSecretName` hashes the original key
+(not its secret value) to produce a bounded, valid name without collapsing
+case or punctuation differences.
 
 ## Architecture
 

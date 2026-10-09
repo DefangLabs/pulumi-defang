@@ -3,14 +3,18 @@ package aws
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const ssmParameterType = "aws:ssm/parameter:Parameter"
 
 // fakeConfigProvider is a minimal compose.ConfigProvider stub: GetConfigValue
 // resolves from a fixed map, GetSecretRef returns a deterministic fake ARN.
@@ -34,19 +38,62 @@ func (f *fakeConfigProvider) GetSecretRef(_ *pulumi.Context, key string, _ ...pu
 // resource.Inputs sets it) so assertions against the real code path can check
 // its shape.
 type composedSecretMocks struct {
+	mu        sync.Mutex
 	created   []pulumi.MockResourceArgs
 	ssmParams int // count of SSM parameters created so far, used to fake a distinct Version per one
 }
 
 func (m *composedSecretMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.created = append(m.created, args)
 	outputs := args.Inputs
-	if args.TypeToken == "aws:ssm/parameter:Parameter" {
+	if args.TypeToken == ssmParameterType {
 		outputs["arn"] = resource.NewStringProperty("arn:aws:ssm:us-west-2:123456789012:parameter" + args.Name)
 		m.ssmParams++
 		outputs["version"] = resource.NewNumberProperty(float64(m.ssmParams))
 	}
 	return args.Name + "_id", outputs, nil
+}
+
+// Parent names do not appear in child URNs, so identical sidecar names in
+// separate Service components still need distinct logical resource names.
+func TestComposedSidecarSecretsHaveUniqueURNs(t *testing.T) {
+	mocks := &composedSecretMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		for _, name := range []string{"api", "worker", "proxy"} {
+			var parent pulumi.ResourceState
+			if err := ctx.RegisterComponentResource("defang-aws:index:Service", name, &parent); err != nil {
+				return err
+			}
+			env := compose.Environment{"AUTH": pulumi.String("Bearer ${TOKEN}")}
+			args := &ECSServiceArgs{
+				ImageURI: pulumi.String("app:latest"),
+				Sidecars: map[string]compose.ServiceConfig{
+					"proxy": {Image: pulumi.String("proxy:latest"), Environment: env},
+				},
+			}
+			_, err := CreateECSService(ctx, &fakeConfigProvider{values: map[string]string{"TOKEN": "value"}},
+				name, compose.ServiceConfig{Environment: env}, args, nil, pulumi.Parent(&parent))
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, pulumi.WithMocks("project", "stack", mocks))
+	require.NoError(t, err)
+
+	seen := make(map[resource.URN]bool)
+	for _, r := range mocks.created {
+		if r.TypeToken != ssmParameterType {
+			continue
+		}
+		parentType := resource.URN(r.RegisterRPC.GetParent()).QualifiedType()
+		urn := resource.NewURN("stack", "project", parentType, tokens.Type(r.TypeToken), r.Name)
+		assert.False(t, seen[urn], "duplicate SSM parameter URN: %s", urn)
+		seen[urn] = true
+	}
+	assert.Len(t, seen, 6, "each main container and sidecar needs its own parameter")
 }
 
 func (m *composedSecretMocks) Call(_ pulumi.MockCallArgs) (resource.PropertyMap, error) {
@@ -88,7 +135,7 @@ func TestNewComposedEnvSecret(t *testing.T) {
 
 	require.Len(t, mocks.created, 1, "expected exactly one SSM parameter to be created")
 	param := mocks.created[0]
-	assert.Equal(t, "aws:ssm/parameter:Parameter", param.TypeToken)
+	assert.Equal(t, ssmParameterType, param.TypeToken)
 	assert.Equal(t, "SecureString", param.Inputs["type"].StringValue())
 	_, hasName := param.Inputs["name"]
 	assert.False(t, hasName, "no physical name should be set; let AWS assign one")
@@ -130,7 +177,7 @@ func TestCreateECSServiceKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 		switch r.TypeToken {
 		case "aws:ecs/taskDefinition:TaskDefinition":
 			taskDefInputs = r.Inputs
-		case "aws:ssm/parameter:Parameter":
+		case ssmParameterType:
 			ssmParams++
 		}
 	}

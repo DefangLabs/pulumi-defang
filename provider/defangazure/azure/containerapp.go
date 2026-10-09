@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -151,31 +152,13 @@ type envResult struct {
 	HasKeyVaultSecret bool
 }
 
-// secretNamer mints unique Container App secret names. A Container App
-// secret is an inline field on the Container App spec itself (see
-// buildEnvVars), not a separate resource with its own provider-assigned
-// name we could read back the way AWS SSM parameters or GCP Secret Manager
-// secrets let us — so instead of deriving a name from user-chosen text (a
-// config var name for a Key Vault-backed secret, an env var key for a
-// composite one) and munging it to fit Container Apps' lowercase-alphanumeric-
-// or-hyphen naming rule, this mints the simplest name that satisfies that
-// rule outright: a sequential counter. That also sidesteps two
-// independently user-chosen sources ever coinciding (Container Apps' ARM API
-// doesn't reject two Secrets entries sharing a Name — behavior on a
-// duplicate is unspecified/last-wins — so a collision must never be allowed
-// to happen).
-type secretNamer struct {
-	n int
-}
-
-func newSecretNamer() *secretNamer {
-	return &secretNamer{}
-}
-
-// next mints the next unique Container App secret name.
-func (n *secretNamer) next() string {
-	n.n++
-	return fmt.Sprintf("env-secret-%d", n.n)
+// containerAppSecretName identifies an inline, app-scoped secret across
+// revisions. Positional names could reassign an old revision's SecretRef to
+// a different credential after an insertion or deletion. Hash only the key
+// (never its value) to preserve case and punctuation distinctions within
+// Azure's naming rules, and separate config references from composed values.
+func containerAppSecretName(namespace, key string) string {
+	return fmt.Sprintf("%s-%x", namespace, sha256.Sum256([]byte(key)))
 }
 
 // resolveComposedEnvValue resolves a static compose env value that isn't a
@@ -264,12 +247,8 @@ func buildEnvVars(
 
 	var appSecrets app.SecretArray
 	var hasKeyVaultSecret bool
-	// namer guarantees every Container App secret name is unique — see its
-	// doc comment for why a fixed prefix can't do this safely. kvSecretNames
-	// dedupes the KV branch: multiple env vars can reference the same config
-	// var (FOO=${X}, BAR=${X}) and must share one Secret entry, so its name
-	// is minted once per secretVar and reused.
-	namer := newSecretNamer()
+	// Multiple env vars can reference the same config var (FOO=${X}, BAR=${X})
+	// and must share one app-scoped Secret entry.
 	kvSecretNames := make(map[string]string)
 	for k, v := range common.Sorted(svc.Environment) {
 		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
@@ -280,7 +259,7 @@ func buildEnvVars(
 		} else if secretVar := compose.GetConfigName2(k, v); secretVar != "" && infra.ConfigProvider != nil {
 			appSecretName, alreadyMinted := kvSecretNames[secretVar]
 			if !alreadyMinted {
-				appSecretName = namer.next()
+				appSecretName = containerAppSecretName("config", secretVar)
 				kvSecretNames[secretVar] = appSecretName
 				secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
 				// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
@@ -311,7 +290,7 @@ func buildEnvVars(
 			if hasSecret {
 				// One env var key always produces exactly one composite
 				// secret (no sharing like the KV branch above).
-				appSecretName := namer.next()
+				appSecretName := containerAppSecretName("env", k)
 				appSecrets = append(appSecrets, app.SecretArgs{
 					Name:  pulumi.String(appSecretName),
 					Value: value.ToStringPtrOutput(),

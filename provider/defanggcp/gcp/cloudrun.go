@@ -71,8 +71,7 @@ func CreateCloudRunService(
 	}
 	for _, cs := range composedSecrets {
 		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
-		resourceName := serviceName + "-env-secret-" + cs.key
-		member, err := secretmanager.NewSecretIamMember(ctx, resourceName, &secretmanager.SecretIamMemberArgs{
+		member, err := secretmanager.NewSecretIamMember(ctx, cs.name, &secretmanager.SecretIamMemberArgs{
 			SecretId: cs.id,
 			Role:     pulumi.String("roles/secretmanager.secretAccessor"),
 			Member:   pulumi.Sprintf("serviceAccount:%v", sa.Email),
@@ -149,7 +148,8 @@ func minInstanceScaling(svc compose.ServiceConfig) *cloudrunv2.ServiceScalingArg
 // place) changes the Cloud Run template's own inputs, so the revision
 // actually redeploys to pick it up.
 type composedEnvSecret struct {
-	key     string // env var key; used to name the IAM grant deterministically
+	key     string // env var key, for diagnostics
+	name    string // shared logical name; resource types distinguish the URNs
 	id      pulumi.StringOutput
 	version pulumi.StringOutput
 }
@@ -171,7 +171,7 @@ func newComposedEnvSecret(
 	value pulumi.StringOutput,
 	opts ...pulumi.ResourceOption,
 ) (*composedEnvSecret, error) {
-	resourceName := serviceName + "-" + key + "-env-secret"
+	resourceName := serviceName + "-env-" + key
 	secret, err := secretmanager.NewSecret(ctx, resourceName, &secretmanager.SecretArgs{
 		Replication: &secretmanager.SecretReplicationArgs{
 			Auto: &secretmanager.SecretReplicationAutoArgs{},
@@ -180,14 +180,14 @@ func newComposedEnvSecret(
 	if err != nil {
 		return nil, fmt.Errorf("creating secret: %w", err)
 	}
-	version, err := secretmanager.NewSecretVersion(ctx, resourceName+"-version", &secretmanager.SecretVersionArgs{
+	version, err := secretmanager.NewSecretVersion(ctx, resourceName, &secretmanager.SecretVersionArgs{
 		Secret:     secret.Name,
 		SecretData: value.ToStringPtrOutput(),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating secret version: %w", err)
 	}
-	return &composedEnvSecret{key: key, id: secret.SecretId, version: version.Version}, nil
+	return &composedEnvSecret{key: key, name: resourceName, id: secret.SecretId, version: version.Version}, nil
 }
 
 // buildEnvVars constructs Cloud Run env vars, using SecretKeyRef for secret references

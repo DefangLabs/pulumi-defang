@@ -498,7 +498,7 @@ func newComposedEnvSecret(
 	value pulumi.StringOutput,
 	opt pulumi.ResourceOrInvokeOption,
 ) (pulumi.StringOutput, pulumi.IntOutput, error) {
-	resourceName := containerName + "-" + key + "-env-secret"
+	resourceName := containerName + "-env-" + key
 	param, err := ssm.NewParameter(ctx, resourceName, &ssm.ParameterArgs{
 		Type:  ssm.ParameterTypeSecureString,
 		Value: value.ToStringPtrOutput(),
@@ -784,7 +784,9 @@ func CreateECSService(
 		if img := sc.StaticImage(); img != nil && *img == "" {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
 		}
-		scEnvEntries, scSecrets, err := resolveEnv(scName, sc)
+		// Parent component names are not part of child URNs. Include the
+		// owning service so standalone services can reuse a sidecar name.
+		scEnvEntries, scSecrets, err := resolveEnv(serviceName+"-sidecar-"+scName, sc)
 		if err != nil {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, err)
 		}
