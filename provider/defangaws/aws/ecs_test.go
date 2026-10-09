@@ -171,6 +171,14 @@ func TestCreateECSServiceKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 	require.True(t, ok, "expected a composedSecretsVersion trigger since a composed secret exists")
 	assert.NotContains(t, version.StringValue(), password,
 		"the trigger must be a version number, never the plaintext value")
+
+	// Triggers alone has no effect on ECS — ForceNewDeployment must also be
+	// set, or a rotated composed secret's value is never picked up despite
+	// the trigger changing. See the AWS provider's "Redeploy Service On
+	// Every Apply" example, which pairs the two.
+	forceNewDeployment, ok := serviceInputs["forceNewDeployment"]
+	require.True(t, ok, "expected forceNewDeployment to be set since a composed secret exists")
+	assert.True(t, forceNewDeployment.BoolValue())
 }
 
 // TestMergeComposedSecretsTrigger verifies the Triggers helper: it merges the

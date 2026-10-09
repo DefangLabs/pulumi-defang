@@ -1099,8 +1099,12 @@ func CreateECSService(
 	// — see newComposedEnvSecret), so without this the service would never
 	// redeploy to pick up a rotated value. Triggers gets each parameter's
 	// Version, which SSM increments on every write, never the plaintext value.
+	// Triggers alone has no effect without ForceNewDeployment — see the AWS
+	// provider's own "Redeploy Service On Every Apply" example, which pairs
+	// the two; Triggers is otherwise just inert state the provider tracks.
 	triggers := args.Triggers
-	if len(composedSecretVersions) > 0 {
+	hasComposedSecrets := len(composedSecretVersions) > 0
+	if hasComposedSecrets {
 		triggers = mergeComposedSecretsTrigger(args.Triggers, composedSecretVersions)
 	}
 
@@ -1143,6 +1147,12 @@ func CreateECSService(
 
 	if args.WaitForSteadyState {
 		ecsServiceArgs.WaitForSteadyState = pulumi.Bool(true)
+	}
+
+	if hasComposedSecrets {
+		// Triggers on its own doesn't force anything — see the comment where
+		// triggers is built.
+		ecsServiceArgs.ForceNewDeployment = pulumi.Bool(true)
 	}
 
 	ecsService, err := ecs.NewService(
