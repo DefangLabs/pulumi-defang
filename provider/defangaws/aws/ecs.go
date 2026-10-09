@@ -804,7 +804,7 @@ func CreateECSService(
 			privateFqdn := common.ServiceLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
 			sidecarDef := ContainerDefinition{
 				Name:      "route53-sidecar",
-				Image:     "public.ecr.aws/defang-io/route53-sidecar:65e431c",
+				Image:     "public.ecr.aws/defang-io/route53-sidecar:c92de14",
 				Essential: ptr.Bool(false),
 				Environment: []KeyValuePair{
 					{Name: ("HOSTEDZONE"), Value: (privateZoneID)},
