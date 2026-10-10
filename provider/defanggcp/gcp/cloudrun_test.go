@@ -9,6 +9,8 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // envNames extracts the static Name of each env var arg for assertions.
@@ -41,7 +43,10 @@ func TestBuildEnvVarsStripsReservedPort(t *testing.T) {
 					},
 					Ports: []compose.ServicePortConfig{{Target: 8080}},
 				}
-				envs, secretIds := buildEnvVars(ctx, nil, "app", "etag1", "", svc)
+				envs, secretIds, _, err := buildEnvVars(ctx, nil, "app", "etag1", "", svc, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if len(secretIds) != 0 {
 					t.Errorf("expected no secret IDs, got %v", secretIds)
 				}
@@ -203,4 +208,105 @@ func TestCreateCloudRunServiceScaling(t *testing.T) {
 			}
 		})
 	}
+}
+
+// secretManagerSpy records every Secret / SecretVersion resource buildEnvVars
+// creates for a composed (interpolated) secret, and synthesizes the
+// output-only fields (secretId, version) that nothing in Inputs sets since no
+// physical name is requested — see newComposedEnvSecret.
+type secretManagerSpy struct {
+	mu       sync.Mutex
+	secrets  []pulumi.MockResourceArgs
+	versions []pulumi.MockResourceArgs
+}
+
+func (m *secretManagerSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Copy before mutating for outputs, so the recorded args (used to assert
+	// no physical name was requested) aren't contaminated by the synthesized
+	// output-only fields below.
+	outputs := make(resource.PropertyMap, len(args.Inputs)+1)
+	for k, v := range args.Inputs {
+		outputs[k] = v
+	}
+	switch args.TypeToken {
+	case "gcp:secretmanager/secret:Secret":
+		m.secrets = append(m.secrets, args)
+		outputs["secretId"] = resource.NewStringProperty("fake-" + args.Name)
+		outputs["name"] = resource.NewStringProperty("projects/p/secrets/fake-" + args.Name)
+	case "gcp:secretmanager/secretVersion:SecretVersion":
+		m.versions = append(m.versions, args)
+		outputs["version"] = resource.NewStringProperty("1")
+	}
+	return args.Name + "_id", outputs, nil
+}
+
+func (m *secretManagerSpy) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
+
+// TestBuildEnvVarsKeepsComposedSecretOutOfPlaintext verifies that a composite
+// env value embedding a config-provided secret via interpolation (e.g. a DSN
+// built from ${DB_PASSWORD}) — as opposed to a bare ${VAR} reference, already
+// covered by the secretVar branch — is also kept out of the plaintext Cloud
+// Run env[].value (readable via a plain services.get) and instead resolved
+// via a new Secret Manager secret referenced through ValueSource.SecretKeyRef.
+// See DefangLabs/pulumi-defang#638 (follow-up to the Azure fix for #637 /
+// DefangLabs/station#198).
+func TestBuildEnvVarsKeepsComposedSecretOutOfPlaintext(t *testing.T) {
+	const password = "val-DB_PASSWORD" // mockSecretConfigProvider.GetConfigValue's deterministic resolution
+
+	spy := &secretManagerSpy{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		svc := compose.ServiceConfig{
+			Environment: compose.Environment{
+				"DATABASE_URL": pulumi.String("postgresql://postgres:${DB_PASSWORD}@db:5432/mydb"),
+			},
+		}
+		configProvider := &mockSecretConfigProvider{prefix: "Defang_myproject_stack_"}
+		envs, secretIds, composedSecrets, err := buildEnvVars(ctx, configProvider, "app", "", "", svc, nil)
+		require.NoError(t, err)
+		assert.Empty(t, secretIds,
+			"DATABASE_URL is composite, not a bare ref, so it must not appear in the pre-existing-secret list")
+		require.Len(t, composedSecrets, 1, "expected exactly one composed secret")
+		assert.Equal(t, "DATABASE_URL", composedSecrets[0].key)
+
+		var found bool
+		for _, e := range envs {
+			args := e.(*cloudrunv2.ServiceTemplateContainerEnvArgs)
+			if string(args.Name.(pulumi.String)) != "DATABASE_URL" {
+				continue
+			}
+			found = true
+			assert.Nil(t, args.Value, "composite secret-bearing value must not land in plaintext Value")
+			require.NotNil(t, args.ValueSource, "must be resolved via ValueSource.SecretKeyRef instead")
+			valueSource := args.ValueSource.(*cloudrunv2.ServiceTemplateContainerEnvValueSourceArgs)
+			secretRef := valueSource.SecretKeyRef.(*cloudrunv2.ServiceTemplateContainerEnvValueSourceSecretKeyRefArgs)
+
+			secretRef.Secret.ToStringOutput().ApplyT(func(id string) string {
+				assert.NotEmpty(t, id, "must reference the secret's own SecretId output")
+				assert.NotContains(t, id, password, "the secret ID must never embed the secret value")
+				return id
+			})
+			secretRef.Version.ToStringPtrOutput().ApplyT(func(v *string) *string {
+				require.NotNil(t, v)
+				assert.NotEqual(t, "latest", *v,
+					"must reference the concrete version, not the 'latest' alias, so a changed value forces a redeploy")
+				return v
+			})
+		}
+		assert.True(t, found, "DATABASE_URL env var not found")
+		return nil
+	}, pulumi.WithMocks("myproject", "stack", spy))
+	require.NoError(t, err)
+
+	require.Len(t, spy.secrets, 1, "expected exactly one new Secret Manager secret")
+	require.Len(t, spy.versions, 1, "expected exactly one new Secret Manager secret version")
+	_, hasSecretId := spy.secrets[0].Inputs["secretId"]
+	assert.False(t, hasSecretId, "no physical secret ID should be set; let GCP assign one")
+	valueInput := spy.versions[0].Inputs["secretData"]
+	require.True(t, valueInput.IsSecret(), "secret version data should be marked secret")
+	assert.Equal(t, "postgresql://postgres:"+password+"@db:5432/mydb",
+		valueInput.SecretValue().Element.StringValue())
 }

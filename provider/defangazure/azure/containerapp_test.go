@@ -29,6 +29,49 @@ func envVarsByName(result envResult) map[string]app.EnvironmentVarArgs {
 	return byName
 }
 
+func TestBuildEnvVarsSecretNamesStableAcrossEdits(t *testing.T) {
+	const (
+		configEnv   = "Z_PASSWORD"
+		composedEnv = "Z_URL"
+	)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		cp := NewConfigProvider("https://example.vault.azure.net")
+		cp.cache["PASSWORD"] = pulumi.ToSecret(pulumi.String("password")).(pulumi.StringOutput)
+		cp.fetched = true
+		infra := &SharedInfra{ConfigProvider: cp}
+		svc := compose.ServiceConfig{Environment: compose.Environment{
+			configEnv:   pulumi.String("${PASSWORD}"),
+			composedEnv: pulumi.String("prefix${PASSWORD}"),
+			"Z-URL":     pulumi.String("prefix${PASSWORD}"),
+			"z_url":     pulumi.String("prefix${PASSWORD}"),
+		}}
+		before := envVarsByName(buildEnvVars(ctx, "app", svc, infra, nil, nil, nil))
+		// Normalizing case or punctuation must not merge distinct env keys.
+		refs := make(map[pulumi.String]bool)
+		for _, key := range []string{configEnv, composedEnv, "Z-URL", "z_url"} {
+			ref := before[key].SecretRef.(pulumi.String)
+			assert.False(t, refs[ref], "duplicate secret reference for %s", key)
+			refs[ref] = true
+		}
+		// An earlier alias must not move the shared config secret; an
+		// unrelated new secret must not renumber the composed secret either.
+		svc.Environment["A_ALIAS"] = pulumi.String("${PASSWORD}")
+		svc.Environment["B_TOKEN"] = pulumi.String("${TOKEN}")
+		after := envVarsByName(buildEnvVars(ctx, "app", svc, infra, nil, nil, nil))
+		for _, key := range []string{configEnv, composedEnv} {
+			assert.Equal(t, before[key].SecretRef, after[key].SecretRef, "%s changed identity after insertion", key)
+		}
+		assert.Equal(t, after["A_ALIAS"].SecretRef, after[configEnv].SecretRef)
+		delete(svc.Environment, configEnv)
+		delete(svc.Environment, "B_TOKEN")
+		removed := envVarsByName(buildEnvVars(ctx, "app", svc, infra, nil, nil, nil))
+		assert.Equal(t, before[configEnv].SecretRef, removed["A_ALIAS"].SecretRef)
+		assert.Equal(t, before[composedEnv].SecretRef, removed[composedEnv].SecretRef)
+		return nil
+	}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
+	require.NoError(t, err)
+}
+
 // TestBuildEnvVarsEmitsSecretRefs verifies that env vars matching the bare
 // ${VAR} pattern (per compose.GetConfigName) are emitted as Key Vault-backed
 // Container App secret references (separate Secret entry +
@@ -126,17 +169,16 @@ func TestBuildEnvVarsEmitsSecretRefs(t *testing.T) {
 
 // TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName covers a
 // naming collision CodeRabbit flagged on an earlier version of this fix
-// (pulumi-defang#637): a bare ${VAR} reference and a composite value can
-// derive the same toContainerAppSecretName when a config var's name matches
-// another env var's own key. Concretely:
+// (pulumi-defang#637), back when secret names were derived from user-chosen
+// text (a config var name, or an env var key) — a bare ${VAR} reference and a
+// composite value could derive the same name when a config var's name
+// matched another env var's own key:
 //
 //	A: "${B}"        // bare ref → Key Vault secret named "b"
 //	B: "prefix${C}"  // composite → would also derive secret name "b"
 //
-// Without disambiguation, B's computed value would be dropped (seenSecrets
-// already has "b") and B would silently read A's Key Vault secret instead of
-// its own interpolated value — the deploy succeeds, so nothing surfaces the
-// wrong value at deploy time.
+// Config references and composed values use separate namespaces, even when
+// a config key equals an environment key.
 func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		const vaultURL = "https://myvault.vault.azure.net"
@@ -193,12 +235,10 @@ func TestBuildEnvVarsCompositeSecretDoesNotCollideWithKeyVaultSecretName(t *test
 
 // TestBuildEnvVarsDisambiguatesConfigVarNamedLikeEnvNamespace covers a deeper
 // version of the same collision class: a fixed namespace prefix on the
-// composite side isn't provably disjoint from the Key Vault side, because the
-// Key Vault side's name comes from a user-chosen config var name too. Here
-// the config var is literally named "ENV_DB", which toContainerAppSecretName
-// normalizes to "env-db" — the same string a composite env var named "DB"
-// would derive on its own (whatever prefixing scheme is used for it). Both
-// secrets must still end up with distinct names.
+// composite side wouldn't have been provably disjoint from the Key Vault
+// side, because the Key Vault side's name came from a user-chosen config var
+// name too. Both branches now use separate namespaces over a digest of
+// the original key, so user-chosen prefixes cannot cross those namespaces.
 func TestBuildEnvVarsDisambiguatesConfigVarNamedLikeEnvNamespace(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		const vaultURL = "https://myvault.vault.azure.net"

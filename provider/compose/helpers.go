@@ -185,6 +185,13 @@ func GetConfigName2(key string, value pulumi.StringInput) string {
 	return GetConfigName(*sv)
 }
 
+// GetConfigOrEnvValue resolves a compose env value, interpolating any $VAR /
+// ${VAR} references against configProvider. The second return value is true
+// when at least one variable was actually substituted, i.e. the result
+// embeds a config-provided (secret) value — see InterpolateEnvironmentVariable.
+// Callers that expose the result as a plaintext resource property (rather
+// than a native secret reference) should keep it out of plaintext
+// state/properties instead; see DefangLabs/pulumi-defang#638.
 func GetConfigOrEnvValue(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
@@ -192,26 +199,23 @@ func GetConfigOrEnvValue(
 	key string,
 	defaultValue string,
 	opts ...pulumi.InvokeOption,
-) pulumi.StringOutput {
+) (pulumi.StringOutput, bool) {
 	if v, ok := s.Environment[key]; ok {
 		sv, static := StaticEnvValue(v)
 		if !static {
 			// Dynamic (Output) values pass through as-is; interpolation and
 			// config resolution only apply to static text.
-			return v.ToStringOutput()
+			return v.ToStringOutput(), false
 		}
 		value := "${" + key + "}"
 		if sv != nil {
 			value = *sv
 		}
 		// Resolve any $VAR / ${VAR} interpolations; empty string passes through as-is.
-		// GetConfigOrEnvValue's callers don't distinguish secret-backed output
-		// from plaintext, so the "was anything substituted" flag isn't needed here.
-		resolved, _ := InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)
-		return resolved
+		return InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)
 	}
 	// Key not in environment at all: use the provided default.
-	return pulumi.String(defaultValue).ToStringOutput()
+	return pulumi.String(defaultValue).ToStringOutput(), false
 }
 
 // ToPulumiStringArray converts a plain []string to a pulumi.StringArray.

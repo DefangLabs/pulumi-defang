@@ -103,6 +103,9 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		defaultValue string
 		configs      map[string]string
 		expected     string
+		// substituted is GetConfigOrEnvValue's "embeds a config-provided
+		// secret" flag — see DefangLabs/pulumi-defang#638.
+		substituted bool
 	}{
 		{
 			name:         "nil environment uses default",
@@ -136,6 +139,7 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			key:         "MY_KEY",
 			configs:     map[string]string{"SECRET": "resolved"},
 			expected:    "prefix_resolved_suffix",
+			substituted: true,
 		},
 		{
 			// Compose spec: "KEY:" (no value) → resolve from config at runtime.
@@ -144,6 +148,7 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			key:         "MY_KEY",
 			configs:     map[string]string{"MY_KEY": "from-config"},
 			expected:    "from-config",
+			substituted: true,
 		},
 	}
 
@@ -152,7 +157,8 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				svc := ServiceConfig{Environment: tt.environment}
 				provider := &mockConfigProvider{values: tt.configs}
-				out := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
+				out, substituted := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
+				assert.Equal(t, tt.substituted, substituted)
 
 				out.ApplyT(func(got string) string {
 					assert.Equal(t, tt.expected, got)

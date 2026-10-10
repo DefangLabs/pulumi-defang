@@ -21,6 +21,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
 )
@@ -469,6 +470,78 @@ func createServiceSG(
 	return sg, nil
 }
 
+// newComposedEnvSecret stores a compose env value that embeds a config-
+// provided secret (GetConfigOrEnvValue's hasSecret return — e.g. a DSN built
+// from ${POSTGRES_PASSWORD}) as a new SSM SecureString parameter and returns
+// its Arn. ECS resolves container `secrets` (valueFrom) at task startup, so
+// the value never appears in the task definition's plaintext Environment,
+// which is readable via ecs:DescribeTaskDefinition — the same protection a
+// bare ${VAR} reference already gets via ConfigProvider.GetSecretRef, which
+// only works for a pre-existing parameter and can't hold an arbitrary
+// computed value. See DefangLabs/pulumi-defang#638 (follow-up to the Azure
+// fix for #637 / DefangLabs/station#198). The execution role's
+// AllowGetSecrets policy (see CreateExecutionRole) already grants
+// ssm:GetParameters on "*", so no additional IAM wiring is needed.
+//
+// No Name is set, so AWS assigns the parameter's physical name — the caller
+// never needs to construct or know a physical path. Returning the resource's
+// own Arn output (rather than building one by hand from project/stack/region/
+// account) also gives the caller an automatic Pulumi dependency edge: the
+// task definition that embeds this Arn in its Secrets waits for the
+// parameter to exist, with no explicit pulumi.DependsOn needed. The Version
+// output is returned too, so a caller that needs to force a redeploy on a
+// value change (see mergeComposedSecretsTrigger) can use SSM's own
+// auto-incrementing version instead of hashing the value itself.
+func newComposedEnvSecret(
+	ctx *pulumi.Context,
+	containerName, key string,
+	value pulumi.StringOutput,
+	opt pulumi.ResourceOrInvokeOption,
+) (pulumi.StringOutput, pulumi.IntOutput, error) {
+	resourceName := containerName + "-env-" + key
+	param, err := ssm.NewParameter(ctx, resourceName, &ssm.ParameterArgs{
+		Type:  ssm.ParameterTypeSecureString,
+		Value: value.ToStringPtrOutput(),
+	}, opt)
+	if err != nil {
+		return pulumi.StringOutput{}, pulumi.IntOutput{}, fmt.Errorf("creating SSM parameter: %w", err)
+	}
+	return param.Arn, param.Version, nil
+}
+
+// mergeComposedSecretsTrigger adds a trigger tracking every composed secret's
+// current SSM parameter Version to triggers (caller-supplied, possibly nil),
+// so an ECS service redeploys when any of those versions changes even though
+// the task definition's own JSON doesn't (see newComposedEnvSecret). SSM
+// increments a parameter's Version on every write to its value, so this
+// needs no hash of the plaintext value itself.
+func mergeComposedSecretsTrigger(triggers pulumi.StringMapInput, versions []pulumi.IntOutput) pulumi.StringMapInput {
+	versionInputs := make([]interface{}, len(versions))
+	for i, v := range versions {
+		versionInputs[i] = v
+	}
+	joined := pulumi.All(versionInputs...).ApplyT(func(vals []any) string {
+		parts := make([]string, len(vals))
+		for i, v := range vals {
+			parts[i] = strconv.Itoa(v.(int))
+		}
+		return strings.Join(parts, ",")
+	}).(pulumi.StringOutput)
+
+	if triggers == nil {
+		return pulumi.StringMap{"composedSecretsVersion": joined}
+	}
+	return pulumi.All(triggers.ToStringMapOutput(), joined).ApplyT(func(all []any) map[string]string {
+		existing := all[0].(map[string]string)
+		merged := make(map[string]string, len(existing)+1)
+		for k, v := range existing {
+			merged[k] = v
+		}
+		merged["composedSecretsVersion"] = all[1].(string)
+		return merged
+	}).(pulumi.StringMapOutput)
+}
+
 // CreateECSService creates an ECS Fargate service for a container service.
 //
 //nolint:funlen,maintidx
@@ -597,6 +670,11 @@ func CreateECSService(
 	type envEntry struct {
 		name string
 		idx  int // index into allInputs where the resolved value will be
+		// isSecret is true when the resolved value at idx is an SSM parameter
+		// ARN for ECS Secrets (valueFrom), not a plaintext Environment value —
+		// set when the value embedded a config-provided secret. See
+		// newComposedEnvSecret.
+		isSecret bool
 	}
 	staticEnvVars := []KeyValuePair{
 		{Name: "DEFANG_SERVICE", Value: serviceName},
@@ -642,9 +720,21 @@ func CreateECSService(
 		allInputs = append(allInputs, args.Environment)
 	}
 
+	// composedSecretVersions collects the SSM parameter Version of every
+	// composed secret (across the main container and sidecars). A changed
+	// value updates the SSM parameter in place without changing its Arn, so
+	// the task definition's Secrets entry — and thus its JSON — wouldn't
+	// otherwise change; these versions feed the service Triggers so such a
+	// change still forces a redeployment.
+	var composedSecretVersions []pulumi.IntOutput
+
 	// Split env vars: bare ${VAR} references go to ECS Secrets (SSM ARN),
-	// all others go to Environment (resolved plaintext).
-	resolveEnv := func(svc compose.ServiceConfig) ([]envEntry, []Secret, error) {
+	// all others go to Environment (resolved plaintext) — unless the resolved
+	// value embeds a config-provided secret via interpolation (e.g. a DSN
+	// built from ${POSTGRES_PASSWORD}), in which case it's wrapped in a new
+	// SSM parameter and also routed to Secrets. See newComposedEnvSecret and
+	// DefangLabs/pulumi-defang#638.
+	resolveEnv := func(containerName string, svc compose.ServiceConfig) ([]envEntry, []Secret, error) {
 		var entries []envEntry
 		var secrets []Secret
 		for k, v := range common.Sorted(svc.Environment) {
@@ -654,16 +744,26 @@ func CreateECSService(
 					return nil, nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
 				}
 				secrets = append(secrets, Secret{Name: k, ValueFrom: ref})
-			} else {
-				resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
-				entries = append(entries, envEntry{name: k, idx: len(allInputs)})
-				allInputs = append(allInputs, resolved)
+				continue
 			}
+			resolved, hasSecret := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
+			if hasSecret {
+				arn, version, err := newComposedEnvSecret(ctx, containerName, k, resolved, parentOpt)
+				if err != nil {
+					return nil, nil, fmt.Errorf("creating composed secret for %q: %w", k, err)
+				}
+				entries = append(entries, envEntry{name: k, idx: len(allInputs), isSecret: true})
+				allInputs = append(allInputs, arn)
+				composedSecretVersions = append(composedSecretVersions, version)
+				continue
+			}
+			entries = append(entries, envEntry{name: k, idx: len(allInputs)})
+			allInputs = append(allInputs, resolved)
 		}
 		return entries, secrets, nil
 	}
 
-	envEntries, secretEntries, err := resolveEnv(svc)
+	envEntries, secretEntries, err := resolveEnv(serviceName, svc)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +784,9 @@ func CreateECSService(
 		if img := sc.StaticImage(); img != nil && *img == "" {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
 		}
-		scEnvEntries, scSecrets, err := resolveEnv(sc)
+		// Parent component names are not part of child URNs. Include the
+		// owning service so standalone services can reuse a sidecar name.
+		scEnvEntries, scSecrets, err := resolveEnv(serviceName+"-sidecar-"+scName, sc)
 		if err != nil {
 			return nil, fmt.Errorf("sidecar %q: %w", scName, err)
 		}
@@ -711,6 +813,10 @@ func CreateECSService(
 		envVars := append([]KeyValuePair{}, staticEnvVars...)
 		for _, e := range envEntries {
 			val := all[e.idx].(string)
+			if e.isSecret {
+				mainSecrets = append(mainSecrets, Secret{Name: e.name, ValueFrom: val})
+				continue
+			}
 			envVars = append(envVars, KeyValuePair{Name: e.name, Value: val})
 		}
 		if envInputIdx >= 0 {
@@ -772,8 +878,14 @@ func CreateECSService(
 
 		for _, sd := range sidecarDatas {
 			scEnvVars := []KeyValuePair{}
+			scSecrets := append([]Secret{}, sd.secrets...)
 			for _, e := range sd.envEntries {
-				scEnvVars = append(scEnvVars, KeyValuePair{Name: e.name, Value: all[e.idx].(string)})
+				val := all[e.idx].(string)
+				if e.isSecret {
+					scSecrets = append(scSecrets, Secret{Name: e.name, ValueFrom: val})
+					continue
+				}
+				scEnvVars = append(scEnvVars, KeyValuePair{Name: e.name, Value: val})
 			}
 			slices.SortFunc(scEnvVars, func(a, b KeyValuePair) int {
 				return cmp.Compare(a.Name, b.Name)
@@ -784,7 +896,7 @@ func CreateECSService(
 				Essential:        ptr.Bool(sd.cfg.Restart != "no"),
 				PortMappings:     []PortMapping{},
 				Environment:      scEnvVars,
-				Secrets:          sd.secrets,
+				Secrets:          scSecrets,
 				Command:          sd.cfg.Command,
 				EntryPoint:       sd.cfg.Entrypoint,
 				DependsOn:        buildDependsOn(sd.cfg.DependsOn, args.Sidecars, infra.Etag),
@@ -984,12 +1096,26 @@ func CreateECSService(
 			}).(pulumi.StringArrayOutput)
 	}
 
+	// A changed composed secret's value doesn't change the task definition's
+	// JSON (its Secrets entry holds a stable SSM parameter Arn, not the value
+	// — see newComposedEnvSecret), so without this the service would never
+	// redeploy to pick up a rotated value. Triggers gets each parameter's
+	// Version, which SSM increments on every write, never the plaintext value.
+	// Triggers alone has no effect without ForceNewDeployment — see the AWS
+	// provider's own "Redeploy Service On Every Apply" example, which pairs
+	// the two; Triggers is otherwise just inert state the provider tracks.
+	triggers := args.Triggers
+	hasComposedSecrets := len(composedSecretVersions) > 0
+	if hasComposedSecrets {
+		triggers = mergeComposedSecretsTrigger(args.Triggers, composedSecretVersions)
+	}
+
 	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)
 	ecsServiceArgs := &ecs.ServiceArgs{
 		Cluster:        infra.clusterArn(),
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
-		Triggers:       args.Triggers,
+		Triggers:       triggers,
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
 			Subnets:        subnetIds,
 			SecurityGroups: serviceSecurityGroups,
@@ -1023,6 +1149,12 @@ func CreateECSService(
 
 	if args.WaitForSteadyState {
 		ecsServiceArgs.WaitForSteadyState = pulumi.Bool(true)
+	}
+
+	if hasComposedSecrets {
+		// Triggers on its own doesn't force anything — see the comment where
+		// triggers is built.
+		ecsServiceArgs.ForceNewDeployment = pulumi.Bool(true)
 	}
 
 	ecsService, err := ecs.NewService(
