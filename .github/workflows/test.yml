@@ -38,6 +38,9 @@ jobs:
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
 
+      - name: Check Dockerfile precaches every plugin a provider imports
+        run: scripts/check-dockerfile-plugins.sh
+
       - run: make provider
 
       - run: make schema
