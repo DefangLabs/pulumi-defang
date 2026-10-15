@@ -23,8 +23,17 @@ var (
 	// default — measured against a real app, a 2K prompt was rejected at
 	// capacity 1 and accepted at 10.
 	LLMDeploymentCapacity = recipe.Int("llm-deployment-capacity", 10)
-	LogRetentionDays      = recipe.Int("log-retention-days", 1)
-	LogWorkspaceSku       = recipe.String("log-workspace-sku", "PerGB2018")
+	// LogConsoleLogsPlan is the table plan for ContainerAppConsoleLogs, the
+	// table that backs `defang logs`. Default "Basic" (~$0.50/GB ingest,
+	// 8-day retention, per-query scan cost, no log alerts) — plenty for
+	// browsing a service's stdout. "Analytics" (~$2.30/GB) adds full
+	// retention, log alerts, and unrestricted KQL. "Auxiliary" (~$0.13/GB)
+	// is cheaper still but drops most query power. Azure validates the value
+	// when the table is created; an unsupported plan surfaces as an ARM
+	// error rather than being checked here.
+	LogConsoleLogsPlan = recipe.String("log-console-logs-plan", "Basic")
+	LogRetentionDays   = recipe.Int("log-retention-days", 1)
+	LogWorkspaceSku    = recipe.String("log-workspace-sku", "PerGB2018")
 	// LogWorkspaceDailyQuotaGb caps daily ingestion in GB. 0 = no cap.
 	// Default 1 GB/day = ~30 GB/mo, ~$70 ceiling on PerGB2018 (~$2.30/GB).
 	// Chatty workloads (AI agents) override upward; an unbounded default
