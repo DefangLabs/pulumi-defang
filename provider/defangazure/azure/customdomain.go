@@ -236,7 +236,7 @@ func CreateByodDomain(
 		if zoneID == "" {
 			continue // no zone hosts this name; the ACME / delegate-domain path covers it
 		}
-		result, err := createByodRecords(ctx, serviceName, hostname, zoneID, containerApp, infra, opts...)
+		result, err := createByodRecords(ctx, serviceName, svc.DomainName, hostname, zoneID, containerApp, infra, opts...)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +254,7 @@ func CreateByodDomain(
 // otherwise-healthy deploy.
 func createByodRecords(
 	ctx *pulumi.Context,
-	serviceName, hostname, dnsZoneID string,
+	serviceName, primaryHostname, hostname, dnsZoneID string,
 	containerApp *app.ContainerApp,
 	infra *SharedInfra,
 	opts ...pulumi.ResourceOption,
@@ -268,9 +268,6 @@ func createByodRecords(
 		return nil, nil //nolint:nilnil // best-effort: skip BYOD records, deploy continues
 	}
 
-	// Logical names are per hostname, so a service with several BYOD hostnames
-	// doesn't collide with itself.
-	prefix := serviceName + "-" + common.SafeLabel(hostname)
 	tags := ServiceTags(serviceName)
 
 	// Apex (hostname == zone): a CNAME is illegal at the zone apex (RFC 1034), so
@@ -283,7 +280,7 @@ func createByodRecords(
 	// ManagedEnvironment replacement) changes the IP and breaks this record. An
 	// apex custom domain accepts that trade-off; subdomains (CNAME) don't have it.
 	if isApexDomain(hostname, zoneName) {
-		a, err := dns.NewRecordSet(ctx, prefix+"-byod-a", &dns.RecordSetArgs{
+		a, err := dns.NewRecordSet(ctx, common.DNSRecordLogicalName(zoneName, common.RecordTypeA), &dns.RecordSetArgs{
 			ResourceGroupName:     pulumi.String(rgName),
 			ZoneName:              pulumi.String(zoneName),
 			RelativeRecordSetName: pulumi.String("@"),
@@ -293,11 +290,15 @@ func createByodRecords(
 				&dns.ARecordArgs{Ipv4Address: infra.Environment.StaticIp.ToStringPtrOutput()},
 			},
 			Metadata: tags,
-		}, opts...)
+		}, withByodRecordAliases(opts, serviceName, primaryHostname, hostname, "byod-a")...)
 		if err != nil {
 			return nil, fmt.Errorf("creating BYOD A record for %s: %w", hostname, err)
 		}
-		asuid, err := createAsuidTXT(ctx, prefix+"-byod-asuid", rgName, zoneName, "asuid", containerApp, tags, opts...)
+		asuid, err := createAsuidTXT(
+			ctx,
+			common.DNSRecordLogicalName("asuid."+zoneName, common.RecordTypeTXT),
+			rgName, zoneName, "asuid", containerApp, tags,
+			withByodRecordAliases(opts, serviceName, primaryHostname, hostname, "byod-asuid")...)
 		if err != nil {
 			return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", hostname, err)
 		}
@@ -317,7 +318,7 @@ func createByodRecords(
 	}
 
 	target := pulumi.Sprintf("%s.%s", containerApp.Name, infra.Environment.DefaultDomain)
-	cname, err := dns.NewRecordSet(ctx, prefix+"-byod-cname", &dns.RecordSetArgs{
+	cname, err := dns.NewRecordSet(ctx, common.DNSRecordLogicalName(hostname, common.RecordTypeCNAME), &dns.RecordSetArgs{
 		ResourceGroupName:     pulumi.String(rgName),
 		ZoneName:              pulumi.String(zoneName),
 		RelativeRecordSetName: pulumi.String(relative),
@@ -327,18 +328,40 @@ func createByodRecords(
 			Cname: target,
 		},
 		Metadata: tags,
-	}, opts...)
+	}, withByodRecordAliases(opts, serviceName, primaryHostname, hostname, "byod-cname")...)
 	if err != nil {
 		return nil, fmt.Errorf("creating BYOD CNAME for %s: %w", hostname, err)
 	}
 
 	asuid, err := createAsuidTXT(
-		ctx, prefix+"-byod-asuid", rgName, zoneName, "asuid."+relative, containerApp, tags, opts...)
+		ctx,
+		common.DNSRecordLogicalName("asuid."+hostname, common.RecordTypeTXT),
+		rgName, zoneName, "asuid."+relative, containerApp, tags,
+		withByodRecordAliases(opts, serviceName, primaryHostname, hostname, "byod-asuid")...)
 	if err != nil {
 		return nil, fmt.Errorf("creating BYOD asuid TXT for %s: %w", hostname, err)
 	}
 
 	return &CustomDomainResult{Cname: cname, Asuid: asuid}, nil
+}
+
+// withByodRecordAliases preserves both Azure BYOD naming schemes that preceded
+// common.DNSRecordLogicalName. The original path handled only DomainName, so it
+// is an alias only for that hostname; the hostname-safe scheme handled all
+// hostnames.
+func withByodRecordAliases(
+	opts []pulumi.ResourceOption,
+	serviceName, primaryHostname, hostname, legacySuffix string,
+) []pulumi.ResourceOption {
+	aliases := []pulumi.Alias{{
+		Name: pulumi.String(serviceName + "-" + common.SafeLabel(hostname) + "-" + legacySuffix),
+	}}
+	if common.NormalizeDNS(hostname) == common.NormalizeDNS(primaryHostname) {
+		aliases = append(aliases, pulumi.Alias{Name: pulumi.String(serviceName + "-" + legacySuffix)})
+	}
+
+	result := append([]pulumi.ResourceOption{}, opts...)
+	return append(result, pulumi.Aliases(aliases))
 }
 
 // createAsuidTXT creates the `asuid[.<sub>]` TXT record that carries the

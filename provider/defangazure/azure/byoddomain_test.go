@@ -190,6 +190,37 @@ func (*recordTypeMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, er
 	return args.Args, nil
 }
 
+type byodRecordName struct {
+	name    string
+	aliases []string
+}
+
+// byodRecordNameMocks records logical names and name aliases, ignoring the
+// Azure Native SDK's API-version aliases (which have a type but no name).
+type byodRecordNameMocks struct {
+	mu      sync.Mutex
+	records []byodRecordName
+}
+
+func (m *byodRecordNameMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if strings.HasSuffix(args.TypeToken, ":RecordSet") {
+		record := byodRecordName{name: args.Name}
+		for _, alias := range args.RegisterRPC.GetAliases() {
+			if spec := alias.GetSpec(); spec != nil && spec.GetName() != "" {
+				record.aliases = append(record.aliases, spec.GetName())
+			}
+		}
+		m.mu.Lock()
+		m.records = append(m.records, record)
+		m.mu.Unlock()
+	}
+	return args.Name + "_id", args.Inputs, nil
+}
+
+func (*byodRecordNameMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
+
 // TestCreateByodDomainRecords verifies the record types created for a subdomain
 // (CNAME + asuid.<sub> TXT) vs an apex domain (A @ + asuid TXT).
 func TestCreateByodDomainRecords(t *testing.T) {
@@ -273,4 +304,58 @@ func TestCreateByodDomainRecords(t *testing.T) {
 			assert.Equal(t, tt.wantTypes, m.byRelative)
 		})
 	}
+}
+
+// TestCreateByodDomainUsesAWSStyleNamesAndMigratesAzureRenames pins the
+// cross-cloud logical-name convention and both Azure migrations. The oldest
+// Azure implementation only created records for DomainName; later versions
+// switched to hostname-safe names without aliases. Aliasing both lets a live
+// stack retain its existing state and physical records.
+func TestCreateByodDomainUsesAWSStyleNamesAndMigratesAzureRenames(t *testing.T) {
+	ingress := []compose.ServicePortConfig{{Target: 80, Mode: "ingress"}}
+	const (
+		primaryZoneID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/dnszones/example.com"
+		aliasZoneID   = "/subscriptions/s/resourceGroups/rg2/providers/Microsoft.Network/dnszones/other.com"
+	)
+
+	mocks := &byodRecordNameMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		env, err := app.NewManagedEnvironment(ctx, "env", &app.ManagedEnvironmentArgs{
+			ResourceGroupName: pulumi.String("rg"),
+		})
+		require.NoError(t, err)
+		capp, err := app.NewContainerApp(ctx, "svc", &app.ContainerAppArgs{
+			ResourceGroupName:    pulumi.String("rg"),
+			ManagedEnvironmentId: env.ID().ToStringOutput(),
+		})
+		require.NoError(t, err)
+
+		svc := compose.ServiceConfig{
+			DomainName: "api.example.com",
+			Ports:      ingress,
+			Networks:   aliasNetwork("api.other.com"),
+		}
+		_, err = CreateByodDomain(ctx, "svc", svc, capp, &SharedInfra{Environment: env}, map[string]string{
+			"api.example.com": primaryZoneID,
+			"api.other.com":   aliasZoneID,
+		})
+		return err
+	}, pulumi.WithMocks("project", "stack", mocks))
+	require.NoError(t, err)
+
+	got := map[string][]string{}
+	for _, record := range mocks.records {
+		got[record.name] = record.aliases
+	}
+	require.Len(t, got, 4)
+	assert.ElementsMatch(t, []string{
+		"svc-api-example-com-byod-cname",
+		"svc-byod-cname",
+	}, got["api.example.com_CNAME"])
+	assert.ElementsMatch(t, []string{
+		"svc-api-example-com-byod-asuid",
+		"svc-byod-asuid",
+	}, got["asuid.api.example.com_TXT"])
+	assert.Equal(t, []string{"svc-api-other-com-byod-cname"}, got["api.other.com_CNAME"])
+	assert.Equal(t, []string{"svc-api-other-com-byod-asuid"}, got["asuid.api.other.com_TXT"])
 }

@@ -24,6 +24,22 @@ func TestNormalizeDNS(t *testing.T) {
 	}
 }
 
+func TestDNSRecordLogicalName(t *testing.T) {
+	tests := []struct {
+		name       string
+		recordType RecordType
+		want       string
+	}{
+		{"Api.Example.com.", RecordTypeCNAME, "api.example.com_CNAME"},
+		{"asuid.Api.Example.com.", RecordTypeTXT, "asuid.api.example.com_TXT"},
+	}
+	for _, tt := range tests {
+		if got := DNSRecordLogicalName(tt.name, tt.recordType); got != tt.want {
+			t.Errorf("DNSRecordLogicalName(%q, %q) = %q, want %q", tt.name, tt.recordType, got, tt.want)
+		}
+	}
+}
+
 func TestSafeLabel(t *testing.T) {
 	tests := []struct {
 		input string

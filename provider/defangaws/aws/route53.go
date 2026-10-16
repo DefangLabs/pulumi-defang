@@ -29,7 +29,7 @@ func CreateRecord(
 		pulumi.DeleteBeforeReplace(true), // delete first, or we risk deleting the record that was just recreated
 		pulumi.RetainOnDelete(RetainDnsOnDelete.Get(ctx)),
 	}, opts...)
-	return route53.NewRecord(ctx, normalized+"_"+string(typ), args, opts...)
+	return route53.NewRecord(ctx, common.DNSRecordLogicalName(name, typ), args, opts...)
 }
 
 type SoaRecordArgs struct {
