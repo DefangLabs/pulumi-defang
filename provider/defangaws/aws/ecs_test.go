@@ -16,6 +16,8 @@ import (
 
 const ssmParameterType = "aws:ssm/parameter:Parameter"
 
+const databaseURLKey = "DATABASE_URL"
+
 // fakeConfigProvider is a minimal compose.ConfigProvider stub: GetConfigValue
 // resolves from a fixed map, GetSecretRef returns a deterministic fake ARN.
 type fakeConfigProvider struct {
@@ -161,7 +163,7 @@ func TestCreateECSServiceKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		svc := compose.ServiceConfig{
 			Environment: compose.Environment{
-				"DATABASE_URL": pulumi.String("postgresql://postgres:${PASSWORD}@db:5432/mydb"),
+				databaseURLKey: pulumi.String("postgresql://postgres:${PASSWORD}@db:5432/mydb"),
 			},
 		}
 		configProvider := &fakeConfigProvider{values: map[string]string{"PASSWORD": password}}
@@ -190,14 +192,14 @@ func TestCreateECSServiceKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 	def := defs[0]
 
 	for _, e := range def.Environment {
-		assert.NotEqual(t, "DATABASE_URL", e.Name,
+		assert.NotEqual(t, databaseURLKey, e.Name,
 			"composite secret-bearing value must not land in plaintext environment")
 		assert.NotContains(t, e.Value, password, "the password must never appear in a plaintext env value")
 	}
 
 	var secretRef string
 	for _, s := range def.Secrets {
-		if s.Name == "DATABASE_URL" {
+		if s.Name == databaseURLKey {
 			secretRef = s.ValueFrom
 		}
 	}
@@ -226,6 +228,62 @@ func TestCreateECSServiceKeepsComposedSecretOutOfPlaintext(t *testing.T) {
 	forceNewDeployment, ok := serviceInputs["forceNewDeployment"]
 	require.True(t, ok, "expected forceNewDeployment to be set since a composed secret exists")
 	assert.True(t, forceNewDeployment.BoolValue())
+}
+
+// TestCreateECSServiceKeepsStandaloneComposedSecretOutOfPlaintext covers the
+// standalone Service component's Environment input. It arrives at
+// CreateECSService separately from the compose-shaped ServiceConfig, so it
+// must be folded into the same resolver before the task-definition ApplyT;
+// creating an SSM parameter from inside that ApplyT would be unsafe.
+func TestCreateECSServiceKeepsStandaloneComposedSecretOutOfPlaintext(t *testing.T) {
+	const password = "hunter2"
+
+	mocks := &composedSecretMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		args := &ECSServiceArgs{
+			ImageURI: pulumi.String("myapp:latest"),
+			Environment: pulumi.StringMap{
+				databaseURLKey: pulumi.String("postgresql://postgres:${PASSWORD}@db:5432/mydb"),
+			},
+		}
+		_, err := CreateECSService(ctx, &fakeConfigProvider{values: map[string]string{"PASSWORD": password}},
+			"myservice", compose.ServiceConfig{}, args, nil, nil)
+		return err
+	}, pulumi.WithMocks("myproject", "stack", mocks))
+	require.NoError(t, err)
+
+	var taskDefInputs resource.PropertyMap
+	for _, r := range mocks.created {
+		if r.TypeToken == "aws:ecs/taskDefinition:TaskDefinition" {
+			taskDefInputs = r.Inputs
+		}
+	}
+	require.NotNil(t, taskDefInputs, "expected a TaskDefinition to be created")
+
+	var defs []ContainerDefinition
+	require.NoError(t, json.Unmarshal([]byte(taskDefInputs["containerDefinitions"].StringValue()), &defs))
+	require.Len(t, defs, 1)
+	for _, e := range defs[0].Environment {
+		assert.NotEqual(t, databaseURLKey, e.Name)
+		assert.NotContains(t, e.Value, password)
+	}
+
+	var secretRef string
+	for _, s := range defs[0].Secrets {
+		if s.Name == databaseURLKey {
+			secretRef = s.ValueFrom
+		}
+	}
+	require.NotEmpty(t, secretRef, "standalone composite value must use ECS secrets")
+	assert.NotContains(t, secretRef, password)
+
+	var ssmParams int
+	for _, r := range mocks.created {
+		if r.TypeToken == ssmParameterType {
+			ssmParams++
+		}
+	}
+	assert.Equal(t, 1, ssmParams, "expected one SecureString parameter for the composite value")
 }
 
 // TestMergeComposedSecretsTrigger verifies the Triggers helper: it merges the

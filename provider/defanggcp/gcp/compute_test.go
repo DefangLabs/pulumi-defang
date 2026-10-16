@@ -3,6 +3,7 @@ package gcp
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const computeDatabaseURLKey = "DATABASE_URL"
 
 // namedResourceMocks records the Pulumi logical name of every resource it
 // creates, keyed by Pulumi type token. Physical naming (length, case,
@@ -234,8 +237,9 @@ func (m *mockSecretConfigProvider) GetSecretRef(
 	return m.prefix + key, nil
 }
 
-// classifyComputeSecretEnv routes bare ${VAR} and null "KEY:" values to native
-// secret refs, and leaves literals and interpolated (mixed) values inline.
+// classifyComputeSecretEnv routes bare ${VAR}, null "KEY:", and mixed values
+// that interpolate config secrets to native secret refs. Mixed values receive
+// their own derived secret, rather than being embedded in instance metadata.
 func TestClassifyComputeSecretEnv(t *testing.T) {
 	env := compose.Environment{
 		"PLAIN":  pulumi.String("literal"),
@@ -245,24 +249,104 @@ func TestClassifyComputeSecretEnv(t *testing.T) {
 	}
 	cp := &mockSecretConfigProvider{prefix: "Defang_proj_stack_"}
 
-	plan := classifyComputeSecretEnv(nil, cp, env)
+	spy := &secretManagerSpy{}
+	var plan containerSecretPlan
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		var err error
+		plan, err = classifyComputeSecretEnv(ctx, cp, "worker", env, nil)
+		return err
+	}, pulumi.WithMocks("proj", "stack", spy))
+	require.NoError(t, err)
 
-	// secret refs are sorted by env key: BARE, NULLED
-	require.Len(t, plan.secretRefs, 2)
-	//nolint:gosec // G101: secret resource names (IDs), not credential values.
-	assert.Equal(t, computeSecretEnv{envKey: "BARE", secretID: "Defang_proj_stack_SECRET_ONE"}, plan.secretRefs[0])
-	//nolint:gosec // G101: secret resource names (IDs), not credential values.
-	assert.Equal(t, computeSecretEnv{envKey: "NULLED", secretID: "Defang_proj_stack_NULLED"}, plan.secretRefs[1])
-	// literals and mixed interpolation stay inline
+	// Secret refs are sorted by env key: BARE, MIXED, NULLED.
+	require.Len(t, plan.secretRefs, 3)
+	assert.Equal(t, "BARE", plan.secretRefs[0].envKey)
+	assert.Equal(t, "Defang_proj_stack_SECRET_ONE", plan.secretRefs[0].identityKey)
+	assert.Equal(t, "MIXED", plan.secretRefs[1].envKey)
+	assert.Equal(t, "worker-env-MIXED", plan.secretRefs[1].identityKey)
+	assert.Equal(t, "NULLED", plan.secretRefs[2].envKey)
+	assert.Equal(t, "Defang_proj_stack_NULLED", plan.secretRefs[2].identityKey)
+	// Literals stay inline; the mixed value is held in a derived secret.
 	assert.Contains(t, plan.inline, "PLAIN")
-	assert.Contains(t, plan.inline, "MIXED")
+	assert.NotContains(t, plan.inline, "MIXED")
 	assert.NotContains(t, plan.inline, "BARE")
 	assert.NotContains(t, plan.inline, "NULLED")
+	require.Len(t, spy.secrets, 1, "mixed interpolation needs one derived secret")
+	require.Len(t, spy.versions, 1, "mixed interpolation needs one secret version")
 
 	// with no config provider, everything is inlined
-	nilPlan := classifyComputeSecretEnv(nil, nil, env)
+	nilPlan, err := classifyComputeSecretEnv(nil, nil, "worker", env, nil)
+	require.NoError(t, err)
 	assert.Nil(t, nilPlan.secretRefs)
 	assert.Equal(t, env, nilPlan.inline)
+}
+
+// TestComputeMixedSecretEnvStaysOutOfInstanceMetadata drives the classification
+// and cloud-init construction used by Compute Engine. The fully interpolated
+// value must be stored in a Secret Manager version and referenced by the
+// boot-time fetch script, never placed in the docker command stored as
+// instance metadata.
+func TestComputeMixedSecretEnvStaysOutOfInstanceMetadata(t *testing.T) {
+	const password = "hunter2"
+	spy := &secretManagerSpy{}
+	var cloudInit string
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		svc := compose.ServiceConfig{
+			Environment: compose.Environment{
+				computeDatabaseURLKey: pulumi.String("postgresql://postgres:${PASSWORD}@db:5432/mydb"),
+			},
+		}
+		plan, err := classifyComputeSecretEnv(
+			ctx, &mockSecretConfigProvider{prefix: "Defang_proj_stack_"}, "worker", svc.Environment, nil)
+		if err != nil {
+			return err
+		}
+		out := getCloudInitConfig(
+			"worker", pulumi.String("myapp:latest"), svc, "us-central1", "", "", "", "", "gcp-proj",
+			false, nil, plan, nil)
+		out.ApplyT(func(value string) string {
+			defer wg.Done()
+			cloudInit = value
+			return value
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", spy))
+	require.NoError(t, err)
+	wg.Wait()
+
+	assert.NotContains(t, cloudInit, password, "secret value must not appear in instance metadata")
+	assert.NotContains(t, cloudInit, computeDatabaseURLKey+"=postgresql",
+		"composed value must not be an inline docker env flag")
+	assert.Contains(t, cloudInit, "ExecStartPre=/run/defang/worker-secrets.sh")
+	assert.Contains(t, cloudInit, "--env-file /run/defang/worker.env")
+	assert.Contains(t, cloudInit, fmt.Sprintf(`printf '%%s=%%s\n' '%s' "$v"`, computeDatabaseURLKey))
+
+	require.Len(t, spy.secrets, 1, "expected a derived Secret Manager secret")
+	require.Len(t, spy.versions, 1, "expected a version containing the composed value")
+	value := spy.versions[0].Inputs["secretData"]
+	require.True(t, value.IsSecret(), "derived secret data must remain a Pulumi secret")
+	assert.Equal(t, "postgresql://postgres:val-PASSWORD@db:5432/mydb", value.SecretValue().Element.StringValue())
+}
+
+func renderSecretFetchScript(t *testing.T, refs []computeSecretEnv) string {
+	t.Helper()
+	var rendered string
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		wf, _, _ := secretFetchScript("my-proj", "svc", refs)
+		wf.ApplyT(func(value string) string {
+			defer wg.Done()
+			rendered = value
+			return value
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", testMocks{}))
+	require.NoError(t, err)
+	wg.Wait()
+	return rendered
 }
 
 // secretFetchScript emits a COS-compatible boot fetch (metadata token + Secret
@@ -270,38 +354,39 @@ func TestClassifyComputeSecretEnv(t *testing.T) {
 // flag that consume it.
 func TestSecretFetchScript(t *testing.T) {
 	refs := []computeSecretEnv{
-		{envKey: "DB", secretID: "Defang_p_s_DBPASS"},  //nolint:gosec // G101 false positive
-		{envKey: "API", secretID: "Defang_p_s_APIKEY"}, //nolint:gosec // G101 false positive
+		{envKey: "DB", secretID: pulumi.String("Defang_p_s_DBPASS")},
+		{envKey: "API", secretID: pulumi.String("Defang_p_s_APIKEY")},
 	}
-	wf, pre, flag := secretFetchScript("my-proj", "svc", refs)
+	_, pre, flag := secretFetchScript("my-proj", "svc", refs)
+	rendered := renderSecretFetchScript(t, refs)
 
 	assert.Equal(t, "ExecStartPre=/run/defang/svc-secrets.sh", pre)
 	assert.Equal(t, "--env-file /run/defang/svc.env", flag)
-	assert.Contains(t, wf, "path: /run/defang/svc-secrets.sh")
-	assert.Contains(t, wf, `permissions: "0700"`)
-	assert.Contains(t, wf, "metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
-	assert.Contains(t, wf, "https://secretmanager.googleapis.com/v1/projects/my-proj/secrets/")
-	assert.Contains(t, wf,
-		`v=$(sm 'Defang_p_s_DBPASS') || { echo "defang: failed to fetch secret Defang_p_s_DBPASS" >&2; exit 1; }`)
-	assert.Contains(t, wf, `printf '%s=%s\n' 'DB' "$v"`)
-	assert.Contains(t, wf,
-		`v=$(sm 'Defang_p_s_APIKEY') || { echo "defang: failed to fetch secret Defang_p_s_APIKEY" >&2; exit 1; }`)
-	assert.Contains(t, wf, `printf '%s=%s\n' 'API' "$v"`)
-	assert.Contains(t, wf, "} > /run/defang/svc.env")
+	assert.Contains(t, rendered, "path: /run/defang/svc-secrets.sh")
+	assert.Contains(t, rendered, `permissions: "0700"`)
+	assert.Contains(t, rendered, "metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
+	assert.Contains(t, rendered, "https://secretmanager.googleapis.com/v1/projects/my-proj/secrets/")
+	assert.Contains(t, rendered,
+		`v=$(sm 'Defang_p_s_DBPASS') || { echo "defang: failed to fetch secret for DB" >&2; exit 1; }`)
+	assert.Contains(t, rendered, `printf '%s=%s\n' 'DB' "$v"`)
+	assert.Contains(t, rendered,
+		`v=$(sm 'Defang_p_s_APIKEY') || { echo "defang: failed to fetch secret for API" >&2; exit 1; }`)
+	assert.Contains(t, rendered, `printf '%s=%s\n' 'API' "$v"`)
+	assert.Contains(t, rendered, "} > /run/defang/svc.env")
 	// fetch failures must fail ExecStartPre, never write an empty value
-	assert.Contains(t, wf, "set -euo pipefail")
-	assert.Contains(t, wf, `[ -n "$tok" ]`)
-	assert.Contains(t, wf, "curl -fsS")
+	assert.Contains(t, rendered, "set -euo pipefail")
+	assert.Contains(t, rendered, `[ -n "$tok" ]`)
+	assert.Contains(t, rendered, "curl -fsS")
 	// Both requests share one curl_retry helper, so the per-attempt bound
 	// (ExecStartPre runs in Type=oneshot units, which have no default systemd
 	// start timeout -- an unbounded curl would stall the boot indefinitely)
 	// appears once, in the helper's definition, not once per call site.
-	assert.Equal(t, 1, strings.Count(wf, "--connect-timeout 5 --max-time 30"))
-	assert.Equal(t, 2, strings.Count(wf, "curl_retry -H"))
+	assert.Equal(t, 1, strings.Count(rendered, "--connect-timeout 5 --max-time 30"))
+	assert.Equal(t, 2, strings.Count(rendered, "curl_retry -H"))
 
 	// no refs -> no output
-	wf2, pre2, flag2 := secretFetchScript("p", "svc", nil)
-	assert.Empty(t, wf2)
+	_, pre2, flag2 := secretFetchScript("p", "svc", nil)
+	assert.Empty(t, renderSecretFetchScript(t, nil))
 	assert.Empty(t, pre2)
 	assert.Empty(t, flag2)
 }
@@ -313,7 +398,7 @@ func TestSecretFetchScript(t *testing.T) {
 // function against a realistic pretty-printed response instead of asserting
 // on the script text.
 func TestSecretFetchScriptExtractsPrettyPrintedJSON(t *testing.T) {
-	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
+	wf := renderSecretFetchScript(t, []computeSecretEnv{{envKey: "DB", secretID: pulumi.String("my-secret")}})
 	raw := rawScriptLines(t, wf)
 
 	// Keep everything through the sm() definition. Drop the /run write (no
@@ -411,7 +496,7 @@ func curlRetrySetup(t *testing.T, wf string) []string {
 // then succeeds, and a no-op sleep stub so the test doesn't block on the real
 // ~30s of backoff -- it asserts on attempt count and behavior, not timing.
 func TestSecretFetchScriptRetriesOnTransientFailure(t *testing.T) {
-	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
+	wf := renderSecretFetchScript(t, []computeSecretEnv{{envKey: "DB", secretID: pulumi.String("my-secret")}})
 	setup := curlRetrySetup(t, wf)
 
 	script := `
@@ -446,7 +531,7 @@ echo "rc=${rc:-0} n=$n sleeps=$sleeps"
 // forever, returning failure so the caller's existing fail-fast handling
 // (non-zero exit, stderr message, ExecStartPre failure) still applies.
 func TestSecretFetchScriptGivesUpAfterMaxAttempts(t *testing.T) {
-	wf, _, _ := secretFetchScript("my-proj", "svc", []computeSecretEnv{{envKey: "DB", secretID: "my-secret"}})
+	wf := renderSecretFetchScript(t, []computeSecretEnv{{envKey: "DB", secretID: pulumi.String("my-secret")}})
 	setup := curlRetrySetup(t, wf)
 
 	script := `
@@ -482,7 +567,9 @@ func TestGetCloudInitConfigSecrets(t *testing.T) {
 	plan := containerSecretPlan{
 		inline: compose.Environment{"PLAIN": pulumi.String("x")},
 		secretRefs: []computeSecretEnv{
-			{envKey: "SECRET_ENV", secretID: "Defang_proj_stack_SECRET_ENV"}, //nolint:gosec // G101 false positive
+			{
+				envKey: "SECRET_ENV", secretID: pulumi.String("Defang_proj_stack_SECRET_ENV"),
+			},
 		},
 	}
 

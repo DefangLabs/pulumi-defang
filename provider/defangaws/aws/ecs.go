@@ -554,6 +554,24 @@ func CreateECSService(
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*EcsServiceResult, error) {
+	// Standalone Service.Environment reaches this worker as a StringMapInput.
+	// When it is the usual static StringMap, fold it into the compose-shaped
+	// environment before assembling the task definition so composite values can
+	// use the same SecureString path as defang compose up. A dynamic map cannot
+	// be inspected until ApplyT, where creating the required SSM resources would
+	// be unsafe, so retain its existing pass-through behavior.
+	environment := args.Environment
+	if staticEnv, ok := args.Environment.(pulumi.StringMap); ok {
+		svc.Environment = maps.Clone(svc.Environment)
+		if svc.Environment == nil {
+			svc.Environment = make(compose.Environment, len(staticEnv))
+		}
+		for key, value := range staticEnv {
+			svc.Environment[key] = value
+		}
+		environment = nil
+	}
+
 	infra := args.Infra
 	if infra == nil {
 		infra = &SharedInfra{} // allow standalone usage without shared infra
@@ -715,9 +733,9 @@ func CreateECSService(
 		allInputs = append(allInputs, args.Secrets)
 	}
 	envInputIdx := -1
-	if args.Environment != nil {
+	if environment != nil {
 		envInputIdx = len(allInputs)
-		allInputs = append(allInputs, args.Environment)
+		allInputs = append(allInputs, environment)
 	}
 
 	// composedSecretVersions collects the SSM parameter Version of every

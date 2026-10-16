@@ -62,12 +62,20 @@ func CreateComputeEngine(
 
 	// Classify each container's env into inline values and native secret refs,
 	// then grant the instance SA access to every referenced secret. Bare ${VAR}
-	// / null "KEY:" values are boot-fetched (see secretFetchScript) rather than
-	// embedded in instance metadata.
-	mainPlan := classifyComputeSecretEnv(ctx, configProvider, svc.Environment)
+	// / null "KEY:" values, and composed values that embed a config secret, are
+	// boot-fetched (see secretFetchScript) rather than embedded in instance
+	// metadata.
+	mainPlan, err := classifyComputeSecretEnv(ctx, configProvider, serviceName, svc.Environment, parentOpt)
+	if err != nil {
+		return nil, err
+	}
 	sidecarPlans := make(map[string]containerSecretPlan, len(args.Sidecars))
 	for name, sc := range args.Sidecars {
-		sidecarPlans[name] = classifyComputeSecretEnv(ctx, configProvider, sc.Environment)
+		plan, err := classifyComputeSecretEnv(ctx, configProvider, serviceName+"-sidecar-"+name, sc.Environment, parentOpt)
+		if err != nil {
+			return nil, fmt.Errorf("classifying sidecar %q environment: %w", name, err)
+		}
+		sidecarPlans[name] = plan
 	}
 	secretMembers, err := grantSecretAccess(ctx, serviceName, args.SA, mainPlan, sidecarPlans, parentOpt)
 	if err != nil {
@@ -431,12 +439,12 @@ func grantSecretAccess(
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) ([]pulumi.Resource, error) {
 	seen := make(map[string]struct{})
-	var ids []string
+	var refs []computeSecretEnv
 	collect := func(plan containerSecretPlan) {
 		for _, r := range plan.secretRefs {
-			if _, ok := seen[r.secretID]; !ok {
-				seen[r.secretID] = struct{}{}
-				ids = append(ids, r.secretID)
+			if _, ok := seen[r.identityKey]; !ok {
+				seen[r.identityKey] = struct{}{}
+				refs = append(refs, r)
 			}
 		}
 	}
@@ -446,16 +454,16 @@ func grantSecretAccess(
 	}
 
 	var members []pulumi.Resource
-	for _, sid := range ids {
+	for _, ref := range refs {
 		opts := append([]pulumi.ResourceOption{parentOpt}, sa.deleteOpts()...)
-		member, err := secretmanager.NewSecretIamMember(ctx, serviceName+"-secret-"+sid,
+		member, err := secretmanager.NewSecretIamMember(ctx, serviceName+"-secret-"+ref.identityKey,
 			&secretmanager.SecretIamMemberArgs{
-				SecretId: pulumi.String(sid),
+				SecretId: ref.secretID,
 				Role:     pulumi.String("roles/secretmanager.secretAccessor"),
 				Member:   pulumi.Sprintf("serviceAccount:%v", sa.Email),
 			}, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("granting secret access for %s: %w", sid, err)
+			return nil, fmt.Errorf("granting secret access for %s: %w", ref.identityKey, err)
 		}
 		members = append(members, member)
 	}
@@ -619,8 +627,9 @@ func dockerRunFlags(
 // start (see secretFetchScript) instead of being embedded in instance metadata,
 // which is readable unauthenticated from the instance.
 type computeSecretEnv struct {
-	envKey   string
-	secretID string
+	envKey      string
+	secretID    pulumi.StringInput
+	identityKey string
 }
 
 // containerSecretPlan is the per-container result of classifyComputeSecretEnv:
@@ -634,30 +643,49 @@ type containerSecretPlan struct {
 // classifyComputeSecretEnv splits a container's environment into values inlined
 // into the `docker run` command (static literals and dynamic Outputs) and
 // native secret references (bare ${VAR} or null "KEY:") that are boot-fetched
-// from Secret Manager. Interpolated values (mixed literal + ${VAR}) stay on the
-// inline path for now; resolving them without leaking plaintext into instance
-// metadata needs deploy-time derived configs — see issue 293. With no config
-// provider (e.g. standalone with no secrets), everything is inlined.
+// from Secret Manager. A mixed interpolation creates a new Secret Manager
+// secret with the resolved value, so it is also boot-fetched rather than
+// embedded in instance metadata. With no config provider (e.g. standalone
+// with no secrets), everything is inlined.
 func classifyComputeSecretEnv(
-	ctx *pulumi.Context, cp compose.ConfigProvider, env compose.Environment,
-) containerSecretPlan {
+	ctx *pulumi.Context,
+	cp compose.ConfigProvider,
+	serviceName string,
+	env compose.Environment,
+	parentOpt pulumi.ResourceOrInvokeOption,
+) (containerSecretPlan, error) {
 	if cp == nil {
-		return containerSecretPlan{inline: env}
+		return containerSecretPlan{inline: env}, nil
 	}
 	plan := containerSecretPlan{inline: make(compose.Environment, len(env))}
 	// Iterate sorted so the generated fetch script and IAM bindings are stable.
 	for k, v := range common.Sorted(env) {
 		if configKey := compose.GetConfigName2(k, v); configKey != "" {
 			if secretID, err := cp.GetSecretRef(ctx, configKey); err == nil && secretID != "" {
-				plan.secretRefs = append(plan.secretRefs, computeSecretEnv{envKey: k, secretID: secretID})
+				plan.secretRefs = append(plan.secretRefs, computeSecretEnv{
+					envKey: k, secretID: pulumi.String(secretID), identityKey: secretID,
+				})
 				continue
 			}
 			// Couldn't resolve a ref: fall through and inline (matches the
 			// pre-secrets behavior rather than dropping the variable).
 		}
+		if raw, static := compose.StaticEnvValue(v); static && raw != nil {
+			value, hasSecret := compose.InterpolateEnvironmentVariable(ctx, cp, *raw, parentOpt)
+			if hasSecret {
+				composed, err := newComposedEnvSecret(ctx, serviceName, k, value, parentOpt)
+				if err != nil {
+					return containerSecretPlan{}, fmt.Errorf("creating composed secret for %q: %w", k, err)
+				}
+				plan.secretRefs = append(plan.secretRefs, computeSecretEnv{
+					envKey: k, secretID: composed.id, identityKey: composed.name,
+				})
+				continue
+			}
+		}
 		plan.inline[k] = v
 	}
-	return plan
+	return plan, nil
 }
 
 // secretFetchScript returns the cloud-init write_files block for the boot-time
@@ -674,9 +702,9 @@ func classifyComputeSecretEnv(
 // newline (e.g. a PEM key) cannot be injected this way. Such values need a
 // per-secret file mount; tracked as a follow-up.
 // Returns (write_files block, ExecStartPre line, docker --env-file flag).
-func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string, string, string) {
+func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (pulumi.StringOutput, string, string) {
 	if len(refs) == 0 {
-		return "", "", ""
+		return pulumi.String("").ToStringOutput(), "", ""
 	}
 	// /run, not /opt: Container-Optimized OS mounts its root filesystem
 	// read-only, so cloud-init's write_files fails with EROFS creating any
@@ -739,9 +767,10 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 		`| grep -o '"data": *"[^"]*"' | cut -d'"' -f4 | base64 -d; }`+"\n", gcpProject)
 	s.WriteString("{\n")
 	for _, r := range refs {
-		fmt.Fprintf(&s, `v=$(sm '%s') || { echo "defang: failed to fetch secret %s" >&2; exit 1; }`+"\n",
-			r.secretID, r.secretID)
-		fmt.Fprintf(&s, "printf '%%s=%%s\\n' '%s' \"$v\"\n", r.envKey)
+		s.WriteString(`v=$(sm '%s') || { echo "defang: failed to fetch secret for `)
+		s.WriteString(r.envKey)
+		s.WriteString(`" >&2; exit 1; }` + "\n")
+		fmt.Fprintf(&s, "printf '%%%%s=%%%%s\\n' '%s' \"$v\"\n", r.envKey)
 	}
 	fmt.Fprintf(&s, "} > %s\n", envFile)
 
@@ -753,7 +782,11 @@ func secretFetchScript(gcpProject, unit string, refs []computeSecretEnv) (string
 		wf.WriteString(line)
 		wf.WriteString("\n")
 	}
-	return wf.String(), "ExecStartPre=" + scriptPath, "--env-file " + envFile
+	secretIDs := make([]any, 0, len(refs))
+	for _, r := range refs {
+		secretIDs = append(secretIDs, r.secretID)
+	}
+	return pulumi.Sprintf(wf.String(), secretIDs...), "ExecStartPre=" + scriptPath, "--env-file " + envFile
 }
 
 // flattenEnvFlags renders `-e "K=V"` docker flags for the given static env
@@ -832,6 +865,10 @@ func getCloudInitConfig(
 ) pulumi.StringOutput {
 	var buf strings.Builder
 	buf.WriteString("#cloud-config\n\nwrite_files:")
+	// The secret fetch script can contain resource Outputs for composed secrets.
+	// Keep it as a Sprintf argument so '%' in its shell code is data, not a
+	// format directive in the surrounding cloud-init template.
+	buf.WriteString("%s")
 
 	containerName := svc.GetContainerName(serviceName)
 	params, command := dockerRunFlags(svc, sidecars)
@@ -843,7 +880,6 @@ func getCloudInitConfig(
 	if secretEnvFileFlag != "" {
 		params = append(params, secretEnvFileFlag)
 	}
-	buf.WriteString(escapePercent(secretWriteFile))
 
 	// Defang-injected runtime vars, mirroring the Cloud Run path (buildEnvVars).
 	staticEnv := [][2]string{{"DEFANG_SERVICE", serviceName}}
@@ -923,10 +959,10 @@ runcmd:
 		escapePercent(strings.Join(runcmds, "\n  - ")),
 		escapePercent(secretExecPre))
 
-	// buf now contains exactly three %s placeholders (env flags, image, and
-	// extra units — the Inputs that may resolve at apply time); all other
+	// buf now contains four %s placeholders (secret script, env flags, image,
+	// and extra units — the Inputs that may resolve at apply time); all other
 	// dynamic text had its '%' doubled.
-	return pulumi.Sprintf(buf.String(), envFlags, image, extraUnits)
+	return pulumi.Sprintf(buf.String(), secretWriteFile, envFlags, image, extraUnits)
 }
 
 // fluentBitLabelsCmd returns the runcmd that stamps the defang-* LogEntry
