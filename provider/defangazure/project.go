@@ -10,6 +10,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/monitor/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -339,11 +340,19 @@ func createProjectResourceGroup(
 	return rg, nil
 }
 
+// ACA log category names. In LogAnalyticsDestinationType=Dedicated mode the
+// category name doubles as the destination Log Analytics table name, so
+// createManagedEnvironment reuses these for both the DiagnosticSetting
+// category and the Table's TableName/import ID.
+const (
+	consoleLogsTable = "ContainerAppConsoleLogs"
+	systemLogsTable  = "ContainerAppSystemLogs"
+)
+
 // createManagedEnvironment provisions the Log Analytics workspace and Container
 // App managed environment, attaching VNet config when networking is present.
-// parentOpt carries the parent (and its provider) for the GetSharedKeys invoke,
-// which ResourceOption slices can't express because InvokeOption is a sibling
-// interface to ResourceOption.
+// parentOpt carries the parent (and its provider) for resource options that
+// ResourceOption slices can't express on their own.
 func createManagedEnvironment(
 	ctx *pulumi.Context,
 	name string,
@@ -371,20 +380,23 @@ func createManagedEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
-	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
-		ResourceGroupName: infra.ResourceGroup.Name,
-		WorkspaceName:     logWorkspace.Name,
-	}, parentOpt)
 
+	// "azure-monitor" routes through Azure Monitor + a DiagnosticSetting
+	// (below), landing ACA logs in the modern, DCR-based ContainerAppConsoleLogs
+	// / ContainerAppSystemLogs tables. The older "log-analytics" destination
+	// used the workspace shared-key API and wrote to Classic Custom Log
+	// ContainerAppConsoleLogs_CL tables, which don't support the Basic plan
+	// (Azure: "Basic Logs plan is not supported by CustomLog Classic tables"),
+	// so workspace ingest stayed locked to Analytics at ~$2.30/GB. The
+	// DiagnosticSetting path below unlocks the Basic plan at ~$0.50/GB on the
+	// modern tables. AppLogsConfiguration must omit LogAnalyticsConfiguration
+	// when Destination is azure-monitor — that field is only valid with
+	// log-analytics, and the shared-key lookup it needed is gone too.
 	envArgs := &app.ManagedEnvironmentArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		AppLogsConfiguration: &app.AppLogsConfigurationArgs{
-			Destination: pulumi.String("log-analytics"),
-			LogAnalyticsConfiguration: &app.LogAnalyticsConfigurationArgs{
-				CustomerId: logWorkspace.CustomerId,
-				SharedKey:  logKeys.PrimarySharedKey(),
-			},
+			Destination: pulumi.String("azure-monitor"),
 		},
 	}
 	if infra.Networking != nil {
@@ -399,6 +411,56 @@ func createManagedEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
+
+	// Route ACA's two log categories from the env (via Azure Monitor) into the
+	// workspace, landing in the modern DCR-based tables (Basic-plan eligible).
+	// LogAnalyticsDestinationType="Dedicated" forces per-resource-type tables;
+	// the default (null/AzureDiagnostics) would merge everything into the
+	// generic AzureDiagnostics table and bypass the schema the CLI expects.
+	//
+	// Use monitor/v3 (not insights/v1): in azure-native v3 the resource was
+	// renamed insights → monitor. The v3 plugin only knows the new token
+	// "azure-native:monitor:DiagnosticSetting" as creatable and keeps
+	// "azure-native:insights:DiagnosticSetting" as an alias for state
+	// migration only — creating via the legacy insights SDK registers with
+	// the old token and fails with "Resource type … not found".
+	diagSetting, err := monitor.NewDiagnosticSetting(ctx, name+"-aca-logs", &monitor.DiagnosticSettingArgs{
+		ResourceUri:                 env.ID().ToStringOutput(),
+		WorkspaceId:                 logWorkspace.ID().ToStringPtrOutput(),
+		LogAnalyticsDestinationType: pulumi.String("Dedicated"),
+		Logs: monitor.DiagnosticsLogSettingsArray{
+			&monitor.DiagnosticsLogSettingsArgs{Category: pulumi.StringPtr(consoleLogsTable), Enabled: pulumi.Bool(true)},
+			&monitor.DiagnosticsLogSettingsArgs{Category: pulumi.StringPtr(systemLogsTable), Enabled: pulumi.Bool(true)},
+		},
+	}, parentOpt, pulumi.Parent(env))
+	if err != nil {
+		return nil, fmt.Errorf("creating ACA diagnostic setting: %w", err)
+	}
+
+	// Pin the plan on the console logs table (Container Apps' stdout sink,
+	// what `defang logs` reads). The table isn't a workspace built-in — its
+	// schema is registered by the DiagnosticSetting above routing logs into
+	// it, so a plain Create would race that registration and fail with
+	// "cannot create already existing resource". Import + DependsOn(diagSetting)
+	// waits for the schema to exist, then applies the Plan diff on top of it.
+	consoleLogsPlan := providerazure.LogConsoleLogsPlan.Get(ctx)
+	consoleLogsImportID := logWorkspace.ID().ToStringOutput().ApplyT(func(id string) pulumi.ID {
+		return pulumi.ID(id + "/tables/" + consoleLogsTable)
+	}).(pulumi.IDOutput)
+	if _, err := operationalinsights.NewTable(ctx, name+"-console-logs", &operationalinsights.TableArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		WorkspaceName:     logWorkspace.Name,
+		TableName:         pulumi.String(consoleLogsTable),
+		Plan:              pulumi.String(consoleLogsPlan),
+	},
+		parentOpt,
+		pulumi.Parent(logWorkspace),
+		pulumi.DependsOn([]pulumi.Resource{diagSetting}),
+		pulumi.Import(consoleLogsImportID),
+	); err != nil {
+		return nil, fmt.Errorf("setting %s plan on %s: %w", consoleLogsPlan, consoleLogsTable, err)
+	}
+
 	return env, nil
 }
 
