@@ -45,18 +45,22 @@ jobs:
     env:
       # GoReleaser's per-build $WORK dirs default to $TMPDIR on the small root
       # partition (~14GB free); the out-of-disk-space write happened there. Point
-      # transient build output at the larger /mnt partition (~65GB). Job-level so
-      # setup-go's cache restore/save (which resolves paths via `go env GOCACHE`)
-      # targets the same dir the GoReleaser build uses.
+      # transient build output at the larger /mnt partition (~65GB). GOCACHE
+      # stays at Go's normal path; the setup step bind-mounts its storage onto
+      # /mnt so its cache remains compatible with ordinary CI jobs.
       TMPDIR: /mnt/gorel-tmp
       GOTMPDIR: /mnt/gorel-tmp
-      GOCACHE: /mnt/gorel-gocache
     steps:
-      # /mnt is root-owned on the runner; create the build dirs the job-level
-      # TMPDIR/GOCACHE point at and hand them to the runner user. First step,
-      # so every later step sees a valid $TMPDIR.
+      # /mnt is root-owned on the runner. Keep the large Go build cache there,
+      # but bind-mount it at Go's standard path. Cache versions include paths,
+      # so using the standard path lets this tag-triggered release restore the
+      # cache written by main-branch CI.
       - name: Prepare /mnt build dirs
-        run: sudo mkdir -p /mnt/gorel-tmp /mnt/gorel-gocache && sudo chown "$USER" /mnt/gorel-tmp /mnt/gorel-gocache
+        run: |
+          sudo mkdir -p /mnt/gorel-tmp /mnt/gorel-gocache
+          sudo chown "$USER" /mnt/gorel-tmp /mnt/gorel-gocache
+          mkdir -p "$HOME/.cache/go-build"
+          sudo mount --bind /mnt/gorel-gocache "$HOME/.cache/go-build"
 
       # The runner's root partition (~14GB free) can't hold the 18 cross-compiled
       # binaries (3 providers x 3 OS x 2 arch) linking the huge pulumi-{aws,gcp,azure}
@@ -71,6 +75,11 @@ jobs:
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
+        with:
+          # Tag-scoped caches cannot be restored by later tags. Releases only
+          # restore the cache maintained by CI on main and avoid consuming the
+          # cache budget with an unreachable multi-gigabyte cache per tag.
+          cache: restore
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
