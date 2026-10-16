@@ -7,10 +7,26 @@ import (
 	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type redisInputMocks struct {
+	redisInputs resource.PropertyMap
+}
+
+func (m *redisInputMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if args.TypeToken == "azure-native:redisenterprise:RedisEnterprise" {
+		m.redisInputs = args.Inputs
+	}
+	return args.Name + "_id", args.Inputs, nil
+}
+
+func (*redisInputMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
 
 // vnetRedisInfra builds the minimal SharedInfra needed to exercise the
 // VNet/private-endpoint path of CreateRedisEnterprise: a resource group, a
@@ -77,6 +93,24 @@ func TestCreateRedisEnterpriseReadinessVNet(t *testing.T) {
 		return nil
 	}, pulumi.WithMocks("proj", "stack", azureNoopMocks{}))
 	require.NoError(t, err)
+}
+
+// TestCreateRedisEnterpriseVNetDisablesPublicNetworkAccess verifies that new
+// VNet Redis clusters choose the secure, private-endpoint-only setting. The
+// IgnoreChanges compatibility guard only affects existing resources; it must
+// not change the value sent when a cluster is first created.
+func TestCreateRedisEnterpriseVNetDisablesPublicNetworkAccess(t *testing.T) {
+	mocks := &redisInputMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		infra := vnetRedisInfra(t, ctx)
+		_, err := CreateRedisEnterprise(ctx, "cache", compose.ServiceConfig{Redis: &compose.RedisConfig{}}, infra)
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	value, ok := mocks.redisInputs[resource.PropertyKey("publicNetworkAccess")]
+	require.True(t, ok, "Redis Enterprise create request must set publicNetworkAccess")
+	assert.Equal(t, "Disabled", value.StringValue())
 }
 
 // TestCreateRedisEnterpriseReadinessNoVNet verifies the standalone/no-VNet path
