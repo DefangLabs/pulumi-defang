@@ -286,6 +286,35 @@ func TestCreateECSServiceKeepsStandaloneComposedSecretOutOfPlaintext(t *testing.
 	assert.Equal(t, 1, ssmParams, "expected one SecureString parameter for the composite value")
 }
 
+func TestCreateECSServiceRejectsDynamicStandaloneEnvironment(t *testing.T) {
+	tests := []struct {
+		name string
+		env  pulumi.StringMapInput
+		want string
+	}{
+		{
+			name: "output-backed map",
+			env:  pulumi.StringMap{"VALUE": pulumi.String("value")}.ToStringMapOutput(),
+			want: "must be a literal pulumi.StringMap",
+		},
+		{
+			name: "output-backed value",
+			env:  pulumi.StringMap{"VALUE": pulumi.String("value").ToStringOutput()},
+			want: "values must be literal strings",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				_, err := CreateECSService(ctx, &fakeConfigProvider{}, "myservice", compose.ServiceConfig{},
+					&ECSServiceArgs{ImageURI: pulumi.String("myapp:latest"), Environment: tt.env}, nil, nil)
+				return err
+			}, pulumi.WithMocks("myproject", "stack", &composedSecretMocks{}))
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
 // TestMergeComposedSecretsTrigger verifies the Triggers helper: it merges the
 // composed secrets' SSM parameter Versions into any caller-supplied triggers,
 // and the trigger value changes when a version changes — which is what makes

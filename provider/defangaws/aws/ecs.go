@@ -27,8 +27,16 @@ import (
 )
 
 var (
-	errSidecarImageRequired = errors.New("image is required")
-	errPoliciesWithTaskRole = errors.New("policies cannot be combined with taskRoleArn")
+	errSidecarImageRequired                  = errors.New("image is required")
+	errPoliciesWithTaskRole                  = errors.New("policies cannot be combined with taskRoleArn")
+	errStandaloneEnvironmentMustBeLiteralMap = errors.New(
+		"standalone service environment must be a literal pulumi.StringMap; " +
+			"use Secrets for dynamic or secret values",
+	)
+	errStandaloneEnvironmentValueMustBeLiteral = errors.New(
+		"standalone service environment values must be literal strings; " +
+			"use Secrets for dynamic or secret values",
+	)
 )
 
 type Policies struct {
@@ -555,21 +563,27 @@ func CreateECSService(
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*EcsServiceResult, error) {
 	// Standalone Service.Environment reaches this worker as a StringMapInput.
-	// When it is the usual static StringMap, fold it into the compose-shaped
-	// environment before assembling the task definition so composite values can
-	// use the same SecureString path as defang compose up. A dynamic map cannot
-	// be inspected until ApplyT, where creating the required SSM resources would
-	// be unsafe, so retain its existing pass-through behavior.
-	environment := args.Environment
-	if staticEnv, ok := args.Environment.(pulumi.StringMap); ok {
+	// Fold a literal map into the compose-shaped environment before assembling
+	// the task definition so composite values use the SecureString path. A map
+	// (or value) that resolves only inside ApplyT cannot be inspected before
+	// serialization, where creating the required SSM resource would be unsafe;
+	// reject it rather than risk writing a resolved secret into plaintext ECS
+	// task-definition environment fields.
+	if args.Environment != nil {
+		staticEnv, ok := args.Environment.(pulumi.StringMap)
+		if !ok {
+			return nil, errStandaloneEnvironmentMustBeLiteralMap
+		}
 		svc.Environment = maps.Clone(svc.Environment)
 		if svc.Environment == nil {
 			svc.Environment = make(compose.Environment, len(staticEnv))
 		}
 		for key, value := range staticEnv {
+			if _, static := compose.StaticEnvValue(value); !static {
+				return nil, fmt.Errorf("%w: %q", errStandaloneEnvironmentValueMustBeLiteral, key)
+			}
 			svc.Environment[key] = value
 		}
-		environment = nil
 	}
 
 	infra := args.Infra
@@ -732,12 +746,6 @@ func CreateECSService(
 		secretsIdx = len(allInputs)
 		allInputs = append(allInputs, args.Secrets)
 	}
-	envInputIdx := -1
-	if environment != nil {
-		envInputIdx = len(allInputs)
-		allInputs = append(allInputs, environment)
-	}
-
 	// composedSecretVersions collects the SSM parameter Version of every
 	// composed secret (across the main container and sidecars). A changed
 	// value updates the SSM parameter in place without changing its Arn, so
@@ -836,21 +844,6 @@ func CreateECSService(
 				continue
 			}
 			envVars = append(envVars, KeyValuePair{Name: e.name, Value: val})
-		}
-		if envInputIdx >= 0 {
-			// Same bare-${VAR} split as resolveEnv, but on already-resolved
-			// values (GetSecretRef only does invokes, safe inside ApplyT).
-			for k, v := range common.Sorted(all[envInputIdx].(map[string]string)) {
-				if secretVar := compose.GetConfigName2(k, pulumi.String(v)); secretVar != "" && configProvider != nil {
-					ref, err := configProvider.GetSecretRef(ctx, secretVar, parentOpt)
-					if err != nil {
-						return "", fmt.Errorf("getting secret ref for %q: %w", k, err)
-					}
-					mainSecrets = append(mainSecrets, Secret{Name: k, ValueFrom: ref})
-					continue
-				}
-				envVars = append(envVars, KeyValuePair{Name: k, Value: v})
-			}
 		}
 		slices.SortFunc(envVars, func(a, b KeyValuePair) int {
 			return cmp.Compare(a.Name, b.Name)

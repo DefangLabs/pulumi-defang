@@ -148,10 +148,11 @@ func minInstanceScaling(svc compose.ServiceConfig) *cloudrunv2.ServiceScalingArg
 // place) changes the Cloud Run template's own inputs, so the revision
 // actually redeploys to pick it up.
 type composedEnvSecret struct {
-	key     string // env var key, for diagnostics
-	name    string // shared logical name; resource types distinguish the URNs
-	id      pulumi.StringOutput
-	version pulumi.StringOutput
+	key             string // env var key, for diagnostics
+	name            string // shared logical name; resource types distinguish the URNs
+	id              pulumi.StringOutput
+	version         pulumi.StringOutput
+	versionResource *secretmanager.SecretVersion
 }
 
 // newComposedEnvSecret stores a compose env value that embeds a config-
@@ -187,7 +188,9 @@ func newComposedEnvSecret(
 	if err != nil {
 		return nil, fmt.Errorf("creating secret version: %w", err)
 	}
-	return &composedEnvSecret{key: key, name: resourceName, id: secret.SecretId, version: version.Version}, nil
+	return &composedEnvSecret{
+		key: key, name: resourceName, id: secret.SecretId, version: version.Version, versionResource: version,
+	}, nil
 }
 
 // buildEnvVars constructs Cloud Run env vars, using SecretKeyRef for secret references

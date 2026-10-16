@@ -264,6 +264,7 @@ func TestClassifyComputeSecretEnv(t *testing.T) {
 	assert.Equal(t, "Defang_proj_stack_SECRET_ONE", plan.secretRefs[0].identityKey)
 	assert.Equal(t, "MIXED", plan.secretRefs[1].envKey)
 	assert.Equal(t, "worker-env-MIXED", plan.secretRefs[1].identityKey)
+	assert.NotNil(t, plan.secretRefs[1].dependency, "derived secret version must gate instance-template creation")
 	assert.Equal(t, "NULLED", plan.secretRefs[2].envKey)
 	assert.Equal(t, "Defang_proj_stack_NULLED", plan.secretRefs[2].identityKey)
 	// Literals stay inline; the mixed value is held in a derived secret.
@@ -273,6 +274,7 @@ func TestClassifyComputeSecretEnv(t *testing.T) {
 	assert.NotContains(t, plan.inline, "NULLED")
 	require.Len(t, spy.secrets, 1, "mixed interpolation needs one derived secret")
 	require.Len(t, spy.versions, 1, "mixed interpolation needs one secret version")
+	assert.Len(t, derivedSecretVersionDependencies(plan, nil), 1)
 
 	// with no config provider, everything is inlined
 	nilPlan, err := classifyComputeSecretEnv(nil, nil, "worker", env, nil)

@@ -23,13 +23,15 @@ type ServiceInputs struct {
 	ProjectName string                      `pulumi:"projectName"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	// Environment holds env vars; values may be Outputs. Bare ${VAR} values
-	// become ECS secret refs to defang config (SSM); others stay plaintext.
-	Environment pulumi.StringMapInput `pulumi:"environment,optional"`
-	Command     []string                    `pulumi:"command,optional"`
-	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
-	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
-	DomainName  string                      `pulumi:"domainName,optional"`
+	// Environment holds literal env vars. Bare ${VAR} values become ECS secret
+	// refs to defang config (SSM); composite config values use a derived
+	// SecureString. Dynamic values are rejected because they cannot be safely
+	// inspected before task-definition serialization; use Secrets for those.
+	Environment pulumi.StringMapInput      `pulumi:"environment,optional"`
+	Command     []string                   `pulumi:"command,optional"`
+	Entrypoint  []string                   `pulumi:"entrypoint,optional"`
+	HealthCheck *compose.HealthCheckConfig `pulumi:"healthCheck,optional"`
+	DomainName  string                     `pulumi:"domainName,optional"`
 
 	// Compose-shaped container settings
 	ContainerName   *string                       `pulumi:"containerName,optional"`

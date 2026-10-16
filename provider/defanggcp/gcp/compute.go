@@ -92,12 +92,15 @@ func CreateComputeEngine(
 		serviceName, image, svc, gcpConfig.Region, gcpConfig.Etag, gcpConfig.ProjectName, gcpConfig.Stack, fqdn,
 		gcpConfig.GcpProject, addHealthCheckSidecar, args.Sidecars, mainPlan, sidecarPlans)
 
-	// The instance template must depend on the secret IAM bindings so instances
-	// don't boot (and run the fetch script) before they can read the secrets.
+	// The instance template must depend on the secret IAM bindings and derived
+	// secret versions so instances don't boot (and run the fetch script) before
+	// the version they read exists and their identity can access it.
 	templateOpts := []pulumi.ResourceOption{parentOpt}
-	templateDeps := make([]pulumi.Resource, 0, len(args.PolicyDeps)+len(secretMembers))
+	secretVersionDeps := derivedSecretVersionDependencies(mainPlan, sidecarPlans)
+	templateDeps := make([]pulumi.Resource, 0, len(args.PolicyDeps)+len(secretMembers)+len(secretVersionDeps))
 	templateDeps = append(templateDeps, args.PolicyDeps...)
 	templateDeps = append(templateDeps, secretMembers...)
+	templateDeps = append(templateDeps, secretVersionDeps...)
 	if len(templateDeps) > 0 {
 		templateOpts = append(templateOpts, pulumi.DependsOn(templateDeps))
 	}
@@ -470,6 +473,29 @@ func grantSecretAccess(
 	return members, nil
 }
 
+// derivedSecretVersionDependencies returns the SecretVersion resources created
+// for composed environment values. The instance template must wait for these
+// resources: its boot script reads versions/latest, which fails before the
+// first version exists even if the Secret and its IAM binding already do.
+func derivedSecretVersionDependencies(
+	mainPlan containerSecretPlan,
+	sidecarPlans map[string]containerSecretPlan,
+) []pulumi.Resource {
+	var dependencies []pulumi.Resource
+	collect := func(plan containerSecretPlan) {
+		for _, ref := range plan.secretRefs {
+			if ref.dependency != nil {
+				dependencies = append(dependencies, ref.dependency)
+			}
+		}
+	}
+	collect(mainPlan)
+	for _, plan := range common.Sorted(sidecarPlans) {
+		collect(plan)
+	}
+	return dependencies
+}
+
 // AddRolesToServiceAccount grants IAM roles to a service account at the project level.
 // Returns a resource array output that can be used as a dependency.
 func AddRolesToServiceAccount(
@@ -630,6 +656,7 @@ type computeSecretEnv struct {
 	envKey      string
 	secretID    pulumi.StringInput
 	identityKey string
+	dependency  pulumi.Resource // derived SecretVersion; nil for existing config secrets
 }
 
 // containerSecretPlan is the per-container result of classifyComputeSecretEnv:
@@ -678,7 +705,7 @@ func classifyComputeSecretEnv(
 					return containerSecretPlan{}, fmt.Errorf("creating composed secret for %q: %w", k, err)
 				}
 				plan.secretRefs = append(plan.secretRefs, computeSecretEnv{
-					envKey: k, secretID: composed.id, identityKey: composed.name,
+					envKey: k, secretID: composed.id, identityKey: composed.name, dependency: composed.versionResource,
 				})
 				continue
 			}
