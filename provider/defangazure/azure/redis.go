@@ -100,17 +100,6 @@ func CreateRedisEnterprise(
 		publicNetworkAccess = "Disabled"
 	}
 
-	// Azure Native v3.20.0 changed Redis Enterprise to API version 2025-07-01,
-	// which makes PublicNetworkAccess required. Clusters created with an older
-	// API return null for that field. Azure rejects the one-time null -> Disabled
-	// migration when its normal update request also contains sku.name, even when
-	// the SKU itself is unchanged. Preserve the legacy state for existing
-	// clusters; new clusters still receive the value declared above. See
-	// https://github.com/pulumi/pulumi-azure-native/issues/4868.
-	clusterOpts := append([]pulumi.ResourceOption{
-		pulumi.IgnoreChanges([]string{"publicNetworkAccess"}),
-	}, opts...)
-
 	cluster, err := redis.NewRedisEnterprise(ctx, serviceName, &redis.RedisEnterpriseArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.StringPtr(location),
@@ -121,7 +110,7 @@ func CreateRedisEnterprise(
 			Name: pulumi.String(skuName),
 		},
 		Tags: ServiceTags(serviceName),
-	}, clusterOpts...)
+	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Azure Managed Redis cluster: %w", err)
 	}
