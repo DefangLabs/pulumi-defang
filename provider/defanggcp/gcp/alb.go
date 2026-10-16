@@ -24,7 +24,6 @@ var (
 	errUnsupportedProtocol     = errors.New("unsupported protocol")
 	errNoTCPPort               = errors.New("at least one tcp port is needed for health check")
 	errTooManyPorts            = errors.New("too many ports with protocol")
-	errMultipleIngressPorts    = errors.New("multiple ingress ports are not supported for Compute Engine services")
 )
 
 // LBServiceEntry holds the data needed to wire a service into the external load balancer.
@@ -74,13 +73,6 @@ func createExternalLoadBalancers(
 	var ingressEntries []LBServiceEntry
 	for _, e := range entries {
 		if e.Config.HasIngressPorts() && (e.CloudRunService != nil || e.InstanceGroup != nil) {
-			if e.InstanceGroup != nil && countIngressPorts(e.Config.Ports) > 1 {
-				return fmt.Errorf(
-					"service %s has multiple ingress ports; use at most one ingress port with any additional ports in host mode: %w",
-					e.Name,
-					errMultipleIngressPorts,
-				)
-			}
 			ingressEntries = append(ingressEntries, e)
 		}
 	}
@@ -609,16 +601,6 @@ func internalServiceDns(name string) string {
 	return common.ServiceLabel(name) + `.google.internal.`
 }
 
-func countIngressPorts(ports []compose.ServicePortConfig) int {
-	var count int
-	for _, port := range ports {
-		if port.IsIngress() {
-			count++
-		}
-	}
-	return count
-}
-
 func newCertMap(
 	ctx *pulumi.Context,
 	projectName string,
@@ -634,6 +616,15 @@ func newCertMap(
 	return certificatemanager.NewCertificateMapResource(ctx, "cert-map", args, opts...)
 }
 
+// lbRoute is one path-matcher/host-rule pair wired to a backend, plus that
+// backend's ID. A CE entry with multiple ingress ports produces one lbRoute
+// per port; every other entry produces at most one.
+type lbRoute struct {
+	backendID pulumi.IDOutput
+	matcher   *compute.URLMapPathMatcherArgs
+	hostRule  *compute.URLMapHostRuleArgs
+}
+
 func buildURLMap(
 	ctx *pulumi.Context,
 	entries []LBServiceEntry,
@@ -645,21 +636,23 @@ func buildURLMap(
 	var pathMatchers compute.URLMapPathMatcherArray
 
 	for _, entry := range entries {
-		backendID, matcher, hostRule, err := buildLBEntry(ctx, entry, region, opts...)
+		routes, err := buildLBEntry(ctx, entry, region, opts...)
 		if err != nil {
 			return nil, err
 		}
-		// Skip entries with no applicable backend: appending a nil matcher panics in
-		// the SDK, and ToStringOutput on a zero-value IDOutput panics on a nil receiver.
-		if matcher == nil {
-			continue
-		}
-		pathMatchers = append(pathMatchers, matcher)
-		if hostRule != nil {
-			hostRules = append(hostRules, hostRule)
-		}
-		if firstBackendID == nil {
-			firstBackendID = backendID.ToStringOutput()
+		for _, route := range routes {
+			// Skip routes with no applicable backend: appending a nil matcher panics in
+			// the SDK, and ToStringOutput on a zero-value IDOutput panics on a nil receiver.
+			if route.matcher == nil {
+				continue
+			}
+			pathMatchers = append(pathMatchers, route.matcher)
+			if route.hostRule != nil {
+				hostRules = append(hostRules, route.hostRule)
+			}
+			if firstBackendID == nil {
+				firstBackendID = route.backendID.ToStringOutput()
+			}
 		}
 	}
 
@@ -674,22 +667,24 @@ func buildURLMap(
 	}, opts...)
 }
 
-// buildLBEntry creates backend resources for one LB service entry and returns the
-// backend ID, path matcher, and optional host rule. Returns nil backendID if the
-// entry has no applicable ports.
+// buildLBEntry creates backend resources for one LB service entry and returns its
+// routes. A CE entry with multiple ingress ports returns one route per port,
+// each with its own backend -- the external ALB routes by path matcher, so a
+// service's ports can't share one backend. Returns nil if the entry has no
+// applicable ports.
 func buildLBEntry(
 	ctx *pulumi.Context,
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) ([]lbRoute, error) {
 	if entry.CloudRunService != nil {
 		return buildCloudRunLBEntry(ctx, entry, region, opts...)
 	}
 	if entry.InstanceGroup != nil {
 		return buildMIGLBEntry(ctx, entry, opts...)
 	}
-	return pulumi.IDOutput{}, nil, nil, nil
+	return nil, nil
 }
 
 // publicLBName names a child of the external load balancer. The role marker is
@@ -707,7 +702,7 @@ func buildCloudRunLBEntry(
 	entry LBServiceEntry,
 	region string,
 	opts ...pulumi.ResourceOption,
-) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) ([]lbRoute, error) {
 	neg, err := compute.NewRegionNetworkEndpointGroup(ctx, publicLBName(entry.Name),
 		&compute.RegionNetworkEndpointGroupArgs{
 			NetworkEndpointType: pulumi.String("SERVERLESS"),
@@ -717,7 +712,7 @@ func buildCloudRunLBEntry(
 			},
 		}, opts...)
 	if err != nil {
-		return pulumi.IDOutput{}, nil, nil, err
+		return nil, err
 	}
 
 	backend, err := compute.NewBackendService(ctx, publicLBName(entry.Name),
@@ -729,7 +724,7 @@ func buildCloudRunLBEntry(
 			},
 		}, opts...)
 	if err != nil {
-		return pulumi.IDOutput{}, nil, nil, err
+		return nil, err
 	}
 
 	matcher := &compute.URLMapPathMatcherArgs{
@@ -742,23 +737,41 @@ func buildCloudRunLBEntry(
 			PathMatcher: pulumi.String(entry.Name),
 		}
 	}
-	return backend.ID(), matcher, hostRule, nil
+	return []lbRoute{{backendID: backend.ID(), matcher: matcher, hostRule: hostRule}}, nil
 }
 
-// buildMIGLBEntry creates an LB backend for the first ingress port of a Compute Engine MIG.
+// buildMIGLBEntry creates one LB backend per ingress port of a Compute Engine MIG.
+// Each ingress port would add a URL map path matcher and host rule with the same
+// name, so each gets its own backend, health check, and path matcher, and only the
+// first one also carries entry.Config.DomainName -- that custom domain names the
+// service as a whole, so it should resolve to the service's "primary" port.
 func buildMIGLBEntry(
 	ctx *pulumi.Context,
 	entry LBServiceEntry,
 	opts ...pulumi.ResourceOption,
-) (pulumi.IDOutput, *compute.URLMapPathMatcherArgs, *compute.URLMapHostRuleArgs, error) {
+) ([]lbRoute, error) {
+	var ingressPorts []compose.ServicePortConfig
 	for _, port := range entry.Config.Ports {
 		// Use IsIngress() so a default (empty) Mode is treated as ingress, matching
 		// HasIngressPorts() — otherwise the filter in createExternalLoadBalancers admits
-		// the entry but we fall through to the zero-value return, which panics later.
-		if !port.IsIngress() {
-			continue
+		// the entry but none of its ports match here, and buildURLMap silently drops it.
+		if port.IsIngress() {
+			ingressPorts = append(ingressPorts, port)
 		}
-		hc, err := compute.NewHealthCheck(ctx, publicLBName(entry.Name),
+	}
+
+	// Only disambiguate names by port once there's more than one: this keeps the
+	// existing single-ingress-port resource names unchanged.
+	multiPort := len(ingressPorts) > 1
+
+	routes := make([]lbRoute, 0, len(ingressPorts))
+	for i, port := range ingressPorts {
+		name := publicLBName(entry.Name)
+		if multiPort {
+			name = fmt.Sprintf("%s-%d", name, port.Target)
+		}
+
+		hc, err := compute.NewHealthCheck(ctx, name,
 			&compute.HealthCheckArgs{
 				CheckIntervalSec: pulumi.Int(5),
 				TimeoutSec:       pulumi.Int(5),
@@ -767,10 +780,10 @@ func buildMIGLBEntry(
 				},
 			}, opts...)
 		if err != nil {
-			return pulumi.IDOutput{}, nil, nil, err
+			return nil, err
 		}
 
-		backend, err := compute.NewBackendService(ctx, publicLBName(entry.Name),
+		backend, err := compute.NewBackendService(ctx, name,
 			&compute.BackendServiceArgs{
 				Protocol:            pulumi.String("HTTP"),
 				LoadBalancingScheme: pulumi.String("EXTERNAL_MANAGED"),
@@ -781,31 +794,48 @@ func buildMIGLBEntry(
 				PortName:     pulumi.String(fmt.Sprintf("port-%v-%v", port.GetProtocol(), port.Target)),
 			}, append(opts, pulumi.DependsOn([]pulumi.Resource{entry.InstanceGroup}))...)
 		if err != nil {
-			return pulumi.IDOutput{}, nil, nil, err
+			return nil, err
 		}
 
+		matcherName := entry.Name
+		if multiPort {
+			matcherName = name
+		}
 		matcher := &compute.URLMapPathMatcherArgs{
-			Name: pulumi.String(entry.Name), DefaultService: backend.ID(),
+			Name: pulumi.String(matcherName), DefaultService: backend.ID(),
 		}
 		var hostRule *compute.URLMapHostRuleArgs
-		if entry.Config.DomainName != "" {
+		if entry.Config.DomainName != "" && i == 0 {
 			hostRule = &compute.URLMapHostRuleArgs{
 				Hosts:       pulumi.ToStringArray([]string{entry.Config.DomainName}),
-				PathMatcher: pulumi.String(entry.Name),
+				PathMatcher: pulumi.String(matcherName),
 			}
 		}
-		return backend.ID(), matcher, hostRule, nil
+		routes = append(routes, lbRoute{backendID: backend.ID(), matcher: matcher, hostRule: hostRule})
 	}
-	return pulumi.IDOutput{}, nil, nil, nil
+	return routes, nil
 }
 
+// migBackend sets the RATE balancing mode whenever this instance group is also
+// attached to the internal passthrough NLB created by createInternalLoadBalancer's
+// host-mode branch (entered whenever the service isn't exactly one ingress port),
+// since that passthrough NLB references the same MIG with the CONNECTION
+// balancing mode, which GCP rejects mixed with this backend's default
+// UTILIZATION but accepts mixed with RATE.
 func migBackend(entry LBServiceEntry) *compute.BackendServiceBackendArgs {
 	backend := &compute.BackendServiceBackendArgs{Group: entry.InstanceGroup.InstanceGroup}
-	if entry.Config.HasHostPorts() {
+	if sharesMIGWithPassthroughNLB(entry.Config.Ports) {
 		backend.BalancingMode = pulumi.String("RATE")
 		backend.MaxRatePerInstance = pulumi.Float64(10000)
 	}
 	return backend
+}
+
+// sharesMIGWithPassthroughNLB mirrors the condition in createInternalLoadBalancer
+// that decides whether a CE service's MIG also gets attached to the internal
+// passthrough NLB: every port except a lone ingress port.
+func sharesMIGWithPassthroughNLB(ports []compose.ServicePortConfig) bool {
+	return len(ports) != 1 || !ports[0].IsIngress()
 }
 
 // Logical names in createHTTPSForwardingRule and createHTTPRedirectForwardingRule

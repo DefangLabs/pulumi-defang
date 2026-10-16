@@ -95,7 +95,12 @@ func TestCreateLoadBalancersMIGSingleIngressLeavesBalancingModeUnset(t *testing.
 	require.False(t, backendArgs.HasValue("maxRatePerInstance"))
 }
 
-func TestCreateLoadBalancersMIGMultipleIngressPortsReturnsActionableError(t *testing.T) {
+// A Compute Engine service can expose multiple ingress ports externally: each gets its
+// own backend service and path matcher, since the external ALB routes a hostname to a
+// single backend. Only the first ingress port also carries the service's custom domain,
+// mirroring buildCloudRunLBEntry and the single-ingress-port MIG case.
+func TestCreateLoadBalancersMIGMultipleIngressPortsCreatesPerPortBackends(t *testing.T) {
+	mocks := &albMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		mig, err := testMIG(ctx, "api")
 		if err != nil {
@@ -110,10 +115,33 @@ func TestCreateLoadBalancersMIGMultipleIngressPortsReturnsActionableError(t *tes
 				{Target: 8080, Mode: compose.PortModeIngress},
 			}),
 		}}, testInfra(ctx))
-	}, pulumi.WithMocks("proj", "stack", &albMocks{}))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "service api has multiple ingress ports")
-	require.Contains(t, err.Error(), "use at most one ingress port")
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+
+	for _, port := range []string{"3000", "8080"} {
+		name := "api-public-" + port
+		backend := requireResource(t, mocks.resources, "gcp:compute/backendService:BackendService", name)
+		requirePropertyString(t, backend.inputs, "portName", "port-tcp-"+port)
+		backends := backend.inputs["backends"].ArrayValue()
+		require.Len(t, backends, 1)
+		// Both ports share the MIG with the internal passthrough NLB (the
+		// service isn't a lone ingress port), so both need RATE.
+		require.Equal(t, "RATE", backends[0].ObjectValue()["balancingMode"].StringValue())
+		require.InEpsilon(t, 10000.0, backends[0].ObjectValue()["maxRatePerInstance"].NumberValue(), 0)
+
+		requireResource(t, mocks.resources, "gcp:compute/healthCheck:HealthCheck", name)
+	}
+
+	urlMap := requireResource(t, mocks.resources, "gcp:compute/uRLMap:URLMap", "urlmap")
+	require.Len(t, urlMap.inputs["pathMatchers"].ArrayValue(), 2, "expected one path matcher per ingress port")
+
+	hostRules := urlMap.inputs["hostRules"].ArrayValue()
+	require.Len(t, hostRules, 1, "only the first ingress port should carry the service's custom domain")
+	hostRule := hostRules[0].ObjectValue()
+	require.Equal(t, "api-public-3000", hostRule["pathMatcher"].StringValue())
+	hosts := hostRule["hosts"].ArrayValue()
+	require.Len(t, hosts, 1)
+	require.Equal(t, "api.example.com", hosts[0].StringValue())
 }
 
 // createInternalLoadBalancer's host-mode branch (a single non-ingress TCP
