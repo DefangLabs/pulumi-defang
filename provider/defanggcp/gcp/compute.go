@@ -95,15 +95,8 @@ func CreateComputeEngine(
 	// The instance template must depend on the secret IAM bindings and derived
 	// secret versions so instances don't boot (and run the fetch script) before
 	// the version they read exists and their identity can access it.
-	templateOpts := []pulumi.ResourceOption{parentOpt}
-	secretVersionDeps := derivedSecretVersionDependencies(mainPlan, sidecarPlans)
-	templateDeps := make([]pulumi.Resource, 0, len(args.PolicyDeps)+len(secretMembers)+len(secretVersionDeps))
-	templateDeps = append(templateDeps, args.PolicyDeps...)
-	templateDeps = append(templateDeps, secretMembers...)
-	templateDeps = append(templateDeps, secretVersionDeps...)
-	if len(templateDeps) > 0 {
-		templateOpts = append(templateOpts, pulumi.DependsOn(templateDeps))
-	}
+	templateOpts := computeTemplateOptions(parentOpt, args.PolicyDeps, secretMembers,
+		derivedSecretVersionDependencies(mainPlan, sidecarPlans))
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, getComputeBootImage(svc), cloudInit,
 		args.SA, args.Triggers, gcpConfig, iamDeps, templateOpts...)
@@ -161,6 +154,24 @@ func CreateComputeEngine(
 	}
 
 	return &ComputeEngineResult{InstanceGroup: instanceGroup}, nil
+}
+
+// computeTemplateOptions makes the template wait for the infrastructure the
+// instance's boot script needs before it starts containers.
+func computeTemplateOptions(
+	parentOpt pulumi.ResourceOption,
+	policyDeps, secretMembers, secretVersionDeps []pulumi.Resource,
+) []pulumi.ResourceOption {
+	deps := make([]pulumi.Resource, 0, len(policyDeps)+len(secretMembers)+len(secretVersionDeps))
+	deps = append(deps, policyDeps...)
+	deps = append(deps, secretMembers...)
+	deps = append(deps, secretVersionDeps...)
+
+	opts := []pulumi.ResourceOption{parentOpt}
+	if len(deps) > 0 {
+		opts = append(opts, pulumi.DependsOn(deps))
+	}
+	return opts
 }
 
 // computeNamedPorts builds the MIG named-port array from the service's ports and
