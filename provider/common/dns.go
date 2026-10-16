@@ -29,6 +29,13 @@ func NormalizeDNS(name string) string {
 	return strings.ToLower(strings.TrimRight(name, "."))
 }
 
+// DNSRecordLogicalName is the stable Pulumi logical name for a DNS record.
+// It mirrors the record's normalized FQDN and type, independently of the
+// cloud that hosts the zone.
+func DNSRecordLogicalName(name string, recordType RecordType) string {
+	return NormalizeDNS(name) + "_" + string(recordType)
+}
+
 func SafeLabel(name string) string {
 	// Technically DNS names can have underscores, so we won't touch them here.
 	return strings.ReplaceAll(strings.ToLower(name), ".", "-")
