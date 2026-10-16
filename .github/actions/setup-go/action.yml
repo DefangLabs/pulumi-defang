@@ -23,6 +23,15 @@ runs:
         # compatible main-branch cache when their dependency hash changes.
         cache: false
 
+    # The pinned setup-go version exposes the installed Go version, but not
+    # its cache directories. Capture those paths once for both cache modes.
+    - name: Locate Go cache directories
+      id: go-cache-paths
+      shell: bash
+      run: |
+        echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
     # setup-go's built-in cache has only an exact dependency-hash key. Retain
     # exact matches, but fall back to the latest cache built with this Go
     # version so a dependency update does not force every package to rebuild.
@@ -33,8 +42,8 @@ runs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
-          ${{ steps.setup-go.outputs.GOMODCACHE }}
-          ${{ steps.setup-go.outputs.GOCACHE }}
+          ${{ steps.go-cache-paths.outputs.gomodcache }}
+          ${{ steps.go-cache-paths.outputs.gocache }}
         key: defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
@@ -44,8 +53,8 @@ runs:
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
-          ${{ steps.setup-go.outputs.GOMODCACHE }}
-          ${{ steps.setup-go.outputs.GOCACHE }}
+          ${{ steps.go-cache-paths.outputs.gomodcache }}
+          ${{ steps.go-cache-paths.outputs.gocache }}
         key: defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
