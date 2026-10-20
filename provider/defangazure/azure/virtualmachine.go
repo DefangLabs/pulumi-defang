@@ -313,14 +313,15 @@ aad_json=$(curl -fsS --get -H Metadata:true \
   http://169.254.169.254/metadata/identity/oauth2/token)
 aad=$(printf '%%s' "$aad_json" | jq -er .access_token)
 payload=$(printf '%%s' "$aad" | cut -d. -f2 | tr '_-' '/+')
-# A JWT payload segment's base64 length is essentially never a multiple of 4
-# (valid padding is 0-2 '=' chars, never 3), so blindly appending '===' always
-# leaves trailing bytes GNU base64 rejects with "invalid input" (exit 1) even
-# though it decodes the real payload to stdout correctly beforehand. Under
-# 'set -e -o pipefail' that exit code, not any actual decoding failure, was
-# killing this script on every single run before it ever reached the ACR
-# token exchange below.
-tenant=$(printf '%%s===' "$payload" | { base64 -d 2>/dev/null || true; } | jq -er .tid)
+# A JWT payload is unpadded Base64. Restore exactly the padding it needs:
+# valid Base64 lengths have a remainder of 0, 2, or 3, never 1.
+case $((${#payload} %% 4)) in
+  0) ;;
+  2) payload="${payload}==" ;;
+  3) payload="${payload}=" ;;
+  *) echo "defang: invalid AAD token payload" >&2; exit 1 ;;
+esac
+tenant=$(printf '%%s' "$payload" | base64 -d | jq -er .tid)
 refresh=$(curl -fsS -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=access_token \
   --data-urlencode "service=$registry" \
