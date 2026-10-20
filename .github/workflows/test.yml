@@ -35,6 +35,9 @@ jobs:
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
 
