@@ -1,6 +1,6 @@
 module config-interpolation
 
-go 1.26.6
+go 1.26.10
 
 replace (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws => ../../sdk/v2/go/defang-aws

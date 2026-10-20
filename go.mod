@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang
 
-go 1.26.6
+go 1.26.10
 
 replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 

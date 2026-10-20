@@ -1,6 +1,6 @@
 module defang-gcp
 
-go 1.25
+go 1.26.10
 
 require (
 	github.com/pulumi/pulumi/sdk/v3 v3.30.0

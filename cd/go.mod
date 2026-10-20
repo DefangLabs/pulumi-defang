@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang/cd
 
-go 1.26.6
+go 1.26.10
 
 replace (
 	github.com/DefangLabs/pulumi-defang => ../
