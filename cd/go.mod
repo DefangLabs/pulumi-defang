@@ -31,7 +31,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.28.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.28.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
-	github.com/pulumi/pulumi/sdk/v3 v3.268.0
+	github.com/pulumi/pulumi/sdk/v3 v3.269.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sync v0.23.0
