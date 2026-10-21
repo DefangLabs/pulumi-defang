@@ -22,7 +22,7 @@ require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
-	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.3
+	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.4
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.50.0
