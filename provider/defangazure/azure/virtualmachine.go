@@ -387,30 +387,62 @@ printf '%%s' "$refresh" | docker login "$registry" --username 00000000-0000-0000
 // only applies when the probe times out with no response at all, and this
 // script always responds). 0 preserves this endpoint's behavior from before
 // start_period support existed: report real container state immediately.
+//
+// The grace window is measured from the CONTAINER's own start time
+// (docker inspect's State.StartedAt), not from when this script itself
+// started: ExecStart=always restarts the container independently of this
+// systemd unit, and a restart after a crash deserves its own start_period,
+// not zero grace because the health endpoint has been up a while. When the
+// container doesn't exist yet at all (still pulling the image, before the
+// first `docker run`), there's no StartedAt to read yet — fall back to this
+// process's own uptime so a container that never gets created still
+// eventually reports unhealthy, rather than reporting OK forever.
 func renderDefangHealthScript(startPeriodSeconds int, containerName string, port int) string {
 	return fmt.Sprintf(`#!/usr/bin/python3
 import http.server
 import subprocess
 import time
+from datetime import datetime, timezone
 
-START = time.monotonic()
+PROCESS_START = time.monotonic()
 START_PERIOD = %d
+CONTAINER = %s
+
+def container_state():
+    result = subprocess.run(
+        ["docker", "inspect", "--format={{.State.Running}}|{{.State.StartedAt}}", CONTAINER],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False, None
+    parts = result.stdout.strip().split("|", 1)
+    running = len(parts) == 2 and parts[0] == "true"
+    started_at = parts[1] if len(parts) == 2 else ""
+    try:
+        # Docker's StartedAt is RFC3339Nano (e.g. "...123456789Z"). Drop the
+        # fractional seconds and "Z" rather than depend on a Python
+        # version's ISO-8601 leniency -- whole-second precision is all
+        # start_period needs.
+        started = datetime.strptime(
+            started_at.split(".")[0].split("Z")[0], "%%Y-%%m-%%dT%%H:%%M:%%S"
+        ).replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - started).total_seconds()
+    except ValueError:
+        age = None
+    return running, age
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        result = subprocess.run(
-            ["docker", "inspect", "--format={{.State.Running}}", %s],
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        healthy = result.returncode == 0 and result.stdout.strip() == "true"
-        # Never report "down" while still inside the startup grace period,
-        # same as Compose's own start_period: failures don't count yet. A
-        # real success is still reported immediately, rather than waiting
-        # out the grace period blindly.
-        if not healthy and time.monotonic() - START < START_PERIOD:
-            healthy = True
+        running, age = container_state()
+        if age is None:
+            age = time.monotonic() - PROCESS_START
+        # Never report "down" while still inside the startup grace period
+        # for whichever start this is, same as Compose's own start_period:
+        # failures don't count yet. A real success is still reported
+        # immediately, rather than waiting out the grace period blindly.
+        healthy = running or age < START_PERIOD
         body = b"OK" if healthy else b"FAIL"
         self.send_response(200 if healthy else 503)
         self.send_header("Content-Length", str(len(body)))
