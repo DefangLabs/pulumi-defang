@@ -21,6 +21,18 @@ const (
 	vmSizeB2s        = "Standard_B2s"
 	azureProtocolTCP = "Tcp"
 	azureProtocolUDP = "Udp"
+
+	// defaultVMProbeIntervalSeconds and defaultVMProbeThreshold are this load
+	// balancer probe's behavior when a service declares no healthcheck at
+	// all — unchanged from before start_period support existed.
+	defaultVMProbeIntervalSeconds = 10
+	defaultVMProbeThreshold       = 3
+	// maxVMProbeThreshold bounds how large a start_period can push
+	// NumberOfProbes. Azure's load balancer probe itself allows a far wider
+	// range; this just keeps a pathological compose value from asking for
+	// something absurd (an hour of startup grace at the default interval is
+	// already generous).
+	maxVMProbeThreshold = 360
 )
 
 var (
@@ -109,6 +121,53 @@ func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyAr
 			RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(false),
 		},
 	}
+}
+
+// vmHealthProbeSchedule derives the load balancer health probe's interval and
+// unhealthy-instance threshold from the compose service's healthcheck, so a
+// declared start_period actually buys a new instance that much grace before
+// a VMSS rolling upgrade can decide it's unhealthy (see virtualMachineUpgradePolicy's
+// MaxUnhealthyUpgradedInstancePercent: 0 above, which has none of its own).
+//
+// Unlike Azure Container Apps' probe (buildProbes in containerapp.go), this
+// load balancer probe has no InitialDelaySeconds field at all — the probe
+// starts the instant the instance joins the backend pool. So the only way to
+// express "ignore failures for the first N seconds" here is to make reaching
+// the failure threshold itself take at least that long:
+// NumberOfProbes * IntervalInSeconds >= start_period + retries*interval.
+//
+// With no compose healthcheck at all, this returns the (10, 3) this probe
+// always used before start_period support existed.
+func vmHealthProbeSchedule(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig) (intervalSeconds, numberOfProbes int) {
+	intervalSeconds = defaultVMProbeIntervalSeconds
+	numberOfProbes = defaultVMProbeThreshold
+	if svc.HealthCheck == nil {
+		return intervalSeconds, numberOfProbes
+	}
+	if svc.HealthCheck.IntervalSeconds > 0 {
+		intervalSeconds = int(svc.HealthCheck.IntervalSeconds)
+	}
+	retries := defaultVMProbeThreshold
+	if svc.HealthCheck.Retries > 0 {
+		retries = int(svc.HealthCheck.Retries)
+	}
+	// Total startup budget the author asked for: start_period of grace, plus
+	// `retries` more failing checks spaced `interval` apart before giving up.
+	wantSeconds := int(svc.HealthCheck.StartPeriodSeconds) + retries*intervalSeconds
+	threshold := (wantSeconds + intervalSeconds - 1) / intervalSeconds // round up
+	if threshold < 1 {
+		threshold = 1
+	}
+	if threshold > maxVMProbeThreshold {
+		_ = ctx.Log.Warn(fmt.Sprintf(
+			"service %q: healthcheck start_period+retries*interval (%ds) needs %d probes at a "+
+				"%ds interval, more than the %d this provider allows; clamped, which only reaches "+
+				"%ds of the requested startup budget.",
+			serviceName, wantSeconds, threshold, intervalSeconds, maxVMProbeThreshold,
+			maxVMProbeThreshold*intervalSeconds), nil)
+		threshold = maxVMProbeThreshold
+	}
+	return intervalSeconds, threshold
 }
 
 func azureProtocol(port compose.ServicePortConfig) string {
@@ -596,6 +655,8 @@ func CreateVirtualMachineService(
 		return nil, fmt.Errorf("creating network security group for %s: %w", serviceName, err)
 	}
 
+	probeIntervalSeconds, probeThreshold := vmHealthProbeSchedule(ctx, serviceName, svc)
+
 	lb, err := network.NewLoadBalancer(ctx, serviceName, &network.LoadBalancerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		LoadBalancerName:  pulumi.StringPtr(serviceName),
@@ -620,8 +681,8 @@ func CreateVirtualMachineService(
 				Protocol:          pulumi.String("Http"),
 				Port:              pulumi.Int(vmHealthPort),
 				RequestPath:       pulumi.StringPtr("/"),
-				IntervalInSeconds: pulumi.IntPtr(10),
-				NumberOfProbes:    pulumi.IntPtr(3),
+				IntervalInSeconds: pulumi.IntPtr(probeIntervalSeconds),
+				NumberOfProbes:    pulumi.IntPtr(probeThreshold),
 			},
 		},
 		LoadBalancingRules: loadBalancingRules,

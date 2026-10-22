@@ -152,6 +152,33 @@ Untagged fields are ignored by the Pulumi infer framework (`introspect.ParseTag`
 
 **Azure is intentionally behind on parity.** `provider/defangazure/service.go` `ServiceInputs` does *not* expose these fields yet, and the Container Apps worker does not honor them. Rationale: no current Defang customer stack drives the Azure Service standalone path with these features, so the added surface area (multi-container Container App revisions, Managed Identity reuse, Container Apps native secret refs, etc.) is deferred until there is a concrete consumer. **TODO(azure-parity)** — when adding this, mirror the AWS/GCP inputs 1:1 for schema stability, and follow the same design as GCP for sidecars (a `sidecars: map[string]ServiceConfig` alongside the main container). Keep any implementation-gap surface behind explicit `unsupported on Azure` errors rather than silent no-ops.
 
+### Adding a feature: all providers together, one PR
+
+When a compose-shape feature gets real runtime support in one provider —
+not a schema field already deferred under the Azure-parity TODO above, but
+something that actually changes deployed behavior, e.g. a healthcheck field
+reaching a resource's config — implement it for AWS, Azure, *and* GCP in the
+same PR, not provider-by-provider over time. A feature that reaches one
+cloud and not the others silently splits behavior: the same `compose.yaml`
+deploys differently depending on which cloud a project happens to be on,
+and the gap is easy to miss because nothing fails — the unimplemented
+provider just keeps doing whatever it already did.
+
+Concretely: before merging a PR that wires a compose field into
+`provider/defangaws/aws/...`, grep the equivalent code path in
+`defangazure/azure/...` and `defanggcp/gcp/...`, and either implement it
+there too or, if a provider genuinely can't or shouldn't support it yet,
+leave an explicit `unsupported on <provider>` error or a TODO comment
+explaining why — not silence.
+
+(`healthcheck.start_period` is the case that prompted this rule: AWS ECS and
+Azure Container Apps already read it, but Azure's own VM/VMSS path and
+GCP's Compute Engine MIG path — both used for VM-backed services like UDP
+listeners — ignored it entirely. Each one's health probe started enforcing
+failures from the moment an instance booted, with no declared grace period,
+which aborted an Azure VMSS rolling upgrade in production over a
+slow-but-otherwise-healthy new instance: DefangLabs/station, 2026-10-22.)
+
 ### Pulumi inputs and outputs
 
 - Pulumi input types should use native types or `pulumi.*Input` types, no `pulumi.*Output`!

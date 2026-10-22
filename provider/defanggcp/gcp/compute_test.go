@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/compute"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
@@ -620,7 +621,7 @@ func TestCreateMIGAutoHealingFirewallSharesHealthCheckName(t *testing.T) {
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := createMIGAutoHealing(
-			ctx, "smokeworker", "smokeworker", &port, false, pulumi.String("projects/p/global/networks/vpc"))
+			ctx, "smokeworker", "smokeworker", &port, false, pulumi.String("projects/p/global/networks/vpc"), nil)
 		return err
 	}, pulumi.WithMocks("pulumi-project", "dev", mocks))
 	require.NoError(t, err)
@@ -629,6 +630,45 @@ func TestCreateMIGAutoHealingFirewallSharesHealthCheckName(t *testing.T) {
 	fwName := mocks.names["gcp:compute/firewall:Firewall"]
 	assert.Equal(t, "smokeworker-6379", hcName)
 	assert.Equal(t, hcName, fwName, "firewall should share the health check's logical name, not append -fw")
+}
+
+// TestCreateMIGAutoHealingHonorsStartPeriod covers the three
+// svcHealthCheck.StartPeriodSeconds cases: absent (keep the longstanding
+// 300s default), present (use it), and a value past GCP's documented
+// initialDelaySec ceiling (clamp rather than send an invalid request).
+func TestCreateMIGAutoHealingHonorsStartPeriod(t *testing.T) {
+	port := 6379
+	tests := []struct {
+		name        string
+		healthCheck *compose.HealthCheckConfig
+		want        int
+	}{
+		{name: "no healthcheck keeps the longstanding default", healthCheck: nil, want: defaultMIGAutoHealingInitialDelaySeconds},
+		{name: "start_period is used directly", healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 45}, want: 45},
+		{
+			name:        "a start_period past GCP's ceiling is clamped",
+			healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 100000},
+			want:        maxMIGAutoHealingInitialDelaySeconds,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var autoHealing compute.RegionInstanceGroupManagerAutoHealingPoliciesPtrInput
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				var err error
+				autoHealing, err = createMIGAutoHealing(
+					ctx, "smokeworker", "smokeworker", &port, false,
+					pulumi.String("projects/p/global/networks/vpc"), tt.healthCheck)
+				return err
+			}, pulumi.WithMocks("pulumi-project", "dev", &namedResourceMocks{}))
+			require.NoError(t, err)
+
+			policy, ok := autoHealing.(compute.RegionInstanceGroupManagerAutoHealingPoliciesArgs)
+			require.True(t, ok, "expected RegionInstanceGroupManagerAutoHealingPoliciesArgs, got %T", autoHealing)
+			assert.Equal(t, pulumi.Int(tt.want), policy.InitialDelaySec)
+		})
+	}
 }
 
 // A live smoketest (defang-mvp#3181) hit GCP's 63-char compute resource name

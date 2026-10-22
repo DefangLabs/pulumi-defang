@@ -321,6 +321,61 @@ func TestVirtualMachineUpgradePolicyFollowsMinHealthyPercent(t *testing.T) {
 	}
 }
 
+// TestVMHealthProbeScheduleHonorsStartPeriod reproduces a DefangLabs/station
+// production incident (2026-10-22): this load balancer probe has no
+// InitialDelaySeconds, so a start_period a compose author declares did
+// nothing at all before this -- a new VMSS instance that was merely slow,
+// not broken, could still abort a rolling upgrade because the probe gave it
+// zero startup grace.
+func TestVMHealthProbeScheduleHonorsStartPeriod(t *testing.T) {
+	tests := []struct {
+		name               string
+		healthCheck        *compose.HealthCheckConfig
+		wantInterval       int
+		wantNumberOfProbes int
+	}{
+		{
+			name:               "no healthcheck keeps prior default behavior",
+			healthCheck:        nil,
+			wantInterval:       defaultVMProbeIntervalSeconds,
+			wantNumberOfProbes: defaultVMProbeThreshold,
+		},
+		{
+			name:               "start_period alone widens the threshold at the default interval",
+			healthCheck:        &compose.HealthCheckConfig{StartPeriodSeconds: 60},
+			wantInterval:       defaultVMProbeIntervalSeconds,
+			wantNumberOfProbes: 9, // ceil((60 + 3*10) / 10)
+		},
+		{
+			name: "interval and retries both override the defaults",
+			healthCheck: &compose.HealthCheckConfig{
+				StartPeriodSeconds: 30, IntervalSeconds: 5, Retries: 2,
+			},
+			wantInterval:       5,
+			wantNumberOfProbes: 8, // ceil((30 + 2*5) / 5)
+		},
+		{
+			name:               "a pathological start_period is clamped, not left unbounded",
+			healthCheck:        &compose.HealthCheckConfig{StartPeriodSeconds: 100000},
+			wantInterval:       defaultVMProbeIntervalSeconds,
+			wantNumberOfProbes: maxVMProbeThreshold,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				svc := compose.ServiceConfig{HealthCheck: tt.healthCheck}
+				interval, numberOfProbes := vmHealthProbeSchedule(ctx, "worker", svc)
+				assert.Equal(t, tt.wantInterval, interval)
+				assert.Equal(t, tt.wantNumberOfProbes, numberOfProbes)
+				return nil
+			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
+			require.NoError(t, err)
+		})
+	}
+}
+
 // TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR
 // login script (the VM's dns.service ExecStartPre) against a real bash, with
 // curl/docker stubbed out. It reproduces the production incident this fixed:
