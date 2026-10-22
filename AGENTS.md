@@ -108,6 +108,36 @@ and composed env values. `containerAppSecretName` hashes the original key
 (not its secret value) to produce a bounded, valid name without collapsing
 case or punctuation differences.
 
+## Avoid hidden variables
+
+When a provider needs a numeric default that isn't declared anywhere in the
+compose spec (a grace period, an interval, a threshold), don't invent a
+cloud-specific constant to paper over it. Instead:
+
+- use the value the compose spec declares, as-is, clamped only to the cloud
+  API's own documented limits; or
+- hardcode the same value for every cloud that implements the feature; or
+- derive it from a recipe.
+
+A default that differs by cloud and traces back to "that's what this cloud
+already did before this feature existed" is a hidden variable: it isn't
+documented in the compose spec or the generated SDK, so the same
+`compose.yaml` behaves differently depending on which cloud it lands on, and
+whoever is debugging the difference has no way to find where the number
+came from short of reading provider source.
+
+This came up on PR #723 (`healthcheck.start_period` on GCP's Compute Engine
+MIG autohealing): the initial implementation kept GCP's pre-existing
+300-second VM-boot allowance and added `start_period` on top of it, while
+Azure VM/VMSS (which never had that allowance) got `start_period` with no
+baseline — a reasonable-sounding "preserve each cloud's prior behavior"
+argument that was still two different answers to the same question. Fixed
+by dropping GCP's baseline rather than adding one to Azure:
+`initialDelaySec` is now exactly the declared `start_period` (0 when
+absent), clamped to GCP's documented ceiling — the same pattern AWS ECS's
+`buildHealthCheck` already used (clamp `start_period` to ECS's own
+`[0, 300]` limit, nothing added on top).
+
 ## Architecture
 
 ### Provider Pattern
