@@ -105,7 +105,8 @@ func CreateComputeEngine(
 	}
 
 	autoHealing, err := createMIGAutoHealing(
-		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, networkID(gcpConfig), svc.HealthCheck, parentOpt)
+		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, networkID(gcpConfig),
+		svc.HealthCheck, parentOpt)
 	if err != nil {
 		return nil, err
 	}

@@ -354,6 +354,26 @@ func TestVMHealthStartPeriodSecondsClamps(t *testing.T) {
 	}
 }
 
+// pollHealthStatus polls defang-health at 127.0.0.1:port until it answers
+// (it needs a moment to start listening), returning the HTTP status code of
+// the first response it gets.
+func pollHealthStatus(t *testing.T, port int) int {
+	t.Helper()
+	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	for range 50 {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("defang-health never started listening")
+	return 0
+}
+
 // TestDefangHealthScriptHonorsStartPeriod runs the actual generated
 // defang-health script (the VM's HTTP health endpoint) against a real
 // python3, with "docker" stubbed to report the container as not running.
@@ -374,31 +394,23 @@ func TestDefangHealthScriptHonorsStartPeriod(t *testing.T) {
 	script := renderDefangHealthScript(5, "worker", port) // 5s start_period
 	dir := t.TempDir()
 	scriptPath := dir + "/defang-health"
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	// 0600: python3 only needs to read this file, not execute it.
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
 
 	// Fake "docker" always reports the container as NOT running, so every
 	// response for the life of this test reflects the start_period logic,
 	// not real container state.
 	fakeDocker := dir + "/docker"
-	require.NoError(t, os.WriteFile(fakeDocker, []byte("#!/bin/sh\necho false\n"), 0o755))
+	//nolint:gosec // G306: must be executable to work as a PATH-resolved "docker"
+	require.NoError(t, os.WriteFile(fakeDocker, []byte("#!/bin/sh\necho false\n"), 0o700))
 
-	cmd := exec.Command("python3", scriptPath)
+	//nolint:gosec // G204: scriptPath is t.TempDir()-derived, not external input
+	cmd := exec.CommandContext(t.Context(), "python3", scriptPath)
 	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
 	require.NoError(t, cmd.Start())
 	defer func() { _ = cmd.Process.Kill() }()
 
-	get := func() int {
-		for i := 0; i < 50; i++ {
-			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
-			if err == nil {
-				defer resp.Body.Close()
-				return resp.StatusCode
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		t.Fatal("defang-health never started listening")
-		return 0
-	}
+	get := func() int { return pollHealthStatus(t, port) }
 
 	assert.Equal(t, 200, get(), "unhealthy container during start_period must not fail the probe")
 	time.Sleep(6 * time.Second) // past the 5s start_period
@@ -423,7 +435,8 @@ func TestDefangHealthScriptResetsGraceOnContainerRestart(t *testing.T) {
 	script := renderDefangHealthScript(startPeriod, "worker", port)
 	dir := t.TempDir()
 	scriptPath := dir + "/defang-health"
-	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	// 0600: python3 only needs to read this file, not execute it.
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
 
 	// statePath holds "<running>\n<startedAt>\n", mirroring the two fields
 	// defang-health actually reads off `docker inspect`. Its absence
@@ -431,38 +444,29 @@ func TestDefangHealthScriptResetsGraceOnContainerRestart(t *testing.T) {
 	// exist yet (still pulling the image, before the first `docker run`).
 	statePath := dir + "/state"
 	fakeDocker := dir + "/docker"
+	//nolint:gosec // G306: must be executable to work as a PATH-resolved "docker"
 	require.NoError(t, os.WriteFile(fakeDocker, []byte(`#!/bin/sh
 state="`+statePath+`"
 [ -f "$state" ] || exit 1
 running=$(sed -n 1p "$state")
 started=$(sed -n 2p "$state")
 printf '%s|%s\n' "$running" "$started"
-`), 0o755))
+`), 0o700))
 
-	cmd := exec.Command("python3", scriptPath)
+	//nolint:gosec // G204: scriptPath is t.TempDir()-derived, not external input
+	cmd := exec.CommandContext(t.Context(), "python3", scriptPath)
 	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
 	require.NoError(t, cmd.Start())
 	defer func() { _ = cmd.Process.Kill() }()
 
-	get := func() int {
-		for i := 0; i < 50; i++ {
-			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
-			if err == nil {
-				defer resp.Body.Close()
-				return resp.StatusCode
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		t.Fatal("defang-health never started listening")
-		return 0
-	}
+	get := func() int { return pollHealthStatus(t, port) }
 	setState := func(running bool, startedAt time.Time) {
 		runningStr := "false"
 		if running {
 			runningStr = "true"
 		}
 		content := runningStr + "\n" + startedAt.UTC().Format("2006-01-02T15:04:05Z") + "\n"
-		require.NoError(t, os.WriteFile(statePath, []byte(content), 0o644))
+		require.NoError(t, os.WriteFile(statePath, []byte(content), 0o600))
 	}
 
 	// Phase 1: container doesn't exist yet at all -- falls back to this
@@ -487,7 +491,8 @@ printf '%s|%s\n' "$running" "$started"
 	// reporting Running -- grace must reset for the new start, even though
 	// the health endpoint itself has been up this whole time.
 	setState(false, time.Now())
-	assert.Equal(t, 200, get(), "a container restart must reset the grace window, not reuse the health endpoint's own uptime")
+	assert.Equal(t, 200, get(),
+		"a container restart must reset the grace window, not reuse the health endpoint's own uptime")
 }
 
 // TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR

@@ -646,7 +646,10 @@ func TestCreateMIGAutoHealingHonorsStartPeriod(t *testing.T) {
 		healthCheck *compose.HealthCheckConfig
 		want        int
 	}{
-		{name: "no healthcheck keeps the longstanding default", healthCheck: nil, want: defaultMIGAutoHealingInitialDelaySeconds},
+		{
+			name: "no healthcheck keeps the longstanding default", healthCheck: nil,
+			want: defaultMIGAutoHealingInitialDelaySeconds,
+		},
 		{
 			name:        "start_period extends the VM-boot allowance",
 			healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 45},
