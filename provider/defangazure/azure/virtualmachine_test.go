@@ -4,11 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/compute/v3"
@@ -321,44 +324,21 @@ func TestVirtualMachineUpgradePolicyFollowsMinHealthyPercent(t *testing.T) {
 	}
 }
 
-// TestVMHealthProbeScheduleHonorsStartPeriod reproduces a DefangLabs/station
-// production incident (2026-10-22): this load balancer probe has no
-// InitialDelaySeconds, so a start_period a compose author declares did
-// nothing at all before this -- a new VMSS instance that was merely slow,
-// not broken, could still abort a rolling upgrade because the probe gave it
-// zero startup grace.
-func TestVMHealthProbeScheduleHonorsStartPeriod(t *testing.T) {
+// TestVMHealthStartPeriodSecondsClamps covers vmHealthStartPeriodSeconds in
+// isolation: no healthcheck, a declared start_period, and a pathological
+// value past the provider's ceiling.
+func TestVMHealthStartPeriodSecondsClamps(t *testing.T) {
 	tests := []struct {
-		name               string
-		healthCheck        *compose.HealthCheckConfig
-		wantInterval       int
-		wantNumberOfProbes int
+		name        string
+		healthCheck *compose.HealthCheckConfig
+		want        int
 	}{
+		{name: "no healthcheck means no grace", healthCheck: nil, want: 0},
+		{name: "start_period is used directly", healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 60}, want: 60},
 		{
-			name:               "no healthcheck keeps prior default behavior",
-			healthCheck:        nil,
-			wantInterval:       defaultVMProbeIntervalSeconds,
-			wantNumberOfProbes: defaultVMProbeThreshold,
-		},
-		{
-			name:               "start_period alone widens the threshold at the default interval",
-			healthCheck:        &compose.HealthCheckConfig{StartPeriodSeconds: 60},
-			wantInterval:       defaultVMProbeIntervalSeconds,
-			wantNumberOfProbes: 9, // ceil((60 + 3*10) / 10)
-		},
-		{
-			name: "interval and retries both override the defaults",
-			healthCheck: &compose.HealthCheckConfig{
-				StartPeriodSeconds: 30, IntervalSeconds: 5, Retries: 2,
-			},
-			wantInterval:       5,
-			wantNumberOfProbes: 8, // ceil((30 + 2*5) / 5)
-		},
-		{
-			name:               "a pathological start_period is clamped, not left unbounded",
-			healthCheck:        &compose.HealthCheckConfig{StartPeriodSeconds: 100000},
-			wantInterval:       defaultVMProbeIntervalSeconds,
-			wantNumberOfProbes: maxVMProbeThreshold,
+			name:        "a pathological start_period is clamped, not left unbounded",
+			healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 100000},
+			want:        maxVMHealthStartPeriodSeconds,
 		},
 	}
 
@@ -366,14 +346,63 @@ func TestVMHealthProbeScheduleHonorsStartPeriod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				svc := compose.ServiceConfig{HealthCheck: tt.healthCheck}
-				interval, numberOfProbes := vmHealthProbeSchedule(ctx, "worker", svc)
-				assert.Equal(t, tt.wantInterval, interval)
-				assert.Equal(t, tt.wantNumberOfProbes, numberOfProbes)
+				assert.Equal(t, tt.want, vmHealthStartPeriodSeconds(ctx, "worker", svc))
 				return nil
 			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestDefangHealthScriptHonorsStartPeriod runs the actual generated
+// defang-health script (the VM's HTTP health endpoint) against a real
+// python3, with "docker" stubbed to report the container as not running.
+//
+// Reproduces a DefangLabs/station production incident (2026-10-22): Azure's
+// load balancer HTTP probe marks an instance up or down on the very first
+// explicit response it gets, regardless of the probe's configured threshold
+// (confirmed against Microsoft's own docs during PR review) — so a
+// start_period a compose author declares has to change what this script
+// reports, not the probe's settings, or a new VMSS instance that's merely
+// slow, not broken, can still abort a rolling upgrade.
+func TestDefangHealthScriptHonorsStartPeriod(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+
+	const port = 18123
+	script := renderDefangHealthScript(5, "worker", port) // 5s start_period
+	dir := t.TempDir()
+	scriptPath := dir + "/defang-health"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+
+	// Fake "docker" always reports the container as NOT running, so every
+	// response for the life of this test reflects the start_period logic,
+	// not real container state.
+	fakeDocker := dir + "/docker"
+	require.NoError(t, os.WriteFile(fakeDocker, []byte("#!/bin/sh\necho false\n"), 0o755))
+
+	cmd := exec.Command("python3", scriptPath)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+	require.NoError(t, cmd.Start())
+	defer func() { _ = cmd.Process.Kill() }()
+
+	get := func() int {
+		for i := 0; i < 50; i++ {
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+			if err == nil {
+				defer resp.Body.Close()
+				return resp.StatusCode
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatal("defang-health never started listening")
+		return 0
+	}
+
+	assert.Equal(t, 200, get(), "unhealthy container during start_period must not fail the probe")
+	time.Sleep(6 * time.Second) // past the 5s start_period
+	assert.Equal(t, 503, get(), "unhealthy container past start_period must fail the probe")
 }
 
 // TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR

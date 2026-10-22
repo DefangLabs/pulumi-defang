@@ -22,17 +22,13 @@ const (
 	azureProtocolTCP = "Tcp"
 	azureProtocolUDP = "Udp"
 
-	// defaultVMProbeIntervalSeconds and defaultVMProbeThreshold are this load
-	// balancer probe's behavior when a service declares no healthcheck at
-	// all — unchanged from before start_period support existed.
-	defaultVMProbeIntervalSeconds = 10
-	defaultVMProbeThreshold       = 3
-	// maxVMProbeThreshold bounds how large a start_period can push
-	// NumberOfProbes. Azure's load balancer probe itself allows a far wider
-	// range; this just keeps a pathological compose value from asking for
-	// something absurd (an hour of startup grace at the default interval is
-	// already generous).
-	maxVMProbeThreshold = 360
+	// maxVMHealthStartPeriodSeconds bounds how large a declared start_period
+	// can be. There's no platform ceiling to respect here (unlike GCP's
+	// documented 3600s for initialDelaySec) since this is just a grace
+	// window the health script measures against its own clock; the cap is
+	// purely to keep a pathological compose value from being accepted
+	// as-is (an hour is already generous).
+	maxVMHealthStartPeriodSeconds = 3600
 )
 
 var (
@@ -123,51 +119,32 @@ func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyAr
 	}
 }
 
-// vmHealthProbeSchedule derives the load balancer health probe's interval and
-// unhealthy-instance threshold from the compose service's healthcheck, so a
-// declared start_period actually buys a new instance that much grace before
-// a VMSS rolling upgrade can decide it's unhealthy (see virtualMachineUpgradePolicy's
-// MaxUnhealthyUpgradedInstancePercent: 0 above, which has none of its own).
+// vmHealthStartPeriodSeconds derives the health script's startup grace
+// window (see the defang-health systemd unit built in virtualMachineCloudInit)
+// from the compose service's healthcheck.start_period.
 //
-// Unlike Azure Container Apps' probe (buildProbes in containerapp.go), this
-// load balancer probe has no InitialDelaySeconds field at all — the probe
-// starts the instant the instance joins the backend pool. So the only way to
-// express "ignore failures for the first N seconds" here is to make reaching
-// the failure threshold itself take at least that long:
-// NumberOfProbes * IntervalInSeconds >= start_period + retries*interval.
-//
-// With no compose healthcheck at all, this returns the (10, 3) this probe
-// always used before start_period support existed.
-func vmHealthProbeSchedule(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig) (intervalSeconds, numberOfProbes int) {
-	intervalSeconds = defaultVMProbeIntervalSeconds
-	numberOfProbes = defaultVMProbeThreshold
-	if svc.HealthCheck == nil {
-		return intervalSeconds, numberOfProbes
+// This can't live in the load balancer probe's config at all: unlike Azure
+// Container Apps' probe (buildProbes in containerapp.go), this LB probe has
+// no InitialDelaySeconds field, and per Azure's own documented behavior
+// (learn.microsoft.com/azure/load-balancer/load-balancer-custom-probe-overview,
+// "Probe threshold"), an HTTP probe's explicit 200/non-200 response
+// immediately marks the backend up or down, bypassing NumberOfProbes
+// entirely — the threshold only applies when the probe times out with no
+// response at all. defang-health always answers (200 or 503), so widening
+// NumberOfProbes buys nothing. The grace has to live in what the health
+// script itself reports instead.
+func vmHealthStartPeriodSeconds(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig) int {
+	if svc.HealthCheck == nil || svc.HealthCheck.StartPeriodSeconds <= 0 {
+		return 0
 	}
-	if svc.HealthCheck.IntervalSeconds > 0 {
-		intervalSeconds = int(svc.HealthCheck.IntervalSeconds)
-	}
-	retries := defaultVMProbeThreshold
-	if svc.HealthCheck.Retries > 0 {
-		retries = int(svc.HealthCheck.Retries)
-	}
-	// Total startup budget the author asked for: start_period of grace, plus
-	// `retries` more failing checks spaced `interval` apart before giving up.
-	wantSeconds := int(svc.HealthCheck.StartPeriodSeconds) + retries*intervalSeconds
-	threshold := (wantSeconds + intervalSeconds - 1) / intervalSeconds // round up
-	if threshold < 1 {
-		threshold = 1
-	}
-	if threshold > maxVMProbeThreshold {
+	startPeriod := int(svc.HealthCheck.StartPeriodSeconds)
+	if startPeriod > maxVMHealthStartPeriodSeconds {
 		_ = ctx.Log.Warn(fmt.Sprintf(
-			"service %q: healthcheck start_period+retries*interval (%ds) needs %d probes at a "+
-				"%ds interval, more than the %d this provider allows; clamped, which only reaches "+
-				"%ds of the requested startup budget.",
-			serviceName, wantSeconds, threshold, intervalSeconds, maxVMProbeThreshold,
-			maxVMProbeThreshold*intervalSeconds), nil)
-		threshold = maxVMProbeThreshold
+			"service %q: healthcheck start_period %ds exceeds this provider's %ds maximum; clamped.",
+			serviceName, startPeriod, maxVMHealthStartPeriodSeconds), nil)
+		startPeriod = maxVMHealthStartPeriodSeconds
 	}
-	return intervalSeconds, threshold
+	return startPeriod
 }
 
 func azureProtocol(port compose.ServicePortConfig) string {
@@ -391,6 +368,62 @@ printf '%%s' "$refresh" | docker login "$registry" --username 00000000-0000-0000
 `, shellQuote(registry), shellQuote(identityID))
 }
 
+// renderDefangHealthScript is the VM's HTTP health endpoint (the defang-health
+// systemd unit's ExecStart): a tiny Python server that reports whether the
+// service container is running, for the load balancer's health probe.
+//
+// It's a plain function (no Pulumi Outputs) for the same reason as
+// renderAcrLoginScript: it's never evaluated by Pulumi, only by Python
+// inside the VM, so a bug here never surfaces as a Pulumi error — only as a
+// rolling upgrade that mysteriously can't tell a healthy instance from a
+// broken one.
+//
+// startPeriodSeconds implements compose's healthcheck.start_period here,
+// not in the load balancer probe's own settings, because that's the only
+// place it can live: Azure's HTTP probe marks an instance up or down on the
+// very first explicit response it gets, regardless of the probe's
+// configured threshold (learn.microsoft.com/azure/load-balancer/
+// load-balancer-custom-probe-overview, "Probe threshold" — the threshold
+// only applies when the probe times out with no response at all, and this
+// script always responds). 0 preserves this endpoint's behavior from before
+// start_period support existed: report real container state immediately.
+func renderDefangHealthScript(startPeriodSeconds int, containerName string, port int) string {
+	return fmt.Sprintf(`#!/usr/bin/python3
+import http.server
+import subprocess
+import time
+
+START = time.monotonic()
+START_PERIOD = %d
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        result = subprocess.run(
+            ["docker", "inspect", "--format={{.State.Running}}", %s],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        healthy = result.returncode == 0 and result.stdout.strip() == "true"
+        # Never report "down" while still inside the startup grace period,
+        # same as Compose's own start_period: failures don't count yet. A
+        # real success is still reported immediately, rather than waiting
+        # out the grace period blindly.
+        if not healthy and time.monotonic() - START < START_PERIOD:
+            healthy = True
+        body = b"OK" if healthy else b"FAIL"
+        self.send_response(200 if healthy else 503)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
+
+http.server.ThreadingHTTPServer(("0.0.0.0", %d), Handler).serve_forever()
+`, startPeriodSeconds, strconv.Quote(containerName), port)
+}
+
 //nolint:funlen // the cloud-init document is clearer when kept as one template
 func virtualMachineCloudInit(
 	serviceName string,
@@ -399,6 +432,7 @@ func virtualMachineCloudInit(
 	infra *SharedInfra,
 	policyIdentity *PolicyIdentity,
 	envPlan vmEnvironmentPlan,
+	startPeriodSeconds int,
 ) pulumi.StringOutput {
 	containerName := svc.GetContainerName(serviceName)
 	dockerFlags, command := vmDockerFlags(svc)
@@ -440,29 +474,7 @@ write_files:
   - path: /usr/local/sbin/defang-health
     permissions: "0755"
     content: |
-      #!/usr/bin/python3
-      import http.server
-      import subprocess
-
-      class Handler(http.server.BaseHTTPRequestHandler):
-          def do_GET(self):
-              result = subprocess.run(
-                  ["docker", "inspect", "--format={{.State.Running}}", %s],
-                  capture_output=True,
-                  check=False,
-                  text=True,
-              )
-              healthy = result.returncode == 0 and result.stdout.strip() == "true"
-              body = b"OK" if healthy else b"FAIL"
-              self.send_response(200 if healthy else 503)
-              self.send_header("Content-Length", str(len(body)))
-              self.end_headers()
-              self.wfile.write(body)
-
-          def log_message(self, format, *args):
-              return
-
-      http.server.ThreadingHTTPServer(("0.0.0.0", %d), Handler).serve_forever()
+%s
   - path: /etc/systemd/system/defang-health.service
     permissions: "0644"
     content: |
@@ -520,8 +532,7 @@ runcmd:
 			template,
 			values[0].(string),
 			indent(values[1].(string)),
-			strconv.Quote(containerName),
-			vmHealthPort,
+			indent(renderDefangHealthScript(startPeriodSeconds, containerName, vmHealthPort)),
 			serviceName,
 			serviceName,
 			secretExecPre,
@@ -655,7 +666,7 @@ func CreateVirtualMachineService(
 		return nil, fmt.Errorf("creating network security group for %s: %w", serviceName, err)
 	}
 
-	probeIntervalSeconds, probeThreshold := vmHealthProbeSchedule(ctx, serviceName, svc)
+	startPeriodSeconds := vmHealthStartPeriodSeconds(ctx, serviceName, svc)
 
 	lb, err := network.NewLoadBalancer(ctx, serviceName, &network.LoadBalancerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
@@ -681,8 +692,8 @@ func CreateVirtualMachineService(
 				Protocol:          pulumi.String("Http"),
 				Port:              pulumi.Int(vmHealthPort),
 				RequestPath:       pulumi.StringPtr("/"),
-				IntervalInSeconds: pulumi.IntPtr(probeIntervalSeconds),
-				NumberOfProbes:    pulumi.IntPtr(probeThreshold),
+				IntervalInSeconds: pulumi.IntPtr(10),
+				NumberOfProbes:    pulumi.IntPtr(3),
 			},
 		},
 		LoadBalancingRules: loadBalancingRules,
@@ -709,7 +720,7 @@ func CreateVirtualMachineService(
 		return nil, fmt.Errorf("creating VM credential for %s: %w", serviceName, err)
 	}
 
-	cloudInit := virtualMachineCloudInit(serviceName, image, svc, infra, policyIdentity, envPlan)
+	cloudInit := virtualMachineCloudInit(serviceName, image, svc, infra, policyIdentity, envPlan, startPeriodSeconds)
 	customData := cloudInit.ApplyT(func(value string) string {
 		return base64.StdEncoding.EncodeToString([]byte(value))
 	}).(pulumi.StringOutput)

@@ -634,7 +634,10 @@ func TestCreateMIGAutoHealingFirewallSharesHealthCheckName(t *testing.T) {
 
 // TestCreateMIGAutoHealingHonorsStartPeriod covers the three
 // svcHealthCheck.StartPeriodSeconds cases: absent (keep the longstanding
-// 300s default), present (use it), and a value past GCP's documented
+// 300s default), present (extends, not replaces, the 300s VM-boot
+// allowance — GCP's initialDelaySec grace starts at VM creation, before the
+// container necessarily starts, while compose's start_period describes
+// grace after the container starts), and a value past GCP's documented
 // initialDelaySec ceiling (clamp rather than send an invalid request).
 func TestCreateMIGAutoHealingHonorsStartPeriod(t *testing.T) {
 	port := 6379
@@ -644,7 +647,11 @@ func TestCreateMIGAutoHealingHonorsStartPeriod(t *testing.T) {
 		want        int
 	}{
 		{name: "no healthcheck keeps the longstanding default", healthCheck: nil, want: defaultMIGAutoHealingInitialDelaySeconds},
-		{name: "start_period is used directly", healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 45}, want: 45},
+		{
+			name:        "start_period extends the VM-boot allowance",
+			healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 45},
+			want:        defaultMIGAutoHealingInitialDelaySeconds + 45,
+		},
 		{
 			name:        "a start_period past GCP's ceiling is clamped",
 			healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 100000},
