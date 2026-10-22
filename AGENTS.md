@@ -108,6 +108,36 @@ and composed env values. `containerAppSecretName` hashes the original key
 (not its secret value) to produce a bounded, valid name without collapsing
 case or punctuation differences.
 
+## Avoid hidden variables
+
+When a provider needs a numeric default that isn't declared anywhere in the
+compose spec (a grace period, an interval, a threshold), don't invent a
+cloud-specific constant to paper over it. Instead:
+
+- use the value the compose spec declares, as-is, clamped only to the cloud
+  API's own documented limits; or
+- hardcode the same value for every cloud that implements the feature; or
+- derive it from a recipe.
+
+A default that differs by cloud and traces back to "that's what this cloud
+already did before this feature existed" is a hidden variable: it isn't
+documented in the compose spec or the generated SDK, so the same
+`compose.yaml` behaves differently depending on which cloud it lands on, and
+whoever is debugging the difference has no way to find where the number
+came from short of reading provider source.
+
+This came up on PR #723 (`healthcheck.start_period` on GCP's Compute Engine
+MIG autohealing): the initial implementation kept GCP's pre-existing
+300-second VM-boot allowance and added `start_period` on top of it, while
+Azure VM/VMSS (which never had that allowance) got `start_period` with no
+baseline — a reasonable-sounding "preserve each cloud's prior behavior"
+argument that was still two different answers to the same question. Fixed
+by dropping GCP's baseline rather than adding one to Azure:
+`initialDelaySec` is now exactly the declared `start_period` (0 when
+absent), clamped to GCP's documented ceiling — the same pattern AWS ECS's
+`buildHealthCheck` already used (clamp `start_period` to ECS's own
+`[0, 300]` limit, nothing added on top).
+
 ## Architecture
 
 ### Provider Pattern
@@ -151,6 +181,33 @@ Untagged fields are ignored by the Pulumi infer framework (`introspect.ParseTag`
 `compose.ServiceConfig` carries a growing set of compose-shaped fields — `containerName`, `workingDir`, `stopGracePeriod`, `volumes`, `volumesFrom`, `dependsOn`, `autoscaling`, per-port `listener` — plus the standalone-Service extras `sidecars`, `secrets`, `taskRoleArn` / `serviceAccountEmail`, `securityGroupIds`, `triggers`, `waitForSteadyState`. AWS `ServiceInputs` and GCP `ServiceInputs` expose these; the underlying workers (`CreateECSService`, `CreateComputeEngine`) implement them.
 
 **Azure is intentionally behind on parity.** `provider/defangazure/service.go` `ServiceInputs` does *not* expose these fields yet, and the Container Apps worker does not honor them. Rationale: no current Defang customer stack drives the Azure Service standalone path with these features, so the added surface area (multi-container Container App revisions, Managed Identity reuse, Container Apps native secret refs, etc.) is deferred until there is a concrete consumer. **TODO(azure-parity)** — when adding this, mirror the AWS/GCP inputs 1:1 for schema stability, and follow the same design as GCP for sidecars (a `sidecars: map[string]ServiceConfig` alongside the main container). Keep any implementation-gap surface behind explicit `unsupported on Azure` errors rather than silent no-ops.
+
+### Adding a feature: all providers together, one PR
+
+When a compose-shape feature gets real runtime support in one provider —
+not a schema field already deferred under the Azure-parity TODO above, but
+something that actually changes deployed behavior, e.g. a healthcheck field
+reaching a resource's config — implement it for AWS, Azure, *and* GCP in the
+same PR, not provider-by-provider over time. A feature that reaches one
+cloud and not the others silently splits behavior: the same `compose.yaml`
+deploys differently depending on which cloud a project happens to be on,
+and the gap is easy to miss because nothing fails — the unimplemented
+provider just keeps doing whatever it already did.
+
+Concretely: before merging a PR that wires a compose field into
+`provider/defangaws/aws/...`, grep the equivalent code path in
+`defangazure/azure/...` and `defanggcp/gcp/...`, and either implement it
+there too or, if a provider genuinely can't or shouldn't support it yet,
+leave an explicit `unsupported on <provider>` error or a TODO comment
+explaining why — not silence.
+
+(`healthcheck.start_period` is the case that prompted this rule: AWS ECS and
+Azure Container Apps already read it, but Azure's own VM/VMSS path and
+GCP's Compute Engine MIG path — both used for VM-backed services like UDP
+listeners — ignored it entirely. Each one's health probe started enforcing
+failures from the moment an instance booted, with no declared grace period,
+which aborted an Azure VMSS rolling upgrade in production over a
+slow-but-otherwise-healthy new instance: DefangLabs/station, 2026-10-22.)
 
 ### Pulumi inputs and outputs
 

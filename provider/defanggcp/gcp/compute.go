@@ -105,7 +105,8 @@ func CreateComputeEngine(
 	}
 
 	autoHealing, err := createMIGAutoHealing(
-		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, networkID(gcpConfig), parentOpt)
+		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, networkID(gcpConfig),
+		svc.HealthCheck, parentOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -322,16 +323,34 @@ func createInstanceTemplate(
 	return tmpl, nil
 }
 
+// maxMIGAutoHealingInitialDelaySeconds is GCP's documented ceiling for
+// autoHealingPolicies.initialDelaySec.
+const maxMIGAutoHealingInitialDelaySeconds = 3600
+
 func createMIGAutoHealing(
 	ctx *pulumi.Context,
 	serviceName, instanceTag string,
 	healthCheckPort *int,
 	addSidecar bool,
 	network pulumi.StringInput,
+	svcHealthCheck *compose.HealthCheckConfig,
 	opts ...pulumi.ResourceOption,
 ) (compute.RegionInstanceGroupManagerAutoHealingPoliciesPtrInput, error) {
 	if healthCheckPort == nil {
 		return nil, nil //nolint:nilnil
+	}
+
+	initialDelaySec := 0
+	if svcHealthCheck != nil && svcHealthCheck.StartPeriodSeconds > 0 {
+		initialDelaySec = int(svcHealthCheck.StartPeriodSeconds)
+		if initialDelaySec > maxMIGAutoHealingInitialDelaySeconds {
+			_ = ctx.Log.Warn(fmt.Sprintf(
+				"service %q: healthcheck start_period %ds exceeds GCP's %ds maximum for "+
+					"autohealing initialDelaySec; clamped.",
+				serviceName, int(svcHealthCheck.StartPeriodSeconds),
+				maxMIGAutoHealingInitialDelaySeconds), nil)
+			initialDelaySec = maxMIGAutoHealingInitialDelaySeconds
+		}
 	}
 
 	// No "-mig-hc" suffix: the type tokens (HealthCheck, Firewall) already say
@@ -384,7 +403,7 @@ func createMIGAutoHealing(
 
 	return compute.RegionInstanceGroupManagerAutoHealingPoliciesArgs{
 		HealthCheck:     healthCheck.SelfLink,
-		InitialDelaySec: pulumi.Int(300),
+		InitialDelaySec: pulumi.Int(initialDelaySec),
 	}, nil
 }
 

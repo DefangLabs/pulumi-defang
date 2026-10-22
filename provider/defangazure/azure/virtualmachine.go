@@ -21,6 +21,14 @@ const (
 	vmSizeB2s        = "Standard_B2s"
 	azureProtocolTCP = "Tcp"
 	azureProtocolUDP = "Udp"
+
+	// maxVMHealthStartPeriodSeconds bounds how large a declared start_period
+	// can be. There's no platform ceiling to respect here (unlike GCP's
+	// documented 3600s for initialDelaySec) since this is just a grace
+	// window the health script measures against its own clock; the cap is
+	// purely to keep a pathological compose value from being accepted
+	// as-is (an hour is already generous).
+	maxVMHealthStartPeriodSeconds = 3600
 )
 
 var (
@@ -109,6 +117,34 @@ func virtualMachineUpgradePolicy(minHealthyPercent int) *compute.UpgradePolicyAr
 			RollbackFailedInstancesOnPolicyBreach: pulumi.BoolPtr(false),
 		},
 	}
+}
+
+// vmHealthStartPeriodSeconds derives the health script's startup grace
+// window (see the defang-health systemd unit built in virtualMachineCloudInit)
+// from the compose service's healthcheck.start_period.
+//
+// This can't live in the load balancer probe's config at all: unlike Azure
+// Container Apps' probe (buildProbes in containerapp.go), this LB probe has
+// no InitialDelaySeconds field, and per Azure's own documented behavior
+// (learn.microsoft.com/azure/load-balancer/load-balancer-custom-probe-overview,
+// "Probe threshold"), an HTTP probe's explicit 200/non-200 response
+// immediately marks the backend up or down, bypassing NumberOfProbes
+// entirely — the threshold only applies when the probe times out with no
+// response at all. defang-health always answers (200 or 503), so widening
+// NumberOfProbes buys nothing. The grace has to live in what the health
+// script itself reports instead.
+func vmHealthStartPeriodSeconds(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig) int {
+	if svc.HealthCheck == nil || svc.HealthCheck.StartPeriodSeconds <= 0 {
+		return 0
+	}
+	startPeriod := int(svc.HealthCheck.StartPeriodSeconds)
+	if startPeriod > maxVMHealthStartPeriodSeconds {
+		_ = ctx.Log.Warn(fmt.Sprintf(
+			"service %q: healthcheck start_period %ds exceeds this provider's %ds maximum; clamped.",
+			serviceName, startPeriod, maxVMHealthStartPeriodSeconds), nil)
+		startPeriod = maxVMHealthStartPeriodSeconds
+	}
+	return startPeriod
 }
 
 func azureProtocol(port compose.ServicePortConfig) string {
@@ -332,6 +368,94 @@ printf '%%s' "$refresh" | docker login "$registry" --username 00000000-0000-0000
 `, shellQuote(registry), shellQuote(identityID))
 }
 
+// renderDefangHealthScript is the VM's HTTP health endpoint (the defang-health
+// systemd unit's ExecStart): a tiny Python server that reports whether the
+// service container is running, for the load balancer's health probe.
+//
+// It's a plain function (no Pulumi Outputs) for the same reason as
+// renderAcrLoginScript: it's never evaluated by Pulumi, only by Python
+// inside the VM, so a bug here never surfaces as a Pulumi error — only as a
+// rolling upgrade that mysteriously can't tell a healthy instance from a
+// broken one.
+//
+// startPeriodSeconds implements compose's healthcheck.start_period here,
+// not in the load balancer probe's own settings, because that's the only
+// place it can live: Azure's HTTP probe marks an instance up or down on the
+// very first explicit response it gets, regardless of the probe's
+// configured threshold (learn.microsoft.com/azure/load-balancer/
+// load-balancer-custom-probe-overview, "Probe threshold" — the threshold
+// only applies when the probe times out with no response at all, and this
+// script always responds). 0 preserves this endpoint's behavior from before
+// start_period support existed: report real container state immediately.
+//
+// The grace window is measured from the CONTAINER's own start time
+// (docker inspect's State.StartedAt), not from when this script itself
+// started: ExecStart=always restarts the container independently of this
+// systemd unit, and a restart after a crash deserves its own start_period,
+// not zero grace because the health endpoint has been up a while. When the
+// container doesn't exist yet at all (still pulling the image, before the
+// first `docker run`), there's no StartedAt to read yet — fall back to this
+// process's own uptime so a container that never gets created still
+// eventually reports unhealthy, rather than reporting OK forever.
+func renderDefangHealthScript(startPeriodSeconds int, containerName string, port int) string {
+	return fmt.Sprintf(`#!/usr/bin/python3
+import http.server
+import subprocess
+import time
+from datetime import datetime, timezone
+
+PROCESS_START = time.monotonic()
+START_PERIOD = %d
+CONTAINER = %s
+
+def container_state():
+    result = subprocess.run(
+        ["docker", "inspect", "--format={{.State.Running}}|{{.State.StartedAt}}", CONTAINER],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False, None
+    parts = result.stdout.strip().split("|", 1)
+    running = len(parts) == 2 and parts[0] == "true"
+    started_at = parts[1] if len(parts) == 2 else ""
+    try:
+        # Docker's StartedAt is RFC3339Nano (e.g. "...123456789Z"). Drop the
+        # fractional seconds and "Z" rather than depend on a Python
+        # version's ISO-8601 leniency -- whole-second precision is all
+        # start_period needs.
+        started = datetime.strptime(
+            started_at.split(".")[0].split("Z")[0], "%%Y-%%m-%%dT%%H:%%M:%%S"
+        ).replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - started).total_seconds()
+    except ValueError:
+        age = None
+    return running, age
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        running, age = container_state()
+        if age is None:
+            age = time.monotonic() - PROCESS_START
+        # Never report "down" while still inside the startup grace period
+        # for whichever start this is, same as Compose's own start_period:
+        # failures don't count yet. A real success is still reported
+        # immediately, rather than waiting out the grace period blindly.
+        healthy = running or age < START_PERIOD
+        body = b"OK" if healthy else b"FAIL"
+        self.send_response(200 if healthy else 503)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
+
+http.server.ThreadingHTTPServer(("0.0.0.0", %d), Handler).serve_forever()
+`, startPeriodSeconds, strconv.Quote(containerName), port)
+}
+
 //nolint:funlen // the cloud-init document is clearer when kept as one template
 func virtualMachineCloudInit(
 	serviceName string,
@@ -340,6 +464,7 @@ func virtualMachineCloudInit(
 	infra *SharedInfra,
 	policyIdentity *PolicyIdentity,
 	envPlan vmEnvironmentPlan,
+	startPeriodSeconds int,
 ) pulumi.StringOutput {
 	containerName := svc.GetContainerName(serviceName)
 	dockerFlags, command := vmDockerFlags(svc)
@@ -381,29 +506,7 @@ write_files:
   - path: /usr/local/sbin/defang-health
     permissions: "0755"
     content: |
-      #!/usr/bin/python3
-      import http.server
-      import subprocess
-
-      class Handler(http.server.BaseHTTPRequestHandler):
-          def do_GET(self):
-              result = subprocess.run(
-                  ["docker", "inspect", "--format={{.State.Running}}", %s],
-                  capture_output=True,
-                  check=False,
-                  text=True,
-              )
-              healthy = result.returncode == 0 and result.stdout.strip() == "true"
-              body = b"OK" if healthy else b"FAIL"
-              self.send_response(200 if healthy else 503)
-              self.send_header("Content-Length", str(len(body)))
-              self.end_headers()
-              self.wfile.write(body)
-
-          def log_message(self, format, *args):
-              return
-
-      http.server.ThreadingHTTPServer(("0.0.0.0", %d), Handler).serve_forever()
+%s
   - path: /etc/systemd/system/defang-health.service
     permissions: "0644"
     content: |
@@ -461,8 +564,7 @@ runcmd:
 			template,
 			values[0].(string),
 			indent(values[1].(string)),
-			strconv.Quote(containerName),
-			vmHealthPort,
+			indent(renderDefangHealthScript(startPeriodSeconds, containerName, vmHealthPort)),
 			serviceName,
 			serviceName,
 			secretExecPre,
@@ -596,6 +698,8 @@ func CreateVirtualMachineService(
 		return nil, fmt.Errorf("creating network security group for %s: %w", serviceName, err)
 	}
 
+	startPeriodSeconds := vmHealthStartPeriodSeconds(ctx, serviceName, svc)
+
 	lb, err := network.NewLoadBalancer(ctx, serviceName, &network.LoadBalancerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		LoadBalancerName:  pulumi.StringPtr(serviceName),
@@ -648,7 +752,7 @@ func CreateVirtualMachineService(
 		return nil, fmt.Errorf("creating VM credential for %s: %w", serviceName, err)
 	}
 
-	cloudInit := virtualMachineCloudInit(serviceName, image, svc, infra, policyIdentity, envPlan)
+	cloudInit := virtualMachineCloudInit(serviceName, image, svc, infra, policyIdentity, envPlan, startPeriodSeconds)
 	customData := cloudInit.ApplyT(func(value string) string {
 		return base64.StdEncoding.EncodeToString([]byte(value))
 	}).(pulumi.StringOutput)

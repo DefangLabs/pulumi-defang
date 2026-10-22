@@ -1,14 +1,18 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/compute/v3"
@@ -319,6 +323,183 @@ func TestVirtualMachineUpgradePolicyFollowsMinHealthyPercent(t *testing.T) {
 				intPtrInputValue(t, rollingPolicy.MaxUnhealthyInstancePercent))
 		})
 	}
+}
+
+// TestVMHealthStartPeriodSecondsClamps covers vmHealthStartPeriodSeconds in
+// isolation: no healthcheck, a declared start_period, and a pathological
+// value past the provider's ceiling.
+func TestVMHealthStartPeriodSecondsClamps(t *testing.T) {
+	tests := []struct {
+		name        string
+		healthCheck *compose.HealthCheckConfig
+		want        int
+	}{
+		{name: "no healthcheck means no grace", healthCheck: nil, want: 0},
+		{name: "start_period is used directly", healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 60}, want: 60},
+		{
+			name:        "a pathological start_period is clamped, not left unbounded",
+			healthCheck: &compose.HealthCheckConfig{StartPeriodSeconds: 100000},
+			want:        maxVMHealthStartPeriodSeconds,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				svc := compose.ServiceConfig{HealthCheck: tt.healthCheck}
+				assert.Equal(t, tt.want, vmHealthStartPeriodSeconds(ctx, "worker", svc))
+				return nil
+			}, pulumi.WithMocks("project", "stack", azureNoopMocks{}))
+			require.NoError(t, err)
+		})
+	}
+}
+
+// pollHealthStatus polls defang-health at 127.0.0.1:port until it answers
+// (it needs a moment to start listening), returning the HTTP status code of
+// the first response it gets.
+func pollHealthStatus(t *testing.T, port int) int {
+	t.Helper()
+	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	for range 50 {
+		// A per-request timeout, not just t.Context(): that context isn't
+		// cancelled until the whole test ends, so a connection accepted but
+		// never answered would block this one attempt for the test's full
+		// remaining timeout instead of just failing this attempt and retrying.
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		cancel()
+		if err == nil {
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("defang-health never started listening")
+	return 0
+}
+
+// TestDefangHealthScriptHonorsStartPeriod runs the actual generated
+// defang-health script (the VM's HTTP health endpoint) against a real
+// python3, with "docker" stubbed to report the container as not running.
+//
+// Reproduces a DefangLabs/station production incident (2026-10-22): Azure's
+// load balancer HTTP probe marks an instance up or down on the very first
+// explicit response it gets, regardless of the probe's configured threshold
+// (confirmed against Microsoft's own docs during PR review) — so a
+// start_period a compose author declares has to change what this script
+// reports, not the probe's settings, or a new VMSS instance that's merely
+// slow, not broken, can still abort a rolling upgrade.
+func TestDefangHealthScriptHonorsStartPeriod(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+
+	const port = 18123
+	script := renderDefangHealthScript(5, "worker", port) // 5s start_period
+	dir := t.TempDir()
+	scriptPath := dir + "/defang-health"
+	// 0600: python3 only needs to read this file, not execute it.
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+
+	// Fake "docker" always reports the container as NOT running, so every
+	// response for the life of this test reflects the start_period logic,
+	// not real container state.
+	fakeDocker := dir + "/docker"
+	//nolint:gosec // G306: must be executable to work as a PATH-resolved "docker"
+	require.NoError(t, os.WriteFile(fakeDocker, []byte("#!/bin/sh\necho false\n"), 0o700))
+
+	//nolint:gosec // G204: scriptPath is t.TempDir()-derived, not external input
+	cmd := exec.CommandContext(t.Context(), "python3", scriptPath)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+	require.NoError(t, cmd.Start())
+	defer func() { _ = cmd.Process.Kill() }()
+
+	get := func() int { return pollHealthStatus(t, port) }
+
+	assert.Equal(t, 200, get(), "unhealthy container during start_period must not fail the probe")
+	time.Sleep(6 * time.Second) // past the 5s start_period
+	assert.Equal(t, 503, get(), "unhealthy container past start_period must fail the probe")
+}
+
+// TestDefangHealthScriptResetsGraceOnContainerRestart covers the gap
+// CodeRabbit flagged in PR review on the first version of this fix: the
+// grace window has to be measured from the CONTAINER's own start time
+// (docker inspect's State.StartedAt), not from when the health endpoint
+// itself started -- Restart=always restarts the container independently of
+// this script, and a restart after a later crash deserves its own
+// start_period, not zero grace just because the health endpoint has been
+// up for a while.
+func TestDefangHealthScriptResetsGraceOnContainerRestart(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+
+	const port = 18124
+	const startPeriod = 3
+	script := renderDefangHealthScript(startPeriod, "worker", port)
+	dir := t.TempDir()
+	scriptPath := dir + "/defang-health"
+	// 0600: python3 only needs to read this file, not execute it.
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+
+	// statePath holds "<running>\n<startedAt>\n", mirroring the two fields
+	// defang-health actually reads off `docker inspect`. Its absence
+	// mirrors `docker inspect` failing outright: the container doesn't
+	// exist yet (still pulling the image, before the first `docker run`).
+	statePath := dir + "/state"
+	fakeDocker := dir + "/docker"
+	//nolint:gosec // G306: must be executable to work as a PATH-resolved "docker"
+	require.NoError(t, os.WriteFile(fakeDocker, []byte(`#!/bin/sh
+state="`+statePath+`"
+[ -f "$state" ] || exit 1
+running=$(sed -n 1p "$state")
+started=$(sed -n 2p "$state")
+printf '%s|%s\n' "$running" "$started"
+`), 0o700))
+
+	//nolint:gosec // G204: scriptPath is t.TempDir()-derived, not external input
+	cmd := exec.CommandContext(t.Context(), "python3", scriptPath)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+	require.NoError(t, cmd.Start())
+	defer func() { _ = cmd.Process.Kill() }()
+
+	get := func() int { return pollHealthStatus(t, port) }
+	setState := func(running bool, startedAt time.Time) {
+		runningStr := "false"
+		if running {
+			runningStr = "true"
+		}
+		content := runningStr + "\n" + startedAt.UTC().Format("2006-01-02T15:04:05Z") + "\n"
+		require.NoError(t, os.WriteFile(statePath, []byte(content), 0o600))
+	}
+
+	// Phase 1: container doesn't exist yet at all -- falls back to this
+	// process's own (just-started) uptime, within start_period.
+	assert.Equal(t, 200, get(), "no container yet, still within this endpoint's own startup grace")
+
+	// Phase 2: container is up and actually running -- healthy regardless
+	// of age.
+	setState(true, time.Now().Add(-1*time.Hour))
+	assert.Equal(t, 200, get(), "a genuinely running container is healthy no matter its age")
+
+	// Phase 3: container crashed, but its own StartedAt is recent -- still
+	// within ITS start_period, not the health endpoint's uptime.
+	setState(false, time.Now())
+	assert.Equal(t, 200, get(), "a crashed container within its own start_period must not fail the probe")
+
+	// Phase 4: wait past that container's start_period -- now unhealthy.
+	time.Sleep(time.Duration(startPeriod+1) * time.Second)
+	assert.Equal(t, 503, get(), "a crashed container past its own start_period must fail the probe")
+
+	// Phase 5: the container restarts (a newer StartedAt), still not yet
+	// reporting Running -- grace must reset for the new start, even though
+	// the health endpoint itself has been up this whole time.
+	setState(false, time.Now())
+	assert.Equal(t, 200, get(),
+		"a container restart must reset the grace window, not reuse the health endpoint's own uptime")
 }
 
 // TestAcrLoginScriptSurvivesUnpaddedJWTBase64 runs the actual generated ACR
