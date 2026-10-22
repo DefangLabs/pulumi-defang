@@ -323,17 +323,6 @@ func createInstanceTemplate(
 	return tmpl, nil
 }
 
-// defaultMIGAutoHealingInitialDelaySeconds is the VM-initialization
-// allowance this MIG's autohealing grace period always included, even
-// before start_period support existed: time for the instance to leave
-// GCP's VERIFYING state and pull the container image, before the container
-// itself has necessarily started. start_period, in compose, describes grace
-// *after* the container starts — so it extends this baseline rather than
-// replacing it; replacing it would shrink the VM-boot allowance for any
-// service whose declared start_period is shorter than 300s, which is a
-// regression, not a translation of what the author asked for.
-const defaultMIGAutoHealingInitialDelaySeconds = 300
-
 // maxMIGAutoHealingInitialDelaySeconds is GCP's documented ceiling for
 // autoHealingPolicies.initialDelaySec.
 const maxMIGAutoHealingInitialDelaySeconds = 3600
@@ -351,16 +340,15 @@ func createMIGAutoHealing(
 		return nil, nil //nolint:nilnil
 	}
 
-	initialDelaySec := defaultMIGAutoHealingInitialDelaySeconds
+	initialDelaySec := 0
 	if svcHealthCheck != nil && svcHealthCheck.StartPeriodSeconds > 0 {
-		initialDelaySec = defaultMIGAutoHealingInitialDelaySeconds + int(svcHealthCheck.StartPeriodSeconds)
+		initialDelaySec = int(svcHealthCheck.StartPeriodSeconds)
 		if initialDelaySec > maxMIGAutoHealingInitialDelaySeconds {
 			_ = ctx.Log.Warn(fmt.Sprintf(
-				"service %q: healthcheck start_period %ds plus this provider's %ds VM-boot "+
-					"allowance exceeds GCP's %ds maximum for autohealing initialDelaySec; clamped, "+
-					"which only reaches %ds of the requested startup budget.",
-				serviceName, int(svcHealthCheck.StartPeriodSeconds), defaultMIGAutoHealingInitialDelaySeconds,
-				maxMIGAutoHealingInitialDelaySeconds, maxMIGAutoHealingInitialDelaySeconds), nil)
+				"service %q: healthcheck start_period %ds exceeds GCP's %ds maximum for "+
+					"autohealing initialDelaySec; clamped.",
+				serviceName, int(svcHealthCheck.StartPeriodSeconds),
+				maxMIGAutoHealingInitialDelaySeconds), nil)
 			initialDelaySec = maxMIGAutoHealingInitialDelaySeconds
 		}
 	}
