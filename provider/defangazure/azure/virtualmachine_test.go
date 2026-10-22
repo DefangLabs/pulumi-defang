@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -361,9 +362,15 @@ func pollHealthStatus(t *testing.T, port int) int {
 	t.Helper()
 	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
 	for range 50 {
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+		// A per-request timeout, not just t.Context(): that context isn't
+		// cancelled until the whole test ends, so a connection accepted but
+		// never answered would block this one attempt for the test's full
+		// remaining timeout instead of just failing this attempt and retrying.
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		require.NoError(t, err)
 		resp, err := http.DefaultClient.Do(req)
+		cancel()
 		if err == nil {
 			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode
