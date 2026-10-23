@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -17,9 +16,6 @@ var (
 	ErrPostgresConfigNil       = errors.New("postgres config is nil")
 	ErrPostgresPasswordMissing = errors.New(
 		"postgres password is required for Scaleway Managed Database for PostgreSQL",
-	)
-	ErrPostgresPasswordInvalid = errors.New(
-		"postgres password must be 8-128 characters and include uppercase, lowercase, digit, and special character",
 	)
 )
 
@@ -87,31 +83,8 @@ func postgresPassword(password pulumi.StringInput) pulumi.StringPtrInput {
 		if p == "" {
 			return nil, fmt.Errorf("%w; set it with `defang config set POSTGRES_PASSWORD`", ErrPostgresPasswordMissing)
 		}
-		if !validScalewayPostgresPassword(p) {
-			return nil, ErrPostgresPasswordInvalid
-		}
 		return &p, nil
 	}).(pulumi.StringPtrOutput)
-}
-
-func validScalewayPostgresPassword(password string) bool {
-	if len(password) < 8 || len(password) > 128 {
-		return false
-	}
-	var hasUpper, hasLower, hasDigit, hasSpecial bool
-	for _, r := range password {
-		switch {
-		case unicode.IsUpper(r):
-			hasUpper = true
-		case unicode.IsLower(r):
-			hasLower = true
-		case unicode.IsDigit(r):
-			hasDigit = true
-		default:
-			hasSpecial = true
-		}
-	}
-	return hasUpper && hasLower && hasDigit && hasSpecial
 }
 
 func scalewayPostgresUsername(

@@ -284,28 +284,47 @@ func containerMaxScale(svc compose.ServiceConfig) pulumi.IntPtrInput {
 	return pulumi.IntPtr(int(svc.GetReplicas()))
 }
 
-func containerHealthChecks(svc compose.ServiceConfig) containers.ContainerHealthCheckArrayInput {
-	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 {
-		return nil
+// containerHealthProbes maps Compose health checks to native probes. A startup
+// probe permits start_period plus the normal retry window before failing; its
+// first success enables liveness checks immediately.
+func containerHealthProbes(
+	svc compose.ServiceConfig,
+) (containers.ContainerLivenessProbePtrInput, containers.ContainerStartupProbePtrInput) {
+	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 || svc.HealthCheck.Test[0] == "NONE" {
+		return nil, nil
 	}
 	retries := svc.HealthCheck.Retries
 	if retries <= 0 {
-		retries = 3 // Scaleway requires failure_threshold; default to 3
+		retries = 3
 	}
 	interval := svc.HealthCheck.IntervalSeconds
 	if interval <= 0 {
-		interval = 10 // Scaleway requires interval; default to 10s
+		interval = 10
 	}
-	check := &containers.ContainerHealthCheckArgs{
-		Https: containers.ContainerHealthCheckHttpArray{
-			&containers.ContainerHealthCheckHttpArgs{
-				Path: pulumi.String("/"),
-			},
-		},
+	timeout := svc.HealthCheck.TimeoutSeconds
+	if timeout <= 0 {
+		timeout = 5
+	}
+	path, _ := common.ParseHealthCheckPathPort(svc.HealthCheck.Test)
+	intervalValue := pulumi.String((time.Duration(interval) * time.Second).String())
+	timeoutValue := pulumi.String((time.Duration(timeout) * time.Second).String())
+	liveness := &containers.ContainerLivenessProbeArgs{
+		Http:             &containers.ContainerLivenessProbeHttpArgs{Path: pulumi.String(path)},
 		FailureThreshold: pulumi.Int(retries),
-		Interval:         pulumi.String((time.Duration(interval) * time.Second).String()),
+		Interval:         intervalValue,
+		Timeout:          timeoutValue,
 	}
-	return containers.ContainerHealthCheckArray{check}
+	if svc.HealthCheck.StartPeriodSeconds <= 0 {
+		return liveness, nil
+	}
+	startupRetries := int(retries) + int(math.Ceil(float64(svc.HealthCheck.StartPeriodSeconds)/float64(interval)))
+	startup := &containers.ContainerStartupProbeArgs{
+		Http:             &containers.ContainerStartupProbeHttpArgs{Path: pulumi.String(path)},
+		FailureThreshold: pulumi.Int(startupRetries),
+		Interval:         intervalValue,
+		Timeout:          timeoutValue,
+	}
+	return liveness, startup
 }
 
 func containerEnvironment(
@@ -432,6 +451,7 @@ func CreateContainerService(
 		}
 	}
 
+	liveness, startup := containerHealthProbes(svc)
 	args := &containers.ContainerArgs{
 		Name:                       pulumi.StringPtr(serviceName),
 		NamespaceId:                infra.Namespace.ID(),
@@ -446,7 +466,8 @@ func CreateContainerService(
 		Deploy:                     pulumi.BoolPtr(true),
 		Commands:                   commands,
 		Args:                       cmdArgs,
-		HealthChecks:               containerHealthChecks(svc),
+		LivenessProbe:              liveness,
+		StartupProbe:               startup,
 		EnvironmentVariables:       env,
 		SecretEnvironmentVariables: secrets,
 	}

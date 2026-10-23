@@ -122,9 +122,11 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 				"MODE":         ptr("prod"),
 			},
 			HealthCheck: &compose.HealthCheckConfig{
-				Test:            []string{"CMD", "curl", "-f", "http://localhost:8080/"},
-				IntervalSeconds: 5,
-				Retries:         3,
+				Test:               []string{"CMD", "curl", "-f", "http://localhost:8080/health/ready"},
+				IntervalSeconds:    5,
+				TimeoutSeconds:     2,
+				StartPeriodSeconds: 17,
+				Retries:            3,
 			},
 		}, &SharedInfra{Namespace: namespace, Region: "fr-par", Etag: "deploy-123"})
 		return err
@@ -145,11 +147,17 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 	require.True(t, secretValue.IsSecret())
 	secrets := secretValue.SecretValue().Element.ObjectValue()
 	assert.Equal(t, "secret-value", secrets[resource.PropertyKey("CONFIG_VALUE")].StringValue())
-	healthChecks := container.inputs[resource.PropertyKey("healthChecks")].ArrayValue()
-	require.Len(t, healthChecks, 1)
-	healthCheck := healthChecks[0].ObjectValue()
+	assert.NotContains(t, container.inputs, resource.PropertyKey("healthChecks"))
+	healthCheck := container.inputs[resource.PropertyKey("livenessProbe")].ObjectValue()
 	assert.InDelta(t, 3, healthCheck[resource.PropertyKey("failureThreshold")].NumberValue(), 0)
 	assert.Equal(t, "5s", healthCheck[resource.PropertyKey("interval")].StringValue())
+	assert.Equal(t, "2s", healthCheck[resource.PropertyKey("timeout")].StringValue())
+	assert.Equal(t, "/health/ready", healthCheck["http"].ObjectValue()["path"].StringValue())
+	startup := container.inputs["startupProbe"].ObjectValue()
+	assert.InDelta(t, 7, startup["failureThreshold"].NumberValue(), 0)
+	assert.Equal(t, "5s", startup["interval"].StringValue())
+	assert.Equal(t, "2s", startup["timeout"].StringValue())
+	assert.Equal(t, "/health/ready", startup["http"].ObjectValue()["path"].StringValue())
 }
 
 func TestFindManagedHostInURL(t *testing.T) {

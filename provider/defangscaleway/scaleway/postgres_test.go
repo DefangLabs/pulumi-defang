@@ -157,3 +157,21 @@ func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {
 	assert.True(t, privateNetwork[resource.PropertyKey("enableIpam")].BoolValue())
 	assert.Equal(t, "fr-par-1", privateNetwork[resource.PropertyKey("zone")].StringValue())
 }
+
+func TestPostgresPreviewUsesCommonPlaceholderWithoutCloudCalls(t *testing.T) {
+	mocks := &recordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		assert.True(t, ctx.DryRun())
+		_, err := CreatePostgres(ctx, &compose.DryRunConfigProvider{}, "db", compose.ServiceConfig{
+			Postgres:    &compose.PostgresConfig{},
+			Environment: map[string]*string{"POSTGRES_PASSWORD": nil},
+		}, nil)
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks), func(info *pulumi.RunInfo) { info.DryRun = true })
+	require.NoError(t, err)
+	instance := mocks.findType("scaleway:databases/instance:Instance")
+	require.NotNil(t, instance)
+	password := instance.inputs["passwordWo"]
+	require.True(t, password.IsSecret())
+	assert.Equal(t, "dry-run-POSTGRES_PASSWORD", password.SecretValue().Element.StringValue())
+}

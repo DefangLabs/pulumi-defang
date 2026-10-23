@@ -62,7 +62,7 @@ func (*Redis) Construct(
 
 	configProvider := compose.ConfigProvider(&compose.PulumiConfigProvider{})
 	if ctx.DryRun() {
-		configProvider = &compose.DryRunConfigProvider{PlaceholderFormat: "DryRun1!-%s"}
+		configProvider = &compose.DryRunConfigProvider{}
 	}
 	if inputs.Scaleway != nil && inputs.Scaleway.ConfigProvider != nil {
 		configProvider = inputs.Scaleway.ConfigProvider

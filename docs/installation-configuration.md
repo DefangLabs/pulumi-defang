@@ -48,6 +48,10 @@ You will also need to authenticate with your cloud provider.
 * For Google Cloud, you may wish to use the [`google-github-actions/auth`](https://github.com/google-github-actions/auth) Github Action
 * For Scaleway, set `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `SCW_ORGANIZATION_ID`, and `SCW_DEFAULT_PROJECT_ID`.
 
+### Scaleway container health checks
+
+Scaleway uses the HTTP path from the Compose health-check command, with the configured interval, timeout, and retries. A positive `start_period` adds a startup probe before liveness checks. Its failure budget covers the startup period, rounded up to whole check intervals, plus the normal retry window. A successful startup check enables liveness checks immediately. Arbitrary health-check commands are not executed inside the container.
+
 ## Using Pulumi Cloud
 
 Defang runs the Pulumi CLI in your cloud account. You can use [Pulumi Cloud](https://www.pulumi.com/product/pulumi-cloud/) to manage the Pulumi resources which Defang creates by setting the following environment variables:

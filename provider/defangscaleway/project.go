@@ -78,7 +78,7 @@ func buildProject(
 
 	configProvider := compose.ConfigProvider(&compose.PulumiConfigProvider{})
 	if ctx.DryRun() {
-		configProvider = &compose.DryRunConfigProvider{PlaceholderFormat: "DryRun1!-%s"}
+		configProvider = &compose.DryRunConfigProvider{}
 	}
 	if infra.ConfigProvider != nil {
 		configProvider = infra.ConfigProvider

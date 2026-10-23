@@ -6,7 +6,6 @@ import (
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 
-	csharpGen "github.com/pulumi/pulumi/pkg/v3/codegen/dotnet"
 	nodejsGen "github.com/pulumi/pulumi/pkg/v3/codegen/nodejs"
 	pythonGen "github.com/pulumi/pulumi/pkg/v3/codegen/python"
 )
@@ -45,8 +44,8 @@ func Provider() p.Provider {
 			License:           "Apache-2.0",
 			PluginDownloadURL: "github://api.github.com/DefangLabs/pulumi-defang",
 			LanguageMap: map[string]any{
-				"csharp": csharpGen.CSharpPackageInfo{
-					RootNamespace: "DefangLabs",
+				"csharp": map[string]any{
+					"rootNamespace": "DefangLabs",
 				},
 				"nodejs": nodejsGen.NodePackageInfo{
 					PackageName: "@defang-io/pulumi-defang-azure",
