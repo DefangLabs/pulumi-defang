@@ -3,6 +3,7 @@ package defangscaleway
 import (
 	"fmt"
 
+	"github.com/DefangLabs/defang/src/pkg/deployment"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerscaleway "github.com/DefangLabs/pulumi-defang/provider/defangscaleway/scaleway"
@@ -34,9 +35,10 @@ type ScalewayServiceInputs struct {
 // ScalewayServiceOutputs holds the outputs of a Scaleway Service component.
 type ScalewayServiceOutputs struct {
 	pulumi.ResourceState
-	Endpoint  pulumi.StringOutput `pulumi:"endpoint"`
-	Container *containers.Container
-	Domain    *containers.Domain
+	Endpoint   pulumi.StringOutput `pulumi:"endpoint"`
+	Deployment pulumi.StringOutput `pulumi:"defangDeployment"`
+	Container  *containers.Container
+	Domain     *containers.Domain
 }
 
 const ServiceComponentType = "defang-scaleway:index:Service"
@@ -108,8 +110,19 @@ func createService(
 	comp.Endpoint = result.Endpoint
 	comp.Container = result.Container
 	comp.Domain = result.Domain
+	etag := ""
+	if infra != nil {
+		etag = infra.Etag
+	}
+	healthcheckPath := ""
+	if svc.HealthCheck != nil {
+		healthcheckPath, _ = common.ParseHealthCheckPathPort(svc.HealthCheck.Test)
+	}
+	comp.Deployment = serviceDeployment(ctx, serviceName, deployment.KindContainer, etag,
+		result.Container.ID(), result.Container.Name, comp.Endpoint, healthcheckPath)
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint": result.Endpoint,
+		"endpoint":            result.Endpoint,
+		deployment.OutputName: comp.Deployment,
 	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}

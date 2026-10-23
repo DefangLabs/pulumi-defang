@@ -3,6 +3,7 @@ package defangscaleway
 import (
 	"fmt"
 
+	"github.com/DefangLabs/defang/src/pkg/deployment"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerscaleway "github.com/DefangLabs/pulumi-defang/provider/defangscaleway/scaleway"
@@ -27,6 +28,7 @@ type ProjectOutputs struct {
 
 	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
 	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
+	Deployment      pulumi.StringOutput    `pulumi:"defangDeployment"`
 }
 
 // Construct implements the ComponentResource interface for Project.
@@ -45,13 +47,20 @@ func (*Project) Construct(
 
 	comp.Endpoints = result.Endpoints
 	comp.LoadBalancerDNS = result.LoadBalancerDNS
+	comp.Deployment = result.Deployment
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoints":       result.Endpoints,
-		"loadBalancerDns": result.LoadBalancerDNS,
+		"endpoints":           result.Endpoints,
+		"loadBalancerDns":     result.LoadBalancerDNS,
+		deployment.OutputName: result.Deployment,
 	}); err != nil {
 		return nil, err
 	}
 	return comp, nil
+}
+
+type projectResult struct {
+	*common.BuildResult
+	Deployment pulumi.StringOutput
 }
 
 func buildProject(
@@ -59,7 +68,7 @@ func buildProject(
 	projectName string,
 	args ProjectInputs,
 	parentOpts ...pulumi.ResourceOption,
-) (*common.BuildResult, error) {
+) (*projectResult, error) {
 	childOpts := append([]pulumi.ResourceOption{}, parentOpts...)
 	infra, err := buildSharedInfra(ctx, projectName, childOpts...)
 	if err != nil {
@@ -77,6 +86,7 @@ func buildProject(
 
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{}
+	var serviceOutputs []any
 	for _, svcName := range common.TopologicalSort(args.Services) {
 		svc := args.Services[svcName]
 		var deps []pulumi.Resource
@@ -91,12 +101,20 @@ func buildProject(
 		}
 		endpoints[svcName] = endpoint
 		dependencies[svcName] = component
+		switch service := component.(type) {
+		case *ScalewayServiceOutputs:
+			serviceOutputs = append(serviceOutputs, service.Deployment)
+		case *ScalewayPostgresOutputs:
+			serviceOutputs = append(serviceOutputs, service.Deployment)
+		case *ScalewayRedisOutputs:
+			serviceOutputs = append(serviceOutputs, service.Deployment)
+		}
 	}
 
-	return &common.BuildResult{
+	return &projectResult{BuildResult: &common.BuildResult{
 		Endpoints:       endpoints.ToStringMapOutput(),
 		LoadBalancerDNS: pulumi.StringPtr("").ToStringPtrOutput(),
-	}, nil
+	}, Deployment: projectDeployment(ctx, args.Etag, serviceOutputs)}, nil
 }
 
 func buildSharedInfra(

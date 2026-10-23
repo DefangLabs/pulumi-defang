@@ -3,6 +3,7 @@ package defangscaleway
 import (
 	"fmt"
 
+	"github.com/DefangLabs/defang/src/pkg/deployment"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerscaleway "github.com/DefangLabs/pulumi-defang/provider/defangscaleway/scaleway"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -28,6 +29,7 @@ type ScalewayPostgresOutputs struct {
 	pulumi.ResourceState
 	Endpoint      pulumi.StringOutput `pulumi:"endpoint"`
 	ConnectionURL pulumi.StringOutput `pulumi:"connectionUrl"`
+	Deployment    pulumi.StringOutput `pulumi:"defangDeployment"`
 	Instance      *databases.Instance
 	Dependency    pulumi.Resource
 }
@@ -88,6 +90,12 @@ func createPostgres(
 	comp.ConnectionURL = result.ConnectionURL
 	comp.Instance = result.Instance
 	comp.Dependency = result.Privilege
+	etag := ""
+	if infra != nil {
+		etag = infra.Etag
+	}
+	comp.Deployment = serviceDeployment(ctx, serviceName, deployment.KindPostgres, etag,
+		result.Instance.ID(), result.Instance.Name, comp.Endpoint, "")
 
 	// Store the managed Postgres host so container services can rewrite
 	// env values like POSTGRES_HOST=database to the actual hostname.
@@ -99,8 +107,9 @@ func createPostgres(
 	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint":      comp.Endpoint,
-		"connectionUrl": comp.ConnectionURL,
+		"endpoint":            comp.Endpoint,
+		"connectionUrl":       comp.ConnectionURL,
+		deployment.OutputName: comp.Deployment,
 	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}

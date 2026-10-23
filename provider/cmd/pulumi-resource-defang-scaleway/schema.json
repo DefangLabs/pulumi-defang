@@ -358,13 +358,17 @@
         "connectionUrl": {
           "type": "string"
         },
+        "defangDeployment": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
         "endpoint",
-        "connectionUrl"
+        "connectionUrl",
+        "defangDeployment"
       ],
       "inputProperties": {
         "deploy": {
@@ -405,6 +409,9 @@
     },
     "defang-scaleway:index:Project": {
       "properties": {
+        "defangDeployment": {
+          "type": "string"
+        },
         "endpoints": {
           "type": "object",
           "additionalProperties": {
@@ -417,7 +424,8 @@
         }
       },
       "required": [
-        "endpoints"
+        "endpoints",
+        "defangDeployment"
       ],
       "inputProperties": {
         "etag": {
@@ -447,13 +455,17 @@
         "connectionUrl": {
           "type": "string"
         },
+        "defangDeployment": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
         "endpoint",
-        "connectionUrl"
+        "connectionUrl",
+        "defangDeployment"
       ],
       "inputProperties": {
         "deploy": {
@@ -487,12 +499,16 @@
     },
     "defang-scaleway:index:Service": {
       "properties": {
+        "defangDeployment": {
+          "type": "string"
+        },
         "endpoint": {
           "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "defangDeployment"
       ],
       "inputProperties": {
         "command": {

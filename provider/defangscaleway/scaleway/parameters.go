@@ -12,6 +12,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/DefangLabs/defang/src/pkg/clouds/scaleway/contract"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -47,7 +49,7 @@ func NewConfigProvider(projectName string) *ConfigProvider {
 }
 
 func (cp *ConfigProvider) getSecretPrefix(stackName string) string {
-	return fmt.Sprintf("%s_%s_%s_", cp.prefix, cp.projectName, stackName)
+	return contract.ConfigPrefix(cp.prefix, cp.projectName, stackName)
 }
 
 // GetConfigValue reads a secret from Scaleway Secret Manager by name.
@@ -56,6 +58,7 @@ func (cp *ConfigProvider) GetConfigValue(
 ) pulumi.StringOutput {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
+	cp.prefix = common.Prefix.Get(ctx)
 
 	// Bulk-fetch all secrets with the project prefix on first access
 	if !cp.fetched {

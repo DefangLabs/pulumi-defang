@@ -16,8 +16,9 @@ import (
 type Project struct {
 	pulumi.ResourceState
 
-	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
-	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
+	DefangDeployment pulumi.StringOutput    `pulumi:"defangDeployment"`
+	Endpoints        pulumi.StringMapOutput `pulumi:"endpoints"`
+	LoadBalancerDns  pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
 }
 
 // NewProject registers a new resource with the given unique name, arguments, and options.
@@ -87,6 +88,10 @@ func (o ProjectOutput) ToProjectOutput() ProjectOutput {
 
 func (o ProjectOutput) ToProjectOutputWithContext(ctx context.Context) ProjectOutput {
 	return o
+}
+
+func (o ProjectOutput) DefangDeployment() pulumi.StringOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.DefangDeployment }).(pulumi.StringOutput)
 }
 
 func (o ProjectOutput) Endpoints() pulumi.StringMapOutput {

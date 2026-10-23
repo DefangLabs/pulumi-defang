@@ -16,7 +16,8 @@ import (
 type Service struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	DefangDeployment pulumi.StringOutput `pulumi:"defangDeployment"`
+	Endpoint         pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // NewService registers a new resource with the given unique name, arguments, and options.
@@ -97,6 +98,10 @@ func (o ServiceOutput) ToServiceOutput() ServiceOutput {
 
 func (o ServiceOutput) ToServiceOutputWithContext(ctx context.Context) ServiceOutput {
 	return o
+}
+
+func (o ServiceOutput) DefangDeployment() pulumi.StringOutput {
+	return o.ApplyT(func(v *Service) pulumi.StringOutput { return v.DefangDeployment }).(pulumi.StringOutput)
 }
 
 func (o ServiceOutput) Endpoint() pulumi.StringOutput {

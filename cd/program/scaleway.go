@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/DefangLabs/defang/src/pkg/deployment"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -31,14 +32,15 @@ func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, proje
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
+	ctx.Export(deployment.OutputName, project.DefangDeployment)
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed object after the
 	// project component has converged so the CLI can read back service status.
 	if projectUpdate != nil {
 		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
 			for _, svc := range projectUpdate.Services {
-				svc.Status = "PROVISIONING"
-				svc.State = defangv1.ServiceState_DEPLOYMENT_COMPLETED
+				svc.Status = "unknown"
+				svc.State = defangv1.ServiceState_NOT_SPECIFIED
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
 					svc.Endpoints = []string{ep}
 				}

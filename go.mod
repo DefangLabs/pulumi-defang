@@ -12,7 +12,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.3.1
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
+	github.com/DefangLabs/defang/src v0.0.0-20261023002438-56bc4b69cd5d
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.14
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.74.0
@@ -39,6 +40,7 @@ require (
 	github.com/pulumi/pulumi-random/sdk/v4 v4.19.2
 	github.com/pulumi/pulumi/pkg/v3 v3.227.0
 	github.com/pulumi/pulumi/sdk/v3 v3.231.0
+	github.com/pulumiverse/pulumi-scaleway/sdk v1.48.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.274.0
 	google.golang.org/grpc v1.80.0
@@ -151,7 +153,6 @@ require (
 	github.com/pulumi/inflector v0.1.1 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
-	github.com/pulumiverse/pulumi-scaleway/sdk v1.48.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
@@ -162,14 +163,13 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/afero v1.10.0 // indirect
-	github.com/spf13/cast v1.5.0 // indirect
+	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zclconf/go-cty v1.14.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

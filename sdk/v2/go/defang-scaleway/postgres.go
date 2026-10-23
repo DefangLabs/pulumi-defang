@@ -17,8 +17,9 @@ import (
 type Postgres struct {
 	pulumi.ResourceState
 
-	ConnectionUrl pulumi.StringOutput `pulumi:"connectionUrl"`
-	Endpoint      pulumi.StringOutput `pulumi:"endpoint"`
+	ConnectionUrl    pulumi.StringOutput `pulumi:"connectionUrl"`
+	DefangDeployment pulumi.StringOutput `pulumi:"defangDeployment"`
+	Endpoint         pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // NewPostgres registers a new resource with the given unique name, arguments, and options.
@@ -97,6 +98,10 @@ func (o PostgresOutput) ToPostgresOutputWithContext(ctx context.Context) Postgre
 
 func (o PostgresOutput) ConnectionUrl() pulumi.StringOutput {
 	return o.ApplyT(func(v *Postgres) pulumi.StringOutput { return v.ConnectionUrl }).(pulumi.StringOutput)
+}
+
+func (o PostgresOutput) DefangDeployment() pulumi.StringOutput {
+	return o.ApplyT(func(v *Postgres) pulumi.StringOutput { return v.DefangDeployment }).(pulumi.StringOutput)
 }
 
 func (o PostgresOutput) Endpoint() pulumi.StringOutput {

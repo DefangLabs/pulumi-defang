@@ -15,7 +15,7 @@ require (
 	cloud.google.com/go/storage v1.61.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
-	github.com/DefangLabs/defang/src v0.0.0-20260410225805-55dc99086e20
+	github.com/DefangLabs/defang/src v0.0.0-20261023002438-56bc4b69cd5d
 	github.com/DefangLabs/pulumi-defang v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000

@@ -3,6 +3,7 @@ package defangscaleway
 import (
 	"fmt"
 
+	"github.com/DefangLabs/defang/src/pkg/deployment"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerscaleway "github.com/DefangLabs/pulumi-defang/provider/defangscaleway/scaleway"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -27,6 +28,7 @@ type ScalewayRedisOutputs struct {
 	pulumi.ResourceState
 	Endpoint      pulumi.StringOutput `pulumi:"endpoint"`
 	ConnectionURL pulumi.StringOutput `pulumi:"connectionUrl"`
+	Deployment    pulumi.StringOutput `pulumi:"defangDeployment"`
 	Cluster       *redis.Cluster
 	Dependency    pulumi.Resource
 }
@@ -91,6 +93,13 @@ func createRedis(
 	comp.ConnectionURL = result.ConnectionURL
 	comp.Cluster = result.Cluster
 	comp.Dependency = result.Cluster
+	etag := ""
+	if infra != nil {
+		etag = infra.Etag
+	}
+	comp.Deployment = serviceDeployment(ctx, serviceName, deployment.KindRedis, etag,
+		result.Cluster.ID(), result.Cluster.Name,
+		publicRedisEndpoint(result.Cluster.ConnectionString), "")
 
 	// Store the managed Redis host and connection URL for container env rewriting.
 	if infra != nil && infra.ManagedHosts != nil {
@@ -103,8 +112,9 @@ func createRedis(
 	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
-		"endpoint":      comp.Endpoint,
-		"connectionUrl": comp.ConnectionURL,
+		"endpoint":            comp.Endpoint,
+		"connectionUrl":       comp.ConnectionURL,
+		deployment.OutputName: comp.Deployment,
 	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
