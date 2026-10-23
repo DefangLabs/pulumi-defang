@@ -430,9 +430,9 @@ var healthCheckPathPortCases = []struct {
 		wantPort: 8000,
 	},
 	{
-		name:     "URL with query but no leading slash",
+		name:     "URL with query but no leading slash gets one added",
 		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000?foo"}},
-		wantPath: "?foo",
+		wantPath: "/?foo",
 		wantPort: 8000,
 	},
 	{

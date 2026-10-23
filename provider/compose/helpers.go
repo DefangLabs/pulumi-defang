@@ -285,6 +285,16 @@ func InterpolateEnvironmentVariable(
 
 // healthcheckURLRegex matches `http://localhost:PORT/PATH` (or 127.0.0.1) inside
 // a Docker Compose `healthcheck.test` arg. Port and path are optional captures.
+//
+// The port capture is `\d{1,5}` (up to 99999) rather than a validated
+// 1-65535 range: per this repo's convention (see AGENTS.md "Don't mirror
+// cloud-provider validation"), an out-of-range port is left for the target
+// cloud's own API to reject rather than duplicated here.
+//
+// The path/query capture is bounded to 333 repetitions as a defensive cap
+// against pathological input (unbounded backtracking / excessive capture
+// length on an adversarial healthcheck.test string), not a standards-derived
+// URL length limit.
 var healthcheckURLRegex = regexp.MustCompile(
 	`(?i)(?:http:\/\/)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`)
 
@@ -311,6 +321,13 @@ func GetHealthCheckPathAndPort(hc *HealthCheckConfig) (string, int) {
 			}
 			if match[2] != "" {
 				path = match[2]
+				// The capture also matches a bare query string with no
+				// leading slash (e.g. "?foo=bar" from "localhost:8080?foo=bar").
+				// That's not a valid HTTP request path on its own, so give it
+				// the implicit "/" every URL path has.
+				if path[0] == '?' {
+					path = "/" + path
+				}
 			}
 		}
 	}
