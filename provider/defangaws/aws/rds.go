@@ -171,10 +171,11 @@ func CreateRDS(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*RDSResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -197,7 +198,9 @@ func CreateRDS(
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, opts...)
+			// The legacy CD named this one after the bare service, with no stack
+			// prefix (postgres.ts: new aws.rds.SubnetGroup(service_name)).
+		}, pulumi.Composite(opt, legacyAlias(serviceName)))
 		if err != nil {
 			return nil, fmt.Errorf("creating DB subnet group: %w", err)
 		}
@@ -231,9 +234,11 @@ func CreateRDS(
 			},
 		},
 		Tags: tags,
-	}, common.MergeOptions(opts,
+	}, pulumi.Composite(opt,
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
-	)...)
+		// createSecurityGroup() registered every SG under stack(name).
+		legacyAlias(legacyStackName(ctx, serviceName)),
+	))
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS security group: %w", err)
 	}
@@ -283,13 +288,40 @@ func CreateRDS(
 	// (now-removed) `storage-encrypted` recipe defaulted to false would otherwise
 	// force-replace on next up. RDS can't toggle encryption in-place, so we
 	// preserve the existing instance and leave migration to the operator.
-	rdsOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{"storageEncrypted"}))
+	rdsOpts := []pulumi.ResourceOption{opt, pulumi.IgnoreChanges([]string{"storageEncrypted"}),
+		legacyAlias(legacyRdsInstanceName(ctx, serviceName))}
 	if len(deps) > 0 {
 		rdsOpts = append(rdsOpts, pulumi.DependsOn(deps))
 	}
 	instance, err := rds.NewInstance(ctx, serviceName, rdsArgs, rdsOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating RDS instance: %w", err)
+	}
+
+	// Free-storage threshold sits below the 10%-free trigger of RDS storage
+	// autoscaling, so it only fires when autoscaling can't keep up or the
+	// maxAllocatedStorage cap is reached.
+	err = createDBAlarms(ctx, serviceName, "AWS/RDS",
+		pulumi.StringMap{"DBInstanceIdentifier": instance.Identifier}, tags, alarmTopicArn, []dbAlarm{
+			{
+				suffix:             "cpu-usage",
+				metricName:         "CPUUtilization",
+				comparisonOperator: "GreaterThanThreshold",
+				threshold:          80,
+				statistic:          "Maximum",
+				description:        "RDS CPU usage has exceeded 80%",
+			},
+			{
+				suffix:             "free-storage",
+				metricName:         "FreeStorageSpace",
+				comparisonOperator: "LessThanThreshold",
+				threshold:          1 << 30, // 1 GiB
+				statistic:          "Minimum",
+				description:        "RDS free storage space is below 1 GiB",
+			},
+		}, opt)
+	if err != nil {
+		return nil, err
 	}
 
 	result := &RDSResult{

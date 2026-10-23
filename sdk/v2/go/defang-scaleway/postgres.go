@@ -52,7 +52,7 @@ type postgresArgs struct {
 type PostgresArgs struct {
 	Deploy      compose.DeployConfigPtrInput
 	Environment pulumi.StringMapInput
-	Image       *string
+	Image       pulumi.StringPtrInput
 	Ports       compose.ServicePortConfigArrayInput
 	Postgres    compose.PostgresConfigPtrInput
 	ProjectName string

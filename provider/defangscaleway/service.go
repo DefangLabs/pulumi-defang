@@ -17,11 +17,11 @@ type Service struct{}
 
 // ScalewayServiceInputs defines the inputs for a standalone Scaleway Serverless Container.
 type ScalewayServiceInputs struct {
-	Image       string                      `pulumi:"image"`
+	Image       pulumi.StringInput          `pulumi:"image"`
 	Platform    *string                     `pulumi:"platform,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]*string          `pulumi:"environment,optional"`
+	Environment compose.Environment         `pulumi:"environment,optional"`
 	Command     []string                    `pulumi:"command,optional"`
 	Entrypoint  []string                    `pulumi:"entrypoint,optional"`
 	HealthCheck *compose.HealthCheckConfig  `pulumi:"healthCheck,optional"`
@@ -51,11 +51,11 @@ func (*Service) Construct(
 	if err := ctx.RegisterComponentResource(typ, name, comp, opts); err != nil {
 		return nil, err
 	}
-	if inputs.Image == "" {
+	if inputs.Image == nil {
 		return nil, fmt.Errorf("service %s: %w", name, common.ErrStandaloneServiceRequiresImage)
 	}
 	svc := compose.ServiceConfig{
-		Image:       &inputs.Image,
+		Image:       inputs.Image,
 		Platform:    inputs.Platform,
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
@@ -76,7 +76,7 @@ func (*Service) Construct(
 	if infra.ConfigProvider != nil {
 		configProvider = infra.ConfigProvider
 	}
-	if err := createService(ctx, comp, configProvider, name, pulumi.String(inputs.Image), svc, infra); err != nil {
+	if err := createService(ctx, comp, configProvider, name, inputs.Image, svc, infra); err != nil {
 		return nil, err
 	}
 	return comp, nil
@@ -116,7 +116,7 @@ func createService(
 	}
 	healthcheckPath := ""
 	if svc.HealthCheck != nil {
-		healthcheckPath, _ = common.ParseHealthCheckPathPort(svc.HealthCheck.Test)
+		healthcheckPath, _ = compose.GetHealthCheckPathAndPort(svc.HealthCheck)
 	}
 	comp.Deployment = serviceDeployment(ctx, serviceName, deployment.KindContainer, etag,
 		result.Container.ID(), result.Container.Name, comp.Endpoint, healthcheckPath)

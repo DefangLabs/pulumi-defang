@@ -1,6 +1,8 @@
 package defangaws
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
@@ -25,6 +27,7 @@ func Provider() p.Provider {
 			infer.Component[*Service, ServiceInputs, *ServiceOutputs](&Service{}),
 			infer.Component[*Postgres, PostgresInputs, *PostgresOutputs](&Postgres{}),
 			infer.Component[*Redis, RedisInputs, *RedisOutputs](&Redis{}),
+			infer.Component[*ObjectStore, ObjectStoreInputs, *ObjectStoreOutputs](&ObjectStore{}),
 		},
 		ModuleMap: map[tokens.ModuleName]tokens.ModuleName{
 			"provider":  "index",
@@ -32,7 +35,8 @@ func Provider() p.Provider {
 		},
 
 		Metadata: schema.Metadata{
-			Description: "Deploy containerized services to AWS with Pulumi.",
+			DisplayName: "Defang AWS",
+			Description: "Deploy Compose projects to AWS with Pulumi. Part of the Defang multi-cloud provider family — also available for GCP (defang-gcp) and Azure (defang-azure).", //nolint:lll
 			Keywords: []string{
 				"category/cloud", "category/infrastructure", "kind/native", "defang", "docker",
 				"cloud", "aws", "ecs", "fargate",
@@ -42,8 +46,11 @@ func Provider() p.Provider {
 			Publisher:         "Defang",
 			LogoURL:           "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
 			License:           "Apache-2.0",
-			PluginDownloadURL: "github://api.github.com/DefangLabs/pulumi-defang",
+			PluginDownloadURL: common.PluginDownloadURL,
 			LanguageMap: map[string]any{
+				// pkg/v3/codegen/dotnet (CSharpPackageInfo) moved out of pulumi/pulumi
+				// after pkg v3.227; inline the equivalent schema JSON instead of
+				// depending on pulumi-dotnet for one struct.
 				"csharp": map[string]any{
 					"rootNamespace": "DefangLabs",
 				},

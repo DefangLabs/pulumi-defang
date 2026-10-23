@@ -62,7 +62,7 @@ func buildServiceImage(
 		"target":      pulumi.StringPtrFromPtr(svc.Build.Target),
 		"buildArgs":   pulumi.ToStringMap(svc.Build.Args),
 		"triggers":    pulumi.StringArray{triggerHash},
-	}, &buildResource, opts...)
+	}, &buildResource, sharedInfra.PluginIdentity.ResourceOptions(opts...)...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating build resource for %s: %w", serviceName, err)
 	}
@@ -90,5 +90,5 @@ func GetServiceImage(
 		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
 	}
 
-	return pulumi.String(*svc.Image).ToStringOutput(), nil
+	return svc.Image.ToStringOutput(), nil
 }

@@ -3,10 +3,15 @@
 # Build context must be the repo root (because cd/go.mod has replace directives to ../).
 # Example: docker buildx build --platform linux/amd64 --build-arg CD_VERSION=0.1.0 --target aws .
 #
-ARG GOVERSION=1.25
+ARG GOVERSION=1.26.10
 ARG PULUMI_VERSION=latest
 ARG BUILDBASE=golang:${GOVERSION}-alpine
+# scratch is fine for gcp/azure, which just run this image's own ENTRYPOINT.
 ARG CDBASE=scratch
+# aws and all need a shell + jq/awk instead (see the cd-base-alpine rationale below). Pinned here,
+# as the ARG's own default, so this is the ONLY place that needs bumping for a CVE fix — CI and
+# the Makefile no longer pass --build-arg CDBASE, so there's nothing else to keep in sync.
+ARG CDBASE_ALPINE=alpine:3.21
 ARG PULUMIBASE=pulumi/pulumi-base:${PULUMI_VERSION}
 ARG CD_VERSION=0.0.1
 ARG PROVIDER_VERSION=0.0.1
@@ -76,6 +81,11 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # Install Pulumi cloud-provider plugins (versions extracted from go.mod)
 # This stage runs on the target platform so pulumi downloads the correct plugin binaries.
 #
+# Adding a provider import of a new pulumi-owned plugin SDK? It needs a
+# matching `pulumi plugin install resource ...` line below, or it'll go
+# uncached and get downloaded at deploy time instead (DefangLabs/pulumi-defang#670).
+# scripts/check-dockerfile-plugins.sh (run in CI) catches a missing one.
+#
 # Both root go.mod and cd/go.mod are copied because plugin SDKs appear in
 # different places: pulumi-awsx and pulumi-random are only imported by the
 # provider packages (root go.mod); pulumi-gcp and pulumi-azure-native-sdk
@@ -144,14 +154,32 @@ COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Pulumi CLI only (no language runtimes)
 COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
-# /tmp is required by Pulumi for workspace temp files; scratch has no filesystem.
-WORKDIR /tmp
+# Pulumi needs /tmp for its workspace temp files and scratch has no filesystem at all.
+# `WORKDIR /tmp` used to stand in for creating it, but whether WORKDIR materialises a directory
+# in the exported image is builder-specific: BuildKit does, buildah/podman does not, and the
+# image then fails at runtime with "unable to create tmp directory for workspace: stat /tmp: no
+# such file or directory" only once it is deployed. build-base's own /tmp is empty and already
+# empty, so copying it works the same way in every builder and needs no stage of its own.
+COPY --link --from=build-base /tmp /tmp
 # App
 WORKDIR /app
 COPY --link --from=build-base /out/cd ./
 ENTRYPOINT [ "/app/cd" ]
 
-FROM cd-base AS aws
+# Same as cd-base, but on a shell-having base: aws and all run as an AWS CodeBuild build
+# container, which needs a shell just to provision at all (scratch fails PROVISIONING with
+# SINGLE_BUILD_CONTAINER_DEAD), and CD code that shells out to build customer images (the Docker
+# Hub mirror setup in provider/defangaws/aws/codebuild.go) needs jq/awk.
+FROM ${CDBASE_ALPINE} AS cd-base-alpine
+COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
+ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
+WORKDIR /app
+COPY --link --from=build-base /out/cd ./
+ENTRYPOINT [ "/app/cd" ]
+RUN apk add --no-cache jq
+
+FROM cd-base-alpine AS aws
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
@@ -167,7 +195,7 @@ FROM cd-base AS scaleway
 COPY --link --from=plugins-scaleway-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-scaleway-defang /root/.pulumi/plugins /root/.pulumi/plugins
 
-FROM cd-base AS all
+FROM cd-base-alpine AS all
 COPY --link --from=plugins-aws-upstream /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-aws-defang /root/.pulumi/plugins /root/.pulumi/plugins
 COPY --link --from=plugins-azure-upstream /root/.pulumi/plugins /root/.pulumi/plugins

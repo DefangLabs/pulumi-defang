@@ -18,3 +18,4 @@ coverage_provider.out
 coverage_tests.out
 coverage.html
 .claude/settings.local.json
+*.lscache

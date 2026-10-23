@@ -44,15 +44,47 @@ jobs:
   publish_binary:
     name: publish
     runs-on: ubuntu-latest
+    env:
+      # GoReleaser's per-build $WORK dirs default to $TMPDIR on the small root
+      # partition (~14GB free); the out-of-disk-space write happened there. Point
+      # transient build output at the larger /mnt partition (~65GB). GOCACHE
+      # stays at Go's normal path; the setup step bind-mounts its storage onto
+      # /mnt so its cache remains compatible with ordinary CI jobs.
+      TMPDIR: /mnt/gorel-tmp
+      GOTMPDIR: /mnt/gorel-tmp
     steps:
+      # /mnt is root-owned on the runner. Keep the large Go build cache there,
+      # but bind-mount it at Go's standard path. Cache versions include paths,
+      # so using the standard path lets this tag-triggered release restore the
+      # cache written by main-branch CI.
+      - name: Prepare /mnt build dirs
+        run: |
+          sudo mkdir -p /mnt/gorel-tmp /mnt/gorel-gocache
+          sudo chown "$USER" /mnt/gorel-tmp /mnt/gorel-gocache
+          mkdir -p "$HOME/.cache/go-build"
+          sudo mount --bind /mnt/gorel-gocache "$HOME/.cache/go-build"
+
+      # The runner's root partition (~14GB free) can't hold the 18 cross-compiled
+      # binaries (3 providers x 3 OS x 2 arch) linking the huge pulumi-{aws,gcp,azure}
+      # SDKs. Reclaim ~25GB of unused preinstalled toolchains before building —
+      # a bash step instead of the jlumbroso/free-disk-space action, since the
+      # subset of its cleanup we use is a few `rm -rf`s, not worth the dep.
+      - name: Free disk space
+        run: sudo rm -rf "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+
       - name: Checkout Repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
+        with:
+          # Tag-scoped caches cannot be restored by later tags. Releases only
+          # restore the cache maintained by CI on main and avoid consuming the
+          # cache budget with an unreachable multi-gigabyte cache per tag.
+          cache: restore
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
           args: -p 2 release
@@ -65,7 +97,7 @@ jobs:
     environment: publish
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Setup and build SDK
         uses: ./.github/actions/build-sdk
@@ -82,7 +114,7 @@ jobs:
           path: ${{ github.workspace}}/sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz
       - if: ${{ matrix.language == 'python' && env.PUBLISH_PYPI == 'true' }}
         name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: ${{github.workspace}}/sdk/python/defang-${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
@@ -115,7 +147,7 @@ jobs:
     needs: publish_binary
     steps:
       - name: Checkout main
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: main
 
@@ -123,22 +155,22 @@ jobs:
         uses: ./.github/actions/setup-go
 
       - name: Install Pulumi CLI
-        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
 
       - name: Regenerate examples
         run: make examples
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Commit and push updated examples
+      - name: Commit, push, and merge updated examples
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/regenerate-examples-${{ github.ref_name }}"
           git add examples/
           if git diff --cached --quiet; then
             echo "No example changes to commit"
           else
-            BRANCH="chore/regenerate-examples-${{ github.ref_name }}"
             git checkout -b "$BRANCH"
             git commit -m "chore: regenerate examples for ${{ github.ref_name }}"
             git push origin "$BRANCH"
@@ -147,7 +179,22 @@ jobs:
               --body "Automated regeneration of examples triggered by release ${{ github.ref_name }}." \
               --base main \
               --head "$BRANCH"
+            # Merge right away: the content was produced by this release run
+            # on a green main, and bot-created PRs don't trigger the test
+            # workflows anyway. Fall back to enabling auto-merge in case
+            # branch protection is waiting on required checks.
+            gh pr merge "$BRANCH" --squash --delete-branch \
+              || gh pr merge "$BRANCH" --squash --delete-branch --auto \
+              || echo "::warning::Could not auto-merge $BRANCH; merge it manually"
           fi
+          # Regenerate-examples PRs from older releases are superseded by this
+          # run (which regenerated from current main): close them.
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("chore/regenerate-examples-")) | [.number, .headRefName] | @tsv' |
+          while IFS=$'\t' read -r num ref; do
+            [ "$ref" = "$BRANCH" ] && continue
+            gh pr close "$num" --delete-branch --comment "Superseded by the examples regeneration for ${{ github.ref_name }}"
+          done
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -162,15 +209,15 @@ jobs:
         clouds: [aws, gcp, azure, scaleway] # skip 'all' because we only ever deploy cloud X to X
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           fetch-tags: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -178,20 +225,20 @@ jobs:
 
       - name: Configure AWS credentials
         if: matrix.clouds == 'aws' || matrix.clouds == 'all'
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1 # ECR Public is always us-east-1
 
       - name: Log in to Amazon ECR Public
         if: matrix.clouds == 'aws' || matrix.clouds == 'all'
-        uses: aws-actions/amazon-ecr-login@f2e9fc6c2b355c1890b65e6f6f0e2ac3e6e22f78 # v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
         with:
           registry-type: public
 
       - name: Log in to Azure
         if: matrix.clouds == 'azure' || matrix.clouds == 'all'
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -242,7 +289,7 @@ jobs:
 
       - name: Build and push CD images
         id: build-push
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: . # include generated Go SDK
           platforms: linux/amd64 # amd64-only: CD images only ever run on amd64 in the cloud; local Apple dev uses Rosetta
@@ -269,8 +316,9 @@ jobs:
       # Pin the CD image refs (digests) in the Defang Fabric so deployments use this exact build.
       - name: Set cd_image_ configs in Defang
         if: matrix.clouds == 'azure'
-        uses: DefangLabs/defang-github-action@482e8e65caf00bc48ad2044d0e41cde178b3e2b6 # v2.3.0
+        uses: DefangLabs/defang-github-action@981924edd6d4dec17d6ddb03e956174223bcec55 # v2.5.0
         with:
+          cli-version: nightly
           project: ecs
           stack: awsprod1oidc
           command: "config set -e cd_image_azure" # TODO: only Azure for now; AWS/GCP/DO are still handled by old TS code

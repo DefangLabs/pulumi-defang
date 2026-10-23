@@ -90,10 +90,10 @@ func CreateRedis(
 		configProvider = &compose.PulumiConfigProvider{}
 	}
 
-	password := compose.GetConfigOrEnvValue(ctx, configProvider, svc, "REDIS_PASSWORD", "")
+	password, _ := compose.GetConfigOrEnvValue(ctx, configProvider, svc, "REDIS_PASSWORD", "")
 	args := &redis.ClusterArgs{
 		Name:              pulumi.String(serviceName),
-		Version:           pulumi.String(redisVersionFromImage(svc.Image)),
+		Version:           pulumi.String(redisVersionFromImage(svc.StaticImage())),
 		NodeType:          pulumi.String(redisNodeType(svc.GetMemoryMiB())),
 		UserName:          pulumi.String("default"),
 		PasswordWo:        redisPassword(password),

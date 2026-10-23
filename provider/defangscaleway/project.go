@@ -40,7 +40,7 @@ func (*Project) Construct(
 		return nil, err
 	}
 
-	result, err := buildProject(ctx, name, inputs, pulumi.Parent(comp))
+	result, err := buildProject(ctx, name, inputs, common.PluginIdentityFrom(opts), pulumi.Parent(comp))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Scaleway resources: %w", err)
 	}
@@ -67,6 +67,7 @@ func buildProject(
 	ctx *pulumi.Context,
 	projectName string,
 	args ProjectInputs,
+	pluginID common.PluginIdentity,
 	parentOpts ...pulumi.ResourceOption,
 ) (*projectResult, error) {
 	childOpts := append([]pulumi.ResourceOption{}, parentOpts...)
@@ -75,6 +76,7 @@ func buildProject(
 		return nil, err
 	}
 	infra.Etag = args.Etag
+	infra.PluginIdentity = pluginID
 
 	configProvider := compose.ConfigProvider(&compose.PulumiConfigProvider{})
 	if ctx.DryRun() {

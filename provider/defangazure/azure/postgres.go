@@ -3,6 +3,7 @@ package azure
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -35,15 +36,31 @@ func sanitizePostgresName(name string) string {
 	return s
 }
 
+// azurePostgresMajorVersion reduces pg.Version to the bare major-version token
+// Azure's Flexible Server API expects (e.g. "18"). pg.Version carries whatever
+// the compose layer parsed out of the image tag, which keeps the minor version
+// when present (e.g. "18.6" from postgres:18.6-alpine); sent as-is, Azure
+// rejects it with a "should be in: []" error. Falls back to the input
+// unchanged if it doesn't parse as a version, matching prior behavior.
+func azurePostgresMajorVersion(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	major := compose.GetPostgresVersion(*v)
+	if major == 0 {
+		return v
+	}
+	return pulumi.StringRef(strconv.Itoa(major))
+}
+
 type postgresResult struct {
 	Server *dbforpostgresql.Server
 
 	// Readiness lists resources that must be fully applied before downstream
 	// consumers (Container Apps running migrations, etc.) can safely use the
-	// server. Includes the `azure.extensions` (pgvector) and
+	// server. Includes the `azure.extensions` allowlist and
 	// `require_secure_transport` configurations; without waiting for these, a
-	// consumer can connect to the server but fail queries that depend on the
-	// parameter change (e.g. CREATE EXTENSION vector).
+	// consumer can connect to the server but fail on CREATE EXTENSION calls.
 	Readiness []pulumi.Resource
 }
 
@@ -94,10 +111,18 @@ func buildPostgresServerArgs(
 		return prefix + "-" + s
 	}).(pulumi.StringOutput)
 
+	// pg.Version is nil when the service has no static image (e.g. built from
+	// a Dockerfile, or a dynamic image expression), so guard before calling
+	// ToStringPtrOutput on it.
+	var version pulumi.StringPtrInput
+	if pg.Version != nil {
+		version = pg.Version.ToStringPtrOutput().ApplyT(azurePostgresMajorVersion).(pulumi.StringPtrOutput)
+	}
+
 	serverArgs := &dbforpostgresql.ServerArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ServerName:        serverName.ToStringPtrOutput(),
-		Version:           pg.Version,
+		Version:           version,
 		Tags:              ServiceTags(serviceName),
 		Sku: &dbforpostgresql.SkuArgs{
 			Name: pulumi.String(skuName),
@@ -143,9 +168,9 @@ func CreatePostgresFlexible(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*postgresResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -159,29 +184,42 @@ func CreatePostgresFlexible(
 	// letters, digits, and hyphens. StackDir-style names contain slashes etc.
 	sanitized := sanitizePostgresName(serviceName)
 
-	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, opts...)
+	serverArgs, err := buildPostgresServerArgs(pg, svc, serviceName, sanitized, infra, ctx, opt)
 	if err != nil {
 		return nil, err
 	}
 
-	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, opts...)
+	server, err := dbforpostgresql.NewServer(ctx, sanitized, serverArgs, opt)
 	if err != nil {
 		return nil, fmt.Errorf("creating PostgreSQL Flexible Server: %w", err)
 	}
 
-	serverChildOpts := append([]pulumi.ResourceOption{pulumi.Parent(server)}, opts...)
+	serverChildOpts := []pulumi.ResourceOption{pulumi.Parent(server), opt}
 
-	// Allowlist the pgvector extension. Azure Postgres Flexible Server blocks CREATE EXTENSION
+	// Allowlist extensions. Azure Postgres Flexible Server blocks CREATE EXTENSION
 	// unless the extension is listed in the azure.extensions server parameter first.
-	pgvectorCfg, err := dbforpostgresql.NewConfiguration(ctx, "pgvector", &dbforpostgresql.ConfigurationArgs{
+	// This list mirrors what AWS RDS and GCP Cloud SQL permit by default, restricted
+	// to extensions Azure Flexible Server actually supports.
+	extensionsCfg, err := dbforpostgresql.NewConfiguration(ctx, "extensions", &dbforpostgresql.ConfigurationArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ServerName:        server.Name,
 		ConfigurationName: pulumi.String("azure.extensions"),
-		Value:             pulumi.String("VECTOR"),
-		Source:            pulumi.String("user-override"),
+		Value: pulumi.String(
+			"ADDRESS_STANDARDIZER,ADDRESS_STANDARDIZER_DATA_US,AMCHECK," +
+				"BLOOM,BTREE_GIN,BTREE_GIST,CITEXT,CUBE,DBLINK,DICT_INT,DICT_XSYN," +
+				"EARTHDISTANCE,FUZZYSTRMATCH,HLL,HSTORE,HYPOPG,INTAGG," +
+				"INTARRAY,IP4R,ISN,LO,LTREE,ORACLE_FDW,ORAFCE,PAGEINSPECT," +
+				"PG_BUFFERCACHE,PG_CRON,PG_FREESPACEMAP,PG_HINT_PLAN,PG_IVM,PGAUDIT," +
+				"PGCRYPTO,PGLOGICAL,PG_PARTMAN,PG_PREWARM,PG_REPACK,PG_SQUEEZE," +
+				"PG_STAT_STATEMENTS,PGSTATTUPLE,PG_TRGM,PG_VISIBILITY,PLPGSQL,PLV8," +
+				"POSTGRES_FDW,POSTGIS,POSTGIS_RASTER,POSTGIS_SFCGAL,POSTGIS_TIGER_GEOCODER," +
+				"POSTGIS_TOPOLOGY,PGROUTING,PGROWLOCKS,SSLINFO,TABLEFUNC,TDS_FDW," +
+				"TEMPORAL_TABLES,TSM_SYSTEM_ROWS,TSM_SYSTEM_TIME,UNACCENT,UUID-OSSP,VECTOR",
+		),
+		Source: pulumi.String("user-override"),
 	}, serverChildOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("enabling pgvector extension: %w", err)
+		return nil, fmt.Errorf("enabling extensions: %w", err)
 	}
 
 	// Allow non-TLS connections. Azure defaults require_secure_transport=ON, which
@@ -189,10 +227,9 @@ func CreatePostgresFlexible(
 	// managed Postgres allow both, and samples (e.g. nextjs-postgres with
 	// POSTGRES_SSL=disable) expect the same here. Clients can still negotiate TLS.
 	//
-	// DependsOn(pgvectorCfg): Azure serializes server-parameter changes — applying
-	// two Configurations in parallel yields `ServerIsBusy` on the loser. Make this
-	// one wait for pgvector to finish.
-	noTlsOpts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{pgvectorCfg})}, serverChildOpts...)
+	// Azure serializes server-parameter changes — applying two Configurations in
+	// parallel yields `ServerIsBusy` on the loser. Sequence this after extensions.
+	noTlsOpts := append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{extensionsCfg})}, serverChildOpts...)
 	noTlsCfg, err := dbforpostgresql.NewConfiguration(ctx, "no-tls", &dbforpostgresql.ConfigurationArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		ServerName:        server.Name,
@@ -232,6 +269,6 @@ func CreatePostgresFlexible(
 
 	return &postgresResult{
 		Server:    server,
-		Readiness: []pulumi.Resource{pgvectorCfg, noTlsCfg},
+		Readiness: []pulumi.Resource{extensionsCfg, noTlsCfg},
 	}, nil
 }

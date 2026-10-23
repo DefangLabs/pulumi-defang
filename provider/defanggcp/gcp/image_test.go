@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
@@ -103,7 +104,7 @@ func TestIsCloudRunSupportedRegistry(t *testing.T) {
 		{"us-central1-docker.pkg.dev", true},
 		{"europe-west1-docker.pkg.dev", true},
 		{"quay.io", false},
-		{"ghcr.io", false},
+		{ghcrRegistry, false},
 		{"registry.example.com", false},
 		{"my-registry.io", false},
 	}
@@ -125,17 +126,30 @@ func TestSanitizeRepoName(t *testing.T) {
 		{"UPPER.CASE.IO", "upper-case-io"},
 		{"-leading-dash", "leading-dash"},
 		{"trailing-dash-", "trailing-dash"},
-		// 64-char input should be trimmed to 63
-		{
-			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
-			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			assert.Equal(t, tt.want, sanitizeRepoName(tt.input))
 		})
 	}
+}
+
+func TestSanitizeRepoNameShortensWithHashSuffix(t *testing.T) {
+	prefix := strings.Repeat("a", artifactRegistryRepositoryIDMaxLength)
+	long1 := prefix + "1"
+	long2 := prefix + "2"
+
+	id1 := sanitizeRepoName(long1)
+	id2 := sanitizeRepoName(long2)
+
+	require.LessOrEqual(t, len(id1), artifactRegistryRepositoryIDMaxLength)
+	require.LessOrEqual(t, len(id2), artifactRegistryRepositoryIDMaxLength)
+	assert.Equal(t, id1, sanitizeRepoName(long1), "repository IDs must be deterministic")
+	assert.NotEqual(t, id1, id2, "distinct names sharing a long prefix must not collide")
+}
+
+func TestSanitizeRepoNameNeverReturnsEmpty(t *testing.T) {
+	assert.Regexp(t, `^repo-[0-9a-f]{8}$`, sanitizeRepoName("..."))
 }
 
 func TestGetServiceImage(t *testing.T) {
@@ -159,31 +173,31 @@ func TestGetServiceImage(t *testing.T) {
 		},
 		{
 			name:      "docker.io image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("nginx:latest")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("nginx:latest")},
 			infra:     fakeInfra,
 			wantImage: "nginx:latest",
 		},
 		{
 			name:      "explicit docker.io image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("docker.io/library/nginx:1.25")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("docker.io/library/nginx:1.25")},
 			infra:     fakeInfra,
 			wantImage: "docker.io/library/nginx:1.25",
 		},
 		{
 			name:      "gcr.io image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("gcr.io/my-project/app:v1")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("gcr.io/my-project/app:v1")},
 			infra:     fakeInfra,
 			wantImage: "gcr.io/my-project/app:v1",
 		},
 		{
 			name:      "artifact registry image returned as-is",
-			svc:       compose.ServiceConfig{Image: strPtr("us-central1-docker.pkg.dev/proj/repo/app:v1")},
+			svc:       compose.ServiceConfig{Image: pulumi.String("us-central1-docker.pkg.dev/proj/repo/app:v1")},
 			infra:     fakeInfra,
 			wantImage: "us-central1-docker.pkg.dev/proj/repo/app:v1",
 		},
 		{
 			name:  "quay.io image rewritten to artifact registry",
-			svc:   compose.ServiceConfig{Image: strPtr("quay.io/prometheus/node-exporter:v1.8.0")},
+			svc:   compose.ServiceConfig{Image: pulumi.String("quay.io/prometheus/node-exporter:v1.8.0")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
 				"quay.io": {RepositoryId: pulumi.String("quay-io").ToStringOutput()},
@@ -191,11 +205,11 @@ func TestGetServiceImage(t *testing.T) {
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/quay-io/prometheus/node-exporter:v1.8.0",
 		},
 		{
-			name:  "ghcr.io image rewritten to artifact registry",
-			svc:   compose.ServiceConfig{Image: strPtr("ghcr.io/owner/image:sha-abc123")},
+			name:  ghcrRegistry + " image rewritten to artifact registry",
+			svc:   compose.ServiceConfig{Image: pulumi.String(ghcrRegistry + "/owner/image:sha-abc123")},
 			infra: fakeInfra,
 			repos: map[string]*artifactregistry.Repository{
-				"ghcr.io": {RepositoryId: pulumi.String("ghcr-io").ToStringOutput()},
+				ghcrRegistry: {RepositoryId: pulumi.String("ghcr-io").ToStringOutput()},
 			},
 			wantImage: "us-central1-docker.pkg.dev/my-gcp-project/ghcr-io/owner/image:sha-abc123",
 		},
@@ -206,7 +220,7 @@ func TestGetServiceImage(t *testing.T) {
 			var gotImage string
 			var wg sync.WaitGroup
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.repos, tt.infra)
+				got, err := GetServiceImage(ctx, "svc", tt.svc, tt.repos, tt.infra, common.PluginIdentity{})
 				if tt.wantErr {
 					assert.Error(t, err)
 					return nil
@@ -237,7 +251,7 @@ func TestGenerateBuildSteps(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		out := generateBuildSteps(pulumi.String(dest).ToStringOutput())
+		out := generateBuildSteps(&compose.BuildConfig{Context: pulumi.String("./app")}, pulumi.String(dest).ToStringOutput())
 		out.ApplyT(func(stepsYAML string) string {
 			defer wg.Done()
 			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
@@ -261,6 +275,40 @@ func TestGenerateBuildSteps(t *testing.T) {
 	assert.Contains(t, steps[1].Args, "--load")
 	assert.NotContains(t, steps[1].Args, "--push")
 	assert.Contains(t, steps[1].Args, dest)
+	assert.Contains(t, steps[1].Args, "linux/amd64") // default platform
+}
+
+func TestGenerateBuildStepsPlatformAndCache(t *testing.T) {
+	const dest = "us-central1-docker.pkg.dev/my-project/my-repo/app:latest"
+	build := &compose.BuildConfig{
+		Context:   pulumi.String("./app"),
+		Platforms: []string{"linux/arm64"},
+		CacheFrom: []string{"type=registry,ref=my/app:cache"},
+		CacheTo:   []string{"type=registry,mode=max,ref=my/app:cache"},
+	}
+
+	var steps []buildStep
+	var unmarshalErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		out := generateBuildSteps(build, pulumi.String(dest).ToStringOutput())
+		out.ApplyT(func(stepsYAML string) string {
+			defer wg.Done()
+			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
+			return stepsYAML
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", testMocks{}))
+	require.NoError(t, err)
+	wg.Wait()
+	require.NoError(t, unmarshalErr)
+	require.Len(t, steps, 2)
+
+	assert.Contains(t, steps[1].Args, "linux/arm64")
+	assert.NotContains(t, steps[1].Args, "linux/amd64")
+	assert.Contains(t, steps[1].Args, "--cache-from=type=registry,ref=my/app:cache")
+	assert.Contains(t, steps[1].Args, "--cache-to=type=registry,mode=max,ref=my/app:cache")
 }
 
 func TestBuildSourceDigest(t *testing.T) {
@@ -356,15 +404,15 @@ func TestBuildSourceDigest(t *testing.T) {
 
 // TestBuildServiceImageDependsOnBucketIAMMember verifies that the Build custom
 // resource has an explicit Pulumi dependency on the BucketIAMMember that grants
-// the build service account read access to the artifacts bucket. Without this
+// the build service account read access to the shared CD bucket. Without this
 // dependency Cloud Build can be submitted before GCP IAM has propagated the
 // binding (~60 s window), causing a 403 on first deploy.
 func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 	spy := &buildDepsSpy{}
 
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		iamMember, err := storage.NewBucketIAMMember(ctx, "artifacts-viewer", &storage.BucketIAMMemberArgs{
-			Bucket: pulumi.String("my-artifacts-bucket"),
+		iamMember, err := storage.NewBucketIAMMember(ctx, "source-viewer", &storage.BucketIAMMemberArgs{
+			Bucket: pulumi.String("defang-cd-test"),
 			Role:   pulumi.String("roles/storage.objectViewer"),
 			Member: pulumi.String("serviceAccount:build@proj.iam.gserviceaccount.com"),
 		})
@@ -389,13 +437,13 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 
 		svc := compose.ServiceConfig{
 			Build: &compose.BuildConfig{
-				// Use a gs:// URI so resolveSourceURI skips the BucketObject creation
-				// and we don't need a real BuildBucket in infra.
-				Context: pulumi.String("gs://my-artifacts-bucket/context.zip"),
+				// A real `defang up` always arrives with a gs:// URI, so
+				// resolveSourceURI passes it straight through.
+				Context: pulumi.String("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 			},
 		}
 
-		_, err = buildServiceImage(ctx, "my-svc", svc, infra)
+		_, err = buildServiceImage(ctx, "my-svc", svc, infra, common.PluginIdentity{})
 		return err
 	}, pulumi.WithMocks("proj", "stack", spy))
 
@@ -412,4 +460,176 @@ func TestBuildServiceImageDependsOnBucketIAMMember(t *testing.T) {
 	}
 	assert.True(t, hasBucketIAMDep,
 		"Build resource must depend on BucketIAMMember (got deps: %v)", spy.buildDeps)
+}
+
+// TestBuildServiceImageTagIsNotLatest verifies the pushed image is tagged with
+// the build's content hash rather than the mutable ":latest" (see #547/#551):
+// two services with different build content must get different tags.
+func TestBuildServiceImageTagIsNotLatest(t *testing.T) {
+	tag := func(t *testing.T, context string) string {
+		t.Helper()
+		var images resource.PropertyValue
+		mocks := &imagesSpy{onBuild: func(inputs resource.PropertyMap) {
+			images = inputs["images"]
+		}}
+
+		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+			sa, err := serviceaccount.NewAccount(ctx, "build-sa", &serviceaccount.AccountArgs{
+				AccountId: pulumi.String("build-sa"),
+			})
+			if err != nil {
+				return err
+			}
+			infra := &BuildInfra{
+				ServiceAccount: sa,
+				RepositoryURL:  pulumi.String("us-central1-docker.pkg.dev/proj/repo").ToStringOutput(),
+				Region:         "us-central1",
+				GcpProject:     "proj",
+			}
+			svc := compose.ServiceConfig{
+				Build: &compose.BuildConfig{Context: pulumi.String(context)},
+			}
+			_, err = buildServiceImage(ctx, "my-svc", svc, infra, common.PluginIdentity{})
+			return err
+		}, pulumi.WithMocks("proj", "stack", mocks))
+		require.NoError(t, err)
+
+		require.True(t, images.HasValue() && images.IsArray(), "Build resource's images input was not recorded")
+		return images.ArrayValue()[0].StringValue()
+	}
+
+	image1 := tag(t, "gs://defang-cd-test/uploads/one.tar.gz")
+	image2 := tag(t, "gs://defang-cd-test/uploads/two.tar.gz")
+
+	assert.False(t, strings.HasSuffix(image1, ":latest"), "got %q, tag must not be the mutable :latest", image1)
+	assert.NotEqual(t, image1, image2, "different build content must produce different tags")
+}
+
+// imagesSpy records the "images" input of the Build custom resource.
+type imagesSpy struct {
+	onBuild func(inputs resource.PropertyMap)
+}
+
+func (m *imagesSpy) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if args.TypeToken == "defang-gcp:defanggcp:Build" {
+		m.onBuild(args.Inputs)
+	}
+	return args.Name + "_id", args.Inputs, nil
+}
+
+func (m *imagesSpy) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	return args.Args, nil
+}
+
+// renderBuildSteps runs generateBuildSteps and returns the decoded step list.
+func renderBuildSteps(t *testing.T, build *compose.BuildConfig) []buildStep {
+	t.Helper()
+	const dest = "us-central1-docker.pkg.dev/my-project/my-repo/app:latest"
+
+	var steps []buildStep
+	var unmarshalErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		out := generateBuildSteps(build, pulumi.String(dest).ToStringOutput())
+		out.ApplyT(func(stepsYAML string) string {
+			defer wg.Done()
+			unmarshalErr = yaml.Unmarshal([]byte(stepsYAML), &steps)
+			return stepsYAML
+		})
+		return nil
+	}, pulumi.WithMocks("proj", "stack", testMocks{}))
+	require.NoError(t, err)
+	wg.Wait()
+	require.NoError(t, unmarshalErr)
+	require.Len(t, steps, 2)
+	return steps
+}
+
+// argValue returns the token following flag in args.
+func argValue(t *testing.T, args []string, flag string) string {
+	t.Helper()
+	for i, a := range args {
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	t.Fatalf("flag %q not found in %v", flag, args)
+	return ""
+}
+
+// A compose service is free to name its Dockerfile something other than
+// "Dockerfile" (`dockerfile: api.Dockerfile`). Without -f, buildx looks for
+// <context>/Dockerfile and the build dies with
+// "failed to read dockerfile: open Dockerfile: no such file or directory".
+func TestGenerateBuildStepsPassesDockerfile(t *testing.T) {
+	dockerfile := "api.Dockerfile"
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context:    pulumi.String("."),
+		Dockerfile: &dockerfile,
+	})
+
+	assert.Equal(t, dockerfile, argValue(t, steps[1].Args, "-f"))
+}
+
+// Unset dockerfile still has to be passed explicitly; GetDockerfile defaults it.
+func TestGenerateBuildStepsDefaultsDockerfile(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{Context: pulumi.String("./app")})
+
+	assert.Equal(t, "Dockerfile", argValue(t, steps[1].Args, "-f"))
+}
+
+// Build args reach the build as --build-arg KEY with the value in the step's
+// env, so values are absent from the docker invocation in the Cloud Build log
+// (they are not hidden from Pulumi state: env is part of the same steps YAML
+// that becomes the Build resource's steps input). Ordering is sorted so an
+// unchanged build does not look changed.
+func TestGenerateBuildStepsPassesBuildArgsInEnv(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Args:    map[string]string{"MODE": "production", "API_URL": "https://example.invalid"},
+	})
+
+	assert.Equal(t, []string{"API_URL=https://example.invalid", "MODE=production"}, steps[1].Env)
+	assert.Equal(t, []string{
+		"buildx", "build", "--platform", "linux/amd64",
+		"-f", "Dockerfile",
+		"--build-arg", "API_URL", "--build-arg", "MODE",
+		"-t", "us-central1-docker.pkg.dev/my-project/my-repo/app:latest", "--load", ".",
+	}, steps[1].Args, "--build-arg flags must pair with their sorted keys, in order")
+	argsLine := strings.Join(steps[1].Args, " ")
+	assert.NotContains(t, argsLine, "production",
+		"build arg values must not appear on the command line")
+	assert.NotContains(t, argsLine, "https://example.invalid",
+		"build arg values must not appear on the command line")
+}
+
+// Cloud Build expands $VAR / ${VAR} substitutions in steps.env before running
+// the step, so a literal $ in a build arg value must be escaped to $$ or it
+// is silently replaced (e.g. by the actual project ID) rather than reaching
+// Docker as the Compose value.
+func TestGenerateBuildStepsEscapesDollarInBuildArgValues(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Args:    map[string]string{"REF": "$PROJECT_ID"},
+	})
+
+	assert.Equal(t, []string{"REF=$$PROJECT_ID"}, steps[1].Env)
+}
+
+func TestGenerateBuildStepsPassesTarget(t *testing.T) {
+	target := "runtime"
+	steps := renderBuildSteps(t, &compose.BuildConfig{
+		Context: pulumi.String("./app"),
+		Target:  &target,
+	})
+
+	assert.Equal(t, target, argValue(t, steps[1].Args, "--target"))
+}
+
+func TestGenerateBuildStepsOmitsTargetWhenUnset(t *testing.T) {
+	steps := renderBuildSteps(t, &compose.BuildConfig{Context: pulumi.String("./app")})
+
+	assert.NotContains(t, steps[1].Args, "--target")
+	assert.Empty(t, steps[1].Env)
 }

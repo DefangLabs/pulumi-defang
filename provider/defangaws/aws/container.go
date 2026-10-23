@@ -23,8 +23,10 @@ type ContainerDefinition struct {
 	Name             string                `json:"name"`
 	PortMappings     []PortMapping         `json:"portMappings"`
 	Secrets          []Secret              `json:"secrets,omitempty"`
+	StopTimeout      *int32                `json:"stopTimeout,omitempty"`
 	SystemControls   []SystemControl       `json:"systemControls"`
 	VolumesFrom      []VolumeFrom          `json:"volumesFrom"`
+	WorkingDirectory *string               `json:"workingDirectory,omitempty"`
 }
 
 // PortMapping defines a port mapping for a container.

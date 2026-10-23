@@ -3,6 +3,7 @@ package program
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/defang/src/pkg/deployment"
@@ -17,9 +18,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployScaleway(
+	ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate,
+) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	// Create an explicit Scaleway provider because pulumi:disable-default-providers
-	// excludes "scaleway" (see cd/main.go projectConfig).
+	// excludes "scaleway" (see cd/cd_main.go).
 	scwProvider, err := scaleway.NewProvider(ctx, "scaleway", &scaleway.ProviderArgs{
 		ProjectId: pulumi.StringPtr(scalewayconfig.GetProjectId(ctx)),
 		Region:    pulumi.StringPtr(scalewayconfig.GetRegion(ctx)),
@@ -38,7 +41,7 @@ func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, proje
 	// project component has converged so the CLI can read back service status.
 	if projectUpdate != nil {
 		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
-			for _, svc := range projectUpdate.Services {
+			for _, svc := range projectUpdate.GetServices() {
 				svc.Status = "unknown"
 				svc.State = defangv1.ServiceState_NOT_SPECIFIED
 				if ep, ok := endpoints[svc.GetService().GetName()]; ok {
@@ -56,13 +59,17 @@ func deployScaleway(ctx *pulumi.Context, cf *compose.Project, etag string, proje
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func saveProjectPbScaleway(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
+var errScalewayStateURL = errors.New("DEFANG_STATE_URL must be an s3:// URL with a bucket for Scaleway uploads")
+
+func saveProjectPbScaleway(
+	ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption,
+) error {
 	u, err := parseStateURL(ctx)
 	if err != nil || u == nil {
 		return err
 	}
 	if u.Scheme != "s3" || u.Host == "" {
-		return fmt.Errorf("DEFANG_STATE_URL must be an s3:// URL with a bucket for Scaleway uploads, got %q", u.String())
+		return fmt.Errorf("%w, got %q", errScalewayStateURL, u.String())
 	}
 
 	file := data.ApplyT(func(v any) (string, error) {
@@ -117,7 +124,7 @@ func toScalewayServices(services compose.Services) scalewaycompose.ServiceConfig
 
 func toScalewayServiceArgs(svc compose.ServiceConfig) scalewaycompose.ServiceConfigArgs {
 	args := scalewaycompose.ServiceConfigArgs{
-		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Image:       pulumi.StringPtrFromPtr(svc.StaticImage()),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
@@ -193,7 +200,9 @@ func toScalewayServiceArgs(svc compose.ServiceConfig) scalewaycompose.ServiceCon
 	if len(svc.DependsOn) > 0 {
 		dm := make(scalewaycompose.ServiceDependencyMap, len(svc.DependsOn))
 		for k, v := range svc.DependsOn {
-			dm[k] = scalewaycompose.ServiceDependencyArgs{Condition: pulumi.String(v.Condition), Required: pulumi.Bool(v.Required)}
+			dm[k] = scalewaycompose.ServiceDependencyArgs{
+				Condition: pulumi.String(v.Condition), Required: pulumi.Bool(v.Required),
+			}
 		}
 		args.DependsOn = dm
 	}

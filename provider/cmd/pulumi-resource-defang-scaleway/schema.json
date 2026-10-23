@@ -38,11 +38,29 @@
             "type": "string"
           }
         },
+        "cacheFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cacheTo": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "context": {
           "type": "string"
         },
         "dockerfile": {
           "type": "string"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "shmSize": {
           "type": "string"
@@ -101,6 +119,17 @@
       },
       "type": "object"
     },
+    "defang-scaleway:compose:ObjectStoreConfig": {
+      "properties": {
+        "bucket": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "bucket"
+      ]
+    },
     "defang-scaleway:compose:PostgresConfig": {
       "properties": {
         "allowDowntime": {
@@ -144,6 +173,15 @@
     },
     "defang-scaleway:compose:ServiceConfig": {
       "properties": {
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "autoscaling": {
+          "type": "boolean"
+        },
         "build": {
           "$ref": "#/types/defang-scaleway:compose:BuildConfig"
         },
@@ -152,6 +190,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "containerName": {
+          "type": "string"
         },
         "dependsOn": {
           "type": "object",
@@ -186,14 +227,26 @@
         "llm": {
           "$ref": "#/types/defang-scaleway:compose:LlmConfig"
         },
+        "networkMode": {
+          "type": "string"
+        },
         "networks": {
           "type": "object",
           "additionalProperties": {
             "$ref": "#/types/defang-scaleway:compose:ServiceNetworkConfig"
           }
         },
+        "objectStore": {
+          "$ref": "#/types/defang-scaleway:compose:ObjectStoreConfig"
+        },
         "platform": {
           "type": "string"
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "ports": {
           "type": "array",
@@ -208,6 +261,24 @@
           "$ref": "#/types/defang-scaleway:compose:RedisConfig"
         },
         "restart": {
+          "type": "string"
+        },
+        "stopGracePeriod": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-scaleway:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workingDir": {
           "type": "string"
         }
       },
@@ -240,6 +311,9 @@
         "appProtocol": {
           "type": "string"
         },
+        "listener": {
+          "type": "string"
+        },
         "mode": {
           "type": "string"
         },
@@ -255,11 +329,28 @@
         "target"
       ]
     },
+    "defang-scaleway:compose:ServiceVolumeConfig": {
+      "properties": {
+        "readOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
+        "target"
+      ]
+    },
     "defang-scaleway:scaleway:SharedInfra": {
       "type": "object"
     }
   },
-  "provider": {},
   "resources": {
     "defang-scaleway:index:Build": {
       "properties": {
@@ -377,13 +468,11 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "ports": {
           "type": "array",
@@ -474,13 +563,11 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "ports": {
           "type": "array",
@@ -535,16 +622,14 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "healthCheck": {
           "$ref": "#/types/defang-scaleway:compose:HealthCheckConfig"
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "platform": {
           "type": "string",

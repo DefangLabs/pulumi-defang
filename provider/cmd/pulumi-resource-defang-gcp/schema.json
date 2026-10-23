@@ -1,6 +1,7 @@
 {
   "name": "defang-gcp",
-  "description": "Deploy containerized services to GCP with Pulumi.",
+  "displayName": "Defang GCP",
+  "description": "Deploy Compose projects to GCP with Pulumi. Part of the Defang multi-cloud provider family — also available for AWS (defang-aws) and Azure (defang-azure).",
   "keywords": [
     "category/cloud",
     "category/infrastructure",
@@ -38,11 +39,29 @@
             "type": "string"
           }
         },
+        "cacheFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cacheTo": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "context": {
           "type": "string"
         },
         "dockerfile": {
           "type": "string"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "shmSize": {
           "type": "string"
@@ -101,6 +120,17 @@
       },
       "type": "object"
     },
+    "defang-gcp:compose:ObjectStoreConfig": {
+      "properties": {
+        "bucket": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "bucket"
+      ]
+    },
     "defang-gcp:compose:PostgresConfig": {
       "properties": {
         "allowDowntime": {
@@ -144,6 +174,15 @@
     },
     "defang-gcp:compose:ServiceConfig": {
       "properties": {
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "autoscaling": {
+          "type": "boolean"
+        },
         "build": {
           "$ref": "#/types/defang-gcp:compose:BuildConfig"
         },
@@ -152,6 +191,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "containerName": {
+          "type": "string"
         },
         "dependsOn": {
           "type": "object",
@@ -186,14 +228,26 @@
         "llm": {
           "$ref": "#/types/defang-gcp:compose:LlmConfig"
         },
+        "networkMode": {
+          "type": "string"
+        },
         "networks": {
           "type": "object",
           "additionalProperties": {
             "$ref": "#/types/defang-gcp:compose:ServiceNetworkConfig"
           }
         },
+        "objectStore": {
+          "$ref": "#/types/defang-gcp:compose:ObjectStoreConfig"
+        },
         "platform": {
           "type": "string"
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "ports": {
           "type": "array",
@@ -208,6 +262,24 @@
           "$ref": "#/types/defang-gcp:compose:RedisConfig"
         },
         "restart": {
+          "type": "string"
+        },
+        "stopGracePeriod": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-gcp:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workingDir": {
           "type": "string"
         }
       },
@@ -240,6 +312,9 @@
         "appProtocol": {
           "type": "string"
         },
+        "listener": {
+          "type": "string"
+        },
         "mode": {
           "type": "string"
         },
@@ -254,9 +329,26 @@
       "required": [
         "target"
       ]
+    },
+    "defang-gcp:compose:ServiceVolumeConfig": {
+      "properties": {
+        "readOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
+        "target"
+      ]
     }
   },
-  "provider": {},
   "resources": {
     "defang-gcp:index:Build": {
       "properties": {
@@ -404,8 +496,7 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "image": {
@@ -442,10 +533,18 @@
         },
         "loadBalancerDns": {
           "type": "string"
+        },
+        "serviceIds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
         }
       },
       "required": [
-        "endpoints"
+        "endpoints",
+        "serviceIds"
       ],
       "inputProperties": {
         "domain": {
@@ -507,10 +606,14 @@
       "properties": {
         "endpoint": {
           "type": "string"
+        },
+        "serviceAccountEmail": {
+          "type": "string"
         }
       },
       "required": [
-        "endpoint"
+        "endpoint",
+        "serviceAccountEmail"
       ],
       "inputProperties": {
         "command": {
@@ -518,6 +621,16 @@
           "items": {
             "type": "string",
             "plain": true
+          }
+        },
+        "containerName": {
+          "type": "string",
+          "plain": true
+        },
+        "dependsOn": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-gcp:compose:ServiceDependency"
           }
         },
         "deploy": {
@@ -537,16 +650,14 @@
         "environment": {
           "type": "object",
           "additionalProperties": {
-            "type": "string",
-            "plain": true
+            "type": "string"
           }
         },
         "healthCheck": {
           "$ref": "#/types/defang-gcp:compose:HealthCheckConfig"
         },
         "image": {
-          "type": "string",
-          "plain": true
+          "type": "string"
         },
         "llm": {
           "$ref": "#/types/defang-gcp:compose:LlmConfig"
@@ -562,6 +673,43 @@
           }
         },
         "projectName": {
+          "type": "string",
+          "plain": true
+        },
+        "serviceAccountEmail": {
+          "type": "string"
+        },
+        "sidecars": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-gcp:compose:ServiceConfig"
+          }
+        },
+        "stopGracePeriod": {
+          "type": "string",
+          "plain": true
+        },
+        "triggers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-gcp:compose:ServiceVolumeConfig"
+          }
+        },
+        "volumesFrom": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "plain": true
+          }
+        },
+        "workingDir": {
           "type": "string",
           "plain": true
         }

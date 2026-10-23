@@ -3,6 +3,7 @@ package program
 import (
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -17,7 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, ttl time.Duration, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &aws.ProviderArgs{
 		Region: pulumi.String(config.GetRegion(ctx)),
 		DefaultTags: &aws.ProviderDefaultTagsArgs{
@@ -54,6 +55,15 @@ func deployAWS(ctx *pulumi.Context, cf *compose.Project, domain, etag string, pr
 	project, err := defangaws.NewProject(ctx, cf.Name, args, pulumi.Provider(awsProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Self-destruct: schedule this stack's own `defang cd down` at now + TTL.
+	// Registered independently of the project component (see
+	// createAWSSelfDestruct for why); every redeploy rewrites the schedule.
+	if ttl > 0 {
+		if err := createAWSSelfDestruct(ctx, cf, ttl, pulumi.Provider(awsProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed S3 object, gated on
@@ -107,11 +117,25 @@ func toAWSServices(services compose.Services) awscompose.ServiceConfigMap {
 
 func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 	args := awscompose.ServiceConfigArgs{
-		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Image:       pulumi.StringPtrFromPtr(svc.StaticImage()),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
+
+		// Every field below is copied unconditionally, including the zero
+		// value: the compose types have no "unset" state for a bare bool or
+		// string, and a conditional write is how a field gets forgotten.
+		// See TestServiceArgsCopyEveryField.
+		Aliases:         pulumi.ToStringMap(svc.Aliases),
+		Autoscaling:     pulumi.Bool(svc.Autoscaling),
+		ContainerName:   pulumi.StringPtrFromPtr(svc.ContainerName),
+		NetworkMode:     pulumi.String(svc.NetworkMode),
+		Policies:        pulumi.ToStringArray(svc.Policies),
+		Restart:         pulumi.String(svc.Restart),
+		StopGracePeriod: pulumi.StringPtrFromPtr(svc.StopGracePeriod),
+		VolumesFrom:     pulumi.ToStringArray(svc.VolumesFrom),
+		WorkingDir:      pulumi.StringPtrFromPtr(svc.WorkingDir),
 	}
 	if svc.DomainName != "" {
 		args.DomainName = pulumi.String(svc.DomainName)
@@ -164,6 +188,11 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Redis.FromSnapshot),
 		}
 	}
+	if svc.ObjectStore != nil {
+		args.ObjectStore = awscompose.ObjectStoreConfigArgs{
+			Bucket: pulumi.String(svc.ObjectStore.Bucket),
+		}
+	}
 	if svc.HealthCheck != nil {
 		args.HealthCheck = awscompose.HealthCheckConfigArgs{
 			Test:               pulumi.ToStringArray(svc.HealthCheck.Test),
@@ -189,6 +218,17 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 	}
 	if svc.LLM != nil {
 		args.Llm = awscompose.LlmConfigArgs{}
+	}
+	if len(svc.Volumes) > 0 {
+		volumes := make(awscompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
+		for _, v := range svc.Volumes {
+			volumes = append(volumes, awscompose.ServiceVolumeConfigArgs{
+				Source:   pulumi.String(v.Source),
+				Target:   pulumi.String(v.Target),
+				ReadOnly: pulumi.Bool(v.ReadOnly),
+			})
+		}
+		args.Volumes = volumes
 	}
 	return args
 }

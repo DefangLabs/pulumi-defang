@@ -18,18 +18,6 @@ var (
 	stderrLogger io.StringWriter = os.Stderr
 )
 
-// withEtagPrefix prepends [defang-etag=<etag>] to every line so the CLI can
-// filter Azure ContainerAppConsoleLogs_CL by KQL `Log_s has "<etag>"`. Azure
-// Container Apps doesn't auto-promote JSON-on-stdout into structured columns
-// the way GCP Cloud Logging does, so per-line tagging is the only mechanism
-// that works there. Etag empty → no prefix wrapper.
-func withEtagPrefix(sw io.StringWriter) io.StringWriter {
-	if etag == "" {
-		return sw
-	}
-	return &prefixStringWriter{sw: sw, prefix: fmt.Sprintf("[defang-etag=%s] ", etag)}
-}
-
 // warn is like `console.warn` in JavaScript and logs to stderr.
 func warn(v ...interface{}) {
 	stderrLogger.WriteString(fmt.Sprintln(v...)) // nolint:errcheck
@@ -54,23 +42,6 @@ func newProgressStream() *LineWriter {
 
 func newErrorProgressStream() *LineWriter {
 	return NewLineWriter(NewIgnoreStringWriter(stderrLogger, ignoreSubstrs))
-}
-
-// prefixStringWriter prepends a fixed prefix to every WriteString call. Used
-// downstream of LineWriter, so each call is one full line; the prefix and the
-// line are concatenated into a single downstream WriteString to preserve the
-// "one WriteString = one log entry" contract that structured sinks (e.g.
-// NewLabelsLogger) rely on.
-type prefixStringWriter struct {
-	sw     io.StringWriter
-	prefix string
-}
-
-func (p *prefixStringWriter) WriteString(s string) (int, error) {
-	n, err := p.sw.WriteString(p.prefix + s)
-	// Report bytes from s only, not the added prefix, so callers' length
-	// accounting matches what they handed us.
-	return max(0, n-len(p.prefix)), err
 }
 
 type IgnoreWriter struct {

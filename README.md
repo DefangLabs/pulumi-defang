@@ -1,24 +1,27 @@
-# Defang Pulumi Provider
+# Defang Pulumi Providers
 
-![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/DefangLabs/pulumi-defang?label=Version)
+[![Version](https://img.shields.io/github/v/tag/DefangLabs/pulumi-defang?label=Version)](https://github.com/DefangLabs/pulumi-defang/releases)
+[![CI](https://github.com/DefangLabs/pulumi-defang/actions/workflows/test.yml/badge.svg)](https://github.com/DefangLabs/pulumi-defang/actions/workflows/test.yml)
+[![License](https://img.shields.io/badge/License-AGPL_3.0_%2F_Apache_2.0-blue.svg)](#license)
+[![Pulumi Registry](https://img.shields.io/badge/Pulumi%20Registry-defang-blueviolet)](https://www.pulumi.com/registry/packages/defang/)
 
-The Pulumi Providers for [Defang](https://defang.io) — Take your app from Docker Compose to a secure and scalable cloud deployment with Pulumi. Develop once, deploy anywhere.
+The Pulumi Providers for [Defang](https://defang.io) — take your app from Docker Compose to a secure, scalable cloud deployment with Pulumi. **Develop once, deploy anywhere**: the AWS, GCP, and Azure providers share a near-identical Compose-shaped API, so the same program targets a different cloud by swapping a single import.
 
 The repo also contains the source of our CD program in the [`cd/`](cd/) directory, which serves as the
-driver for the Defang deployments: it receive a Compose file, translates it to a Pulumi program, and runs `pulumi up` (or `destroy` etc.) to (de)provision the resources in it.
+driver for the Defang deployments: it receives a Compose file, translates it to a Pulumi program, and runs `pulumi up` (or `destroy` etc.) to (de)provision the resources in it.
 
 Most users will want to use these components through the [Defang CLI](https://github.com/DefangLabs/defang), which connects to your cloud account, bootstraps the CD environment and runs the CD image built by this repo.
 
 If you're a Pulumi user, check out our [Pulumi Registry listing](https://www.pulumi.com/registry/packages/defang/) for installation instructions, API docs, and example usage of using the providers in your own Pulumi programs.
 
-The [examples/](examples/) directory in this repo also contains complete working samples for all clouds and languages, incuding [examples/multi-cloud](examples/multi-cloud/) which deploys a single Compose app to the supported clouds from a single Pulumi program.
+The [examples/](examples/) directory in this repo also contains complete working samples for all clouds and languages, including [examples/multi-cloud](examples/multi-cloud/) which deploys a single Compose app to AWS, GCP, and Azure from a single Pulumi program.
 
 ## Components
 
 Each provider (`defang-aws`, `defang-gcp`, `defang-azure`, `defang-scaleway`) exposes the same Pulumi resource palette:
 
 - **`Project`** — the recommended entry point. Takes a full `services` map (Compose-style) and provisions shared infrastructure alongside each service. Exact shared infrastructure is provider-specific.
-- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility where a cloud build pipeline exists (Artifact Registry + Cloud Build on GCP, ECR + CodeBuild on AWS, ACR on Azure). Scaleway currently requires pre-built images for both standalone `Service` and `Project` services.
+- **`Service`** — a single container service. Standalone use is **image-only**: `image` must refer to a pre-built image. Build-from-source is a `Project` responsibility because it needs the shared build pipeline (Cloud Build on GCP, CodeBuild on AWS, ACR on Azure, Kaniko via Serverless Jobs on Scaleway).
 - **`Build`** — an image-build resource used internally by `Project` where supported.
 - **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
 
@@ -26,9 +29,8 @@ Managed components (`Service`, `Postgres`, `Redis`) share one implementation bet
 
 ### Resource naming
 
-When creating Pulumi resources, these Pulumi components will only specify the **logical** names, which is either the service name (e.g. `app`) or a name to describe the resource's role (e.g. `shared-vpc`, `ecr-public`).
-The **physical** name of the underlying cloud resource is determined by the Pulumi engine. By default, this will be the logical name followed by a hyphen and 7 random hex characters (e.g. `app-abc1234`).
-To control the physical name, configure `autonaming` rules in the Pulumi configuration files, either globally or per resource type. See the [Pulumi autonaming docs](https://www.pulumi.com/docs/intro/concepts/resources/#autonaming) for details. See the [CD code](cd/main.go) for examples of how autonaming is used in Defang.
+Components use **logical** names such as the service name (`app`) or the resource's role (`shared-vpc`). Most resources use Pulumi autonaming for their **physical** names. Scaleway currently sets explicit physical names for containers, namespaces, and managed databases.
+To control the physical name, configure `autonaming` rules in the Pulumi configuration files, either globally or per resource type. See the [Pulumi autonaming docs](https://www.pulumi.com/docs/intro/concepts/resources/#autonaming) for details. See the [CD code](cd/config.go) for examples of how autonaming is used in Defang.
 
 ## Installation and Configuration
 
@@ -40,8 +42,7 @@ See the [Contributing](https://github.com/DefangLabs/pulumi-defang/blob/main/CON
 
 ## Example usage
 
-The examples below use AWS. GCP, Azure, and Scaleway follow the same pattern — just swap the package name (e.g. `defang-aws` → `defang-gcp`).
-Complete working samples for all clouds and languages are in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory.
+The examples below use AWS. **The same code targets GCP, Azure, or Scaleway by swapping the import** (`defang-aws` → `defang-gcp`, `defang-azure`, or `defang-scaleway`) — the `services` map and the rest of the program are unchanged. Complete working samples for the supported clouds and four languages are in the [`./examples`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples) directory, and [`examples/multi-cloud`](https://github.com/DefangLabs/pulumi-defang/tree/main/examples/multi-cloud) deploys the same Compose app to all three from a single program.
 
 {{< chooser language "typescript,python,go,dotnet,yaml" >}}
 {{% choosable language typescript %}}
@@ -194,3 +195,12 @@ outputs:
 
 {{% /choosable %}}
 {{< /chooser >}}
+
+## License
+
+Dual-licensed:
+
+- The **provider source** in this repo (everything that builds the `pulumi-resource-defang-{aws,gcp,azure,scaleway}` binaries and the CD program in [`cd/`](cd/)) is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). If you fork the providers or run a modified version as a network service, AGPL's source-disclosure obligations apply.
+- The **generated SDKs** in [`sdk/`](sdk/) (the typed TypeScript, Python, Go, and .NET client libraries that you import into your Pulumi program) are licensed under [Apache License 2.0](sdk/LICENSE). Embedding them in your application carries no copyleft obligation — they're tooling, not infrastructure-of-your-app.
+
+Practically: if you just consume these providers from your Pulumi program (the common case), you're using Apache-2.0 code. AGPL only enters the picture if you fork the provider engine itself.

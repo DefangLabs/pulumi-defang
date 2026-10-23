@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/certificatemanager"
@@ -34,14 +35,17 @@ type SharedInfra struct {
 	PrivateZone       pulumi.StringOutput                     // managed zone name for the private google.internal. zone
 	Prefix            string                                  // prefix for all resource names (e.g. "myproject")
 	Stack             string                                  // Pulumi stack name (e.g. "dev")
+	ProjectName       string                                  // compose project name (defang-project log label)
 	Repos             map[string]*artifactregistry.Repository // non-empty when services reference external registries
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
 }
 
-// EnableGcpAPIs enables the GCP APIs required by the project.
-func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.ResourceOption) error {
+// EnableGcpAPIs enables the GCP APIs required by the project. Project is
+// deliberately left unset on each Service: it falls back to the provider's
+// configured project when omitted.
+func EnableGcpAPIs(ctx *pulumi.Context, opts ...pulumi.ResourceOption) error {
 	apis := []string{
 		"storage.googleapis.com",              // Cloud Storage API
 		"artifactregistry.googleapis.com",     // Artifact Registry API
@@ -59,11 +63,15 @@ func EnableGcpAPIs(ctx *pulumi.Context, gcpProject string, opts ...pulumi.Resour
 		"firestore.googleapis.com",            // For Firestore MongoDB
 	}
 
-	opts = append(opts, pulumi.RetainOnDelete(true))
+	// DisableOnDestroy false, not RetainOnDelete. Both leave the API enabled after a `down`, and
+	// both drop the resource from Pulumi state: RetainOnDelete by skipping the provider's delete
+	// call outright, this by telling the provider not to disable. The difference is that this is
+	// the provider's own switch for exactly this intent, which keeps RetainOnDelete reserved for
+	// the one case that warrants it — a recipe deliberately keeping a non-defang resource.
 	for _, api := range apis {
 		if _, err := projects.NewService(ctx, api, &projects.ServiceArgs{
-			Project: pulumi.String(gcpProject),
-			Service: pulumi.String(api),
+			Service:          pulumi.String(api),
+			DisableOnDestroy: pulumi.Bool(false),
 		}, opts...); err != nil {
 			return fmt.Errorf("failed to enable API %s: %w", api, err)
 		}
@@ -98,23 +106,36 @@ func BuildGlobalConfig(
 	region := GcpRegion(ctx)
 	gcpProject := config.GetProject(ctx)
 
-	vpc, err := compute.NewNetwork(ctx, projectName+"-vpc", &compute.NetworkArgs{
+	// Logical names below deliberately omit projectName, same as the firewalls and
+	// private-dns zone further down: Pulumi's default resource ID already prefixes
+	// it with <pulumi-project>-<stack>, which includes projectName, so repeating it
+	// here risked exceeding GCP's 63-char resource ID limit.
+	// Deliberately NOT RetainOnDelete, even though GCP holds the subnet's IP addresses for 1-2
+	// hours after the last Cloud Run service using them is deleted (Direct VPC egress; see
+	// buildVpcAccess in cloudrun.go), so a `down` inside that window fails to delete the subnet
+	// and, behind it, the VPC. Retaining hid that failure but dropped both resources from the
+	// Pulumi state, which left the VPC orphaned with nothing left to delete it: the project then
+	// ran into its NETWORKS quota (issue #183). Letting the destroy fail is what puts the CLI's
+	// cleanup tool (DefangLabs/defang#2157) in front of the user.
+	// networkName(project + "-vpc") in the legacy CD; it skipped the prefix and stack.
+	vpc, err := compute.NewNetwork(ctx, "vpc", &compute.NetworkArgs{
 		AutoCreateSubnetworks: pulumi.Bool(false),
-	}, append(opts, pulumi.RetainOnDelete(true))...)
+	}, common.MergeOptions(opts, legacyAlias(legacyNetworkName(projectName+"-vpc")))...)
 	if err != nil {
 		return nil, err
 	}
 
-	subnet, err := compute.NewSubnetwork(ctx, projectName+"-subnet", &compute.SubnetworkArgs{
+	subnet, err := compute.NewSubnetwork(ctx, "subnet", &compute.SubnetworkArgs{
 		IpCidrRange: pulumi.String("10.0.0.0/16"),
 		Region:      pulumi.String(region),
 		Network:     vpc.ID(),
-	}, append(opts, pulumi.RetainOnDelete(true))...)
+	}, common.MergeOptions(opts,
+		legacyAlias(legacyResourceName(ctx, projectName, "shared-subnet")))...)
 	if err != nil {
 		return nil, err
 	}
 
-	publicIP, err := compute.NewGlobalAddress(ctx, projectName+"-ip", &compute.GlobalAddressArgs{
+	publicIP, err := compute.NewGlobalAddress(ctx, "ip", &compute.GlobalAddressArgs{
 		AddressType: pulumi.String("EXTERNAL"),
 	}, opts...)
 	if err != nil {
@@ -122,7 +143,13 @@ func BuildGlobalConfig(
 	}
 
 	// Allow SSH ingress to all instances in the VPC (required for GCP Console SSH).
-	if _, err := compute.NewFirewall(ctx, projectName+"-allow-ssh", &compute.FirewallArgs{
+	// Logical name deliberately omits projectName: Pulumi's default resource ID
+	// already prefixes it with <pulumi-project>-<stack>, which includes
+	// projectName, so repeating it here risked exceeding GCP's 63-char resource
+	// ID limit (observed: "...-allow-icmp-<hash>" at 64 chars, one over, while
+	// the one-shorter "...-allow-ssh-<hash>" landed at exactly 63 and happened
+	// to still pass). Same fix as the wildcard-cert name below.
+	if _, err := compute.NewFirewall(ctx, "allow-ssh", &compute.FirewallArgs{
 		Network:      vpc.ID(),
 		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 		Allows: compute.FirewallAllowArray{
@@ -137,7 +164,7 @@ func BuildGlobalConfig(
 	}
 
 	// Allow ICMP ping to all instances in the VPC.
-	if _, err := compute.NewFirewall(ctx, projectName+"-allow-icmp", &compute.FirewallArgs{
+	if _, err := compute.NewFirewall(ctx, "allow-icmp", &compute.FirewallArgs{
 		Network:      vpc.ID(),
 		SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 		Allows: compute.FirewallAllowArray{
@@ -150,18 +177,11 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	privateZone, err := dns.NewManagedZone(ctx, projectName+"-private-dns", &dns.ManagedZoneArgs{
-		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
-		DnsName:     pulumi.String("google.internal."),
-		Visibility:  pulumi.String("private"),
-		PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
-			Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
-				&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
-					NetworkUrl: vpc.ID(),
-				},
-			},
-		},
-	}, append(opts, pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
+	// Logical name deliberately omits projectName, same as the firewalls above and
+	// public-dns below: Pulumi's default resource ID already prefixes it with
+	// <pulumi-project>-<stack>, which includes projectName, so repeating it here
+	// risked exceeding GCP's 63-char resource ID limit.
+	privateZone, err := createPrivateZone(ctx, projectName, vpc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +190,7 @@ func BuildGlobalConfig(
 		Stack:       ctx.Stack(),
 		Region:      region,
 		GcpProject:  gcpProject,
+		ProjectName: projectName,
 		VpcId:       vpc.ID().ToStringOutput(),
 		SubnetId:    subnet.ID().ToStringOutput(),
 		PublicIP:    publicIP,
@@ -207,7 +228,7 @@ func buildOptionalInfra(
 	}
 
 	if externalRegistries := collectExternalRegistries(services); len(externalRegistries) > 0 {
-		repos, err := createRemoteRepos(ctx, externalRegistries, opts...)
+		repos, err := createRemoteRepos(ctx, projectName, externalRegistries, opts...)
 		if err != nil {
 			return err
 		}
@@ -341,4 +362,32 @@ func GcpRegion(ctx *pulumi.Context) string {
 		return r
 	}
 	return defaultGCPRegion
+}
+
+// createPrivateZone creates the project's private google.internal. zone.
+// Extracted so BuildGlobalConfig stays within the length limit.
+func createPrivateZone(
+	ctx *pulumi.Context,
+	projectName string,
+	vpc *compute.Network,
+	opts ...pulumi.ResourceOption,
+) (*dns.ManagedZone, error) {
+	privateZone, err := dns.NewManagedZone(ctx, "private-dns", &dns.ManagedZoneArgs{
+		Description: pulumi.String(fmt.Sprintf("Private DNS zone for %v", projectName)),
+		DnsName:     pulumi.String("google.internal."),
+		Visibility:  pulumi.String("private"),
+		PrivateVisibilityConfig: &dns.ManagedZonePrivateVisibilityConfigArgs{
+			Networks: dns.ManagedZonePrivateVisibilityConfigNetworkArray{
+				&dns.ManagedZonePrivateVisibilityConfigNetworkArgs{
+					NetworkUrl: vpc.ID(),
+				},
+			},
+		},
+	}, append(common.MergeOptions(opts,
+		legacyAlias(legacyResourceName(ctx, projectName, "private-dns"))),
+		pulumi.ReplaceOnChanges([]string{"forwardingConfig"}), pulumi.DeleteBeforeReplace(true))...)
+	if err != nil {
+		return nil, err
+	}
+	return privateZone, nil
 }

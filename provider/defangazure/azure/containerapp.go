@@ -1,26 +1,52 @@
 package azure
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	armappcontainers "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
-	"github.com/pulumi/pulumi-azure-native-sdk/v3/commontypesv5"
+	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+// maxProbeInitialDelaySeconds is Azure Container Apps' hard ceiling for a probe's
+// InitialDelaySeconds; exceeding it fails the deploy with HTTP 400
+// ContainerAppProbeInitialDelaySecondsOutOfRange.
+const (
+	maxProbeInitialDelaySeconds = 60
+	// maxProbeFailureThreshold is Azure's ceiling for FailureThreshold, which bounds
+	// how much of a clamped start_period can be recovered into the retry window.
+	maxProbeFailureThreshold = 10
+	// Azure's own defaults, used when the compose file leaves them unset.
+	defaultProbePeriodSeconds    = 10
+	defaultProbeFailureThreshold = 3
 )
 
 // postgresURLEndpoint checks whether v is a postgres(ql):// URL whose host matches a managed
 // service in serviceEndpoints. If so it returns a new URL with:
 //   - the hostname replaced by the managed service FQDN
 //   - any ${VAR} credential/query references interpolated from configProvider
+//
+// The third return value is true when a config-provided secret (e.g. a
+// managed Postgres password) was interpolated into the URL — callers must
+// keep that value out of a plaintext resource property (Container Apps'
+// `env[].value` is readable by anyone with subscription Reader on a plain
+// GET; see DefangLabs/station#198) and instead wrap it as a native secret.
 func postgresURLEndpoint(
 	ctx *pulumi.Context,
 	v string,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	configProvider compose.ConfigProvider,
-) (pulumi.StringOutput, bool) {
+) (pulumi.StringOutput, bool, bool) {
 	var prefix string
 	switch {
 	case strings.HasPrefix(v, "postgresql://"):
@@ -28,14 +54,14 @@ func postgresURLEndpoint(
 	case strings.HasPrefix(v, "postgres://"):
 		prefix = "postgres://"
 	default:
-		return pulumi.StringOutput{}, false
+		return pulumi.StringOutput{}, false, false
 	}
 
 	rest := strings.TrimPrefix(v, prefix)
 	// Find the last "@" to split userinfo from host
 	atIdx := strings.LastIndex(rest, "@")
 	if atIdx < 0 {
-		return pulumi.StringOutput{}, false
+		return pulumi.StringOutput{}, false, false
 	}
 
 	hostAndRest := rest[atIdx+1:]
@@ -47,7 +73,7 @@ func postgresURLEndpoint(
 
 	ep, ok := serviceEndpoints[host]
 	if !ok {
-		return pulumi.StringOutput{}, false
+		return pulumi.StringOutput{}, false, false
 	}
 
 	// Split into: "scheme+userinfo@" and "afterhost" (port/path/query)
@@ -56,9 +82,10 @@ func postgresURLEndpoint(
 
 	// Interpolate ${VAR} in credentials and query parts if a config provider is available.
 	var beforeOut, afterOut pulumi.StringOutput
+	var beforeHasSecret, afterHasSecret bool
 	if configProvider != nil {
-		beforeOut = compose.InterpolateEnvironmentVariable(ctx, configProvider, beforeHost)
-		afterOut = compose.InterpolateEnvironmentVariable(ctx, configProvider, afterHost)
+		beforeOut, beforeHasSecret = compose.InterpolateEnvironmentVariable(ctx, configProvider, beforeHost)
+		afterOut, afterHasSecret = compose.InterpolateEnvironmentVariable(ctx, configProvider, afterHost)
 	} else {
 		beforeOut = pulumi.String(beforeHost).ToStringOutput()
 		afterOut = pulumi.String(afterHost).ToStringOutput()
@@ -73,11 +100,20 @@ func postgresURLEndpoint(
 		return before + epHost + after
 	}).(pulumi.StringOutput)
 
-	return result, true
+	return result, true, beforeHasSecret || afterHasSecret
 }
 
 type containerAppResult struct {
 	App *app.ContainerApp
+	// CustomDomain is nil unless the project sets a delegate Domain *and* the
+	// service exposes a public ingress; see CreateCustomDomain.
+	CustomDomain *CustomDomainResult
+	// WildcardDomain is nil unless the service declares a wildcard hostname and
+	// the project has a Front Door to serve it; see CreateWildcardDomain.
+	WildcardDomain *WildcardDomainResult
+	// ByodDomains holds one entry per BYOD hostname whose zone was found in the
+	// subscription — empty when the service has none; see CreateByodDomain.
+	ByodDomains []*CustomDomainResult
 }
 
 // containerAppCpuMemory snaps requested CPU/memory to Azure Container Apps fixed tiers.
@@ -108,17 +144,58 @@ func containerAppCpuMemory(cpus float64, memMiB int) (float64, string) {
 type envResult struct {
 	Envs    app.EnvironmentVarArray
 	Secrets app.SecretArray
+	// HasKeyVaultSecret is true when Secrets contains at least one Key
+	// Vault-backed entry (KeyVaultUrl set), as opposed to a Container
+	// App-native value-backed one (see the composite-secret branch in
+	// buildEnvVars). Only a Key Vault-backed secret needs the app to carry
+	// the Key Vault reader identity.
+	HasKeyVaultSecret bool
 }
 
-// toContainerAppSecretName converts an env var name to a Container App secret
-// name (lowercase, hyphens instead of underscores).
-func toContainerAppSecretName(envKey string) string {
-	return strings.ToLower(strings.ReplaceAll(envKey, "_", "-"))
+// containerAppSecretName identifies an inline, app-scoped secret across
+// revisions. Positional names could reassign an old revision's SecretRef to
+// a different credential after an insertion or deletion. Hash only the key
+// (never its value) to preserve case and punctuation distinctions within
+// Azure's naming rules, and separate config references from composed values.
+func containerAppSecretName(namespace, key string) string {
+	return fmt.Sprintf("%s-%x", namespace, sha256.Sum256([]byte(key)))
+}
+
+// resolveComposedEnvValue resolves a static compose env value that isn't a
+// bare secret ref (compose.GetConfigName2 returned ""): a managed-service
+// endpoint substitution (Redis/LLM/Postgres URL, or a bare service host name)
+// or, failing that, plain ${VAR} interpolation. hasSecret is true when the
+// result embeds a config-provided secret (currently only possible via the
+// Postgres URL branch or the interpolation fallback) — callers must keep such
+// a value out of a plaintext resource property. See DefangLabs/station#198.
+func resolveComposedEnvValue(
+	ctx *pulumi.Context,
+	raw string,
+	serviceEndpoints map[string]pulumi.StringOutput,
+	serviceHosts map[string]pulumi.StringOutput,
+	configProvider compose.ConfigProvider,
+) (pulumi.StringOutput, bool) {
+	if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
+		return ep, false
+	}
+	if ep, ok := llmURLEndpoint(raw, serviceEndpoints); ok {
+		return ep, false
+	}
+	if ep, ok, secret := postgresURLEndpoint(ctx, raw, serviceEndpoints, configProvider); ok {
+		return ep, secret
+	}
+	if host, ok := serviceHosts[raw]; ok {
+		return host, false
+	}
+	return compose.InterpolateEnvironmentVariable(ctx, configProvider, raw)
 }
 
 // buildEnvVars constructs the environment variable array for a Container App.
-// Pure config vars (empty value in compose) get Key Vault-backed secret references
-// when vault info is available; otherwise they fall back to inline values.
+// Pure config vars (empty value in compose) get Key Vault-backed secret
+// references when vault info is available. A composite value that embeds a
+// config-provided secret (e.g. a DSN built from ${POSTGRES_PASSWORD}) gets a
+// Container App-native secret instead (see DefangLabs/station#198); anything
+// else falls back to an inline value.
 func buildEnvVars(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -126,6 +203,11 @@ func buildEnvVars(
 	infra *SharedInfra,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	policyIdentity *PolicyIdentity,
+	//nolint:unparam // no current caller supplies invoke options, but the
+	// param mirrors ConfigProvider.GetSecretRef's own signature (compose.ConfigProvider),
+	// which buildEnvVars forwards it to — kept for interface parity with the
+	// AWS worker, which does pass a real option (parentOpt) here.
 	opts ...pulumi.InvokeOption,
 ) envResult {
 	envs := app.EnvironmentVarArray{
@@ -134,18 +216,40 @@ func buildEnvVars(
 			Value: pulumi.String(serviceName),
 		},
 	}
+	if _, userSet := svc.Environment["AZURE_CLIENT_ID"]; policyIdentity != nil && !userSet {
+		// DefaultAzureCredential can't disambiguate when the Container App
+		// carries more than one user-assigned identity (e.g. this one plus a
+		// Key Vault identity) — tell it which one is x-defang-policies's.
+		// Skipped when the compose file already sets AZURE_CLIENT_ID: two
+		// entries with the same name make Container Apps reject the spec (or
+		// pick one nondeterministically), and the compose author's choice of
+		// identity should win over ours either way.
+		envs = append(envs, app.EnvironmentVarArgs{
+			Name:  pulumi.String("AZURE_CLIENT_ID"),
+			Value: policyIdentity.ClientID,
+		})
+	}
 	if infra.Etag != "" {
 		envs = append(envs, app.EnvironmentVarArgs{
 			Name:  pulumi.String("DEFANG_ETAG"),
 			Value: pulumi.String(infra.Etag),
 		})
 	}
+	// DEFANG_FQDN: custom domain, else public FQDN (ingress) under the delegate
+	// domain — matches the CNAME from CreateCustomDomain. Azure has no
+	// private-FQDN fallback. See common.ServiceFQDN for the precedence.
+	if fqdn := common.ServiceFQDN(serviceName, svc, infra.Domain, ""); fqdn != "" {
+		envs = append(envs, app.EnvironmentVarArgs{
+			Name:  pulumi.String("DEFANG_FQDN"),
+			Value: pulumi.String(fqdn),
+		})
+	}
 
 	var appSecrets app.SecretArray
-	// Multiple env vars can reference the same secret (FOO=${X}, BAR=${X}); we
-	// need one Secret entry per unique secret but one EnvironmentVar per env
-	// var, so dedupe on the secret var name.
-	seenSecrets := make(map[string]struct{})
+	var hasKeyVaultSecret bool
+	// Multiple env vars can reference the same config var (FOO=${X}, BAR=${X})
+	// and must share one app-scoped Secret entry.
+	kvSecretNames := make(map[string]string)
 	for k, v := range common.Sorted(svc.Environment) {
 		if k == "OPENAI_API_KEY" && infra.LLMInfra != nil {
 			envs = append(envs, app.EnvironmentVarArgs{
@@ -153,11 +257,12 @@ func buildEnvVars(
 				Value: infra.LLMInfra.APIKey,
 			})
 		} else if secretVar := compose.GetConfigName2(k, v); secretVar != "" && infra.ConfigProvider != nil {
-			secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
-			// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
-			appSecretName := toContainerAppSecretName(secretVar)
-			if _, ok := seenSecrets[appSecretName]; !ok {
-				seenSecrets[appSecretName] = struct{}{}
+			appSecretName, alreadyMinted := kvSecretNames[secretVar]
+			if !alreadyMinted {
+				appSecretName = containerAppSecretName("config", secretVar)
+				kvSecretNames[secretVar] = appSecretName
+				secretURL, _ := infra.ConfigProvider.GetSecretRef(ctx, secretVar, opts...)
+				// If we fail to get a secret ref, fall back to an inline value so the app can still deploy.
 				// Container Apps requires both KeyVaultUrl and Identity when
 				// referencing a Key Vault secret — the identity is what the
 				// runtime uses to authenticate the vault fetch.
@@ -166,39 +271,50 @@ func buildEnvVars(
 					KeyVaultUrl: pulumi.String(secretURL),
 					Identity:    infra.KeyVaultIdentityID,
 				})
+				hasKeyVaultSecret = true
 			}
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:      pulumi.String(k),
 				SecretRef: pulumi.String(appSecretName),
 			})
-		} else {
-			// v is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
+		} else if sv, static := compose.StaticEnvValue(v); static {
+			// sv is guaranteed non-nil here: GetConfigName2(k, nil) returns k,
 			// which took the secret-ref branch above when a ConfigProvider is
-			// available. The only way to land here with nil v is
+			// available. The only way to land here with nil sv is
 			// ConfigProvider == nil — treat as empty literal.
 			var raw string
-			if v != nil {
-				raw = *v
+			if sv != nil {
+				raw = *sv
 			}
-			var value pulumi.StringInput
-			if ep, ok := redisURLEndpoint(raw, serviceEndpoints); ok {
-				value = ep
-			} else if ep, ok := llmURLEndpoint(raw, serviceEndpoints); ok {
-				value = ep
-			} else if ep, ok := postgresURLEndpoint(ctx, raw, serviceEndpoints, infra.ConfigProvider); ok {
-				value = ep
-			} else if host, ok := serviceHosts[raw]; ok {
-				value = host
+			value, hasSecret := resolveComposedEnvValue(ctx, raw, serviceEndpoints, serviceHosts, infra.ConfigProvider)
+			if hasSecret {
+				// One env var key always produces exactly one composite
+				// secret (no sharing like the KV branch above).
+				appSecretName := containerAppSecretName("env", k)
+				appSecrets = append(appSecrets, app.SecretArgs{
+					Name:  pulumi.String(appSecretName),
+					Value: value.ToStringPtrOutput(),
+				})
+				envs = append(envs, app.EnvironmentVarArgs{
+					Name:      pulumi.String(k),
+					SecretRef: pulumi.String(appSecretName),
+				})
 			} else {
-				value = compose.InterpolateEnvironmentVariable(ctx, infra.ConfigProvider, raw)
+				envs = append(envs, app.EnvironmentVarArgs{
+					Name:  pulumi.String(k),
+					Value: value,
+				})
 			}
+		} else {
+			// Dynamic (Output) values pass through as-is; endpoint substitution
+			// and interpolation only apply to static text.
 			envs = append(envs, app.EnvironmentVarArgs{
 				Name:  pulumi.String(k),
-				Value: value,
+				Value: v,
 			})
 		}
 	}
-	return envResult{Envs: envs, Secrets: appSecrets}
+	return envResult{Envs: envs, Secrets: appSecrets, HasKeyVaultSecret: hasKeyVaultSecret}
 }
 
 // CreateContainerApp creates an Azure Container App.
@@ -216,9 +332,11 @@ func CreateContainerApp(
 	imageURI pulumi.StringInput,
 	serviceEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	dnsZones map[string]string,
+	policyIdentity *PolicyIdentity,
 	opts ...pulumi.ResourceOption,
 ) (*containerAppResult, error) {
-	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts)
+	result := buildEnvVars(ctx, serviceName, svc, infra, serviceEndpoints, serviceHosts, policyIdentity)
 
 	// Resource limits
 	cpu, mem := containerAppCpuMemory(svc.GetCPUs(), svc.GetMemoryMiB())
@@ -231,7 +349,15 @@ func CreateContainerApp(
 	}
 
 	ingress := buildIngress(svc, nil) // TODO: need top-level networks to decide whether 'default' is internal
-	probes := buildProbes(svc)
+	if ingress != nil {
+		// Preserve any customDomains binding added out-of-band by
+		// `defang cert generate` (BYOD) or the delegate-domain cert flow. The
+		// provider never sets customDomains itself, so feeding back the live
+		// value keeps the CreateOrUpdate below from dropping the binding. See
+		// readLiveCustomDomains.
+		ingress.CustomDomains = readLiveCustomDomains(ctx, infra, serviceName)
+	}
+	probes := buildProbes(ctx, serviceName, svc)
 
 	var registries app.RegistryCredentialsArray
 	// Collect user-assigned identities the app needs: one for ACR pull (when
@@ -249,12 +375,15 @@ func CreateContainerApp(
 		}
 		userIdentities = append(userIdentities, identityID)
 	}
-	if len(result.Secrets) > 0 && infra.KeyVaultURL != "" {
-		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.Elem())
+	if result.HasKeyVaultSecret && infra.KeyVaultIdentityID != nil {
+		userIdentities = append(userIdentities, infra.KeyVaultIdentityID.ToStringPtrOutput().Elem())
 	}
-	var identity *commontypesv5.ManagedServiceIdentityArgs
+	if policyIdentity != nil {
+		userIdentities = append(userIdentities, policyIdentity.ID)
+	}
+	var identity *app.ManagedServiceIdentityArgs
 	if len(userIdentities) > 0 {
-		identity = &commontypesv5.ManagedServiceIdentityArgs{
+		identity = &app.ManagedServiceIdentityArgs{
 			Type:                   pulumi.String("UserAssigned"),
 			UserAssignedIdentities: userIdentities,
 		}
@@ -287,13 +416,6 @@ func CreateContainerApp(
 		template.RevisionSuffix = pulumi.String(infra.Etag)
 	}
 
-	// `customDomains` is managed out-of-band by `defang cert generate`
-	// (BYOD flow). Ignoring it prevents subsequent `pulumi up` calls from
-	// clobbering the binding when other fields on the app change.
-	opts = append(opts, pulumi.IgnoreChanges([]string{
-		"configuration.ingress.customDomains",
-	}))
-
 	containerApp, err := app.NewContainerApp(ctx, serviceName, &app.ContainerAppArgs{
 		ResourceGroupName:    infra.ResourceGroup.Name,
 		ContainerAppName:     pulumi.StringPtr(serviceName),
@@ -311,7 +433,131 @@ func CreateContainerApp(
 		return nil, fmt.Errorf("creating Container App: %w", err)
 	}
 
-	return &containerAppResult{App: containerApp}, nil
+	// Attach the service's public hostnames. Bound to the CA's parent option set
+	// so failures here propagate through the normal component graph.
+	return createAppDomains(ctx, serviceName, svc, containerApp, infra, dnsZones, opts...)
+}
+
+// createAppDomains attaches the service's public hostnames to its Container App:
+// the delegate-domain records and cert Azure Container Apps can bind itself, the
+// BYOD records in a zone found in the subscription, and Front Door routing for
+// the wildcard hostnames Container Apps can't serve. Each is a no-op when the
+// service doesn't ask for it.
+func createAppDomains(
+	ctx *pulumi.Context,
+	serviceName string,
+	svc compose.ServiceConfig,
+	containerApp *app.ContainerApp,
+	infra *SharedInfra,
+	dnsZones map[string]string,
+	opts ...pulumi.ResourceOption,
+) (*containerAppResult, error) {
+	customDomain, err := CreateCustomDomain(ctx, serviceName, svc, containerApp, infra, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating custom domain for %s: %w", serviceName, err)
+	}
+
+	// BYOD: for each of the service's own hostnames the CD task found a zone for,
+	// also write the routing + asuid TXT records into that customer zone. The CD
+	// program issues a managed cert per hostname. This is additive to the
+	// delegate-domain records above, so the service stays reachable on both.
+	byodDomains, err := CreateByodDomain(ctx, serviceName, svc, containerApp, infra, dnsZones, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating BYOD domain for %s: %w", serviceName, err)
+	}
+
+	// Wildcard hostnames bypass Container Apps entirely — it binds one hostname
+	// at a time — and are served by the project's Front Door instead. The zone
+	// zones resolved above also hold their validation TXT and wildcard CNAME
+	// wherever they can host them.
+	wildcardDomain, err := CreateWildcardDomain(ctx, serviceName, svc, containerApp, infra, dnsZones, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating wildcard domain for %s: %w", serviceName, err)
+	}
+
+	return &containerAppResult{
+		App:            containerApp,
+		CustomDomain:   customDomain,
+		ByodDomains:    byodDomains,
+		WildcardDomain: wildcardDomain,
+	}, nil
+}
+
+// resolveSubscriptionID resolves the Azure subscription for the out-of-band
+// customDomains read. It prefers the azure-native:subscriptionId stack config
+// (what the provider itself is configured with), then falls back to the
+// ARM_SUBSCRIPTION_ID / AZURE_SUBSCRIPTION_ID env vars the Azure SDK / CLI use.
+// The env fallback matters for BYOD: `defang cert generate` takes its
+// subscription from the CLI driver, which isn't necessarily mirrored into the
+// Pulumi stack config — but the CD task's environment carries it.
+func resolveSubscriptionID(ctx *pulumi.Context) string {
+	if sub := config.GetSubscriptionId(ctx); sub != "" {
+		return sub
+	}
+	if sub := os.Getenv("ARM_SUBSCRIPTION_ID"); sub != "" {
+		return sub
+	}
+	return os.Getenv("AZURE_SUBSCRIPTION_ID")
+}
+
+// readLiveCustomDomains fetches the Container App's current
+// configuration.ingress.customDomains directly from ARM and returns them as a
+// Pulumi input, so the CreateOrUpdate this provider issues *preserves* any
+// binding added out-of-band — by `defang cert generate` (BYOD) or the
+// delegate-domain cert flow — instead of wiping it.
+//
+// This replaces an earlier pulumi.IgnoreChanges("...customDomains") guard,
+// which was ineffective: IgnoreChanges reuses the value from Pulumi's last
+// checkpoint, and since the provider never sets customDomains that value is
+// always empty — so the next deploy's PUT still dropped the binding. Reading
+// the live value each deploy makes the desired state match reality.
+//
+// On the first deploy the app (or its resource group) doesn't exist yet; a 404
+// is treated as "nothing to preserve". Any other read error is returned so the
+// deploy fails loudly rather than silently clobbering the binding. With no
+// subscription configured (e.g. a bare preview) the read is skipped.
+func readLiveCustomDomains(ctx *pulumi.Context, infra *SharedInfra, serviceName string) app.CustomDomainArrayOutput {
+	subscriptionID := resolveSubscriptionID(ctx)
+	return infra.ResourceGroup.Name.ApplyT(func(rgName string) ([]app.CustomDomain, error) {
+		// An empty resource group name means nothing has been deployed to read
+		// from (mock test servers resolve it to ""); ARM rejects it anyway.
+		if subscriptionID == "" || rgName == "" {
+			return nil, nil
+		}
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, fmt.Errorf("custom-domain preserve: build credential: %w", err)
+		}
+		client, err := armappcontainers.NewContainerAppsClient(subscriptionID, cred, nil)
+		if err != nil {
+			return nil, fmt.Errorf("custom-domain preserve: build client: %w", err)
+		}
+		resp, err := client.Get(ctx.Context(), rgName, serviceName, nil)
+		if err != nil {
+			var respErr *azcore.ResponseError
+			if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+				return nil, nil // app/resource group not created yet — nothing to preserve
+			}
+			return nil, fmt.Errorf("custom-domain preserve: reading %s: %w", serviceName, err)
+		}
+		if resp.Properties == nil || resp.Properties.Configuration == nil ||
+			resp.Properties.Configuration.Ingress == nil {
+			return nil, nil
+		}
+		var domains []app.CustomDomain
+		for _, cd := range resp.Properties.Configuration.Ingress.CustomDomains {
+			if cd == nil || cd.Name == nil {
+				continue
+			}
+			domain := app.CustomDomain{Name: *cd.Name, CertificateId: cd.CertificateID}
+			if cd.BindingType != nil {
+				bt := string(*cd.BindingType)
+				domain.BindingType = &bt
+			}
+			domains = append(domains, domain)
+		}
+		return domains, nil
+	}).(app.CustomDomainArrayOutput)
 }
 
 // llmURLEndpoint checks whether v is an LLM gateway URL ("http://<name>/api/v1/") whose
@@ -332,32 +578,154 @@ func llmURLEndpoint(v string, serviceEndpoints map[string]pulumi.StringOutput) (
 	return pulumi.StringOutput{}, false
 }
 
+// buildIngress returns the Container Apps ingress for a service, or nil when the
+// service publishes no port at all.
+//
+// Container Apps has no equivalent of a direct host port: an app is reachable by
+// name — even from a sibling app in the same environment — only if it has an
+// ingress block. So a host-mode port must map to an ingress rather than to none
+// at all, or the service gets no resolvable name and a sibling that addresses it
+// by service name fails DNS resolution outright.
+//
+// A host-only service's main ingress must additionally be TCP-transport with an
+// explicit ExposedPort. Azure's `<name>:<port>` service-to-service addressing
+// (the contract the CLI already rewrites env var references to, and the one
+// AWS/GCP already implement — pulumi-defang#558) works only for TCP ingress; an
+// HTTP-transport ingress expects the app's FQDN and host-based routing, so a
+// sibling dialing the bare name and port resolves a name but the TCP handshake
+// never completes (station.defang.io's 2026-09-09 outage: DNS resolved, `dial
+// tcp <ip>:8080: i/o timeout` on every route).
+//
+// Port mode therefore selects the exposure type and networks decide visibility:
+//   - an ingress port is externally exposed when the service is in a public
+//     network, internal otherwise;
+//   - a host port is always internal. Host is treated as private transitionally,
+//     the same choice common.ServiceFQDN documents, so a default-network host
+//     service keeps an internal-only name until public host exposure is
+//     implemented (pulumi-defang#253). This deliberately does not give a
+//     default-network host service a public hostname.
+//
+// A service with both an ingress port and host ports keeps the ingress port as
+// its main (possibly external) ingress and maps every host port as an internal
+// AdditionalPortMapping, so both stay reachable — pulumi-defang#558.
+//
+// This deliberately does not pre-validate port values (UDP, Azure's reserved
+// 36985, 80/443, or the 5-additional-port ceiling): Azure Container Apps
+// already rejects all of those at the ARM API, and duplicating that logic here
+// would drift as Azure's own rules change. CreateContainerApp wraps whatever
+// error comes back, so the real failure still reaches the caller.
 func buildIngress(svc compose.ServiceConfig, networks compose.Networks) *app.IngressArgs {
-	if !svc.HasIngressPorts() {
+	ingressPort, hostPorts := splitAzurePorts(svc)
+	if ingressPort == nil && len(hostPorts) == 0 {
 		return nil
 	}
-	var ingressPort compose.ServicePortConfig
-	for _, p := range svc.Ports {
-		if p.IsIngress() {
-			ingressPort = p
-			break // TODO: support more than one ingress port
+
+	var ingress *app.IngressArgs
+	extraHostPorts := hostPorts
+	if ingressPort != nil {
+		ingress = &app.IngressArgs{
+			External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
+			TargetPort: pulumi.Int(ingressPort.Target),
 		}
+		if ingressPort.AppProtocol == compose.PortAppProtocolGRPC ||
+			ingressPort.AppProtocol == compose.PortAppProtocolHTTP2 {
+			ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodHttp2))
+		}
+	} else {
+		main := hostPorts[0]
+		ingress = &app.IngressArgs{
+			External:    pulumi.Bool(false),
+			TargetPort:  pulumi.Int(main.Target),
+			ExposedPort: pulumi.IntPtr(int(main.Target)),
+		}
+		// TCP is required for <name>:<port> addressing (pulumi-defang#558); Azure
+		// Container Apps ingress has no UDP transport, so a UDP host port is left
+		// without one, like the ingress-port branch above leaves it unset for its
+		// non-grpc/http2 case — the ARM API rejects it with its own error rather
+		// than this code mislabeling it as TCP.
+		if main.Protocol != compose.PortProtocolUDP {
+			ingress.Transport = pulumi.StringPtr(string(app.IngressTransportMethodTcp))
+		}
+		extraHostPorts = hostPorts[1:]
 	}
-	return &app.IngressArgs{
-		External:   pulumi.Bool(common.InPublicNetwork(networks, svc)),
-		TargetPort: pulumi.Int(ingressPort.Target),
+
+	if len(extraHostPorts) > 0 {
+		mappings := make(app.IngressPortMappingArray, 0, len(extraHostPorts))
+		for _, p := range extraHostPorts {
+			mappings = append(mappings, app.IngressPortMappingArgs{
+				External:    pulumi.Bool(false),
+				TargetPort:  pulumi.Int(p.Target),
+				ExposedPort: pulumi.IntPtr(int(p.Target)),
+			})
+		}
+		ingress.AdditionalPortMappings = mappings
 	}
+	return ingress
 }
 
-func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
-	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 || len(svc.Ports) == 0 {
+// splitAzurePorts separates a service's ports into its (at most one) main
+// ingress port and its host-mode ports. TODO: support more than one ingress
+// port.
+//
+//nolint:nonamedreturns // names document which slice is which at every call site
+func splitAzurePorts(svc compose.ServiceConfig) (
+	ingressPort *compose.ServicePortConfig, hostPorts []compose.ServicePortConfig,
+) {
+	for i, p := range svc.Ports {
+		switch {
+		case p.IsIngress() && ingressPort == nil:
+			ingressPort = &svc.Ports[i]
+		case p.IsHost():
+			hostPorts = append(hostPorts, p)
+		}
+	}
+	return ingressPort, hostPorts
+}
+
+// buildProbes returns the liveness probe(s) for a Container App.
+//
+// When the compose service declares a `healthcheck:`, we emit an HTTP probe
+// against the path parsed from the `test:` command (e.g. CMD curl
+// http://localhost:PORT/healthz) — falling back to "/" if no URL is found.
+// Probe cadence (interval/timeout/retries/start period) is copied from the
+// compose healthcheck.
+//
+// When there's no compose healthcheck, we emit an explicit TCP probe on the
+// service's target port instead of returning nil. Returning nil here causes
+// Azure Container Apps to inject its DEFAULT liveness probe — HTTP GET on
+// `/`, which 404s for many services (Hasura is the canonical case) and puts
+// the container into a crash-loop. A TCP probe just checks the listener is
+// up, which is correct default behavior regardless of HTTP semantics.
+func buildProbes(ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig) app.ContainerAppProbeArray {
+	if len(svc.Ports) == 0 {
 		return nil
 	}
+	targetPort := pulumi.Int(svc.Ports[0].Target)
+
+	if svc.HealthCheck == nil || len(svc.HealthCheck.Test) == 0 {
+		// Fall back to a TCP probe so Azure's default HTTP-/ probe doesn't
+		// activate. Same probe shape as Azure's default (10s/5s/5) but TCP.
+		return app.ContainerAppProbeArray{
+			app.ContainerAppProbeArgs{
+				Type: pulumi.String("Liveness"),
+				TcpSocket: &app.ContainerAppProbeTcpSocketArgs{
+					Port: targetPort,
+				},
+			},
+		}
+	}
+
+	// Use the path AND port parsed from the test command — matches what the
+	// user literally wrote (e.g. `curl http://localhost:9000/healthz` probes
+	// :9000, not whatever svc.Ports[0].Target happens to be). When no port
+	// appears in the test URL, GetHealthCheckPathAndPort returns 80 — same
+	// semantics as TS (`cd/aws/healthcheck.ts`: `parsed.port || 80`).
+	path, port := compose.GetHealthCheckPathAndPort(svc.HealthCheck)
 	probe := app.ContainerAppProbeArgs{
 		Type: pulumi.String("Liveness"),
 		HttpGet: &app.ContainerAppProbeHttpGetArgs{
-			Port: pulumi.Int(svc.Ports[0].Target),
-			Path: pulumi.String("/"),
+			Port: pulumi.Int(port),
+			Path: pulumi.String(path),
 		},
 	}
 	if svc.HealthCheck.IntervalSeconds != 0 {
@@ -370,7 +738,50 @@ func buildProbes(svc compose.ServiceConfig) app.ContainerAppProbeArray {
 		probe.FailureThreshold = pulumi.Int(svc.HealthCheck.Retries)
 	}
 	if svc.HealthCheck.StartPeriodSeconds != 0 {
-		probe.InitialDelaySeconds = pulumi.Int(svc.HealthCheck.StartPeriodSeconds)
+		// Azure rejects anything above maxProbeInitialDelaySeconds with a 400
+		// (ContainerAppProbeInitialDelaySecondsOutOfRange), which fails the whole
+		// deploy. ECS allows far longer start periods, so a compose that is
+		// perfectly valid on AWS would otherwise be undeployable here.
+		//
+		// Clamping alone would silently shorten the grace a slow-starting container
+		// gets, turning a deploy-time error into a restart loop. What the author
+		// actually asked for is a total startup budget: start_period grace plus
+		// retries * interval before the container is declared unhealthy. So move the
+		// clamped-off seconds into the retry window and keep that budget intact.
+		delay := svc.HealthCheck.StartPeriodSeconds
+		if delay > maxProbeInitialDelaySeconds {
+			period := svc.HealthCheck.IntervalSeconds
+			if period <= 0 {
+				period = defaultProbePeriodSeconds
+			}
+			threshold := svc.HealthCheck.Retries
+			if threshold <= 0 {
+				threshold = defaultProbeFailureThreshold
+			}
+			// Round up: the budget may only grow, never shrink.
+			lost := delay - maxProbeInitialDelaySeconds
+			want := threshold + (lost+period-1)/period
+			if want > maxProbeFailureThreshold {
+				want = maxProbeFailureThreshold
+			}
+			budget := maxProbeInitialDelaySeconds + want*period
+			if budget < delay+threshold*period {
+				_ = ctx.Log.Warn(fmt.Sprintf(
+					"service %q: start_period %ds exceeds the Azure maximum of %ds. Clamped and raised "+
+						"healthcheck retries to %d, but that only reaches %ds of startup budget instead of "+
+						"the %ds requested; raise the healthcheck interval if the container needs longer.",
+					serviceName, delay, maxProbeInitialDelaySeconds, want, budget,
+					delay+threshold*period), nil)
+			} else {
+				_ = ctx.Log.Info(fmt.Sprintf(
+					"service %q: start_period %ds exceeds the Azure maximum of %ds; clamped and raised "+
+						"healthcheck retries from %d to %d, preserving %ds of startup budget.",
+					serviceName, delay, maxProbeInitialDelaySeconds, threshold, want, budget), nil)
+			}
+			probe.FailureThreshold = pulumi.Int(want)
+			delay = maxProbeInitialDelaySeconds
+		}
+		probe.InitialDelaySeconds = pulumi.Int(delay)
 	}
 	return app.ContainerAppProbeArray{probe}
 }

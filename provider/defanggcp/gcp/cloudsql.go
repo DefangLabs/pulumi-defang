@@ -16,8 +16,19 @@ type CloudSQLResult struct {
 }
 
 // gcpPostgresVersion maps a major version number to the GCP database version string.
+// https://cloud.google.com/sql/docs/postgres/db-versions
 func gcpPostgresVersion(version int) string {
 	switch version {
+	case 9:
+		return "POSTGRES_9_6" // 9.6 was the only 9.x Cloud SQL offered
+	case 10:
+		return "POSTGRES_10"
+	case 11:
+		return "POSTGRES_11"
+	case 12:
+		return "POSTGRES_12"
+	case 13:
+		return "POSTGRES_13"
 	case 14:
 		return "POSTGRES_14"
 	case 15:
@@ -84,12 +95,13 @@ func sqlBackupConfig(ctx *pulumi.Context) *sql.DatabaseInstanceSettingsBackupCon
 func CreateCloudSQL(
 	ctx *pulumi.Context,
 	configProvider compose.ConfigProvider,
+	projectName string,
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *SharedInfra,
-	opts ...pulumi.ResourceOption,
+	opt pulumi.ResourceOrInvokeOption,
 ) (*CloudSQLResult, error) {
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	pg := svc.ResolvePostgres(ctx, configProvider, opt)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}
@@ -111,11 +123,13 @@ func CreateCloudSQL(
 		return gcpPostgresVersion(v)
 	}).(pulumi.StringOutput)
 
-	instanceOpts := opts
+	// resourceName(project, config, service, "postgres") in the legacy CD.
+	instanceOpts := []pulumi.ResourceOption{
+		opt, legacyAlias(legacyResourceName(ctx, projectName, serviceName, "postgres")),
+	}
 	if infra != nil && infra.ServiceConnection != nil {
-		instanceOpts = append([]pulumi.ResourceOption{
-			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}),
-		}, opts...)
+		instanceOpts = append(instanceOpts,
+			pulumi.DependsOn([]pulumi.Resource{infra.ServiceConnection}))
 	}
 
 	var regionInput pulumi.StringPtrInput
@@ -150,31 +164,37 @@ func CreateCloudSQL(
 	}
 
 	// Create user only if a password is explicitly provided as a literal.
-	// A nil *string (YAML "POSTGRES_PASSWORD:" with no value) means "resolve
-	// at runtime from config" — at this point we can't tell if a password
-	// exists, so skip custom user creation and let the default path handle it.
-	if pw := svc.Environment["POSTGRES_PASSWORD"]; pw != nil && *pw != "" {
+	// A nil value (YAML "POSTGRES_PASSWORD:" with no value) means "resolve
+	// at runtime from config", and a dynamic (Output) value can't be inspected
+	// here — in both cases skip custom user creation and let the default path
+	// handle it.
+	if pw, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_PASSWORD"]); pw != nil && *pw != "" {
 		_, err := sql.NewUser(ctx, serviceName+"-user", &sql.UserArgs{
-			Name:           pg.Username,
-			Instance:       instance.Name,
-			Password:       pg.Password,
-			Type:           pulumi.String("BUILT_IN"),
+			Name:     pg.Username,
+			Instance: instance.Name,
+			Password: pg.Password,
+			Type:     pulumi.String("BUILT_IN"),
+			// ABANDON alone. Deleting the instance removes its users, so there is nothing here to
+			// delete and nothing to leak; the RetainOnDelete that used to sit on top was
+			// redundant with the deletion policy, which already suppresses the API call.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, append(opts, pulumi.RetainOnDelete(true))...)
+		}, opt, legacyAlias(legacyPlainName(projectName, serviceName, "postgres", "user")))
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL user: %w", err)
 		}
 	}
 
 	// Create database only if explicitly set to a non-default literal name.
-	// Same rationale as POSTGRES_PASSWORD above: nil (*string zero) is "resolve
+	// Same rationale as POSTGRES_PASSWORD above: nil or dynamic is "resolve
 	// at runtime", which we treat as "no custom DB requested" for scheduling.
-	if rawDB := svc.Environment["POSTGRES_DB"]; rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
+	rawDB, _ := compose.StaticEnvValue(svc.Environment["POSTGRES_DB"])
+	if rawDB != nil && *rawDB != "" && *rawDB != compose.DEFAULT_POSTGRES_DB {
 		_, err := sql.NewDatabase(ctx, serviceName+"-db", &sql.DatabaseArgs{
-			Name:           pg.DBName,
-			Instance:       instance.Name,
+			Name:     pg.DBName,
+			Instance: instance.Name,
+			// ABANDON alone, same reasoning as the user above.
 			DeletionPolicy: pulumi.String("ABANDON"),
-		}, append(opts, pulumi.RetainOnDelete(true))...)
+		}, opt, legacyAlias(legacyPlainName(projectName, serviceName, "postgres", "db")))
 		if err != nil {
 			return nil, fmt.Errorf("creating Cloud SQL database: %w", err)
 		}

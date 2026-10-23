@@ -11,14 +11,16 @@ import (
 type NetworkingResult struct {
 	VNet                   *network.VirtualNetwork
 	AppsSubnet             *network.Subnet
+	ComputeSubnet          *network.Subnet
 	PostgresSubnet         *network.Subnet
 	PrivateEndpointsSubnet *network.Subnet // subnet for private endpoints (Redis, etc.)
 }
 
-// CreateNetworking creates a VNet with three subnets:
+// CreateNetworking creates a VNet with four subnets:
 //   - apps subnet (10.0.0.0/23): used by Container Apps managed environment
 //   - postgres subnet (10.0.2.0/24): delegated to Microsoft.DBforPostgreSQL/flexibleServers
 //   - endpoints subnet (10.0.3.0/24): for private endpoints (Redis, etc.)
+//   - compute subnet (10.0.4.0/24): used by VM scale sets for services Container Apps cannot run
 func CreateNetworking(
 	ctx *pulumi.Context,
 	name string,
@@ -78,9 +80,19 @@ func CreateNetworking(
 		return nil, fmt.Errorf("creating private endpoints subnet: %w", err)
 	}
 
+	computeSubnet, err := network.NewSubnet(ctx, "compute", &network.SubnetArgs{
+		ResourceGroupName:  infra.ResourceGroup.Name,
+		VirtualNetworkName: vnet.Name,
+		AddressPrefix:      pulumi.String("10.0.4.0/24"),
+	}, subnetOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating compute subnet: %w", err)
+	}
+
 	return &NetworkingResult{
 		VNet:                   vnet,
 		AppsSubnet:             appsSubnet,
+		ComputeSubnet:          computeSubnet,
 		PostgresSubnet:         pgSubnet,
 		PrivateEndpointsSubnet: peSubnet,
 	}, nil

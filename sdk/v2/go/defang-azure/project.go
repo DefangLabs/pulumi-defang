@@ -18,6 +18,7 @@ type Project struct {
 
 	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
 	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
+	ServiceIds      pulumi.StringMapOutput `pulumi:"serviceIds"`
 }
 
 // NewProject registers a new resource with the given unique name, arguments, and options.
@@ -40,6 +41,8 @@ func NewProject(ctx *pulumi.Context,
 }
 
 type projectArgs struct {
+	DnsZones map[string]string                `pulumi:"dnsZones"`
+	Domain   *string                          `pulumi:"domain"`
 	Etag     *string                          `pulumi:"etag"`
 	Networks map[string]compose.NetworkConfig `pulumi:"networks"`
 	Services map[string]compose.ServiceConfig `pulumi:"services"`
@@ -47,6 +50,8 @@ type projectArgs struct {
 
 // The set of arguments for constructing a Project resource.
 type ProjectArgs struct {
+	DnsZones pulumi.StringMapInput
+	Domain   *string
 	Etag     *string
 	Networks compose.NetworkConfigMapInput
 	Services compose.ServiceConfigMapInput
@@ -95,6 +100,10 @@ func (o ProjectOutput) Endpoints() pulumi.StringMapOutput {
 
 func (o ProjectOutput) LoadBalancerDns() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringPtrOutput { return v.LoadBalancerDns }).(pulumi.StringPtrOutput)
+}
+
+func (o ProjectOutput) ServiceIds() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.ServiceIds }).(pulumi.StringMapOutput)
 }
 
 func init() {

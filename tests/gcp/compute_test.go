@@ -76,7 +76,7 @@ func TestHostPortRoutesToComputeEngine(t *testing.T) {
 	assert.Equal(t, 1, countType(*records, gcpInstanceGroupManagerType), "host port should use Compute Engine MIG")
 }
 
-func TestMultipleIngressPortsRoutesToComputeEngine(t *testing.T) {
+func TestMultipleIngressPortsCreatePerPortBackends(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -88,10 +88,22 @@ func TestMultipleIngressPortsRoutesToComputeEngine(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, 0, countType(*records, gcpCloudRunServiceType),
-		"multiple ingress ports should not use Cloud Run")
-	assert.Equal(t, 1, countType(*records, gcpInstanceGroupManagerType),
-		"multiple ingress ports should use Compute Engine MIG")
+
+	// Each ingress port gets its own HTTP/EXTERNAL_MANAGED backend service -- the
+	// external ALB routes a hostname to a single backend, so two ingress ports
+	// can't share one.
+	assert.Equal(t, 2, countTypeWhere(*records, "gcp:compute/backendService:BackendService",
+		func(m property.Map) bool {
+			return m.Get("protocol").AsString() == "HTTP" && m.Get("loadBalancingScheme").AsString() == "EXTERNAL_MANAGED"
+		}), "expected one external backend service per ingress port")
+
+	// Both ports share the MIG with the internal passthrough NLB (the service
+	// isn't a lone ingress port), so both backends need RATE balancing mode.
+	assert.Equal(t, 2, countTypeWhere(*records, "gcp:compute/backendService:BackendService",
+		func(m property.Map) bool {
+			backends := m.Get("backends").AsArray()
+			return backends.Len() == 1 && backends.Get(0).AsMap().Get("balancingMode").AsString() == "RATE"
+		}), "expected both backends to use RATE balancing mode")
 }
 
 // --- Compute Engine resource creation ---

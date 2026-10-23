@@ -305,7 +305,7 @@ func containerHealthProbes(
 	if timeout <= 0 {
 		timeout = 5
 	}
-	path, _ := common.ParseHealthCheckPathPort(svc.HealthCheck.Test)
+	path, _ := compose.GetHealthCheckPathAndPort(svc.HealthCheck)
 	intervalValue := pulumi.String((time.Duration(interval) * time.Second).String())
 	timeoutValue := pulumi.String((time.Duration(timeout) * time.Second).String())
 	liveness := &containers.ContainerLivenessProbeArgs{
@@ -347,9 +347,15 @@ func containerEnvironment(
 			secrets[k] = configProvider.GetConfigValue(ctx, secretVar, opts...)
 			continue
 		}
+		literal, static := compose.StaticEnvValue(v)
+		if !static {
+			// Outputs may carry secrets; keep dynamic values in the native secret map.
+			secrets[k] = v
+			continue
+		}
 		raw := ""
-		if v != nil {
-			raw = *v
+		if literal != nil {
+			raw = *literal
 		}
 		// Replace env values that reference managed services:
 		// - Values matching a managed service name (e.g., POSTGRES_HOST=database)
@@ -374,21 +380,26 @@ func containerEnvironment(
 						// Preserve query parameters from the original URL.
 						if queryStart := strings.IndexByte(raw, '?'); queryStart >= 0 {
 							extraParams := raw[queryStart+1:]
-							env[k] = connURL.ApplyT(func(u string) string {
+							secrets[k] = connURL.ApplyT(func(u string) string {
 								if strings.Contains(u, "?") {
 									return u + "&" + extraParams
 								}
 								return u + "?" + extraParams
 							}).(pulumi.StringOutput)
 						} else {
-							env[k] = connURL
+							secrets[k] = connURL
 						}
 						continue
 					}
 				}
 			}
 		}
-		env[k] = compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
+		value, hasSecret := compose.InterpolateEnvironmentVariable(ctx, configProvider, raw, opts...)
+		if hasSecret {
+			secrets[k] = value
+		} else {
+			env[k] = value
+		}
 	}
 	return env, secrets
 }

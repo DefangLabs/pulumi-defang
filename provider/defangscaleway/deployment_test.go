@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DefangLabs/defang/src/pkg/deployment"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -28,10 +29,10 @@ func TestProjectDeploymentIsReadableByCLI(t *testing.T) {
 	mocks := &deploymentMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		result, err := buildProject(ctx, "demo", ProjectInputs{Etag: "attempt-1", Services: compose.Services{
-			"web": {Image: strPtr("nginx:latest"), Ports: []compose.ServicePortConfig{{Target: 80}}},
+			"web": {Image: compose.ImageFromPtr(strPtr("nginx:latest")), Ports: []compose.ServicePortConfig{{Target: 80}}},
 			"db": {Postgres: &compose.PostgresConfig{},
-				Environment: map[string]*string{"POSTGRES_PASSWORD": strPtr("DoNotPublish123!")}},
-		}})
+				Environment: compose.Environment{"POSTGRES_PASSWORD": pulumi.String("DoNotPublish123!")}},
+		}}, common.PluginIdentityFrom(nil))
 		if err != nil {
 			return err
 		}

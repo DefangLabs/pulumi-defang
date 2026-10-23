@@ -18,10 +18,10 @@ The Defang Pulumi Provider is available as separate packages per cloud (AWS, GCP
 
 ### Installing the Pulumi Plugins directly
 ```
-pulumi plugin install resource defang-aws --server github://api.github.com/DefangLabs
-pulumi plugin install resource defang-gcp --server github://api.github.com/DefangLabs
-pulumi plugin install resource defang-azure --server github://api.github.com/DefangLabs
-pulumi plugin install resource defang-scaleway --server github://api.github.com/DefangLabs
+pulumi plugin install resource defang-aws --server github://api.github.com/DefangLabs/pulumi-defang
+pulumi plugin install resource defang-gcp --server github://api.github.com/DefangLabs/pulumi-defang
+pulumi plugin install resource defang-azure --server github://api.github.com/DefangLabs/pulumi-defang
+pulumi plugin install resource defang-scaleway --server github://api.github.com/DefangLabs/pulumi-defang
 ```
 
 ## Authentication
@@ -61,4 +61,4 @@ Defang runs the Pulumi CLI in your cloud account. You can use [Pulumi Cloud](htt
 
 ## Reference
 
-For detailed reference documentation, please visit [the Pulumi registry](https://www.pulumi.com/registry/packages/defang/).
+For detailed reference documentation, please visit the Pulumi registry: [defang-aws](https://www.pulumi.com/registry/packages/defang-aws/), [defang-gcp](https://www.pulumi.com/registry/packages/defang-gcp/), [defang-azure](https://www.pulumi.com/registry/packages/defang-azure/).

@@ -1,6 +1,12 @@
 name: Setup Go build environment
 description: Fetches tags, installs Go, and installs pulumictl.
 
+inputs:
+  cache:
+    description: Whether to restore-and-save the Go cache or restore it only.
+    required: false
+    default: read-write
+
 runs:
   using: composite
   steps:
@@ -9,10 +15,49 @@ runs:
       run: git fetch --prune --unshallow --tags # pulumictl needs tags to compute v2.x version
 
     - name: Install Go
-      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      id: setup-go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
       with:
         go-version-file: go.mod
-        cache-dependency-path: go.sum
+        # Cache explicitly below so releases can fall back to the most recent
+        # compatible main-branch cache when their dependency hash changes.
+        cache: false
+
+    # The pinned setup-go version exposes the installed Go version, but not
+    # its cache directories. Capture those paths once for both cache modes.
+    - name: Locate Go cache directories
+      id: go-cache-paths
+      shell: bash
+      run: |
+        echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
+    # setup-go's built-in cache has only an exact dependency-hash key. Retain
+    # exact matches, but fall back to the latest cache built with this Go
+    # version so a dependency update does not force every package to rebuild.
+    # The cache path must be identical in all jobs that share it; the release
+    # job bind-mounts its large-disk build cache at Go's normal cache path.
+    - name: Restore and save Go cache
+      if: inputs.cache == 'read-write'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ${{ steps.go-cache-paths.outputs.gomodcache }}
+          ${{ steps.go-cache-paths.outputs.gocache }}
+        key: defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
+
+    - name: Restore Go cache
+      if: inputs.cache == 'restore'
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: |
+          ${{ steps.go-cache-paths.outputs.gomodcache }}
+          ${{ steps.go-cache-paths.outputs.gocache }}
+        key: defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
 
     - name: Install pulumictl
       shell: bash

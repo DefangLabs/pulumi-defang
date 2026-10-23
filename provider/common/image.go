@@ -15,9 +15,7 @@ var ErrStandaloneServiceRequiresImage = errors.New("standalone Service requires 
 
 // imgRE parses a Docker image reference into registry, repo, tag, and digest parts.
 // Mirrors the regex used by DefangLabs/defang/src/pkg/dockerhub.
-//
-//nolint:lll
-var imgRE = regexp.MustCompile(`^((?:((?:[0-9a-z](?:[0-9a-z-]{0,61}[0-9a-z])?\.)+[a-z]{2,63})\/)?(.{1,127}?))(?::(\w[\w.-]{0,127}))?(?:@(sha256:[0-9a-f]{64}))?$`)
+var imgRE = regexp.MustCompile(`^((?:((?:[0-9a-z](?:[0-9a-z-]{0,61}[0-9a-z])?\.)+[a-z]{2,63})\/)?(.{1,127}?))(?::(\w[\w.-]{0,127}))?(?:@(sha256:[0-9a-f]{64}))?$`) //nolint:lll
 
 type ImageInfo struct {
 	Registry string

@@ -49,7 +49,13 @@ func EnsureKeyVault(
 		VaultName:         vaultName,
 	}, parentOpt)
 	if err != nil {
-		if strings.Contains(err.Error(), `Code="ResourceNotFound"`) {
+		// ResourceNotFound: RG exists but vault doesn't.
+		// ResourceGroupNotFound: fresh project deploy — RG hasn't been created
+		// in Azure yet (the RG Pulumi resource is created earlier in
+		// buildProject, but LookupVault is an invoke against a computed name
+		// and doesn't depend on the RG resource handle).
+		if strings.Contains(err.Error(), `Code="ResourceNotFound"`) ||
+			strings.Contains(err.Error(), `Code="ResourceGroupNotFound"`) {
 			return nil, ErrNoKeyVault
 		}
 		return nil, fmt.Errorf("looking up existing Key Vault: %w", err)

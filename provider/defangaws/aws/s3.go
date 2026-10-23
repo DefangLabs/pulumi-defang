@@ -51,7 +51,9 @@ func createBucket(
 	return bucket, err
 }
 
-func createPrivateBucket(
+// CreatePrivateBucket creates an S3 bucket with default encryption and full
+// public-access blocking. Exported for use by the ObjectStore component.
+func CreatePrivateBucket(
 	ctx *pulumi.Context,
 	name string,
 	args *s3.BucketArgs,

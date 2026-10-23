@@ -9,6 +9,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/dns/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	azureconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -20,14 +21,29 @@ type SharedInfra struct {
 	Environment        *app.ManagedEnvironment
 	BuildInfra         *BuildInfra            // nil when no services require image builds
 	Networking         *NetworkingResult      // nil when no VNet-integrated services are present
+	Networks           compose.Networks       // top-level Compose networks, used to determine service visibility
 	DNS                *DNSResult             // nil when no VNet-integrated services are present
 	LLMInfra           *LLMInfra              // nil when no LLM services are present
 	ConfigProvider     compose.ConfigProvider // reads project secrets (set via `defang config set`)
 	KeyVaultURL        string                 // Key Vault URL for secret references (empty if no vault)
-	KeyVaultIdentityID pulumi.StringPtrOutput // user-assigned identity for KV access (zero if no vault)
+	KeyVaultIdentityID pulumi.StringPtrInput  // user-assigned identity for KV access (zero if no vault)
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
+	// Domain is the project delegate domain (e.g. "myproj-stack.tenant.defang.app").
+	// When non-empty, ingress services get per-service CNAME + asuid TXT records and
+	// a ManagedCertificate provisioned in the public DNS zone of the same name in
+	// ResourceGroup. The zone itself is created out-of-band by the defang CLI
+	// (PrepareDomainDelegation), so Pulumi only manages the records and the cert.
+	Domain string
+	// DomainZone is the public DNS zone named Domain, adopted into Pulumi state by
+	// EnsureDomainZone so that `defang compose down` deletes it (and its records)
+	// instead of orphaning it in the resource group. Nil when Domain is empty.
+	DomainZone *dns.Zone
+	// FrontDoor is the project's Azure Front Door profile and endpoint, which
+	// serve the wildcard hostnames Container Apps can't bind. Nil unless some
+	// service asks for one — see frontdoor.go.
+	FrontDoor *FrontDoorInfra
 }
 
 // BaseTags returns the project-wide tag map: defang-project (Pulumi project),

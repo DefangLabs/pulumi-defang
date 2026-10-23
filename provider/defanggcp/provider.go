@@ -1,6 +1,8 @@
 package defanggcp
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
@@ -32,7 +34,8 @@ func Provider() p.Provider {
 		},
 
 		Metadata: schema.Metadata{
-			Description: "Deploy containerized services to GCP with Pulumi.",
+			DisplayName: "Defang GCP",
+			Description: "Deploy Compose projects to GCP with Pulumi. Part of the Defang multi-cloud provider family — also available for AWS (defang-aws) and Azure (defang-azure).", //nolint:lll
 			Keywords: []string{
 				"category/cloud", "category/infrastructure", "kind/native", "defang", "docker",
 				"cloud", "gcp", "cloudrun",
@@ -42,8 +45,11 @@ func Provider() p.Provider {
 			Publisher:         "Defang",
 			LogoURL:           "https://raw.githubusercontent.com/DefangLabs/pulumi-defang/refs/heads/main/docs/logo.png",
 			License:           "Apache-2.0",
-			PluginDownloadURL: "github://api.github.com/DefangLabs/pulumi-defang",
+			PluginDownloadURL: common.PluginDownloadURL,
 			LanguageMap: map[string]any{
+				// pkg/v3/codegen/dotnet (CSharpPackageInfo) moved out of pulumi/pulumi
+				// after pkg v3.227; inline the equivalent schema JSON instead of
+				// depending on pulumi-dotnet for one struct.
 				"csharp": map[string]any{
 					"rootNamespace": "DefangLabs",
 				},

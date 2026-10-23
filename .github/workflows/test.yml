@@ -31,13 +31,19 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
+
+      - name: Check Dockerfile precaches every plugin a provider imports
+        run: scripts/check-dockerfile-plugins.sh
 
       - run: make provider
 
@@ -46,9 +52,9 @@ jobs:
       - run: COVER=1 make test
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.7.2
+          version: v2.11.4
           args: --timeout=5m --config=.golangci.yaml ./provider/...
 
   build_sdks:
@@ -67,7 +73,7 @@ jobs:
           - scaleway
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Setup and build SDK
         uses: ./.github/actions/build-sdk
@@ -112,15 +118,21 @@ jobs:
       contents: write
     steps:
       - name: Checkout PR branch or pushed ref
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          # Same-repo PRs check out the branch (needed to auto-commit); fork
+          # PRs check out the head SHA — the branch only exists on the fork,
+          # but GitHub mirrors PR head commits into the base repo.
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || github.event.pull_request.head.sha || github.ref }}
+          # Only same-repo PRs push (the auto-commit); fork PRs and direct
+          # pushes never do, so don't leave the token in .git/config there.
+          persist-credentials: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
       - name: Install Pulumi CLI
-        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
 
       - run: make provider schema go_sdk
 
@@ -156,16 +168,18 @@ jobs:
       id-token: write # for defang OIDC login
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        # Fork-PR tokens can't write org packages; forks build without pushing.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -177,15 +191,18 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "IMAGE_TAG=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
           else
-            echo "IMAGE_TAG=$(make version)" >> "$GITHUB_ENV"
+            # `make version` emits SemVer, which may include a `+<commit>` build-metadata
+            # suffix (e.g. 2.1.2-alpha+a3aefa34). Docker tags disallow `+`, so swap it for `-`.
+            VERSION="$(make version)"
+            echo "IMAGE_TAG=${VERSION//+/-}" >> "$GITHUB_ENV"
           fi
 
       - name: Build and push image to GHCR
         id: build-push
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: . # build context must be repo root to include generated Go SDK
-          push: true
+          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           target: all
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=${{ github.workflow }}
@@ -195,7 +212,7 @@ jobs:
       # pushes — PR runs would otherwise have every contributor overwrite the staging config.
       - name: Set cd_image_ configs in Defang
         if: github.event_name == 'push'
-        uses: DefangLabs/defang-github-action@482e8e65caf00bc48ad2044d0e41cde178b3e2b6 # v2.3.0
+        uses: DefangLabs/defang-github-action@981924edd6d4dec17d6ddb03e956174223bcec55 # v2.5.0
         with:
           project: ecs
           stack: awsstagingoidc

@@ -1,0 +1,58 @@
+name: crewai
+runtime: go
+description: A Pulumi program to test Defang CD with the pulumi-defang providers.
+plugins:
+  providers:
+    - name: defang-aws
+      path: ../../bin
+    - name: defang-gcp
+      path: ../../bin
+    - name: defang-azure
+      path: ../../bin
+config:
+  pulumi:autonaming:
+    value:
+      pattern: Defang-${project}-${stack}-${name}-${hex(7)}
+      providers:
+        aws:
+          resources:
+            aws:lb/loadBalancer:LoadBalancer:
+              pattern: ${project}-${stack}-${hex(4)}
+            aws:lb/targetGroup:TargetGroup:
+              pattern: ${name}-${hex(4)}
+            aws:ecs/service:Service:
+              pattern: ${name}-${hex(7)}
+            aws:elasticache/subnetGroup:SubnetGroup:
+              pattern: defang-${project}-${stack}-${name}-${hex(7)}
+            aws:ecr/repository:Repository:
+              pattern: defang-${project}-${stack}-${name}-${hex(7)}
+            aws:rds/subnetGroup:SubnetGroup:
+              pattern: defang-${project}-${stack}-${name}-${hex(7)}
+        azure-native:
+          resources:
+            azure-native:containerregistry:Registry:
+              pattern: ${name}${stack}${hex(7)}
+            azure-native:containerregistry:Task:
+              pattern: ${name}-${hex(7)}
+            azure-native:app:ManagedEnvironment:
+              pattern: Defang-${project}-${stack}-${hex(7)}
+        gcp:
+          pattern: defang-${project}-${stack}-${name}-${hex(7)}
+          resources:
+            gcp:serviceaccount/account:Account:
+              pattern: ${name}-${hex(4)}
+            gcp:cloudrunv2/service:Service:
+              pattern: ${project}-${stack}-${name}-${hex(7)}
+            gcp:redis/instance:Instance:
+              pattern: ${project}-${name}-${hex(7)}
+  pulumi:disable-default-providers:
+    value:
+      - aws-native
+      - aws
+      - azure-native
+      - azure
+      - eks
+      - gcp
+      - google-beta
+      - google-native
+      - kubernetes

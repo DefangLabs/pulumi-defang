@@ -15,8 +15,33 @@ import (
 
 var ErrRedisConfigNil = errors.New("redis config is nil")
 
+const (
+	engineRedis  = "redis"
+	engineValkey = "valkey"
+)
+
+// detectRedisEngine returns the engine (redis vs valkey) and version derived
+// from the service's image name; defaults to "redis" with no version when the
+// image is unset or a dynamic Output.
+func detectRedisEngine(svc compose.ServiceConfig) (string, string) {
+	engine := engineRedis
+	var engineVersion string
+	if img := svc.StaticImage(); img != nil {
+		if strings.Contains(strings.ToLower(*img), engineValkey) {
+			engine = engineValkey
+		}
+		if tag := compose.ParseImageTag(*img); tag != "" {
+			engineVersion = tag
+		}
+	}
+	return engine, engineVersion
+}
+
 type ElasticacheResult struct {
 	Address pulumi.StringOutput // primary or configuration endpoint address
+	// ClusterID is the ElastiCache replication group ID or the MemoryDB
+	// cluster name, for downstream consumers such as CloudWatch alarms.
+	ClusterID pulumi.StringOutput
 }
 
 // ElastiCache node type catalogs.
@@ -164,7 +189,7 @@ func cacheNodeType(minCPUs float64, minMemoryMiB int, nodeType string) string {
 // "Transit encryption mode is not supported for engine version 6.2.6.
 // Please use engine version 7.0.5 or higher."
 func transitEncryptionSupported(engine, engineVersion string) bool {
-	if engine == "valkey" {
+	if engine == engineValkey {
 		return true
 	}
 	if engineVersion == "" {
@@ -188,6 +213,7 @@ func CreateElasticache(
 	vpcID pulumi.StringInput,
 	privateSubnetIDs pulumi.StringArrayInput,
 	privateSgID pulumi.StringPtrInput,
+	alarmTopicArn pulumi.StringInput,
 	deps []pulumi.Resource,
 	opts ...pulumi.ResourceOption,
 ) (*ElasticacheResult, error) {
@@ -195,24 +221,7 @@ func CreateElasticache(
 		return nil, ErrRedisConfigNil
 	}
 
-	// Detect engine (redis vs valkey) from image name.
-	var engine string
-	if svc.Image != nil {
-		if strings.Contains(strings.ToLower(*svc.Image), "valkey") {
-			engine = "valkey"
-		} else {
-			engine = "redis"
-		}
-	}
-
-	// Parse version from image tag (e.g. "7.2" from "redis:7.2").
-	var engineVersion string
-	if svc.Image != nil {
-		parts := strings.Split(*svc.Image, ":")
-		if len(parts) == 2 {
-			engineVersion = parts[1]
-		}
-	}
+	engine, engineVersion := detectRedisEngine(svc)
 
 	allowDowntime := false
 	if svc.Redis.AllowDowntime != nil {
@@ -238,7 +247,10 @@ func CreateElasticache(
 			Description: pulumi.String(common.DefangComment),
 			SubnetIds:   privateSubnetIDs,
 			Tags:        tags,
-		}, opts...)
+			// stack(service_name) in the legacy CD (redis.ts).
+		}, common.MergeOptions(opts,
+			append(svc.AliasOptions(compose.AliasSubnetGroup),
+				legacyAlias(legacyStackName(ctx, serviceName)))...)...)
 		if err != nil {
 			return nil, fmt.Errorf("creating ElastiCache subnet group: %w", err)
 		}
@@ -273,8 +285,10 @@ func CreateElasticache(
 			},
 		},
 		Tags: tags,
-	}, common.MergeOptions(opts,
+	}, common.MergeOptions(common.MergeOptions(opts, svc.AliasOptions(compose.AliasSecurityGroup)...),
 		pulumi.Timeouts(&pulumi.CustomTimeouts{Delete: "2m"}),
+		// createSecurityGroup() registered every SG under stack(name).
+		legacyAlias(legacyStackName(ctx, serviceName)),
 	)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating ElastiCache security group: %w", err)
@@ -298,7 +312,6 @@ func CreateElasticache(
 		AutoMinorVersionUpgrade:  pulumi.Bool(true),
 		Description:              pulumi.String(common.DefangComment),
 		Engine:                   pulumi.String(engine),
-		EngineVersion:            pulumi.String(engineVersion),
 		FinalSnapshotIdentifier:  finalSnapshotIdentifier,
 		MultiAzEnabled:           pulumi.Bool(replicas > 1),
 		NodeType:                 pulumi.String(nodeType),
@@ -308,6 +321,9 @@ func CreateElasticache(
 		SubnetGroupName:          subnetGroupName,
 		Tags:                     tags,
 		TransitEncryptionEnabled: pulumi.Bool(transitEncryption),
+	}
+	if engineVersion != "" {
+		rgArgs.EngineVersion = pulumi.String(engineVersion)
 	}
 	if replicas > 1 && deletionProtection {
 		rgArgs.ClusterMode = pulumi.String("compatible")
@@ -324,7 +340,10 @@ func CreateElasticache(
 		rgArgs.SnapshotWindow = pulumi.String("09:30-10:30")
 	}
 
-	clusterOpts := append(append([]pulumi.ResourceOption{}, opts...), pulumi.IgnoreChanges([]string{
+	clusterOpts := common.MergeOptions(opts,
+		// The legacy CD named the replication group after the bare service.
+		append(svc.AliasOptions(compose.AliasCluster), legacyAlias(serviceName))...)
+	clusterOpts = append(clusterOpts, pulumi.IgnoreChanges([]string{
 		"atRestEncryptionEnabled",
 		"authToken", // TODO: allow user to set authToken via config
 		"authTokenUpdateStrategy",
@@ -342,6 +361,37 @@ func CreateElasticache(
 		return nil, fmt.Errorf("creating ElastiCache replication group: %w", err)
 	}
 
+	// ElastiCache metrics are per member cache cluster, not per replication
+	// group. MemberClusters carries the actual member IDs — their naming
+	// differs between cluster-mode-disabled ("<rg-id>-00N") and "compatible"
+	// groups, so don't reconstruct them. EngineCPUUtilization tracks the
+	// (single) Redis thread, which saturates well before host CPUUtilization
+	// on multi-vCPU nodes.
+	for i := range replicas {
+		err = createDBAlarms(ctx, fmt.Sprintf("%s-%03d", serviceName, i+1), "AWS/ElastiCache",
+			pulumi.StringMap{"CacheClusterId": rg.MemberClusters.Index(pulumi.Int(i))}, tags, alarmTopicArn, []dbAlarm{
+				{
+					suffix:             "memory-usage",
+					metricName:         "DatabaseMemoryUsagePercentage",
+					comparisonOperator: "GreaterThanThreshold",
+					threshold:          80,
+					statistic:          "Maximum",
+					description:        "ElastiCache memory usage has exceeded 80%",
+				},
+				{
+					suffix:             "cpu-usage",
+					metricName:         "EngineCPUUtilization",
+					comparisonOperator: "GreaterThanThreshold",
+					threshold:          80,
+					statistic:          "Maximum",
+					description:        "ElastiCache engine CPU usage has exceeded 80%",
+				},
+			}, opts...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Use configuration endpoint (cluster mode enabled) if available, else primary endpoint.
 	address := pulumi.All(rg.ConfigurationEndpointAddress, rg.PrimaryEndpointAddress).
 		ApplyT(
@@ -354,5 +404,5 @@ func CreateElasticache(
 				return primary
 			}).(pulumi.StringOutput)
 
-	return &ElasticacheResult{Address: address}, nil
+	return &ElasticacheResult{Address: address, ClusterID: rg.ReplicationGroupId}, nil
 }

@@ -2,8 +2,11 @@ package aws
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -143,6 +146,120 @@ func attachPullThroughCachePolicy(
 		Policy: policyJson,
 	}, opts...)
 	return err
+}
+
+// objectStoreActions are the S3 actions granted to a service that depends on
+// an x-defang-s3 store, split by the ARN they apply to.
+//
+// The bucket-level half is not optional: HeadBucket — what many S3 clients
+// call at startup to check their credentials — is authorized by s3:ListBucket
+// on the BUCKET ARN, and no object-level action covers it. A grant of only the
+// object actions lets every read and write succeed while that probe returns
+// 403, and a client that treats the probe as fatal then disables storage for
+// the life of the process. GetBucketLocation is here for the SDKs that resolve
+// the region before their first call.
+var (
+	objectStoreBucketActions = []string{
+		"s3:ListBucket",
+		"s3:GetBucketLocation",
+		"s3:ListBucketMultipartUploads",
+	}
+	objectStoreObjectActions = []string{
+		"s3:GetObject",
+		"s3:PutObject",
+		"s3:DeleteObject",
+		"s3:AbortMultipartUpload",
+		"s3:ListMultipartUploadParts",
+	}
+)
+
+// attachObjectStorePolicy grants serviceName's task role access to one
+// x-defang-s3 bucket, named by storeName. Inline rather than a managed policy:
+// the document names a single bucket ARN, so it has exactly one consumer.
+func attachObjectStorePolicy(
+	ctx *pulumi.Context,
+	taskRole *iam.Role,
+	serviceName string,
+	storeName string,
+	bucketArn pulumi.StringInput,
+	opts ...pulumi.ResourceOption,
+) (pulumi.Resource, error) {
+	policyJson := bucketArn.ToStringOutput().ApplyT(func(arn string) (string, error) {
+		b, err := json.Marshal(PolicyDocument{
+			Version: "2012-10-17",
+			Statement: []PolicyStatement{
+				{
+					Sid:      "AllowObjectStoreBucket",
+					Effect:   "Allow",
+					Action:   objectStoreBucketActions,
+					Resource: arn,
+				},
+				{
+					Sid:      "AllowObjectStoreObjects",
+					Effect:   "Allow",
+					Action:   objectStoreObjectActions,
+					Resource: arn + "/*",
+				},
+			},
+		})
+		return string(b), err
+	}).(pulumi.StringOutput)
+
+	return iam.NewRolePolicy(ctx, serviceName+"-objectstore-"+storeName, &iam.RolePolicyArgs{
+		Role:   taskRole.Name,
+		Policy: policyJson,
+	}, opts...)
+}
+
+// ErrPolicyNotAWS rejects an x-defang-policies entry that cannot be an AWS
+// policy identifier.
+var ErrPolicyNotAWS = errors.New(
+	"an AWS policy is a full ARN (arn:…) or the name of a customer-managed policy in this account")
+
+// ParsePolicies normalizes x-defang-policies for an AWS deployment and
+// rejects what AWS cannot name. Anything but a full ARN is a policy name, and
+// IAM policy names cannot contain "/" or ":" (PolicyName is [\w+=,.@-]+), so
+// an entry carrying either is not an AWS identifier at all — most often
+// another cloud's, in a compose file deployed to several. Whether a
+// well-formed name exists is IAM's answer, not this function's.
+func ParsePolicies(entries []string) ([]string, error) {
+	policies, err := compose.NormalizeLiteralPolicies(entries)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range policies {
+		if strings.HasPrefix(policy, "arn:") {
+			continue
+		}
+		if strings.ContainsAny(policy, "/:") {
+			return nil, fmt.Errorf("x-defang-policies entry %q: %w%s",
+				policy, ErrPolicyNotAWS, compose.PolicyVarHint)
+		}
+	}
+	return policies, nil
+}
+
+// resolvePolicyArn turns an x-defang-policies entry into a policy ARN. Full
+// ARNs pass through; bare names resolve to a customer-managed policy in the
+// caller's account (matches makeArn in defang-mvp: partition "aws", no region).
+func resolvePolicyArn(ctx *pulumi.Context, policy string, opts ...pulumi.InvokeOption) (pulumi.StringInput, error) {
+	if strings.HasPrefix(policy, "arn:") {
+		return pulumi.String(policy), nil
+	}
+	accountID, err := getCallerAccountId(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("getting caller account ID: %w", err)
+	}
+	return pulumi.String("arn:aws:iam::" + accountID + ":policy/" + policy), nil
+}
+
+// policyName returns the name segment of a policy ARN, or the input unchanged
+// if it's already a bare name. Used for stable child-resource names.
+func policyName(policy string) string {
+	if i := strings.LastIndexByte(policy, '/'); i >= 0 {
+		return policy[i+1:]
+	}
+	return policy
 }
 
 // createTaskRole creates a per-service ECS task role.

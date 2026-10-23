@@ -50,7 +50,7 @@ type redisArgs struct {
 type RedisArgs struct {
 	Deploy      compose.DeployConfigPtrInput
 	Environment pulumi.StringMapInput
-	Image       *string
+	Image       pulumi.StringPtrInput
 	Ports       compose.ServicePortConfigArrayInput
 	Redis       compose.RedisConfigPtrInput
 	Scaleway    scaleway.SharedInfraPtrInput

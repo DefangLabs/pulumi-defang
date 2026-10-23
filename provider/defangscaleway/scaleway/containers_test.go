@@ -70,7 +70,9 @@ func TestValidateContainerServiceRejectsUnsupportedInputs(t *testing.T) {
 	})
 
 	t.Run("reserved env", func(t *testing.T) {
-		err := validateContainerService(compose.ServiceConfig{Environment: map[string]*string{"SCW_REGION": ptr("fr-par")}})
+		err := validateContainerService(compose.ServiceConfig{
+			Environment: compose.Environment{"SCW_REGION": pulumi.String("fr-par")},
+		})
 		require.ErrorIs(t, err, ErrContainerUnsupported)
 		assert.Contains(t, err.Error(), "reserved")
 	})
@@ -117,9 +119,9 @@ func TestCreateContainerServiceMapsInputs(t *testing.T) {
 		}
 		_, err = CreateContainerService(ctx, configProvider, "app", pulumi.String("nginx:latest"), compose.ServiceConfig{
 			Ports: []compose.ServicePortConfig{{Target: 8080, AppProtocol: compose.PortAppProtocolGRPC}},
-			Environment: map[string]*string{
-				"CONFIG_VALUE": &secretRef,
-				"MODE":         ptr("prod"),
+			Environment: compose.Environment{
+				"CONFIG_VALUE": pulumi.String(secretRef),
+				"MODE":         pulumi.String("prod"),
 			},
 			HealthCheck: &compose.HealthCheckConfig{
 				Test:               []string{"CMD", "curl", "-f", "http://localhost:8080/health/ready"},
@@ -330,4 +332,49 @@ func TestShellJoin(t *testing.T) {
 	assert.Equal(t, "npm run worker", shellJoin([]string{"npm", "run", "worker"}))
 	assert.Equal(t, "echo 'hello world'", shellJoin([]string{"echo", "hello world"}))
 	assert.Equal(t, "cmd 'it'\"'\"'s'", shellJoin([]string{"cmd", "it's"}))
+}
+
+func TestContainerEnvironmentKeepsResolvedSecretsPrivate(t *testing.T) {
+	mocks := &recordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		ns, err := containers.NewNamespace(ctx, "ns", &containers.NamespaceArgs{})
+		if err != nil {
+			return err
+		}
+		//nolint:gosec // Deterministic mock value; never sent to a cloud API.
+		config := &mockConfigProvider{values: map[string]string{"TOKEN": "config-value"}}
+		_, err = CreateContainerService(ctx, config,
+			"app", pulumi.String("nginx:latest"), compose.ServiceConfig{
+				Ports: []compose.ServicePortConfig{{Target: 8080}},
+				Environment: compose.Environment{
+					"PUBLIC":       pulumi.String("literal"),
+					"BARE":         pulumi.String("${TOKEN}"),
+					"COMPOSITE":    pulumi.String("Bearer ${TOKEN}"),
+					"DYNAMIC":      pulumi.ToSecret(pulumi.String("derived-value")).(pulumi.StringOutput),
+					"DATABASE_URL": pulumi.String("postgres://database/db?sslmode=require"),
+				},
+			}, &SharedInfra{
+				Namespace:    ns,
+				ManagedHosts: map[string]pulumi.StringOutput{"database": pulumi.String("10.0.0.5").ToStringOutput()},
+				ManagedConnectionURLs: map[string]pulumi.StringOutput{
+					"database": pulumi.ToSecret(pulumi.String("postgres://user:example@10.0.0.5/db")).(pulumi.StringOutput),
+				},
+			})
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+	require.NoError(t, err)
+	container := mocks.findType("scaleway:containers/container:Container")
+	require.NotNil(t, container)
+	env := container.inputs["environmentVariables"].ObjectValue()
+	assert.Equal(t, "literal", env["PUBLIC"].StringValue())
+	for _, key := range []resource.PropertyKey{"BARE", "COMPOSITE", "DYNAMIC", "DATABASE_URL"} {
+		assert.NotContains(t, env, key)
+	}
+	secret := container.inputs["secretEnvironmentVariables"]
+	require.True(t, secret.IsSecret())
+	values := secret.SecretValue().Element.ObjectValue()
+	assert.Equal(t, "config-value", values["BARE"].StringValue())
+	assert.Equal(t, "Bearer config-value", values["COMPOSITE"].StringValue())
+	assert.Equal(t, "derived-value", values["DYNAMIC"].StringValue())
+	assert.Equal(t, "postgres://user:example@10.0.0.5/db?sslmode=require", values["DATABASE_URL"].StringValue())
 }

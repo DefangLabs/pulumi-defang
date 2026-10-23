@@ -47,6 +47,7 @@ go_sdk: .sdk.go.$(PACK).stamp
 	cd "$(SDK_GO_DIR)" && go mod init "$(SDK_MODULE)" && \
 		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
 		go mod tidy
+	cp sdk/LICENSE "$(SDK_GO_DIR)/LICENSE"
 	@touch $@
 
 nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed 's/^v//')
@@ -61,8 +62,8 @@ nodejs_sdk: .sdk.nodejs.$(PACK).stamp
 		yarn install && \
 		yarn run tsc && \
 		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
-		rm -f ./package.json.bak && \
-		cp ../../../README.md ../../../LICENSE package.json yarn.lock bin/
+		rm ./package.json.bak && \
+		cp ../../../README.md package.json yarn.lock bin/ && cp ../../LICENSE bin/
 	@touch $@
 
 python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))
@@ -78,7 +79,7 @@ python_sdk: .sdk.python.$(PACK).stamp
 		python3 setup.py clean --all 2>/dev/null; \
 		rm -rf ./bin/ ../python.bin.$(PACK)/ && cp -R . ../python.bin.$(PACK) && mv ../python.bin.$(PACK) ./bin && \
 		sed -i.bak -e 's/^VERSION = .*/VERSION = "$(PYPI_VERSION)"/g' -e 's/^PLUGIN_VERSION = .*/PLUGIN_VERSION = "$(VERSION)"/g' ./bin/setup.py && \
-		rm -f ./bin/setup.py.bak && \
+		rm ./bin/setup.py.bak && \
 		cd ./bin && python3 setup.py build sdist
 	@touch $@
 

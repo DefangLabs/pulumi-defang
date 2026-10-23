@@ -70,9 +70,12 @@ func BuildTriggerHash(build *compose.BuildConfig) pulumi.StringOutput {
 	if build.Target != nil {
 		target = *build.Target
 	}
+	// cache_from/cache_to deliberately excluded: cache config affects build speed,
+	// not the image contents, so it shouldn't retrigger builds.
+	platforms := []byte(strings.Join(build.Platforms, ","))
 	return pulumi.StringOutput(pulumix.Apply(
 		pulumix.Output[string](build.Context.ToStringOutput()), func(ctx string) string {
 			contextEtag, _, _ := strings.Cut(ctx, "?") // remove sig query param; FIXME: get actual etag from URL, not path
-			return sha256hash([]byte(contextEtag), argsStr, []byte(dockerfile), []byte(target))[0:8]
+			return sha256hash([]byte(contextEtag), argsStr, []byte(dockerfile), []byte(target), platforms)[0:8]
 		}))
 }

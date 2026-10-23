@@ -4,24 +4,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/codebuild"
 	cbtypes "github.com/aws/aws-sdk-go-v2/service/codebuild/types"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
 var (
-	ErrNoBuildID        = errors.New("failed to start build: no build ID returned")
-	ErrBuildTimedOut    = errors.New("build timed out")
-	ErrBuildNotFound    = errors.New("build not found")
-	ErrBuildFailed      = errors.New("build failed")
-	ErrBuildFaulted     = errors.New("build faulted")
-	ErrBuildStopped     = errors.New("build was stopped (ABORTED)")
-	ErrCodeBuildTimeout = errors.New("build timed out on CodeBuild side")
+	ErrNoBuildID          = errors.New("failed to start build: no build ID returned")
+	ErrBuildTimedOut      = errors.New("build timed out")
+	ErrBuildNotFound      = errors.New("build not found")
+	ErrBuildFailed        = errors.New("build failed")
+	ErrBuildFaulted       = errors.New("build faulted")
+	ErrBuildStopped       = errors.New("build was stopped (ABORTED)")
+	ErrCodeBuildTimeout   = errors.New("build timed out on CodeBuild side")
+	ErrNotECRReference    = errors.New("destination is not a <repo-url>:<tag> ECR image reference")
+	ErrImageDigestMissing = errors.New("ECR reported no digest for the pushed image")
 )
 
 // Build is a custom resource that triggers a CodeBuild build and waits for completion.
@@ -52,7 +58,8 @@ type BuildState struct {
 	// The CodeBuild build ID
 	BuildId string `pulumi:"buildId"`
 
-	// The built image URL (empty for non-image builds)
+	// The built image, pinned by digest (e.g. "<repo-url>@sha256:...") rather
+	// than by the mutable tag it was pushed under; empty for non-image builds.
 	Image string `pulumi:"image"`
 }
 
@@ -100,7 +107,13 @@ func (*Build) Create(
 		}
 	}
 
-	image := inputs.Destination
+	var image string
+	if inputs.Destination != "" {
+		image, err = resolveECRDigest(ctx, inputs.Destination)
+		if err != nil {
+			return infer.CreateResponse[BuildState]{}, fmt.Errorf("resolving digest of pushed image: %w", err)
+		}
+	}
 
 	return infer.CreateResponse[BuildState]{
 		ID: inputs.ProjectName,
@@ -110,6 +123,62 @@ func (*Build) Create(
 			Image:       image,
 		},
 	}, nil
+}
+
+// ecrRegistryRE matches a private ECR registry hostname
+// ("<12-digit-account-id>.dkr.ecr.<region>.amazonaws.com", ".com.cn" in
+// China regions) -- excludes lookalikes like ghcr.io or docker.io, which
+// DescribeImages cannot resolve a digest against. Captures the region so
+// callers can target the registry's own region rather than assume it
+// matches the build's.
+var ecrRegistryRE = regexp.MustCompile(`^\d{12}\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`)
+
+// loadAWSConfig loads the default AWS config, optionally pinned to region.
+func loadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
+	opts := []func(*config.LoadOptions) error{}
+	if region != "" {
+		opts = append(opts, config.WithRegion(region))
+	}
+	return config.LoadDefaultConfig(ctx, opts...)
+}
+
+// resolveECRDigest looks up the digest ECR assigned the image that was just
+// pushed to destination (a "<repo-url>:<tag>" reference) and returns the same
+// image addressed by digest instead ("<repo-url>@sha256:..."), so a task that
+// restarts or scales out is pinned to the exact image this build produced
+// rather than whatever the mutable tag happens to point at by then.
+//
+// destination's tag must be unique to this build (see BuildTriggerHash) -- a
+// tag shared with other builds (e.g. ":latest") could be overwritten by a
+// concurrent build between this build's push completing and this lookup
+// running, which would resolve to the wrong digest.
+func resolveECRDigest(ctx context.Context, destination string) (string, error) {
+	img := common.ParseImage(destination)
+	m := ecrRegistryRE.FindStringSubmatch(img.Registry)
+	if m == nil || img.Repo == "" || img.Tag == "" {
+		return "", fmt.Errorf("%w: got %q", ErrNotECRReference, destination)
+	}
+	// The pushed image's registry is the source of truth for which region to
+	// query -- it may differ from the build's own region.
+	region := m[1]
+
+	cfg, err := loadAWSConfig(ctx, region)
+	if err != nil {
+		return "", fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	out, err := ecr.NewFromConfig(cfg).DescribeImages(ctx, &ecr.DescribeImagesInput{
+		RepositoryName: &img.Repo,
+		ImageIds:       []ecrtypes.ImageIdentifier{{ImageTag: &img.Tag}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("describing ECR image %s:%s: %w", img.Repo, img.Tag, err)
+	}
+	if len(out.ImageDetails) == 0 || out.ImageDetails[0].ImageDigest == nil {
+		return "", fmt.Errorf("%w: %s:%s", ErrImageDigestMissing, img.Repo, img.Tag)
+	}
+
+	return img.Registry + "/" + img.Repo + "@" + *out.ImageDetails[0].ImageDigest, nil
 }
 
 func isRetryable(err error) bool {
@@ -123,12 +192,7 @@ func isRetryable(err error) bool {
 }
 
 func runCodeBuildBuild(ctx context.Context, projectName, region string, maxWaitSeconds int) (string, error) {
-	opts := []func(*config.LoadOptions) error{}
-	if region != "" {
-		opts = append(opts, config.WithRegion(region))
-	}
-
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	cfg, err := loadAWSConfig(ctx, region)
 	if err != nil {
 		return "", fmt.Errorf("loading AWS config: %w", err)
 	}

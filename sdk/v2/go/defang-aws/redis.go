@@ -17,7 +17,8 @@ import (
 type Redis struct {
 	pulumi.ResourceState
 
-	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	ClusterId pulumi.StringOutput `pulumi:"clusterId"`
+	Endpoint  pulumi.StringOutput `pulumi:"endpoint"`
 }
 
 // NewRedis registers a new resource with the given unique name, arguments, and options.
@@ -37,6 +38,7 @@ func NewRedis(ctx *pulumi.Context,
 }
 
 type redisArgs struct {
+	Aliases     map[string]string           `pulumi:"aliases"`
 	Aws         *aws.SharedInfra            `pulumi:"aws"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy"`
 	Environment map[string]string           `pulumi:"environment"`
@@ -48,6 +50,7 @@ type redisArgs struct {
 
 // The set of arguments for constructing a Redis resource.
 type RedisArgs struct {
+	Aliases     pulumi.StringMapInput
 	Aws         aws.SharedInfraPtrInput
 	Deploy      compose.DeployConfigPtrInput
 	Environment pulumi.StringMapInput
@@ -92,6 +95,10 @@ func (o RedisOutput) ToRedisOutput() RedisOutput {
 
 func (o RedisOutput) ToRedisOutputWithContext(ctx context.Context) RedisOutput {
 	return o
+}
+
+func (o RedisOutput) ClusterId() pulumi.StringOutput {
+	return o.ApplyT(func(v *Redis) pulumi.StringOutput { return v.ClusterId }).(pulumi.StringOutput)
 }
 
 func (o RedisOutput) Endpoint() pulumi.StringOutput {

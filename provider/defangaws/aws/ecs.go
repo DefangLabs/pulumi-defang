@@ -3,22 +3,40 @@ package aws
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/smithy-go/ptr"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/appautoscaling"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ecs"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/ssm"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumix"
+)
+
+var (
+	errSidecarImageRequired                  = errors.New("image is required")
+	errPoliciesWithTaskRole                  = errors.New("policies cannot be combined with taskRoleArn")
+	errStandaloneEnvironmentMustBeLiteralMap = errors.New(
+		"standalone service environment must be a literal pulumi.StringMap; " +
+			"use Secrets for dynamic or secret values",
+	)
+	errStandaloneEnvironmentValueMustBeLiteral = errors.New(
+		"standalone service environment values must be literal strings; " +
+			"use Secrets for dynamic or secret values",
+	)
 )
 
 type Policies struct {
@@ -28,6 +46,15 @@ type Policies struct {
 }
 
 // SharedInfra holds project-level AWS resources shared across all services.
+//
+// Fields come in two flavors:
+//   - internal typed resource pointers (Cluster, ExecRole, LogGroup, …) set by
+//     the project-scope orchestrator; untagged, so not part of the SDK schema.
+//   - schema-tagged string inputs (ClusterArn, ExecutionRoleArn, …) so
+//     standalone SDK users can reuse hand-provisioned infrastructure.
+//
+// The accessor methods below prefer the typed resource when set and fall back
+// to the schema input.
 type SharedInfra struct {
 	Cluster          *ecs.Cluster
 	ExecRole         *iam.Role
@@ -38,21 +65,97 @@ type SharedInfra struct {
 	PrivateZoneID    pulumi.StringPtrInput   `pulumi:"privateZoneID,optional"`
 	PrivateDomain    string
 	ProjectDomain    string
-	ZoneId           pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
+	// ApexServiceName is the service that serves the bare project (apex)
+	// domain. Set only when the whole project has exactly one ingress port
+	// (a single service with a single ingress port); empty otherwise, in
+	// which case the apex is left to the ALB listener's default action.
+	// Resolved in buildProject; not a schema field.
+	ApexServiceName string
+	ZoneId          pulumi.StringPtrInput // Route53 zone ID for public DNS records (empty if no public DNS)
 	// shared "private SG" — attached to all services, no ingress rules
-	PrivateSgID    pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
-	AlbSG          *ec2.SecurityGroup    // nil if no ALB
-	HttpListener   *lb.Listener          // nil if no ALB
-	HttpsListener  *lb.Listener          // nil if no ALB
-	Alb            *lb.LoadBalancer      // nil if no ALB
+	PrivateSgID pulumi.StringPtrInput `pulumi:"privateSgID,optional"`
+	// SNS topic notified by provider-created database alarms (see the alarms
+	// recipe); nil means the alarms don't notify.
+	AlarmTopicArn  pulumi.StringInput `pulumi:"alarmTopicArn,optional"`
+	AlbSG          *ec2.SecurityGroup // nil if no ALB
+	HttpListener   *lb.Listener       // nil if no ALB
+	HttpsListener  *lb.Listener       // nil if no ALB
+	Alb            *lb.LoadBalancer   // nil if no ALB
 	Region         string
 	BuildInfra     *BuildInfra       // nil if no builds needed
 	PublicEcrCache *PullThroughCache // ECR public pull-through cache
 	SkipNatGW      bool
+	// DnsProvider is a role-assuming AWS provider for public Route53
+	// operations when the DNS zone lives in another account; nil otherwise.
+	DnsProvider pulumi.ProviderResource
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
+	// ProjectName is the compose project name; empty for standalone Service
+	// callers. It qualifies the ECS service name so the CLI can attribute
+	// lifecycle events to a service (see ecsServiceResourceName).
+	ProjectName string
 	Policies
+
+	// Schema-exposed handles to pre-existing infrastructure, for standalone
+	// SDK callers that manage their own cluster/exec role/log group. ALB
+	// attachment is deliberately not exposed: ingress-bearing services
+	// belong in a Project, which owns its own ALB.
+	ClusterArn       pulumi.StringInput `pulumi:"clusterArn,optional"`
+	ExecutionRoleArn pulumi.StringInput `pulumi:"executionRoleArn,optional"`
+	LogGroupName     pulumi.StringInput `pulumi:"logGroupName,optional"`
+}
+
+func (i *SharedInfra) clusterArn() pulumi.StringInput {
+	if i.Cluster != nil {
+		return i.Cluster.Arn
+	}
+	return i.ClusterArn
+}
+
+func (i *SharedInfra) executionRoleArn() pulumi.StringPtrInput {
+	if i.ExecRole != nil {
+		return i.ExecRole.Arn
+	}
+	if i.ExecutionRoleArn != nil {
+		return i.ExecutionRoleArn.ToStringOutput()
+	}
+	return nil
+}
+
+func (i *SharedInfra) logGroupName() pulumi.StringInput {
+	if i.LogGroup != nil {
+		return i.LogGroup.Name
+	}
+	return i.LogGroupName
+}
+
+func (i *SharedInfra) httpListenerArn() pulumi.StringInput {
+	if i.HttpListener != nil {
+		return i.HttpListener.Arn
+	}
+	return nil
+}
+
+func (i *SharedInfra) httpsListenerArn() pulumi.StringInput {
+	if i.HttpsListener != nil {
+		return i.HttpsListener.Arn
+	}
+	return nil
+}
+
+func (i *SharedInfra) albDnsName() pulumi.StringInput {
+	if i.Alb != nil {
+		return i.Alb.DnsName
+	}
+	return nil
+}
+
+func (i *SharedInfra) albSecurityGroupId() pulumi.StringInput {
+	if i.AlbSG != nil {
+		return i.AlbSG.ID().ToStringOutput()
+	}
+	return nil
 }
 
 // ECSServiceArgs holds per-service arguments for CreateECSService.
@@ -61,12 +164,38 @@ type ECSServiceArgs struct {
 	ImageURI           pulumi.StringInput // container image URI (built or pre-built)
 	Networks           compose.Networks   // from project
 	WaitForSteadyState bool               // true if another service depends on this one with condition: service_healthy
+	// TaskRoleArn, when set, is used as the task role instead of creating a
+	// fresh per-service role. Provider-managed policy attachments (route53
+	// sidecar, bedrock) are skipped — the caller owns the role's policies.
+	TaskRoleArn pulumi.StringInput
+	// SecurityGroupIds are extra security groups attached to the service's ENI
+	// in addition to the per-service SG and the shared private SG.
+	SecurityGroupIds pulumi.StringArrayInput
+	// Secrets maps container environment variable names to SSM parameter or
+	// Secrets Manager ARNs, injected via the ECS-native secrets mechanism.
+	Secrets pulumi.StringMapInput
+	// Environment holds extra env vars for the main container; values may be
+	// Outputs. Bare ${VAR} values become ECS secret refs (like the
+	// compose-shaped ServiceConfig.Environment); other values stay plaintext.
+	Environment pulumi.StringMapInput
+	// Sidecars are additional containers deployed in the same task definition.
+	// Keyed by service name; volumesFrom/dependsOn on the main service may
+	// reference these names.
+	Sidecars map[string]compose.ServiceConfig
+	// ObjectStoreArns are the S3 bucket ARNs this service is granted access
+	// to, keyed by the x-defang-s3 service name that owns each bucket. Ignored
+	// when TaskRoleArn is caller-supplied — the caller owns that role's
+	// policies, same as the route53/bedrock/x-defang-policies attachments.
+	ObjectStoreArns map[string]pulumi.StringInput
+	// Triggers force a service redeployment when any value changes.
+	Triggers pulumi.StringMapInput
 }
 
 type EcsServiceResult struct {
-	Service    *ecs.Service
-	Endpoint   pulumix.Output[string]
-	HasIngress bool
+	Service     *ecs.Service
+	Endpoint    pulumix.Output[string]
+	HasIngress  bool
+	TaskRoleArn pulumi.StringInput // the created or caller-supplied task role
 }
 
 // clampInt clamps v to [minimum, maximum]. Returns fallback if v is 0.
@@ -152,11 +281,114 @@ func portProtocol(p compose.ServicePortConfig) awsecs.TransportProtocol {
 	return awsecs.TransportProtocolTcp
 }
 
-func roleArn(r *iam.Role) pulumi.StringOutput {
-	if r == nil {
-		return pulumi.StringOutput{}
+// parseVolumesFrom parses a compose volumes_from entry ("container[:ro|rw]" or
+// "container:service:ro") into the source container name and read-only flag.
+// Matches the TS parseVolumesFrom helper.
+func parseVolumesFrom(ref string) (string, bool) {
+	parts := strings.Split(ref, ":")
+	switch len(parts) {
+	case 1:
+		return parts[0], false
+	case 2:
+		return parts[0], parts[1] == "ro"
+	case 3:
+		return parts[1], parts[2] == "ro"
+	default:
+		return ref, false
 	}
-	return r.Arn
+}
+
+// buildMountPoints converts compose volume entries to ECS mount points.
+func buildMountPoints(volumes []compose.ServiceVolumeConfig) []MountPoint {
+	mountPoints := make([]MountPoint, 0, len(volumes))
+	for _, v := range volumes {
+		mountPoints = append(mountPoints, MountPoint{
+			ContainerPath: ptr.String(v.Target),
+			SourceVolume:  ptr.String(v.Source),
+			ReadOnly:      ptr.Bool(v.ReadOnly),
+		})
+	}
+	return mountPoints
+}
+
+// buildVolumesFrom converts compose volumes_from entries to ECS volumesFrom,
+// resolving service names to their container names via the sidecar map.
+func buildVolumesFrom(refs []string, sidecars map[string]compose.ServiceConfig, etag string) []VolumeFrom {
+	volumesFrom := make([]VolumeFrom, 0, len(refs))
+	for _, ref := range refs {
+		source, readOnly := parseVolumesFrom(ref)
+		if sc, ok := sidecars[source]; ok {
+			source = QualifiedContainerName(sc.GetContainerName(source), etag)
+		}
+		volumesFrom = append(volumesFrom, VolumeFrom{
+			SourceContainer: ptr.String(source),
+			ReadOnly:        ptr.Bool(readOnly),
+		})
+	}
+	return volumesFrom
+}
+
+// buildHealthCheck converts a compose health check to an ECS container health
+// check with clamped values (matches TS clamp ranges).
+func buildHealthCheck(hc *compose.HealthCheckConfig) *HealthCheck {
+	if hc == nil || len(hc.Test) == 0 {
+		return nil
+	}
+	healthCheck := &HealthCheck{
+		Command:  hc.Test,
+		Interval: ptr.Int32(clampInt(hc.IntervalSeconds, 5, 300, 30)),
+		Timeout:  ptr.Int32(clampInt(hc.TimeoutSeconds, 2, 60, 5)),
+		Retries:  ptr.Int32(clampInt(hc.Retries, 1, 10, 3)),
+	}
+	if startPeriod := clampInt(hc.StartPeriodSeconds, 0, 300, 0); startPeriod > 0 {
+		healthCheck.StartPeriod = ptr.Int32(startPeriod)
+	}
+	return healthCheck
+}
+
+// buildStopTimeout converts a compose stop_grace_period to an ECS stopTimeout
+// (nil if unset; ECS caps Fargate stopTimeout at 120s).
+func buildStopTimeout(svc compose.ServiceConfig) *int32 {
+	secs := svc.GetStopGracePeriodSeconds()
+	if secs <= 0 {
+		return nil
+	}
+	if secs > 120 {
+		secs = 120
+	}
+	return ptr.Int32(int32(secs))
+}
+
+// composeToEcsConditions maps compose depends_on conditions to ECS container
+// dependency conditions.
+var composeToEcsConditions = map[string]awsecs.ContainerCondition{
+	"service_started":                awsecs.ContainerConditionStart,
+	"service_healthy":                awsecs.ContainerConditionHealthy,
+	"service_completed_successfully": awsecs.ContainerConditionSuccess,
+}
+
+// buildDependsOn converts compose depends_on entries to ECS container
+// dependencies. Only dependencies on sidecar containers in the same task are
+// supported; others are dropped (matches the TS behaviour).
+func buildDependsOn(
+	dependsOn compose.DependsOnConfig, sidecars map[string]compose.ServiceConfig, etag string,
+) []ContainerDependency {
+	deps := make([]ContainerDependency, 0, len(dependsOn))
+	for depName, dep := range common.Sorted(dependsOn) {
+		sc, ok := sidecars[depName]
+		if !ok {
+			continue // ECS only supports dependsOn between containers in the same task
+		}
+		condition := composeToEcsConditions[dep.Condition]
+		if condition == "" {
+			condition = awsecs.ContainerConditionStart
+		}
+		deps = append(deps, ContainerDependency{
+			ContainerName: ptr.String(QualifiedContainerName(sc.GetContainerName(depName), etag)),
+			Condition:     condition,
+		})
+	}
+	return deps
 }
 
 // createServiceSG creates a per-service security group with port-specific ingress rules.
@@ -189,9 +421,9 @@ func createServiceSG(
 		}
 
 		switch {
-		case port.IsIngress() && infra.AlbSG != nil:
+		case port.IsIngress() && infra.albSecurityGroupId() != nil:
 			// LB-backed port: allow from ALB SG (matches TS: VPC CIDR for ingress ports)
-			rule.SecurityGroups = pulumi.StringArray{infra.AlbSG.ID()}
+			rule.SecurityGroups = pulumi.StringArray{infra.albSecurityGroupId()}
 		case isPrivate && infra.PrivateSgID != nil:
 			// Private port: allow from privateSG as source SG
 			rule.SecurityGroups = pulumi.StringArray{infra.PrivateSgID.ToStringPtrOutput().Elem()}
@@ -246,6 +478,78 @@ func createServiceSG(
 	return sg, nil
 }
 
+// newComposedEnvSecret stores a compose env value that embeds a config-
+// provided secret (GetConfigOrEnvValue's hasSecret return — e.g. a DSN built
+// from ${POSTGRES_PASSWORD}) as a new SSM SecureString parameter and returns
+// its Arn. ECS resolves container `secrets` (valueFrom) at task startup, so
+// the value never appears in the task definition's plaintext Environment,
+// which is readable via ecs:DescribeTaskDefinition — the same protection a
+// bare ${VAR} reference already gets via ConfigProvider.GetSecretRef, which
+// only works for a pre-existing parameter and can't hold an arbitrary
+// computed value. See DefangLabs/pulumi-defang#638 (follow-up to the Azure
+// fix for #637 / DefangLabs/station#198). The execution role's
+// AllowGetSecrets policy (see CreateExecutionRole) already grants
+// ssm:GetParameters on "*", so no additional IAM wiring is needed.
+//
+// No Name is set, so AWS assigns the parameter's physical name — the caller
+// never needs to construct or know a physical path. Returning the resource's
+// own Arn output (rather than building one by hand from project/stack/region/
+// account) also gives the caller an automatic Pulumi dependency edge: the
+// task definition that embeds this Arn in its Secrets waits for the
+// parameter to exist, with no explicit pulumi.DependsOn needed. The Version
+// output is returned too, so a caller that needs to force a redeploy on a
+// value change (see mergeComposedSecretsTrigger) can use SSM's own
+// auto-incrementing version instead of hashing the value itself.
+func newComposedEnvSecret(
+	ctx *pulumi.Context,
+	containerName, key string,
+	value pulumi.StringOutput,
+	opt pulumi.ResourceOrInvokeOption,
+) (pulumi.StringOutput, pulumi.IntOutput, error) {
+	resourceName := containerName + "-env-" + key
+	param, err := ssm.NewParameter(ctx, resourceName, &ssm.ParameterArgs{
+		Type:  ssm.ParameterTypeSecureString,
+		Value: value.ToStringPtrOutput(),
+	}, opt)
+	if err != nil {
+		return pulumi.StringOutput{}, pulumi.IntOutput{}, fmt.Errorf("creating SSM parameter: %w", err)
+	}
+	return param.Arn, param.Version, nil
+}
+
+// mergeComposedSecretsTrigger adds a trigger tracking every composed secret's
+// current SSM parameter Version to triggers (caller-supplied, possibly nil),
+// so an ECS service redeploys when any of those versions changes even though
+// the task definition's own JSON doesn't (see newComposedEnvSecret). SSM
+// increments a parameter's Version on every write to its value, so this
+// needs no hash of the plaintext value itself.
+func mergeComposedSecretsTrigger(triggers pulumi.StringMapInput, versions []pulumi.IntOutput) pulumi.StringMapInput {
+	versionInputs := make([]interface{}, len(versions))
+	for i, v := range versions {
+		versionInputs[i] = v
+	}
+	joined := pulumi.All(versionInputs...).ApplyT(func(vals []any) string {
+		parts := make([]string, len(vals))
+		for i, v := range vals {
+			parts[i] = strconv.Itoa(v.(int))
+		}
+		return strings.Join(parts, ",")
+	}).(pulumi.StringOutput)
+
+	if triggers == nil {
+		return pulumi.StringMap{"composedSecretsVersion": joined}
+	}
+	return pulumi.All(triggers.ToStringMapOutput(), joined).ApplyT(func(all []any) map[string]string {
+		existing := all[0].(map[string]string)
+		merged := make(map[string]string, len(existing)+1)
+		for k, v := range existing {
+			merged[k] = v
+		}
+		merged["composedSecretsVersion"] = all[1].(string)
+		return merged
+	}).(pulumi.StringMapOutput)
+}
+
 // CreateECSService creates an ECS Fargate service for a container service.
 //
 //nolint:funlen,maintidx
@@ -258,49 +562,132 @@ func CreateECSService(
 	deps []pulumi.Resource,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*EcsServiceResult, error) {
+	// Standalone Service.Environment reaches this worker as a StringMapInput.
+	// Fold a literal map into the compose-shaped environment before assembling
+	// the task definition so composite values use the SecureString path. A map
+	// (or value) that resolves only inside ApplyT cannot be inspected before
+	// serialization, where creating the required SSM resource would be unsafe;
+	// reject it rather than risk writing a resolved secret into plaintext ECS
+	// task-definition environment fields.
+	if args.Environment != nil {
+		staticEnv, ok := args.Environment.(pulumi.StringMap)
+		if !ok {
+			return nil, errStandaloneEnvironmentMustBeLiteralMap
+		}
+		svc.Environment = maps.Clone(svc.Environment)
+		if svc.Environment == nil {
+			svc.Environment = make(compose.Environment, len(staticEnv))
+		}
+		for key, value := range staticEnv {
+			if _, static := compose.StaticEnvValue(value); !static {
+				return nil, fmt.Errorf("%w: %q", errStandaloneEnvironmentValueMustBeLiteral, key)
+			}
+			svc.Environment[key] = value
+		}
+	}
+
 	infra := args.Infra
 	if infra == nil {
 		infra = &SharedInfra{} // allow standalone usage without shared infra
 	}
 
-	// Create task role
-	taskRole, err := createTaskRole(ctx, serviceName, parentOpt)
-	if err != nil {
-		return nil, fmt.Errorf("creating task role: %w", err)
-	}
-
-	// Attach route53 sidecar policy if service has host ports (private DNS)
+	// Use the caller-supplied task role, or create one per service. Provider-
+	// managed policy attachments only apply to roles we create — an external
+	// role's policies are owned by the caller.
 	var lbDependsOn []pulumi.Resource
-	if svc.HasHostPorts() && infra.route53SidecarPolicy != nil {
-		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-AllowRoute53Sidecar", &iam.RolePolicyAttachmentArgs{
-			Role:      taskRole.Name,
-			PolicyArn: infra.route53SidecarPolicy.Arn,
-		}, parentOpt)
+	taskRoleArn := args.TaskRoleArn
+	if taskRoleArn == nil {
+		taskRole, err := createTaskRole(ctx, serviceName, parentOpt)
 		if err != nil {
-			return nil, fmt.Errorf("attaching route53 sidecar policy: %w", err)
+			return nil, fmt.Errorf("creating task role: %w", err)
 		}
-		lbDependsOn = append(lbDependsOn, dep)
-	}
+		taskRoleArn = taskRole.Arn
 
-	// Attach bedrock policy if service uses LLM (x-defang-llm)
-	if svc.LLM != nil && infra.bedrockPolicy != nil {
-		dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-BedrockPolicy", &iam.RolePolicyAttachmentArgs{
-			Role:      taskRole.Name,
-			PolicyArn: infra.bedrockPolicy.Arn,
-		}, parentOpt)
-		if err != nil {
-			return nil, fmt.Errorf("attaching bedrock policy: %w", err)
+		// Attach route53 sidecar policy if service has host ports (private DNS)
+		if svc.HasHostPorts() && infra.route53SidecarPolicy != nil {
+			dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-AllowRoute53Sidecar", &iam.RolePolicyAttachmentArgs{
+				Role:      taskRole.Name,
+				PolicyArn: infra.route53SidecarPolicy.Arn,
+			}, parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("attaching route53 sidecar policy: %w", err)
+			}
+			lbDependsOn = append(lbDependsOn, dep)
 		}
-		lbDependsOn = append(lbDependsOn, dep)
+
+		// Attach bedrock policy if service uses LLM (x-defang-llm)
+		if svc.LLM != nil && infra.bedrockPolicy != nil {
+			dep, err := iam.NewRolePolicyAttachment(ctx, serviceName+"-BedrockPolicy", &iam.RolePolicyAttachmentArgs{
+				Role:      taskRole.Name,
+				PolicyArn: infra.bedrockPolicy.Arn,
+			}, parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("attaching bedrock policy: %w", err)
+			}
+			lbDependsOn = append(lbDependsOn, dep)
+		}
+
+		// Grant access to the buckets of the x-defang-s3 services this one
+		// depends on. Sorted for a deterministic resource name per store.
+		for _, storeName := range slices.Sorted(maps.Keys(args.ObjectStoreArns)) {
+			dep, err := attachObjectStorePolicy(
+				ctx, taskRole, serviceName, storeName, args.ObjectStoreArns[storeName], parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("granting %s access to object store %q: %w", serviceName, storeName, err)
+			}
+			lbDependsOn = append(lbDependsOn, dep)
+		}
+
+		// Attach caller-specified policies (x-defang-policies). Entries are
+		// literals by now — compose variables were interpolated before the
+		// project reached the provider — so anything unresolved or qualified
+		// for a different cloud is a hard error.
+		policies, err := ParsePolicies(svc.Policies)
+		if err != nil {
+			return nil, fmt.Errorf("service %s: %w", serviceName, err)
+		}
+		// Dedup repeated entries: the attachment URN embeds policyName(policy),
+		// so a duplicate entry would collide on it.
+		seenPolicies := make(map[string]struct{}, len(policies))
+		for _, policy := range policies {
+			if _, dup := seenPolicies[policy]; dup {
+				continue
+			}
+			seenPolicies[policy] = struct{}{}
+			policyArn, err := resolvePolicyArn(ctx, policy, parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("resolving policy %q: %w", policy, err)
+			}
+			attachmentName := serviceName + "-task-role-" + policyName(policy)
+			dep, err := iam.NewRolePolicyAttachment(ctx, attachmentName, &iam.RolePolicyAttachmentArgs{
+				Role:      taskRole.Name,
+				PolicyArn: policyArn,
+			}, parentOpt)
+			if err != nil {
+				return nil, fmt.Errorf("attaching policy %q: %w", policy, err)
+			}
+			lbDependsOn = append(lbDependsOn, dep)
+		}
+	} else if len(compose.NormalizePolicies(svc.Policies)) > 0 {
+		// A caller-supplied task role's policies are owned by the caller.
+		return nil, fmt.Errorf("service %s: %w", serviceName, errPoliciesWithTaskRole)
 	}
 
 	// Build container definition
 	cpus := svc.GetCPUs()
 	memMiB := svc.GetMemoryMiB()
 
-	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort)
+	// Build port mappings (protocol normalized to tcp/udp, hostPort = containerPort).
+	// Multiple compose ports can share a target port (e.g. http + grpc listeners
+	// on the same port), so dedupe (matches TS dedup by containerPort/protocol).
 	portMappings := make([]PortMapping, 0, len(svc.Ports))
+	seenPorts := map[string]bool{}
 	for _, p := range svc.Ports {
+		key := fmt.Sprintf("%d/%s", p.Target, portProtocol(p))
+		if seenPorts[key] {
+			continue
+		}
+		seenPorts[key] = true
 		portMappings = append(portMappings, PortMapping{
 			ContainerPort: ptr.Int32(p.Target),
 			HostPort:      ptr.Int32(p.Target), // awsvpc mode: AWS normalizes hostPort = containerPort
@@ -308,97 +695,174 @@ func CreateECSService(
 		})
 	}
 
-	// Build health check with clamped values (matches TS clamp ranges)
-	var healthCheck *HealthCheck
-	if svc.HealthCheck != nil && len(svc.HealthCheck.Test) > 0 {
-		healthCheck = &HealthCheck{
-			Command:  svc.HealthCheck.Test,
-			Interval: ptr.Int32(clampInt(svc.HealthCheck.IntervalSeconds, 5, 300, 30)),
-			Timeout:  ptr.Int32(clampInt(svc.HealthCheck.TimeoutSeconds, 2, 60, 5)),
-			Retries:  ptr.Int32(clampInt(svc.HealthCheck.Retries, 1, 10, 3)),
-		}
-		startPeriod := clampInt(svc.HealthCheck.StartPeriodSeconds, 0, 300, 0)
-		if startPeriod > 0 {
-			healthCheck.StartPeriod = ptr.Int32(startPeriod)
-		}
-	}
+	healthCheck := buildHealthCheck(svc.HealthCheck)
 
 	// Build environment variable names and resolve values via ConfigProvider interpolation
 	// (matches GCP's use of compose.GetConfigOrEnvValue)
 	type envEntry struct {
 		name string
 		idx  int // index into allInputs where the resolved value will be
+		// isSecret is true when the resolved value at idx is an SSM parameter
+		// ARN for ECS Secrets (valueFrom), not a plaintext Environment value —
+		// set when the value embedded a config-provided secret. See
+		// newComposedEnvSecret.
+		isSecret bool
 	}
-	var envEntries []envEntry
 	staticEnvVars := []KeyValuePair{
 		{Name: "DEFANG_SERVICE", Value: serviceName},
 	}
 	if infra != nil && infra.Etag != "" {
 		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_ETAG", Value: infra.Etag})
 	}
-	if svc.DomainName != "" {
-		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: svc.DomainName})
+	// DEFANG_FQDN: custom domain, else public FQDN (ingress), else private FQDN
+	// (host-port). See common.ServiceFQDN for the source-of-truth precedence.
+	var publicDomain, privateDomain string
+	if infra != nil {
+		publicDomain, privateDomain = infra.ProjectDomain, infra.PrivateDomain
+	}
+	if fqdn := common.ServiceFQDN(serviceName, svc, publicDomain, privateDomain); fqdn != "" {
+		staticEnvVars = append(staticEnvVars, KeyValuePair{Name: "DEFANG_FQDN", Value: fqdn})
 	}
 
 	// Resolve outputs (image URI, log group name, env vars) before building the container
 	// definitions JSON. The ECS ContainerDefinitions field is a plain JSON string,
-	// so all values must be concrete before marshaling.
-	containerName := serviceName
+	// so all values must be concrete before marshaling. Each optional input's
+	// index into allInputs is tracked explicitly.
+	containerName := QualifiedContainerName(svc.GetContainerName(serviceName), infra.Etag)
 
 	allInputs := []interface{}{args.ImageURI}
-	hasLogGroup := infra != nil && infra.LogGroup != nil
-	if hasLogGroup {
-		allInputs = append(allInputs, infra.LogGroup.Name)
+	logGroupIdx := -1
+	if logGroupName := infra.logGroupName(); logGroupName != nil {
+		logGroupIdx = len(allInputs)
+		allInputs = append(allInputs, logGroupName)
 	}
-	hasPrivateZone := infra != nil && infra.PrivateZoneID != nil
-	if hasPrivateZone {
+	privateZoneIdx := -1
+	if infra.PrivateZoneID != nil {
+		privateZoneIdx = len(allInputs)
 		allInputs = append(allInputs, infra.PrivateZoneID)
 	}
+	secretsIdx := -1
+	if args.Secrets != nil {
+		secretsIdx = len(allInputs)
+		allInputs = append(allInputs, args.Secrets)
+	}
+	// composedSecretVersions collects the SSM parameter Version of every
+	// composed secret (across the main container and sidecars). A changed
+	// value updates the SSM parameter in place without changing its Arn, so
+	// the task definition's Secrets entry — and thus its JSON — wouldn't
+	// otherwise change; these versions feed the service Triggers so such a
+	// change still forces a redeployment.
+	var composedSecretVersions []pulumi.IntOutput
 
 	// Split env vars: bare ${VAR} references go to ECS Secrets (SSM ARN),
-	// all others go to Environment (resolved plaintext).
-	var secretEntries []Secret
-
-	for k, v := range common.Sorted(svc.Environment) {
-		if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
-			ref, err := configProvider.GetSecretRef(ctx, secretVar, parentOpt)
-			if err != nil {
-				return nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
+	// all others go to Environment (resolved plaintext) — unless the resolved
+	// value embeds a config-provided secret via interpolation (e.g. a DSN
+	// built from ${POSTGRES_PASSWORD}), in which case it's wrapped in a new
+	// SSM parameter and also routed to Secrets. See newComposedEnvSecret and
+	// DefangLabs/pulumi-defang#638.
+	resolveEnv := func(containerName string, svc compose.ServiceConfig) ([]envEntry, []Secret, error) {
+		var entries []envEntry
+		var secrets []Secret
+		for k, v := range common.Sorted(svc.Environment) {
+			if secretVar := compose.GetConfigName2(k, v); secretVar != "" && configProvider != nil {
+				ref, err := configProvider.GetSecretRef(ctx, secretVar, parentOpt)
+				if err != nil {
+					return nil, nil, fmt.Errorf("getting secret ref for %q: %w", k, err)
+				}
+				secrets = append(secrets, Secret{Name: k, ValueFrom: ref})
+				continue
 			}
-			secretEntries = append(secretEntries, Secret{Name: k, ValueFrom: ref})
-		} else {
-			resolved := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, *v, parentOpt)
-			entry := envEntry{name: k, idx: len(allInputs)}
-			envEntries = append(envEntries, entry)
+			resolved, hasSecret := compose.GetConfigOrEnvValue(ctx, configProvider, svc, k, "", parentOpt)
+			if hasSecret {
+				arn, version, err := newComposedEnvSecret(ctx, containerName, k, resolved, parentOpt)
+				if err != nil {
+					return nil, nil, fmt.Errorf("creating composed secret for %q: %w", k, err)
+				}
+				entries = append(entries, envEntry{name: k, idx: len(allInputs), isSecret: true})
+				allInputs = append(allInputs, arn)
+				composedSecretVersions = append(composedSecretVersions, version)
+				continue
+			}
+			entries = append(entries, envEntry{name: k, idx: len(allInputs)})
 			allInputs = append(allInputs, resolved)
 		}
+		return entries, secrets, nil
+	}
+
+	envEntries, secretEntries, err := resolveEnv(serviceName, svc)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve sidecar container env vars the same way as the main container.
+	type sidecarData struct {
+		name       string
+		cfg        compose.ServiceConfig
+		envEntries []envEntry
+		secrets    []Secret
+		imageIdx   int // index into allInputs where the resolved image URI will be
+	}
+	sidecarDatas := make([]sidecarData, 0, len(args.Sidecars))
+	for scName, sc := range common.Sorted(args.Sidecars) {
+		if sc.Image == nil {
+			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
+		}
+		if img := sc.StaticImage(); img != nil && *img == "" {
+			return nil, fmt.Errorf("sidecar %q: %w", scName, errSidecarImageRequired)
+		}
+		// Parent component names are not part of child URNs. Include the
+		// owning service so standalone services can reuse a sidecar name.
+		scEnvEntries, scSecrets, err := resolveEnv(serviceName+"-sidecar-"+scName, sc)
+		if err != nil {
+			return nil, fmt.Errorf("sidecar %q: %w", scName, err)
+		}
+		imageIdx := len(allInputs)
+		allInputs = append(allInputs, sc.Image)
+		sidecarDatas = append(sidecarDatas, sidecarData{
+			name: scName, cfg: sc, envEntries: scEnvEntries, secrets: scSecrets, imageIdx: imageIdx,
+		})
 	}
 
 	containerDefsJSON := pulumi.All(allInputs...).ApplyT(func(all []any) (string, error) {
 		imageUri := all[0].(string)
 
+		// Merge ECS-native secrets from the Secrets input with the ones derived
+		// from bare ${VAR} environment references.
+		mainSecrets := append([]Secret{}, secretEntries...)
+		if secretsIdx >= 0 {
+			for name, valueFrom := range common.Sorted(all[secretsIdx].(map[string]string)) {
+				mainSecrets = append(mainSecrets, Secret{Name: name, ValueFrom: valueFrom})
+			}
+		}
+
 		// Build env vars from resolved outputs
 		envVars := append([]KeyValuePair{}, staticEnvVars...)
 		for _, e := range envEntries {
 			val := all[e.idx].(string)
+			if e.isSecret {
+				mainSecrets = append(mainSecrets, Secret{Name: e.name, ValueFrom: val})
+				continue
+			}
 			envVars = append(envVars, KeyValuePair{Name: e.name, Value: val})
 		}
 		slices.SortFunc(envVars, func(a, b KeyValuePair) int {
 			return cmp.Compare(a.Name, b.Name)
 		})
 
-		var logConfiguration *LogConfiguration
-		if hasLogGroup {
-			logGroupName := all[1].(string)
-			logConfiguration = &LogConfiguration{
+		logConfigurationFor := func(streamPrefix string) *LogConfiguration {
+			if logGroupIdx < 0 {
+				return nil
+			}
+			return &LogConfiguration{
 				LogDriver: awsecs.LogDriverAwslogs,
 				Options: map[LogOption]string{
-					LogOptionAwslogsGroup:        logGroupName,
+					LogOptionAwslogsGroup:        all[logGroupIdx].(string),
 					LogOptionAwslogsRegion:       infra.Region,
-					LogOptionAwslogsStreamPrefix: containerName,
+					LogOptionAwslogsStreamPrefix: streamPrefix,
 				},
 			}
 		}
+		logConfiguration := logConfigurationFor(containerName)
 
 		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
@@ -408,24 +872,62 @@ func CreateECSService(
 			Essential:        ptr.Bool(true),
 			PortMappings:     portMappings,
 			Environment:      envVars,
-			Secrets:          secretEntries,
+			Secrets:          mainSecrets,
 			Command:          svc.Command,
 			EntryPoint:       svc.Entrypoint,
+			DependsOn:        buildDependsOn(svc.DependsOn, args.Sidecars, infra.Etag),
 			HealthCheck:      healthCheck,
 			Image:            imageUri,
 			LogConfiguration: logConfiguration,
+			StopTimeout:      buildStopTimeout(svc),
+			WorkingDirectory: svc.WorkingDir,
 			// AWS normalizes these to [] on read; use empty slices to avoid null vs [] diffs
-			MountPoints:    []MountPoint{},
+			MountPoints:    buildMountPoints(svc.Volumes),
 			SystemControls: []SystemControl{},
-			VolumesFrom:    []VolumeFrom{},
+			VolumesFrom:    buildVolumesFrom(svc.VolumesFrom, args.Sidecars, infra.Etag),
 		}}
 
-		if svc.HasHostPorts() && hasPrivateZone {
-			privateZoneID := all[2].(string)                                         // FIXME: this is [1] if there's no loggroup
-			privateFqdn := common.SafeLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
+		for _, sd := range sidecarDatas {
+			scEnvVars := []KeyValuePair{}
+			scSecrets := append([]Secret{}, sd.secrets...)
+			for _, e := range sd.envEntries {
+				val := all[e.idx].(string)
+				if e.isSecret {
+					scSecrets = append(scSecrets, Secret{Name: e.name, ValueFrom: val})
+					continue
+				}
+				scEnvVars = append(scEnvVars, KeyValuePair{Name: e.name, Value: val})
+			}
+			slices.SortFunc(scEnvVars, func(a, b KeyValuePair) int {
+				return cmp.Compare(a.Name, b.Name)
+			})
+			scContainerName := QualifiedContainerName(sd.cfg.GetContainerName(sd.name), infra.Etag)
+			containerDefs = append(containerDefs, ContainerDefinition{
+				Name:             scContainerName,
+				Essential:        ptr.Bool(sd.cfg.Restart != "no"),
+				PortMappings:     []PortMapping{},
+				Environment:      scEnvVars,
+				Secrets:          scSecrets,
+				Command:          sd.cfg.Command,
+				EntryPoint:       sd.cfg.Entrypoint,
+				DependsOn:        buildDependsOn(sd.cfg.DependsOn, args.Sidecars, infra.Etag),
+				HealthCheck:      buildHealthCheck(sd.cfg.HealthCheck),
+				Image:            all[sd.imageIdx].(string),
+				LogConfiguration: logConfigurationFor(scContainerName),
+				StopTimeout:      buildStopTimeout(sd.cfg),
+				WorkingDirectory: sd.cfg.WorkingDir,
+				MountPoints:      buildMountPoints(sd.cfg.Volumes),
+				SystemControls:   []SystemControl{},
+				VolumesFrom:      buildVolumesFrom(sd.cfg.VolumesFrom, args.Sidecars, infra.Etag),
+			})
+		}
+
+		if svc.HasHostPorts() && privateZoneIdx >= 0 {
+			privateZoneID := all[privateZoneIdx].(string)
+			privateFqdn := common.ServiceLabel(serviceName) + "." + infra.PrivateDomain // route53 sidecar needs FQDN
 			sidecarDef := ContainerDefinition{
 				Name:      "route53-sidecar",
-				Image:     "public.ecr.aws/defang-io/route53-sidecar:65e431c",
+				Image:     "public.ecr.aws/defang-io/route53-sidecar:c92de14",
 				Essential: ptr.Bool(false),
 				Environment: []KeyValuePair{
 					{Name: ("HOSTEDZONE"), Value: (privateZoneID)},
@@ -469,9 +971,10 @@ func CreateECSService(
 		RequiresCompatibilities: pulumi.StringArray{pulumi.String("FARGATE")},
 		Cpu:                     pulumi.String(fargateCPU),
 		Memory:                  pulumi.String(fargateMemory),
-		ExecutionRoleArn:        roleArn(infra.ExecRole),
-		TaskRoleArn:             taskRole.Arn,
+		ExecutionRoleArn:        infra.executionRoleArn(),
+		TaskRoleArn:             taskRoleArn.ToStringOutput(),
 		ContainerDefinitions:    containerDefsJSON,
+		Volumes:                 buildTaskVolumes(svc, args.Sidecars),
 		RuntimePlatform: &ecs.TaskDefinitionRuntimePlatformArgs{
 			CpuArchitecture:       pulumi.String(string(cpuArch)),
 			OperatingSystemFamily: pulumi.String("LINUX"),
@@ -490,50 +993,80 @@ func CreateECSService(
 	var loadBalancers ecs.ServiceLoadBalancerArray
 	var endpointOutput pulumix.Output[string]
 
-	listener := infra.HttpListener
-	if infra.HttpsListener != nil {
-		// If HTTPS listener exists, use it instead of HTTP (matches TS createTgLrPair)
-		listener = infra.HttpsListener
+	// If an HTTPS listener exists, prefer it over HTTP (matches TS createTgLrPair).
+	// A port may force the plain HTTP listener via x-defang-listener: http.
+	defaultListenerArn := infra.httpsListenerArn()
+	if defaultListenerArn == nil {
+		defaultListenerArn = infra.httpListenerArn()
 	}
 
-	if svc.HasIngressPorts() && listener != nil {
-		serviceLabel := common.SafeLabel(serviceName)
+	if svc.HasIngressPorts() && defaultListenerArn != nil {
+		serviceLabel := common.ServiceLabel(serviceName)
 
 		firstIngress := true
+		var prevRule pulumi.Resource // serializes rule creation so ALB priorities follow port order
 		for _, port := range svc.Ports {
 			var endpoints []string
 
 			if infra.ProjectDomain != "" {
 				endpoints = append(endpoints, fmt.Sprintf("%s--%d.%s", serviceLabel, port.Target, infra.ProjectDomain))
 			}
-			if port.IsIngress() && firstIngress {
-				if svc.DomainName != "" {
+			if port.IsIngress() {
+				// The service's public FQDN matches every ingress port's rule:
+				// rules on the same listener are disambiguated by protocol
+				// conditions (gRPC content-type) or target a different
+				// listener (x-defang-listener: http).
+				switch {
+				case svc.DomainName != "":
 					endpoints = append(endpoints, svc.DomainName)
-				} else if infra.ProjectDomain != "" {
-					publicFqdn := fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain)
-					// FIXME: which service should listen on the project domain?
-					endpoints = append(endpoints, publicFqdn, infra.ProjectDomain)
+				case infra.ProjectDomain != "":
+					endpoints = append(endpoints, fmt.Sprintf("%s.%s", serviceLabel, infra.ProjectDomain))
+					// The apex (bare project) domain is bound to a service only
+					// when the whole project has exactly one ingress port; the
+					// owner is resolved in buildProject. Otherwise the apex is
+					// left to the ALB listener's default action.
+					if serviceName == infra.ApexServiceName {
+						endpoints = append(endpoints, infra.ProjectDomain)
+					}
 				}
-				endpoints = append(endpoints, svc.Networks[compose.DefaultNetwork].Aliases...)
-				firstIngress = false
+				if firstIngress {
+					endpoints = append(endpoints, svc.Networks[compose.DefaultNetwork].Aliases...)
+					firstIngress = false
+				}
 			}
 
+			listenerArn := defaultListenerArn
+			if port.Listener == compose.PortListenerHTTP {
+				if httpArn := infra.httpListenerArn(); httpArn != nil {
+					listenerArn = httpArn
+				}
+			}
+
+			// Rules for different ports may match the same host (e.g. the
+			// service's domainname), disambiguated by protocol conditions.
+			// AWS assigns rule priorities in creation order, so serialize:
+			// earlier ports get higher-priority (more specific) rules.
+			tgLrOpt := pulumi.ResourceOption(parentOpt)
+			if prevRule != nil {
+				tgLrOpt = pulumi.Composite(tgLrOpt, pulumi.DependsOn([]pulumi.Resource{prevRule}))
+			}
 			tg, lr, err := createTgLrPair(
 				ctx,
 				serviceName,
 				infra.VpcID,
-				listener,
+				listenerArn,
 				port,
 				svc.HealthCheck,
 				endpoints,
-				infra.Alb.DnsName,
-				parentOpt)
+				infra.albDnsName(),
+				tgLrOpt)
 			if err != nil {
 				return nil, fmt.Errorf("creating TG/LR pair for port %d: %w", port.Target, err)
 			}
 			if tg == nil || lr == nil {
 				continue
 			}
+			prevRule = lr
 
 			loadBalancers = append(loadBalancers, &ecs.ServiceLoadBalancerArgs{
 				ContainerName:  pulumi.String(containerName),
@@ -559,23 +1092,44 @@ func CreateECSService(
 		return nil, err
 	}
 
-	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)
-	var clusterArn pulumi.StringInput
-	if infra.Cluster != nil {
-		clusterArn = infra.Cluster.Arn
-	}
-	// Attach both per-service SG and shared privateSG (matches TS: [privateSg])
+	// Attach per-service SG, shared privateSG (matches TS: [privateSg]), and any
+	// caller-supplied extra security groups.
 	securityGroups := pulumi.StringArray{serviceSG.ID()}
 	if infra.PrivateSgID != nil {
 		securityGroups = append(securityGroups, infra.PrivateSgID.ToStringPtrOutput().Elem())
 	}
+	var serviceSecurityGroups pulumi.StringArrayInput = securityGroups
+	if args.SecurityGroupIds != nil {
+		serviceSecurityGroups = pulumi.All(securityGroups, args.SecurityGroupIds).
+			ApplyT(func(all []any) []string {
+				//nolint:forcetypeassert // pulumi.All resolves string arrays
+				return append(all[0].([]string), all[1].([]string)...)
+			}).(pulumi.StringArrayOutput)
+	}
+
+	// A changed composed secret's value doesn't change the task definition's
+	// JSON (its Secrets entry holds a stable SSM parameter Arn, not the value
+	// — see newComposedEnvSecret), so without this the service would never
+	// redeploy to pick up a rotated value. Triggers gets each parameter's
+	// Version, which SSM increments on every write, never the plaintext value.
+	// Triggers alone has no effect without ForceNewDeployment — see the AWS
+	// provider's own "Redeploy Service On Every Apply" example, which pairs
+	// the two; Triggers is otherwise just inert state the provider tracks.
+	triggers := args.Triggers
+	hasComposedSecrets := len(composedSecretVersions) > 0
+	if hasComposedSecrets {
+		triggers = mergeComposedSecretsTrigger(args.Triggers, composedSecretVersions)
+	}
+
+	// Create ECS service with circuit breaker and managed tags (matches TS createEcsService)
 	ecsServiceArgs := &ecs.ServiceArgs{
-		Cluster:        clusterArn,
+		Cluster:        infra.clusterArn(),
 		TaskDefinition: taskDef.Arn,
 		DesiredCount:   pulumi.Int(replicas),
+		Triggers:       triggers,
 		NetworkConfiguration: &ecs.ServiceNetworkConfigurationArgs{
 			Subnets:        subnetIds,
-			SecurityGroups: securityGroups,
+			SecurityGroups: serviceSecurityGroups,
 			AssignPublicIp: pulumi.Bool(assignPublicIp),
 		},
 		LoadBalancers: loadBalancers,
@@ -608,9 +1162,15 @@ func CreateECSService(
 		ecsServiceArgs.WaitForSteadyState = pulumi.Bool(true)
 	}
 
+	if hasComposedSecrets {
+		// Triggers on its own doesn't force anything — see the comment where
+		// triggers is built.
+		ecsServiceArgs.ForceNewDeployment = pulumi.Bool(true)
+	}
+
 	ecsService, err := ecs.NewService(
 		ctx,
-		serviceName,
+		ECSServiceResourceName(infra.ProjectName, serviceName),
 		ecsServiceArgs,
 		parentOpt,
 		pulumi.DependsOn(lbDependsOn),
@@ -619,22 +1179,23 @@ func CreateECSService(
 		return nil, fmt.Errorf("creating ECS service: %w", err)
 	}
 
-	hasIngress := svc.HasIngressPorts() && infra.HttpListener != nil
-	serviceLabel := common.SafeLabel(serviceName)
+	hasIngress := svc.HasIngressPorts() && defaultListenerArn != nil
+	serviceLabel := common.ServiceLabel(serviceName)
 	switch {
 	case hasIngress && infra.ProjectDomain != "":
 		// HTTP listener redirects to HTTPS when a cert is bound, so advertise https://.
 		endpointOutput = pulumix.Val(fmt.Sprintf("https://%s.%s", serviceLabel, infra.ProjectDomain))
-	case hasIngress:
+	case hasIngress && infra.albDnsName() != nil:
 		// No ProjectDomain: reach the service via the raw ALB DNS. createTgLrPair
-		// sets the listener-rule HostHeader to infra.Alb.DnsName when no hostnames
+		// sets the listener-rule HostHeader to the ALB DNS name when no hostnames
 		// are configured, so routing works for http://<alb-dns-name>.
 		endpointOutput = pulumix.Apply(
-			pulumix.Output[string](infra.Alb.DnsName),
+			pulumix.Output[string](infra.albDnsName().ToStringOutput()),
 			func(dns string) string { return "http://" + dns },
 		)
 	case svc.HasHostPorts() && infra.PrivateDomain != "":
-		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceName, infra.PrivateDomain))
+		// serviceLabel (not raw serviceName) to match the private DNS record.
+		endpointOutput = pulumix.Val(fmt.Sprintf("%s.%s", serviceLabel, infra.PrivateDomain))
 	default:
 		endpointOutput = pulumix.Val(serviceName)
 	}
@@ -644,9 +1205,92 @@ func CreateECSService(
 		return nil, fmt.Errorf("creating certs and Route53 DNS: %w", err)
 	}
 
+	// CPU-based target-tracking autoscaling (x-defang-autoscaling), replicas..2x
+	// replicas (matches TS createFargateScalingTarget/PolicyCPU).
+	if svc.Autoscaling {
+		if err := createCPUAutoscaling(ctx, serviceName, infra, ecsService, replicas, parentOpt); err != nil {
+			return nil, err
+		}
+	}
+
 	return &EcsServiceResult{
-		Service:    ecsService,
-		Endpoint:   endpointOutput,
-		HasIngress: hasIngress,
+		Service:     ecsService,
+		Endpoint:    endpointOutput,
+		HasIngress:  hasIngress,
+		TaskRoleArn: taskRoleArn,
 	}, nil
+}
+
+// createCPUAutoscaling registers the ECS service as an Application Auto Scaling
+// target with a CPU target-tracking policy (85% average utilization).
+func createCPUAutoscaling(
+	ctx *pulumi.Context,
+	serviceName string,
+	infra *SharedInfra,
+	ecsService *ecs.Service,
+	replicas int32,
+	parentOpt pulumi.ResourceOrInvokeOption,
+) error {
+	clusterName := pulumi.String("default").ToStringOutput()
+	if clusterArn := infra.clusterArn(); clusterArn != nil {
+		clusterName = clusterArn.ToStringOutput().ApplyT(func(arn string) string {
+			// arn:aws:ecs:region:account:cluster/NAME → NAME
+			return arn[strings.LastIndexByte(arn, '/')+1:]
+		}).(pulumi.StringOutput)
+	}
+	resourceID := pulumi.Sprintf("service/%s/%s", clusterName, ecsService.Name)
+
+	target, err := appautoscaling.NewTarget(ctx, serviceName+"-scaling", &appautoscaling.TargetArgs{
+		MinCapacity:       pulumi.Int(replicas),
+		MaxCapacity:       pulumi.Int(replicas * 2),
+		ResourceId:        resourceID,
+		ScalableDimension: pulumi.String("ecs:service:DesiredCount"),
+		ServiceNamespace:  pulumi.String("ecs"),
+	}, parentOpt)
+	if err != nil {
+		return fmt.Errorf("creating autoscaling target: %w", err)
+	}
+
+	metricSpec := &appautoscaling.PolicyTargetTrackingScalingPolicyConfigurationPredefinedMetricSpecificationArgs{
+		PredefinedMetricType: pulumi.String("ECSServiceAverageCPUUtilization"),
+	}
+	_, err = appautoscaling.NewPolicy(ctx, serviceName+"-scaling-cpu", &appautoscaling.PolicyArgs{
+		PolicyType:        pulumi.String("TargetTrackingScaling"),
+		ResourceId:        target.ResourceId,
+		ScalableDimension: target.ScalableDimension,
+		ServiceNamespace:  target.ServiceNamespace,
+		TargetTrackingScalingPolicyConfiguration: &appautoscaling.PolicyTargetTrackingScalingPolicyConfigurationArgs{
+			PredefinedMetricSpecification: metricSpec,
+			TargetValue:                   pulumi.Float64(85),
+		},
+	}, parentOpt)
+	if err != nil {
+		return fmt.Errorf("creating autoscaling policy: %w", err)
+	}
+	return nil
+}
+
+// buildTaskVolumes collects the distinct volume names referenced by the main
+// service's and sidecars' compose volumes into task-definition volumes.
+func buildTaskVolumes(
+	svc compose.ServiceConfig, sidecars map[string]compose.ServiceConfig,
+) ecs.TaskDefinitionVolumeArray {
+	var volumes ecs.TaskDefinitionVolumeArray
+	seen := map[string]bool{}
+	add := func(vols []compose.ServiceVolumeConfig) {
+		for _, v := range vols {
+			if seen[v.Source] {
+				continue
+			}
+			seen[v.Source] = true
+			volumes = append(volumes, &ecs.TaskDefinitionVolumeArgs{
+				Name: pulumi.String(v.Source),
+			})
+		}
+	}
+	add(svc.Volumes)
+	for _, sc := range common.Sorted(sidecars) {
+		add(sc.Volumes)
+	}
+	return volumes
 }

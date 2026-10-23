@@ -1,7 +1,13 @@
 version: 2
 updates:
+  # "/" only covers .github/workflows/** plus a root-level action.yml, so each
+  # composite action under .github/actions/ needs its own entry — without one
+  # its pinned actions are never bumped and drift behind the workflows'.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/build-sdk"
+      - "/.github/actions/setup-go"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3
@@ -11,11 +17,6 @@ updates:
       github-actions:
         patterns:
           - "*"
-    ignore:
-      # Only major version bumps; security advisories always bypass ignore rules.
-      - dependency-name: "*"
-        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
-
   # Explicit gomod directories override GitHub's auto-discovery, which would
   # otherwise open PRs against generated code under /sdk and /examples.
   - package-ecosystem: "gomod"
@@ -24,3 +25,33 @@ updates:
       - "/cd"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      # azure-native is the only Pulumi SDK we use that ships as many
+      # independently-versioned subpackages (app/v3, network/v3,
+      # operationalinsights/v3, ...). Bumping them separately drifts versions
+      # apart, which mismatches the plugin version baked into
+      # PkgResourceDefaultOpts and breaks resource dispatch ("Resource type
+      # azure-native:<svc>:<Resource> not found"). Grouping forces one PR for
+      # the whole family.
+      pulumi-azure-native-sdk:
+        patterns:
+          - "github.com/pulumi/pulumi-azure-native-sdk*"
+      # Security updates ignore the schedule and would otherwise open one PR
+      # per vulnerable dependency; group them so each directory gets a single
+      # security-bump PR instead.
+      gomod-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+  # Covers every ARG default that feeds a FROM line in the root Dockerfile
+  # (BUILDBASE=golang, CDBASE_SHELL=alpine, PULUMIBASE=pulumi/pulumi-base) —
+  # that's the only place these base images are pinned, so this is the one
+  # ecosystem entry that keeps them patched for CVEs.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"crypto/sha1" //nolint:gosec
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,12 +14,15 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/artifactregistry"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/config"
-	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/storage"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"gopkg.in/yaml.v3"
 )
 
 var errNoRemoteRepoConfigured = errors.New("no remote repository configured for registry")
+var errMultiPlatformUnsupported = errors.New("multi-platform builds are unsupported on GCP Cloud Build")
+var errBuildContextNotGCS = errors.New(
+	"build context must be a gs:// URI; only `defang up` deploys are supported on GCP",
+)
 
 // Based on Cloud Run error:
 // "Expected an image path like [host/]repo-path[:tag and/or @digest], where host is one of
@@ -37,16 +41,34 @@ func isCloudRunSupportedRegistry(registry string) bool {
 
 var nonLowerAlphaNumericOrDashRe = regexp.MustCompile(`[^a-z0-9-]`)
 
+const (
+	artifactRegistryRepositoryIDMaxLength  = 63
+	artifactRegistryRepositoryIDHashLength = 8
+)
+
 // sanitizeRepoName produces a valid Artifact Registry repository ID:
-// lowercase alphanumeric + hyphens, max 63 characters.
+// lowercase alphanumeric + hyphens, max 63 characters. Names longer than the
+// limit are truncated with a hash of the full original name appended, so two
+// names that share a long prefix still get distinct, bounded IDs.
 func sanitizeRepoName(name string) string {
+	original := name
 	name = strings.ToLower(name)
 	name = nonLowerAlphaNumericOrDashRe.ReplaceAllLiteralString(name, "-")
 	name = strings.Trim(name, "-")
-	if len(name) > 63 {
-		name = name[:63] // FIXME: this could lead to collisions
+	if name == "" {
+		return "repo-" + repositoryIDHash(original)
 	}
-	return strings.TrimRight(name, "-")
+	if len(name) > artifactRegistryRepositoryIDMaxLength {
+		suffix := "-" + repositoryIDHash(original)
+		maxPrefixLength := artifactRegistryRepositoryIDMaxLength - len(suffix)
+		name = strings.TrimRight(name[:maxPrefixLength], "-") + suffix
+	}
+	return name
+}
+
+func repositoryIDHash(name string) string {
+	digest := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(digest[:])[:artifactRegistryRepositoryIDHashLength]
 }
 
 // gcpBuildResource is the Pulumi resource state for the defang-gcp:defanggcp:Build custom resource.
@@ -59,14 +81,54 @@ type gcpBuildResource struct {
 type buildStep struct {
 	Name string   `yaml:"name"`
 	Args []string `yaml:"args"`
+	Env  []string `yaml:"env,omitempty"`
 }
 
 // generateBuildSteps returns a YAML-encoded Cloud Build step list that builds
 // a Docker image and loads it into the local Docker daemon. Cloud Build then
 // pushes the image to the registry via the images: field so that build results
 // contain the image digest.
-func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
+//
+// Multi-platform builds are rejected: the --load step and the images: push
+// only handle a single-platform image (Cloud Build's daemon cannot load a
+// multi-arch manifest list).
+func generateBuildSteps(build *compose.BuildConfig, dest pulumi.StringOutput) pulumi.StringOutput {
+	platform := "linux/amd64"
+	if len(build.Platforms) == 1 {
+		platform = build.Platforms[0]
+	}
+	buildArgs := []string{"buildx", "build", "--platform", platform}
+	buildArgs = append(buildArgs, "-f", build.GetDockerfile())
+	if target := build.GetTarget(); target != "" {
+		buildArgs = append(buildArgs, "--target", target)
+	}
+	// Values travel in the step's env rather than on the command line, so they
+	// do not show up in the docker invocation Cloud Build logs. They are not
+	// hidden from Pulumi state: env is part of the same steps YAML that becomes
+	// the Build resource's steps input. Compose build args are not a secret
+	// channel — Docker bakes them into image history — so that is acceptable
+	// here; anything genuinely secret belongs in a BuildKit secret mount, not
+	// in build args. Sorted for a stable ordering: a map walk would reshuffle
+	// the args every run and make the Build resource look changed when it isn't.
+	var buildEnv []string
+	for k, v := range common.Sorted(build.Args) {
+		buildArgs = append(buildArgs, "--build-arg", k)
+		// Cloud Build expands $VAR / ${VAR} substitutions in steps.env before
+		// running the step, so a literal $ in the value (e.g. an arg that
+		// happens to read "$PROJECT_ID") must be escaped to $$ to survive as
+		// the literal Compose value rather than being substituted away.
+		buildEnv = append(buildEnv, k+"="+strings.ReplaceAll(v, "$", "$$"))
+	}
+	for _, c := range build.CacheFrom {
+		buildArgs = append(buildArgs, "--cache-from="+c)
+	}
+	for _, c := range build.CacheTo {
+		buildArgs = append(buildArgs, "--cache-to="+c)
+	}
 	return dest.ApplyT(func(d string) (string, error) {
+		if len(build.Platforms) > 1 {
+			return "", fmt.Errorf("%w (got %v)", errMultiPlatformUnsupported, build.Platforms)
+		}
 		steps := []buildStep{
 			{
 				Name: "gcr.io/cloud-builders/docker",
@@ -77,10 +139,8 @@ func generateBuildSteps(dest pulumi.StringOutput) pulumi.StringOutput {
 			},
 			{
 				Name: "gcr.io/cloud-builders/docker",
-				Args: []string{
-					"buildx", "build", "--platform", "linux/amd64",
-					"-t", d, "--load", ".",
-				},
+				Args: append(buildArgs, "-t", d, "--load", "."),
+				Env:  buildEnv,
 			},
 		}
 		b, err := yaml.Marshal(steps)
@@ -108,16 +168,24 @@ func GetServiceImage(
 	svc compose.ServiceConfig,
 	repos map[string]*artifactregistry.Repository,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {
-		return buildServiceImage(ctx, serviceName, svc, infra, opts...)
+		return buildServiceImage(ctx, serviceName, svc, infra, pluginID, opts...)
 	}
 	if svc.Image == nil {
 		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, common.ErrNoImageOrBuildConfig)
 	}
 
-	info := common.ParseImage(*svc.Image)
+	img := svc.StaticImage()
+	if img == nil {
+		// Dynamic (Output) image: registry can't be inspected synchronously, so
+		// skip the unsupported-registry rewrite and pass it through as-is.
+		return svc.Image.ToStringOutput(), nil
+	}
+
+	info := common.ParseImage(*img)
 	if !isCloudRunSupportedRegistry(info.Registry) {
 		gcpProject := config.GetProject(ctx)
 		region := GcpRegion(ctx)
@@ -140,7 +208,7 @@ func GetServiceImage(
 		image := repo.RepositoryId.ApplyT(func(repoId string) string {
 			info.Repo = fmt.Sprintf("%s/%s/%s", gcpProject, repoId, info.Repo)
 			msg := fmt.Sprintf("rewriting image for service %s: %s -> %s (registry not supported by Cloud Run)",
-				serviceName, *svc.Image, info.FullImage())
+				serviceName, *img, info.FullImage())
 			_ = ctx.Log.Info(msg, nil)
 			return info.FullImage()
 		}).(pulumi.StringOutput)
@@ -190,6 +258,7 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 		h.Write([]byte(ctx))
 		h.Write([]byte(build.GetDockerfile()))
 		h.Write([]byte(build.GetTarget()))
+		h.Write([]byte(strings.Join(build.Platforms, ",")))
 		argBytes, err := json.Marshal(build.Args)
 		if err != nil {
 			return "", fmt.Errorf("marshaling build args: %w", err)
@@ -199,28 +268,21 @@ func buildSourceDigest(build *compose.BuildConfig) pulumi.StringOutput {
 	}).(pulumi.StringOutput)
 }
 
-// resolveSourceURI ensures the build context is available at a GCS URI.
-// If the context is already a gs:// URI it is returned as-is. If it is a local
-// path (expressed as a pulumi.String literal), the directory is archived and
-// uploaded to the project's build-artifacts bucket via a BucketObject.
-func resolveSourceURI(
-	ctx *pulumi.Context,
-	serviceName string,
-	build *compose.BuildConfig,
-	infra *BuildInfra,
-	opts ...pulumi.ResourceOption,
-) (pulumi.StringOutput, error) {
-	ps, ok := build.Context.(pulumi.String)
-	if ok && !strings.HasPrefix(string(ps), "gs://") {
-		obj, err := storage.NewBucketObject(ctx, serviceName+"-context", &storage.BucketObjectArgs{
-			Bucket: infra.BuildBucket.Name,
-			Name:   pulumi.Sprintf("%s-context.zip", serviceName),
-			Source: pulumi.NewFileArchive(string(ps)),
-		}, opts...)
-		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("uploading build context for %s: %w", serviceName, err)
-		}
-		return pulumi.Sprintf("gs://%s/%s", infra.BuildBucket.Name, obj.Name), nil
+// resolveSourceURI asserts that the build context is already a GCS URI.
+//
+// Every `defang up` deploy arrives here with a gs:// URI already: the CLI archives
+// the build context, uploads it to the shared Defang CD bucket with a presigned URL,
+// and rewrites build.context to "gs://<cd-bucket>/uploads/<digest>.tar.gz" before CD
+// runs. Those are passed through untouched.
+//
+// A local path only reaches here when the Pulumi program is driven directly (not by
+// `defang up`) or via `compose config` dry runs (which never invoke CD). Neither is
+// a supported way to build on GCP, so it's a hard error rather than an upload-on-the-
+// fly fallback: there is no real caller to preserve that behavior for.
+func resolveSourceURI(serviceName string, build *compose.BuildConfig) (pulumi.StringOutput, error) {
+	if ps, ok := build.Context.(pulumi.String); ok && !strings.HasPrefix(string(ps), "gs://") {
+		return pulumi.StringOutput{}, fmt.Errorf("%w: service %s has build context %q",
+			errBuildContextNotGCS, serviceName, string(ps))
 	}
 	// Already a GCS URI (or an unresolved output) — use as-is.
 	return build.Context.ToStringOutput(), nil
@@ -233,22 +295,29 @@ func buildServiceImage(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
-	dest := pulumi.Sprintf("%s/%s:latest", infra.RepositoryURL, serviceName)
-	steps := generateBuildSteps(dest)
+	// Tag with the build's content hash rather than ":latest" -- shared,
+	// hardcoded tags are unnecessary churn in the repo and let this provider
+	// drift from what AWS and Azure now do (see #547/#551). Digest resolution
+	// itself doesn't depend on the tag: it comes straight from this specific
+	// Cloud Build run's own API result (buildRes.ImageDigest below), not a
+	// post-hoc lookup by tag, so this is a hygiene fix, not a correctness one.
+	dest := pulumi.Sprintf("%s/%s:%s", infra.RepositoryURL, serviceName, common.BuildTriggerHash(svc.Build))
+	steps := generateBuildSteps(svc.Build, dest)
 	shmBytes := svc.Build.GetShmSizeBytes()
 
-	sourceURI, err := resolveSourceURI(ctx, serviceName, svc.Build, infra, opts...)
+	sourceURI, err := resolveSourceURI(serviceName, svc.Build)
 	if err != nil {
 		return pulumi.StringOutput{}, err
 	}
 
-	// The Build resource must depend on the BucketIAMMember so Pulumi waits for
-	// the IAM binding before submitting the Cloud Build job. GCP IAM changes can
-	// take ~60 s to propagate globally; without this explicit edge the build SA
-	// may not yet have objectViewer access when Cloud Build attempts to read the
-	// source archive, causing a 403 on first deploy.
+	// The Build resource must depend on the BucketIAMMember (objectViewer on the
+	// shared CD bucket) so Pulumi waits for the IAM binding before submitting the
+	// Cloud Build job. GCP IAM changes can take ~60 s to propagate globally; without
+	// this explicit edge the build SA may not yet have read access when Cloud Build
+	// attempts to fetch the source archive, causing a 403 on first deploy.
 	buildOpts := make([]pulumi.ResourceOption, 0, len(opts)+1)
 	buildOpts = append(buildOpts, opts...)
 	if infra.BucketIAMMember != nil {
@@ -271,7 +340,7 @@ func buildServiceImage(
 			"diskSizeGb":     pulumi.Int(cloudBuildDiskSizeGb(shmBytes)),
 		},
 		&buildRes,
-		buildOpts...,
+		pluginID.ResourceOptions(buildOpts...)...,
 	); err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating Build resource for %s: %w", serviceName, err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	defanggcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
@@ -136,6 +137,10 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 	})
 	require.NotNil(t, ssh, "expected an SSH firewall rule")
 	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
+	// Logical name must not re-embed the project name: Pulumi's default resource
+	// ID already prefixes <pulumi-project>-<stack>, which includes it, and
+	// doing so again pushed the physical name over GCP's 63-char limit.
+	assert.Equal(t, "allow-ssh", ssh.name)
 
 	// ICMP firewall rule
 	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
@@ -144,6 +149,7 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 	})
 	require.NotNil(t, icmp, "expected an ICMP firewall rule")
 	assert.Equal(t, "INGRESS", icmp.inputs.Get("direction").AsString())
+	assert.Equal(t, "allow-icmp", icmp.name)
 }
 
 func TestConstructProjectAlwaysCreatesPrivateDNSZone(t *testing.T) {
@@ -388,16 +394,22 @@ func TestConstructProjectWithoutDomainSkipsWildcardCert(t *testing.T) {
 	assert.Equal(t, 0, countType(*records, "gcp:certificatemanager/certificateMapEntry:CertificateMapEntry"))
 }
 
+// TestConstructProjectWithBuildCreatesBuildInfra mirrors a real `defang up`:
+// the CLI has already uploaded the build context to the shared CD bucket and
+// rewritten build.context to a gs:// URI, so the provider must build the image
+// straight from there without provisioning any GCS bucket of its own — the CD
+// service account has no project-level storage.buckets.create permission.
 func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.GcpURN("Project"),
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
 			"app": property.New(property.NewMap(map[string]property.Value{
 				"build": property.New(property.NewMap(map[string]property.Value{
-					"context": property.New("./app"),
+					"context": property.New("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 				})),
 			})),
 		}),
@@ -416,6 +428,43 @@ func TestConstructProjectWithBuildCreatesBuildInfra(t *testing.T) {
 	assert.Equal(t, 1, countType(*records, "gcp:artifactregistry/repositoryIamBinding:RepositoryIamBinding"))
 	// Build resource for the service
 	assert.Equal(t, 1, countType(*records, "defang-gcp:defanggcp:Build"))
+
+	// No GCS bucket may be created: the build context already lives in the shared
+	// CD bucket, and creating one needs storage.buckets.create on the project.
+	assert.Equal(t, 0, countType(*records, "gcp:storage/bucket:Bucket"))
+	assert.Equal(t, 0, countType(*records, "gcp:storage/bucketObject:BucketObject"))
+
+	// Instead, the build SA gets bucket-scoped read access on the shared CD bucket.
+	viewer := findTypeWhere(*records, "gcp:storage/bucketIAMMember:BucketIAMMember", func(_ property.Map) bool {
+		return true
+	})
+	require.NotNil(t, viewer, "expected a BucketIAMMember on the shared CD bucket")
+	assert.Equal(t, "defang-cd-test", viewer.inputs.Get("bucket").AsString())
+	assert.Equal(t, "roles/storage.objectViewer", viewer.inputs.Get("role").AsString())
+}
+
+// TestConstructProjectWithLocalBuildContextErrors asserts a clear error when a
+// service's build context isn't already a gs:// URI. Only `defang up` invokes
+// CD, and it always resolves the context to a gs:// URI in the shared bucket
+// beforehand, so a local path (from a direct-Pulumi caller, or a `compose config`
+// dry run that never invokes CD) is not a supported flow.
+func TestConstructProjectWithLocalBuildContextErrors(t *testing.T) {
+	mock, _ := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"build": property.New(property.NewMap(map[string]property.Value{
+					"context": property.New("./app"),
+				})),
+			})),
+		}),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "gs://")
 }
 
 func TestConstructProjectWithoutBuildSkipsBuildInfra(t *testing.T) {
@@ -915,7 +964,7 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoCloudRun(t *testing.T) {
 	for _, envName := range []string{
 		"GOOGLE_VERTEX_PROJECT",
 		"GOOGLE_VERTEX_LOCATION",
-		"GOOGLE_CLOUD_PROJECT",
+		"GCLOUD_PROJECT",
 		"GOOGLE_CLOUD_LOCATION",
 	} {
 		assert.NotNil(t, findEnvInCloudRun(capturedCR, envName),
@@ -947,7 +996,7 @@ func TestConstructProjectWithLLMInjectsVertexEnvVarsIntoComputeEngine(t *testing
 	for _, envName := range []string{
 		"GOOGLE_VERTEX_PROJECT",
 		"GOOGLE_VERTEX_LOCATION",
-		"GOOGLE_CLOUD_PROJECT",
+		"GCLOUD_PROJECT",
 		"GOOGLE_CLOUD_LOCATION",
 	} {
 		assert.Contains(t, userData, envName,
@@ -1088,7 +1137,8 @@ func TestConstructProjectAllResourcesAreChildren(t *testing.T) {
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn: testutil.GcpURN("Project"),
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
 		Inputs: property.NewMap(map[string]property.Value{
 			"domain": property.New("example.com"),
 			"services": property.New(property.NewMap(map[string]property.Value{
@@ -1099,7 +1149,7 @@ func TestConstructProjectAllResourcesAreChildren(t *testing.T) {
 				"worker": testutil.ServiceWithImage("myapp:worker"),
 				"builder": property.New(property.NewMap(map[string]property.Value{
 					"build": property.New(property.NewMap(map[string]property.Value{
-						"context": property.New("./app"),
+						"context": property.New("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
 					})),
 				})),
 				"db": property.New(property.NewMap(map[string]property.Value{
@@ -1152,4 +1202,154 @@ func TestConstructProjectWithLLMPreservesExistingEnvVars(t *testing.T) {
 	require.NotNil(t, env, "expected GOOGLE_VERTEX_PROJECT env var to be present")
 	assert.Equal(t, "my-custom-project", env.AsMap().Get("value").AsString(),
 		"enableLLM should not overwrite a pre-existing GOOGLE_VERTEX_PROJECT value")
+}
+
+func TestConstructGcpProjectServiceWithPoliciesGrantsRoles(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"redeployer": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("defangio/cli:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/run.developer"),
+					property.New("roles/storage.objectAdmin"),
+					property.New("deployer"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	for _, role := range []string{"roles/run.developer", "roles/storage.objectAdmin"} {
+		found := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+			return m.Get("role").AsString() == role
+		})
+		require.NotNil(t, found, "expected an IAM member for x-defang-policies role %s", role)
+	}
+
+	custom := findTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return strings.HasSuffix(m.Get("role").AsString(), "/roles/deployer")
+	})
+	require.NotNil(t, custom, "expected a bare policy name to resolve to a project custom role")
+}
+
+func TestConstructGcpProjectRejectsForeignPolicies(t *testing.T) {
+	server := testutil.MakeGcpTestServer()
+
+	// No cross-cloud filtering: an AWS-qualified entry on a GCP deploy is a
+	// hard error pointing at per-stack variable values instead.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("arn:aws:iam::123456789012:policy/deployer"),
+				})),
+			})),
+		}),
+	})
+	require.ErrorContains(t, err, "a GCP role is")
+	require.ErrorContains(t, err, "${VAR}")
+}
+
+func TestConstructGcpProjectPolicyRepeatingPlatformRoleDoesNotCollide(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	// A portless worker runs on Compute Engine, which grants a platform role
+	// set (logging, monitoring, ...) on the same service account. Repeating
+	// one of those roles in x-defang-policies must not abort the deployment
+	// with a duplicate URN.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"worker": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:worker"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/logging.logWriter"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	members := countTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/logging.logWriter"
+	})
+	assert.Equal(t, 2, members, "expected both the platform grant and the policy grant to be registered")
+}
+
+func TestConstructGcpProjectDuplicatePoliciesDeduped(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	// Repeated entries resolve to the same role; the member URN embeds the
+	// role, so without dedup the second entry would collide.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.GcpURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"ports": property.New(property.NewArray([]property.Value{testutil.IngressPort(8080)})),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("roles/run.developer"),
+					property.New("roles/run.developer"),
+				})),
+			})),
+		}),
+	})
+
+	require.NoError(t, err)
+
+	members := countTypeWhere(*records, "gcp:projects/iAMMember:IAMMember", func(m property.Map) bool {
+		return m.Get("role").AsString() == "roles/run.developer"
+	})
+	assert.Equal(t, 1, members, "duplicate x-defang-policies entries must be deduped")
+}
+
+// TestConstructGcpProjectBuildCarriesPluginIdentity asserts that the Build
+// resource the provider registers for itself tells the engine where to fetch
+// the plugin from, and that it pins no version. Registrations that go through a
+// generated SDK get the URL for free; the ones we make with a raw
+// ctx.RegisterResource do not, and omitting it strands the stack on any
+// operation run from a workspace whose plugin cache is empty.
+//
+// The version has to stay empty even when this build carries one. A pinned
+// version is recorded in the checkpoint and can afterwards only be resolved by
+// a plugin of exactly that version — which, for every build except a tagged
+// release, names a GitHub release that does not exist. See
+// common.PluginIdentityFrom.
+func TestConstructGcpProjectBuildCarriesPluginIdentity(t *testing.T) {
+	// Stamp a version the way the linker does, to prove it does not leak into
+	// the registration.
+	prev := defanggcp.Version
+	defanggcp.Version = "9.9.9"
+	t.Cleanup(func() { defanggcp.Version = prev })
+
+	mock, tracker := testutil.NewPluginTracker()
+	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.GcpURN("Project"),
+		Config: testutil.StackConfig("defang:stateUrl", "gs://defang-cd-test"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"builder": property.New(property.NewMap(map[string]property.Value{
+					"build": property.New(property.NewMap(map[string]property.Value{
+						"context": property.New("gs://defang-cd-test/uploads/sha256-abc.tar.gz"),
+					})),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "")
 }

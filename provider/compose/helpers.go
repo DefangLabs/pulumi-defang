@@ -35,6 +35,29 @@ func (p ServicePortConfig) GetAppProtocol() PortAppProtocol {
 	return PortAppProtocolHTTP
 }
 
+// UDPIngressAsHost returns a copy of services in which UDP ingress ports use
+// host mode. AWS and GCP use this at their project boundary to preserve the
+// deployment behavior produced by older CLIs, which rewrote UDP ingress to
+// host mode before invoking the Pulumi provider.
+func UDPIngressAsHost(services Services) Services {
+	if services == nil {
+		return nil
+	}
+
+	normalized := make(Services, len(services))
+	for name, service := range services {
+		service.Ports = append([]ServicePortConfig(nil), service.Ports...)
+		for i := range service.Ports {
+			port := &service.Ports[i]
+			if port.GetProtocol() == PortProtocolUDP && port.IsIngress() {
+				port.Mode = PortModeHost
+			}
+		}
+		normalized[name] = service
+	}
+	return normalized
+}
+
 // ParseMemoryMiB parses a memory string into MiB.
 // Accepts raw bytes (compose-go normalized), or suffixes: b, k, m, g, t, kb, mb, gb, tb, ki, mi, gi, ti.
 func ParseMemoryMiB(s string) int {
@@ -151,13 +174,24 @@ func GetConfigName(value string) string {
 	return ""
 }
 
-func GetConfigName2(key string, value *string) string {
-	if value == nil {
+func GetConfigName2(key string, value pulumi.StringInput) string {
+	sv, static := StaticEnvValue(value)
+	if !static {
+		return "" // dynamic values are passed as plaintext env, never secret refs
+	}
+	if sv == nil {
 		return key
 	}
-	return GetConfigName(*value)
+	return GetConfigName(*sv)
 }
 
+// GetConfigOrEnvValue resolves a compose env value, interpolating any $VAR /
+// ${VAR} references against configProvider. The second return value is true
+// when at least one variable was actually substituted, i.e. the result
+// embeds a config-provided (secret) value — see InterpolateEnvironmentVariable.
+// Callers that expose the result as a plaintext resource property (rather
+// than a native secret reference) should keep it out of plaintext
+// state/properties instead; see DefangLabs/pulumi-defang#638.
 func GetConfigOrEnvValue(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
@@ -165,19 +199,23 @@ func GetConfigOrEnvValue(
 	key string,
 	defaultValue string,
 	opts ...pulumi.InvokeOption,
-) pulumi.StringOutput {
+) (pulumi.StringOutput, bool) {
 	if v, ok := s.Environment[key]; ok {
-		var value string
-		if v == nil {
-			value = "${" + key + "}"
-		} else {
-			value = *v
+		sv, static := StaticEnvValue(v)
+		if !static {
+			// Dynamic (Output) values pass through as-is; interpolation and
+			// config resolution only apply to static text.
+			return v.ToStringOutput(), false
+		}
+		value := "${" + key + "}"
+		if sv != nil {
+			value = *sv
 		}
 		// Resolve any $VAR / ${VAR} interpolations; empty string passes through as-is.
 		return InterpolateEnvironmentVariable(ctx, configProvider, value, opts...)
 	}
 	// Key not in environment at all: use the provided default.
-	return pulumi.String(defaultValue).ToStringOutput()
+	return pulumi.String(defaultValue).ToStringOutput(), false
 }
 
 // ToPulumiStringArray converts a plain []string to a pulumi.StringArray.
@@ -192,15 +230,23 @@ func ToPulumiStringArray(ss []string) pulumi.StringArray {
 	return arr
 }
 
+// InterpolateEnvironmentVariable resolves ${VAR} / $VAR references in value
+// against configProvider. The second return value is true when at least one
+// variable was actually substituted — callers that expose the result as a
+// plaintext resource property (rather than a native secret reference) should
+// treat that as "this value embeds a config-provided secret" and keep it out
+// of plaintext state/properties instead (e.g. buildEnvVars in the Azure
+// provider, which wraps such values as Container App secrets — see
+// DefangLabs/station#198).
 func InterpolateEnvironmentVariable(
 	ctx *pulumi.Context,
 	configProvider ConfigProvider,
 	value string,
 	opts ...pulumi.InvokeOption,
-) pulumi.StringOutput {
+) (pulumi.StringOutput, bool) {
 	if configProvider == nil {
 		// No config provider, so we can't resolve any variables. Return the raw string.
-		return pulumi.String(value).ToStringOutput()
+		return pulumi.String(value).ToStringOutput(), false
 	}
 	// First pass: discover variables and set up config resolution.
 	// A second pass inside ApplyT is unavoidable because Pulumi outputs are async.
@@ -218,13 +264,13 @@ func InterpolateEnvironmentVariable(
 
 	if len(names) == 0 {
 		if err != nil {
-			return pulumi.String(value).ToStringOutput()
+			return pulumi.String(value).ToStringOutput(), false
 		}
-		return pulumi.String(escaped).ToStringOutput()
+		return pulumi.String(escaped).ToStringOutput(), false
 	}
 
 	// Wait for all resolutions, then let compose-go do the full substitution
-	return pulumi.All(outputs...).ApplyT(func(resolved []interface{}) (string, error) {
+	result := pulumi.All(outputs...).ApplyT(func(resolved []interface{}) (string, error) {
 		mapping := make(map[string]string, len(names))
 		for i, name := range names {
 			mapping[name] = resolved[i].(string)
@@ -234,4 +280,56 @@ func InterpolateEnvironmentVariable(
 			return v, ok
 		}, template.WithoutLogging)
 	}).(pulumi.StringOutput)
+	return result, true
+}
+
+// healthcheckURLRegex matches `http://localhost:PORT/PATH` (or 127.0.0.1) inside
+// a Docker Compose `healthcheck.test` arg. Port and path are optional captures.
+//
+// The port capture is `\d{1,5}` (up to 99999) rather than a validated
+// 1-65535 range: per this repo's convention (see AGENTS.md "Don't mirror
+// cloud-provider validation"), an out-of-range port is left for the target
+// cloud's own API to reject rather than duplicated here.
+//
+// The path/query capture is bounded to 333 repetitions as a defensive cap
+// against pathological input (unbounded backtracking / excessive capture
+// length on an adversarial healthcheck.test string), not a standards-derived
+// URL length limit.
+var healthcheckURLRegex = regexp.MustCompile(
+	`(?i)(?:http:\/\/)?(?:localhost|127\.0\.0\.1)(?::(\d{1,5}))?([?/](?:[?/a-z0-9._~!$&()*+,;=:@-]|%[a-f0-9]{2}){0,333})?`)
+
+// GetHealthCheckPathAndPort extracts the URL path and port from a Compose
+// healthcheck command of the form `CMD curl http://localhost:PORT/PATH` (or
+// CMD-SHELL with the URL embedded in a shell string). Returns ("/", 80) when
+// no URL is present or the test isn't a CMD/CMD-SHELL form.
+//
+// Cloud providers that translate a Compose healthcheck into a cloud-native
+// HTTP probe (Azure Container Apps liveness probe, GCP MIG ALB health check)
+// use this to populate the probe's path/port instead of hardcoding "/".
+func GetHealthCheckPathAndPort(hc *HealthCheckConfig) (string, int) {
+	path := "/"
+	port := 80
+	if hc == nil || len(hc.Test) < 1 || (hc.Test[0] != "CMD" && hc.Test[0] != "CMD-SHELL") {
+		return path, port
+	}
+	for _, arg := range hc.Test[1:] {
+		if match := healthcheckURLRegex.FindStringSubmatch(arg); match != nil {
+			if match[1] != "" {
+				if n, err := strconv.Atoi(match[1]); err == nil {
+					port = n
+				}
+			}
+			if match[2] != "" {
+				path = match[2]
+				// The capture also matches a bare query string with no
+				// leading slash (e.g. "?foo=bar" from "localhost:8080?foo=bar").
+				// That's not a valid HTTP request path on its own, so give it
+				// the implicit "/" every URL path has.
+				if path[0] == '?' {
+					path = "/" + path
+				}
+			}
+		}
+	}
+	return path, port
 }

@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -10,6 +11,8 @@ import (
 	awsxec2 "github.com/pulumi/pulumi-awsx/sdk/v3/go/awsx/ec2"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
+
+var errMissingPublicSubnets = errors.New("aws.publicSubnetIDs is required when adopting an existing VPC via aws.vpcID")
 
 type NetworkingResult struct {
 	VpcID            pulumi.StringOutput
@@ -21,36 +24,20 @@ type NetworkingResult struct {
 	UseNatGW         bool                     // whether to use NAT Gateways (vs. public subnets for outbound)
 }
 
-// ResolveNetworking creates a new VPC using awsx or uses provided VPC/subnet IDs.
+// ResolveNetworking creates a new VPC using awsx, or adopts the VPC/subnets
+// provided via AWSConfig. In both cases the project's private hosted zone is
+// created and attached to the VPC.
 func ResolveNetworking(
-	ctx *pulumi.Context, projectName string, opt pulumi.ResourceOrInvokeOption,
+	ctx *pulumi.Context, projectName string, cfg *AWSConfig, opt pulumi.ResourceOrInvokeOption,
 ) (*NetworkingResult, error) {
 	privateDomain := common.SafeLabel(projectName) + ".internal"
 
+	if cfg != nil && cfg.VpcID != nil {
+		return adoptVpc(ctx, privateDomain, cfg, opt)
+	}
+
 	strategy := awsxec2.NatGatewayStrategy(NatGatewayStrategy.Get(ctx)) // TODO: missing type checking
 	numberOfAZs := NumberOfAvailabilityZones.Get(ctx)
-
-	// if cfg != nil && cfg.VpcID != "" {
-	// 	// Use provided VPC and subnet IDs
-	// 	subnetIDs := make(pulumi.StringArray, len(cfg.PublicSubnetIDs))
-	// 	for i, id := range cfg.PublicSubnetIDs {
-	// 		subnetIDs[i] = pulumi.String(id)
-	// 	}
-	// 	privateSubnetIDs := make(pulumi.StringArray, len(cfg.PrivateSubnetIDs))
-	// 	for i, id := range cfg.PrivateSubnetIDs {
-	// 		privateSubnetIDs[i] = pulumi.String(id)
-	// 	}
-	// 	if len(privateSubnetIDs) == 0 {
-	// 		privateSubnetIDs = subnetIDs
-	// 	}
-	// 	return &NetworkingResult{
-	// 		VpcID:            pulumi.String(cfg.VpcID).ToStringOutput(),
-	// 		PublicSubnetIDs:  subnetIDs.ToStringArrayOutput(),
-	// 		PrivateSubnetIDs: privateSubnetIDs.ToStringArrayOutput(),
-	// 		UseNatGW:         strategy != awsxec2.NatGatewayStrategyNone,
-	// 		// PrivateZoneID:    pulumi.IDPtrOutput{},  no private hosted zone since we didn't create the VPC
-	// 	}, nil
-	// }
 
 	region, err := aws.GetRegion(ctx, nil, opt)
 	if err != nil {
@@ -101,26 +88,9 @@ func ResolveNetworking(
 		return nil, err
 	}
 
-	// TODO: make this optional, so we can save $$
-	privateZone, err := route53.NewZone(ctx, privateDomain, &route53.ZoneArgs{
-		Comment:      pulumi.String(common.DefangComment),
-		Name:         pulumi.String(privateDomain),
-		ForceDestroy: pulumi.Bool(ForceDestroyHostedzone.Get(ctx)),
-		Vpcs: route53.ZoneVpcArray{
-			route53.ZoneVpcArgs{VpcId: vpc.VpcId},
-		},
-	}, opt)
+	privateZone, err := createPrivateZone(ctx, privateDomain, vpc.VpcId, opt)
 	if err != nil {
-		return nil, fmt.Errorf("creating Route53 private hosted zone: %w", err)
-	}
-
-	// Lower the negative caching TTL to 15 seconds
-	_, err = createSoaRecord(ctx, privateDomain, privateZone.ToZoneOutput(), SoaRecordArgs{
-		Serial:  pulumi.Int(2023022101),
-		Minimum: pulumi.Int(15),
-	}, opt)
-	if err != nil {
-		return nil, fmt.Errorf("creating SOA record: %w", err)
+		return nil, err
 	}
 
 	options, err := ec2.NewVpcDhcpOptions(ctx, "dhcp-options", &ec2.VpcDhcpOptionsArgs{
@@ -156,4 +126,69 @@ func ResolveNetworking(
 		PublicNatIPs:     publicNatIps,
 		UseNatGW:         strategy != awsxec2.NatGatewayStrategyNone,
 	}, nil
+}
+
+// adoptVpc uses the caller-provided VPC and subnets instead of creating a VPC.
+// The project's private hosted zone is still created (managed Redis/Postgres
+// CNAMEs live there) and attached to the adopted VPC, but the VPC itself —
+// DHCP options, route tables, NAT — is left untouched. Private subnets, when
+// provided, are assumed to have outbound connectivity (NAT or equivalent);
+// when omitted, all workloads run in the public subnets with public IPs.
+func adoptVpc(
+	ctx *pulumi.Context, privateDomain string, cfg *AWSConfig, opt pulumi.ResourceOrInvokeOption,
+) (*NetworkingResult, error) {
+	if cfg.PublicSubnetIDs == nil {
+		return nil, errMissingPublicSubnets
+	}
+
+	privateZone, err := createPrivateZone(ctx, privateDomain, cfg.VpcID, opt)
+	if err != nil {
+		return nil, err
+	}
+
+	privateSubnetIDs := cfg.PrivateSubnetIDs
+	useNatGW := privateSubnetIDs != nil
+	if privateSubnetIDs == nil {
+		privateSubnetIDs = cfg.PublicSubnetIDs
+	}
+
+	return &NetworkingResult{
+		VpcID:            cfg.VpcID.ToStringOutput(),
+		PublicSubnetIDs:  cfg.PublicSubnetIDs.ToStringArrayOutput(),
+		PrivateSubnetIDs: privateSubnetIDs.ToStringArrayOutput(),
+		PrivateDomain:    privateDomain,
+		PrivateZone:      privateZone,
+		PublicNatIPs:     pulumi.StringArray{}.ToStringArrayOutput(),
+		UseNatGW:         useNatGW,
+	}, nil
+}
+
+// createPrivateZone creates the project's Route53 private hosted zone attached
+// to the given VPC, with a low negative-caching TTL.
+func createPrivateZone(
+	ctx *pulumi.Context, privateDomain string, vpcID pulumi.StringInput, opt pulumi.ResourceOrInvokeOption,
+) (*route53.Zone, error) {
+	// TODO: make this optional, so we can save $$
+	privateZone, err := route53.NewZone(ctx, privateDomain, &route53.ZoneArgs{
+		Comment:      pulumi.String(common.DefangComment),
+		Name:         pulumi.String(privateDomain),
+		ForceDestroy: pulumi.Bool(ForceDestroyHostedzone.Get(ctx)),
+		Vpcs: route53.ZoneVpcArray{
+			route53.ZoneVpcArgs{VpcId: vpcID},
+		},
+	}, opt)
+	if err != nil {
+		return nil, fmt.Errorf("creating Route53 private hosted zone: %w", err)
+	}
+
+	// Lower the negative caching TTL to 15 seconds
+	_, err = createSoaRecord(ctx, privateDomain, privateZone.ToZoneOutput(), SoaRecordArgs{
+		Serial:  pulumi.Int(2023022101),
+		Minimum: pulumi.Int(15),
+	}, opt)
+	if err != nil {
+		return nil, fmt.Errorf("creating SOA record: %w", err)
+	}
+
+	return privateZone, nil
 }

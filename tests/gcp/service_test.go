@@ -380,17 +380,30 @@ func TestConstructGcpCloudRunServiceEmitsSecretRefs(t *testing.T) {
 	assert.Equal(t, secRef.Get("secret").AsString(), otherRef.Get("secret").AsString(),
 		"two env vars pointing at the same secret should reference the same Secret ID")
 
-	// MIXED: interpolation (not a bare ref) — resolved via GetConfigValue, ends up
-	// as a plain value, NOT a SecretKeyRef.
+	// MIXED: interpolation (not a bare ref) still embeds the CONFIG secret, so
+	// (DefangLabs/pulumi-defang#638) it's wrapped in its own new Secret Manager
+	// secret and referenced via SecretKeyRef — never inlined as plaintext.
 	mixed, ok := byName["MIXED"]
 	require.True(t, ok, "MIXED env var missing")
-	assert.True(t, mixed.Get("valueSource").IsNull(),
-		"MIXED is prefix${CONFIG}suffix — not a bare ref, so no SecretKeyRef")
+	assert.True(t, mixed.Get("value").IsNull(),
+		"MIXED embeds a config-provided secret and must not have an inline value")
+	mixedRef := mixed.Get("valueSource").AsMap().Get("secretKeyRef").AsMap()
+	require.NotEqual(t, 0, mixedRef.Len(), "MIXED must have valueSource.secretKeyRef")
+	assert.NotEqual(t, secRef.Get("secret").AsString(), mixedRef.Get("secret").AsString(),
+		"MIXED's composed secret must be distinct from CONFIG's own secret")
 
-	// Exactly one IamMember should exist — deduped even though two env vars
-	// reference the same secret (regression test for the URN collision bug).
+	// Two IamMembers: one for the CONFIG secret (SECRET/OTHER share it, deduped
+	// — regression test for the URN collision bug), one for MIXED's own new
+	// composed secret.
 	iamCount := countType(records, "gcp:secretmanager/secretIamMember:SecretIamMember")
-	assert.Equal(t, 1, iamCount, "expected one IamMember per unique secret")
+	assert.Equal(t, 2, iamCount, "expected one IamMember per unique secret")
+
+	// MIXED's underlying Secret resource must hold the fully-interpolated
+	// value, not the raw "prefix${CONFIG}suffix" template.
+	secretRes := findTypeWhere(records, "gcp:secretmanager/secretVersion:SecretVersion", func(property.Map) bool { return true })
+	require.NotNil(t, secretRes, "expected a new SecretVersion for MIXED")
+	assert.NotContains(t, secretRes.inputs.Get("secretData").AsString(), "${CONFIG}",
+		"the secret must hold the interpolated value, not the raw template")
 }
 
 // TestConstructGcpCloudRunServiceInjectsDefangServiceEnv verifies that the

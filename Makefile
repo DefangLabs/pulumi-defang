@@ -64,7 +64,7 @@ GO_TEST_COVER_FLAGS := $(if $(COVER),-count=1 -cover)
 GO_TEST	:= go test -v $(GO_TEST_COVER_FLAGS) -timeout 5m -parallel ${TESTPARALLELISM}
 
 .PHONY: test_provider
-test_provider: provider ## Provider integration tests
+test_provider: provider ## Provider tests
 	cd tests && ${GO_TEST} $(if $(COVER),-coverprofile=../coverage_tests.out -coverpkg=github.com/DefangLabs/pulumi-defang/provider/...) -short ./... | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test_unit
@@ -74,6 +74,10 @@ test_unit: ## Unit tests only
 .PHONY: test_cd
 test_cd: go_sdk
 	cd cd && $(GO_TEST) -race | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
+
+.PHONY: integ
+integ: ## Run CD integration tests
+	cd cd && go test -v -tags=integration | sed -e 's/\(--- FAIL.*\)/[0;31m\1[0m/g'
 
 .PHONY: test
 test: test_unit test_provider test_cd ## Run all tests
@@ -164,13 +168,25 @@ pre-push: provider test image_all
 EXAMPLE_PROVIDERS  := aws gcp azure scaleway
 EXAMPLE_LANGUAGES  := go nodejs python dotnet
 
+# Install every provider before generating any example. pulumictl bakes a
+# "+dirty" suffix into a provider's version if the git tree isn't clean at
+# build time, and generating one provider's examples writes real diffs into
+# the tracked examples/ tree — so building providers one-at-a-time,
+# interleaved with generation, dirties the tree for every provider after the
+# first (aws-then-gcp-then-azure: aws always came out clean, gcp and azure
+# always came out "+dirty"). This barrier must be a real prerequisite of
+# every generation target, not just a sibling of `examples`, so it also
+# holds under `make -j`.
+.PHONY: install_example_providers
+install_example_providers: $(foreach p,$(EXAMPLE_PROVIDERS),install_defang-$(p))
+
 .PHONY: examples
 examples: $(foreach p,$(EXAMPLE_PROVIDERS),gen_examples_$(p)) ## Generate language examples from YAML
 	$(MAKE) README.md
 
 define example_target
 .PHONY: example_$(1)_$(2)
-example_$(1)_$(2): install_defang-$(1)
+example_$(1)_$(2): install_example_providers
 	cd examples/$(1)-yaml && pulumi convert --language $(2) --generate-only --out ../$(1)-$(2)
 endef
 

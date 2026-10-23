@@ -6,7 +6,6 @@ import (
 
 	"encoding/json"
 
-	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lb"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/s3"
@@ -51,7 +50,7 @@ func createLbLogsBucket(
 			BucketKeyEnabled: pulumi.Bool(true), // frequently accessed objects will use bucket keys
 		},
 	}
-	bucket, err := createPrivateBucket(ctx, name, &s3.BucketArgs{}, sseRules, opt)
+	bucket, err := CreatePrivateBucket(ctx, name, &s3.BucketArgs{}, sseRules, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +63,7 @@ func createLbLogsBucket(
 				Id:     pulumi.String("expire-logs"),
 				Status: pulumi.String("Enabled"),
 				Expiration: &s3.BucketLifecycleConfigurationRuleExpirationArgs{
-					Days: pulumi.Int(common.LogRetentionDays.Get(ctx)),
+					Days: pulumi.Int(LogRetentionDays.Get(ctx)),
 				},
 			},
 		},
@@ -115,12 +114,35 @@ func createLbLogsBucket(
 	return bucket, nil
 }
 
+// tgHealthCheckTiming derives the target-group health check interval and
+// timeout from a compose healthcheck (nil = recipe defaults), matching TS
+// createTargetGroup in lb.ts: `clamp(healthCheck?.timeout ?? interval, 2,
+// min(interval-1, 120))`. AWS requires timeout < interval, so the
+// unset-timeout fallback must be the CLAMPED default — clampInt returns its
+// fallback verbatim, and a raw `interval` fallback fails TG creation (e.g. a
+// compose healthcheck with interval 5s and no timeout).
+func tgHealthCheckTiming(defaultInterval int, healthCheck *compose.HealthCheckConfig) (int, int) {
+	interval := defaultInterval
+	if healthCheck != nil {
+		interval = clampInt(int(healthCheck.IntervalSeconds), 5, 300, defaultInterval)
+	}
+	maxTimeout := interval - 1
+	if maxTimeout > 120 {
+		maxTimeout = 120
+	}
+	timeout := min(max(interval, 2), maxTimeout)
+	if healthCheck != nil {
+		timeout = clampInt(int(healthCheck.TimeoutSeconds), 2, maxTimeout, timeout)
+	}
+	return interval, timeout
+}
+
 //nolint:funlen // sequential TG+LR setup is clearer as one function
 func createTgLrPair(
 	ctx *pulumi.Context,
 	serviceName string,
 	vpcId pulumi.StringInput,
-	listener *lb.Listener,
+	listenerArn pulumi.StringInput,
 	port compose.ServicePortConfig,
 	healthCheck *compose.HealthCheckConfig,
 	endpoints []string,
@@ -133,27 +155,15 @@ func createTgLrPair(
 
 	// Only create TG/LR for http, http2, grpc (matches TS createTgLrPair)
 	appProto := port.GetAppProtocol()
-	if appProto != "http" && appProto != "http2" && appProto != "grpc" {
+	if appProto != compose.PortAppProtocolHTTP &&
+		appProto != compose.PortAppProtocolHTTP2 && appProto != compose.PortAppProtocolGRPC {
 		return nil, nil, nil // skip
 	}
 
-	tgName := targetGroupName(serviceName, int(port.Target), appProto)
+	tgName := targetGroupName(serviceName, int(port.Target), appProto, port.Listener)
 
 	// Target group health check (matches TS createTargetGroup in lb.ts)
-	defaultInterval := HealthCheckInterval.Get(ctx)
-	interval := defaultInterval
-	if healthCheck != nil {
-		interval = clampInt(int(healthCheck.IntervalSeconds), 5, 300, defaultInterval)
-	}
-	maxTimeout := interval - 1
-	if maxTimeout > 120 {
-		maxTimeout = 120
-	}
-	// Default timeout to interval, clamped to [2, maxTimeout] (matches TS: `healthCheck?.timeout ?? interval`)
-	timeout := clampInt(interval, 2, maxTimeout, interval)
-	if healthCheck != nil {
-		timeout = clampInt(int(healthCheck.TimeoutSeconds), 2, maxTimeout, interval)
-	}
+	interval, timeout := tgHealthCheckTiming(HealthCheckInterval.Get(ctx), healthCheck)
 	unhealthyThreshold := (3)
 	if healthCheck != nil {
 		unhealthyThreshold = clampInt(int(healthCheck.Retries), 2, 10, 3)
@@ -166,6 +176,12 @@ func createTgLrPair(
 		matcher = "0"
 	}
 
+	// Parse the health check URL from the compose `healthcheck.test` command
+	// (e.g. CMD curl http://localhost:PORT/healthz). When no compose healthcheck
+	// is defined, or the test command doesn't contain a parseable URL, falls
+	// back to "/" — matches the TS implementation (shared/aws/lb.ts:220).
+	healthCheckPath, _ := compose.GetHealthCheckPathAndPort(healthCheck)
+
 	tgArgs := &lb.TargetGroupArgs{
 		Port:                       pulumi.Int(port.Target),
 		Protocol:                   pulumi.String("HTTP"),
@@ -175,7 +191,7 @@ func createTgLrPair(
 		DeregistrationDelay:        pulumi.Int(DeregistrationDelay.Get(ctx)),
 		HealthCheck: &lb.TargetGroupHealthCheckArgs{
 			// Port:               pulumi.String("traffic-port"),
-			Path:               pulumi.String("/"),
+			Path:               pulumi.String(healthCheckPath),
 			HealthyThreshold:   pulumi.Int(HealthCheckThreshold.Get(ctx)),
 			UnhealthyThreshold: pulumi.Int(unhealthyThreshold),
 			Interval:           pulumi.Int(interval),
@@ -241,7 +257,7 @@ func createTgLrPair(
 	}
 
 	lr, lrErr := lb.NewListenerRule(ctx, tgName+"-rule", &lb.ListenerRuleArgs{
-		ListenerArn: listener.Arn,
+		ListenerArn: listenerArn,
 		Actions: lb.ListenerRuleActionArray{
 			&lb.ListenerRuleActionArgs{
 				Type:           pulumi.String("forward"),

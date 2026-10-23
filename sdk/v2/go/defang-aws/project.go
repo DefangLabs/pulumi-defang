@@ -16,8 +16,14 @@ import (
 type Project struct {
 	pulumi.ResourceState
 
+	ClusterName     pulumi.StringOutput    `pulumi:"clusterName"`
 	Endpoints       pulumi.StringMapOutput `pulumi:"endpoints"`
+	LoadBalancerArn pulumi.StringPtrOutput `pulumi:"loadBalancerArn"`
 	LoadBalancerDns pulumi.StringPtrOutput `pulumi:"loadBalancerDns"`
+	LogGroupName    pulumi.StringOutput    `pulumi:"logGroupName"`
+	ServiceIds      pulumi.StringMapOutput `pulumi:"serviceIds"`
+	ServiceNames    pulumi.StringMapOutput `pulumi:"serviceNames"`
+	TaskRoleArns    pulumi.StringMapOutput `pulumi:"taskRoleArns"`
 }
 
 // NewProject registers a new resource with the given unique name, arguments, and options.
@@ -40,18 +46,20 @@ func NewProject(ctx *pulumi.Context,
 }
 
 type projectArgs struct {
-	Aws      *AWSConfig                       `pulumi:"aws"`
-	Etag     *string                          `pulumi:"etag"`
-	Networks map[string]compose.NetworkConfig `pulumi:"networks"`
-	Services map[string]compose.ServiceConfig `pulumi:"services"`
+	Aws                *AWSConfig                       `pulumi:"aws"`
+	Etag               *string                          `pulumi:"etag"`
+	Networks           map[string]compose.NetworkConfig `pulumi:"networks"`
+	Services           map[string]compose.ServiceConfig `pulumi:"services"`
+	WaitForSteadyState *bool                            `pulumi:"waitForSteadyState"`
 }
 
 // The set of arguments for constructing a Project resource.
 type ProjectArgs struct {
-	Aws      AWSConfigPtrInput
-	Etag     *string
-	Networks compose.NetworkConfigMapInput
-	Services compose.ServiceConfigMapInput
+	Aws                AWSConfigPtrInput
+	Etag               *string
+	Networks           compose.NetworkConfigMapInput
+	Services           compose.ServiceConfigMapInput
+	WaitForSteadyState *bool
 }
 
 func (ProjectArgs) ElementType() reflect.Type {
@@ -91,12 +99,36 @@ func (o ProjectOutput) ToProjectOutputWithContext(ctx context.Context) ProjectOu
 	return o
 }
 
+func (o ProjectOutput) ClusterName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.ClusterName }).(pulumi.StringOutput)
+}
+
 func (o ProjectOutput) Endpoints() pulumi.StringMapOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.Endpoints }).(pulumi.StringMapOutput)
 }
 
+func (o ProjectOutput) LoadBalancerArn() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringPtrOutput { return v.LoadBalancerArn }).(pulumi.StringPtrOutput)
+}
+
 func (o ProjectOutput) LoadBalancerDns() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Project) pulumi.StringPtrOutput { return v.LoadBalancerDns }).(pulumi.StringPtrOutput)
+}
+
+func (o ProjectOutput) LogGroupName() pulumi.StringOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringOutput { return v.LogGroupName }).(pulumi.StringOutput)
+}
+
+func (o ProjectOutput) ServiceIds() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.ServiceIds }).(pulumi.StringMapOutput)
+}
+
+func (o ProjectOutput) ServiceNames() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.ServiceNames }).(pulumi.StringMapOutput)
+}
+
+func (o ProjectOutput) TaskRoleArns() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Project) pulumi.StringMapOutput { return v.TaskRoleArns }).(pulumi.StringMapOutput)
 }
 
 func init() {

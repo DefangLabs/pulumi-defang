@@ -3,6 +3,8 @@ package common
 import (
 	"regexp"
 	"strings"
+
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
 type RecordType string
@@ -27,10 +29,73 @@ func NormalizeDNS(name string) string {
 	return strings.ToLower(strings.TrimRight(name, "."))
 }
 
+// DNSRecordLogicalName is the stable Pulumi logical name for a DNS record.
+// It mirrors the record's normalized FQDN and type, independently of the
+// cloud that hosts the zone.
+func DNSRecordLogicalName(name string, recordType RecordType) string {
+	return NormalizeDNS(name) + "_" + string(recordType)
+}
+
 func SafeLabel(name string) string {
-	// Technically DNS names can have underscores, but these are reserved for SRV
-	// records and some systems have issues with them.
+	// Technically DNS names can have underscores, so we won't touch them here.
 	return strings.ReplaceAll(strings.ToLower(name), ".", "-")
+}
+
+// ServiceLabel converts a Compose service name into the DNS label used in
+// generated FQDNs (e.g. "<service>.<domain>"). It mirrors the CLI's
+// getServiceLabel: underscores are mapped to hyphens before SafeLabel because,
+// while technically valid in DNS names, they are reserved for SRV records and
+// break some systems. Use this (not SafeLabel) for anything derived from a
+// service name so provider-generated hostnames match what the CLI computed.
+func ServiceLabel(name string) string {
+	return SafeLabel(strings.ReplaceAll(name, "_", "-"))
+}
+
+// ServiceFQDN returns the public-facing fully-qualified domain name for a
+// service, following the CLI source-of-truth precedence
+// (cd: domainname || publicFqdn || privateFqdn):
+//   - the custom DomainName if set;
+//   - else "<ServiceLabel>.<publicDomain>" when the service has ingress ports;
+//   - else "<ServiceLabel>.<privateDomain>" when it has host (internal) ports.
+//
+// publicDomain is the project's delegate domain, privateDomain its internal
+// domain; pass "" for either when the provider has no such concept (e.g. GCP and
+// Azure today have no private-FQDN fallback). Returns "" when no FQDN applies,
+// which callers use to decide whether to set DEFANG_FQDN.
+func ServiceFQDN(serviceName string, svc compose.ServiceConfig, publicDomain, privateDomain string) string {
+	if svc.DomainName != "" {
+		return svc.DomainName
+	}
+	switch {
+	case svc.HasIngressPorts() && publicDomain != "":
+		return ServiceLabel(serviceName) + "." + publicDomain
+	case svc.HasHostPorts() && privateDomain != "":
+		return ServiceLabel(serviceName) + "." + privateDomain
+	}
+	return ""
+}
+
+// WildcardPrefix marks a hostname that stands for every single-level subdomain
+// of the name that follows it, e.g. "*.example.com".
+const WildcardPrefix = "*."
+
+// IsWildcardHost reports whether hostname is a wildcard hostname. A bare "*."
+// isn't one: it stands for nothing, and passing it on as a domain would have a
+// cloud reject it — or worse, accept it.
+func IsWildcardHost(hostname string) bool {
+	base, found := strings.CutPrefix(hostname, WildcardPrefix)
+	return found && base != ""
+}
+
+// ByodHostnames returns the bring-your-own-domain hostnames a service asks to be
+// reachable on: its `domainname`, followed by the aliases on its default
+// network. A service with no `domainname` gets nil even when it has aliases —
+// aliases extend a BYOD request, they don't make one.
+func ByodHostnames(svc compose.ServiceConfig) []string {
+	if svc.DomainName == "" {
+		return nil
+	}
+	return append([]string{svc.DomainName}, svc.DefaultNetwork().Aliases...)
 }
 
 // https://www.rfc-editor.org/rfc/rfc6762#appendix-G and https://www.rfc-editor.org/rfc/rfc8375

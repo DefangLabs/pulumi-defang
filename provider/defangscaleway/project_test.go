@@ -4,6 +4,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -12,9 +13,11 @@ import (
 )
 
 type projectResourceRecord struct {
-	typ    string
-	name   string
-	inputs resource.PropertyMap
+	typ       string
+	name      string
+	inputs    resource.PropertyMap
+	pluginURL string
+	version   string
 }
 
 type projectRecordingMocks struct {
@@ -47,7 +50,10 @@ func (m *projectRecordingMocks) NewResource(args pulumi.MockResourceArgs) (strin
 		outputs[resource.PropertyKey("image")] = resource.NewStringProperty("rg.fr-par.scw.cloud/defang/app:latest")
 	}
 	m.mu.Lock()
-	m.records = append(m.records, projectResourceRecord{typ: args.TypeToken, name: args.Name, inputs: args.Inputs})
+	m.records = append(m.records, projectResourceRecord{
+		typ: args.TypeToken, name: args.Name, inputs: args.Inputs,
+		pluginURL: args.RegisterRPC.GetPluginDownloadURL(), version: args.RegisterRPC.GetVersion(),
+	})
 	m.mu.Unlock()
 	return args.Name + "_id", outputs, nil
 }
@@ -89,7 +95,7 @@ func TestBuildProjectCreatesServerlessContainerResources(t *testing.T) {
 			Etag: "etag-1",
 			Services: compose.Services{
 				"app": {
-					Image: &image,
+					Image: compose.ImageFromPtr(&image),
 					Ports: []compose.ServicePortConfig{{
 						Target:      80,
 						Mode:        compose.PortModeIngress,
@@ -97,7 +103,7 @@ func TestBuildProjectCreatesServerlessContainerResources(t *testing.T) {
 					}},
 				},
 			},
-		})
+		}, common.PluginIdentityFrom(nil))
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))
 
@@ -124,7 +130,7 @@ func TestBuildProjectMultiServiceWithPostgres(t *testing.T) {
 			Etag: "etag-2",
 			Services: compose.Services{
 				"web": {
-					Image: &image,
+					Image: compose.ImageFromPtr(&image),
 					Ports: []compose.ServicePortConfig{{
 						Target:      8080,
 						Mode:        compose.PortModeIngress,
@@ -135,17 +141,17 @@ func TestBuildProjectMultiServiceWithPostgres(t *testing.T) {
 					},
 				},
 				"worker": {
-					Image: &workerImage,
+					Image: compose.ImageFromPtr(&workerImage),
 					// No ports = private background worker
 				},
 				"db": {
 					Postgres: &compose.PostgresConfig{},
-					Environment: map[string]*string{
-						"POSTGRES_PASSWORD": strPtr("Secret123!"),
+					Environment: compose.Environment{
+						"POSTGRES_PASSWORD": pulumi.String("Secret123!"),
 					},
 				},
 			},
-		})
+		}, common.PluginIdentityFrom(nil))
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))
 
@@ -188,11 +194,44 @@ func TestBuildProjectCreatesBuildResourceForBuildOnlyServices(t *testing.T) {
 					Build: &compose.BuildConfig{Context: pulumi.String(".")},
 				},
 			},
-		})
+		}, common.PluginIdentityFrom(nil))
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))
 
 	require.NoError(t, err)
 	build := mocks.findType("defang-scaleway:index:Build")
 	assert.NotNil(t, build, "a Build resource should be created for build-only services")
+}
+
+func TestProjectBuildCarriesPluginIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name, url, version string
+		opts               []pulumi.ResourceOption
+	}{
+		{name: "default", url: common.PluginDownloadURL},
+		{name: "explicit", url: "https://plugins.example.com", version: "2.7.1",
+			opts: []pulumi.ResourceOption{
+				pulumi.PluginDownloadURL("https://plugins.example.com"), pulumi.Version("v2.7.1"),
+			}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mocks := &projectRecordingMocks{}
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				_, err := (&Project{}).Construct(ctx, "demo", "defang-scaleway:index:Project", ProjectInputs{
+					Services: compose.Services{
+						"app": {Build: &compose.BuildConfig{Context: pulumi.String("s3://bucket/source")}},
+					},
+				}, pulumi.Composite(tt.opts...))
+				return err
+			}, pulumi.WithMocks("proj", "stack", mocks))
+			require.NoError(t, err)
+			build := mocks.findType("defang-scaleway:index:Build")
+			require.NotNil(t, build)
+			assert.Equal(t, tt.url, build.pluginURL)
+			assert.Equal(t, tt.version, build.version)
+			cloud := mocks.findType("scaleway:containers/container:Container")
+			require.NotNil(t, cloud)
+			assert.NotEqual(t, tt.url, cloud.pluginURL, "Defang identity must not leak to cloud resources")
+		})
+	}
 }

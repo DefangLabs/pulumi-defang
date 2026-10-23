@@ -2,6 +2,7 @@ package program
 
 import (
 	"fmt"
+	"time"
 
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -15,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.Duration, cdImage string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	gcpProvider, err := gcp.NewProvider(ctx, "gcp", &gcp.ProviderArgs{
 		Project: pulumi.String(config.GetProject(ctx)),
 		Region:  pulumi.String(config.GetRegion(ctx)),
@@ -34,6 +35,15 @@ func deployGCP(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpd
 	project, err := defanggcp.NewProject(ctx, cf.Name, toGCPArgs(cf, etag), pulumi.Providers(gcpProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Self-destruct: schedule this stack's own `defang cd down` at now + TTL.
+	// Registered independently of the project component (see
+	// createGCPSelfDestruct); every redeploy rewrites the schedule.
+	if ttl > 0 {
+		if err := createGCPSelfDestruct(ctx, cf, ttl, cdImage, pulumi.Provider(gcpProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed GCS object, gated on
@@ -87,11 +97,25 @@ func toGCPServices(services compose.Services) gcpcompose.ServiceConfigMap {
 
 func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
 	args := gcpcompose.ServiceConfigArgs{
-		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Image:       pulumi.StringPtrFromPtr(svc.StaticImage()),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
+
+		// Every field below is copied unconditionally, including the zero
+		// value: the compose types have no "unset" state for a bare bool or
+		// string, and a conditional write is how a field gets forgotten.
+		// See TestServiceArgsCopyEveryField.
+		Aliases:         pulumi.ToStringMap(svc.Aliases),
+		Autoscaling:     pulumi.Bool(svc.Autoscaling),
+		ContainerName:   pulumi.StringPtrFromPtr(svc.ContainerName),
+		NetworkMode:     pulumi.String(svc.NetworkMode),
+		Policies:        pulumi.ToStringArray(svc.Policies),
+		Restart:         pulumi.String(svc.Restart),
+		StopGracePeriod: pulumi.StringPtrFromPtr(svc.StopGracePeriod),
+		VolumesFrom:     pulumi.ToStringArray(svc.VolumesFrom),
+		WorkingDir:      pulumi.StringPtrFromPtr(svc.WorkingDir),
 	}
 	if svc.DomainName != "" {
 		args.DomainName = pulumi.StringPtr(svc.DomainName)
@@ -144,6 +168,11 @@ func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
 			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Redis.FromSnapshot),
 		}
 	}
+	if svc.ObjectStore != nil {
+		args.ObjectStore = gcpcompose.ObjectStoreConfigArgs{
+			Bucket: pulumi.String(svc.ObjectStore.Bucket),
+		}
+	}
 	if svc.HealthCheck != nil {
 		args.HealthCheck = gcpcompose.HealthCheckConfigArgs{
 			Test:               pulumi.ToStringArray(svc.HealthCheck.Test),
@@ -169,6 +198,17 @@ func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
 	}
 	if svc.LLM != nil {
 		args.Llm = gcpcompose.LlmConfigArgs{}
+	}
+	if len(svc.Volumes) > 0 {
+		volumes := make(gcpcompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
+		for _, v := range svc.Volumes {
+			volumes = append(volumes, gcpcompose.ServiceVolumeConfigArgs{
+				Source:   pulumi.String(v.Source),
+				Target:   pulumi.String(v.Target),
+				ReadOnly: pulumi.Bool(v.ReadOnly),
+			})
+		}
+		args.Volumes = volumes
 	}
 	return args
 }

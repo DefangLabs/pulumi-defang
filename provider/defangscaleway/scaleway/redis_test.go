@@ -40,10 +40,10 @@ func TestCreateRedisClusterRequiresPrivateNetwork(t *testing.T) {
 	password := "secret"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := CreateRedis(ctx, &mockConfigProvider{}, "cache", compose.ServiceConfig{
-			Image: &[]string{"redis:7"}[0],
+			Image: compose.ImageFromPtr(&[]string{"redis:7"}[0]),
 			Redis: &compose.RedisConfig{},
-			Environment: map[string]*string{
-				"REDIS_PASSWORD": &password,
+			Environment: compose.Environment{
+				"REDIS_PASSWORD": pulumi.String(password),
 			},
 		}, nil)
 		return err
@@ -62,10 +62,10 @@ func TestCreateRedisAttachesPrivateNetwork(t *testing.T) {
 			return err
 		}
 		_, err = CreateRedis(ctx, &mockConfigProvider{}, "cache", compose.ServiceConfig{
-			Image: &[]string{"redis:7"}[0],
+			Image: compose.ImageFromPtr(&[]string{"redis:7"}[0]),
 			Redis: &compose.RedisConfig{},
-			Environment: map[string]*string{
-				"REDIS_PASSWORD": &password,
+			Environment: compose.Environment{
+				"REDIS_PASSWORD": pulumi.String(password),
 			},
 		}, &SharedInfra{Zone: "fr-par-1", PrivateNetwork: pn})
 		return err

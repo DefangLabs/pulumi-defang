@@ -45,6 +45,7 @@ go_sdk: .sdk.go.$(PACK).stamp
 	cd "$(SDK_GO_DIR)" && go mod init "$(SDK_MODULE)" && \
 		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
 		go mod tidy
+	cp sdk/LICENSE "$(SDK_GO_DIR)/LICENSE"
 	@touch $@
 
 nodejs_sdk: VERSION := $(shell pulumictl get version --language javascript --version-prefix=$(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed 's/^v//')
@@ -60,7 +61,7 @@ nodejs_sdk: .sdk.nodejs.$(PACK).stamp
 		yarn run tsc && \
 		sed -i.bak 's/$${VERSION}/$(VERSION)/g' package.json && \
 		rm -f ./package.json.bak && \
-		cp ../../../README.md ../../../LICENSE package.json yarn.lock bin/
+		cp ../../../README.md package.json yarn.lock bin/ && cp ../../LICENSE bin/
 	@touch $@
 
 python_sdk: PYPI_VERSION := $(shell pulumictl get version --language python --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease))

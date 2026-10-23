@@ -11,13 +11,19 @@ package aws
 // which can supply a richer mock.
 
 import (
+	"encoding/json"
+	"sync"
 	"testing"
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws"
+	awsprov "github.com/DefangLabs/pulumi-defang/provider/defangaws/aws"
 	"github.com/DefangLabs/pulumi-defang/tests/testutil"
 )
 
@@ -33,6 +39,140 @@ func TestConstructAwsProject(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+}
+
+// TestConstructAwsProjectFoldsSidecars verifies that a service with
+// network_mode: "service:<name>" is folded into the parent's task definition
+// as an additional container instead of being deployed as its own ECS service.
+func TestConstructAwsProjectFoldsSidecars(t *testing.T) {
+	// NewResourceF runs concurrently (one goroutine per resource registration),
+	// so captures must be synchronized.
+	var mu sync.Mutex
+	var taskDefs []property.Map
+	ecsServices := 0
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
+			switch string(args.TypeToken) {
+			case "aws:ecs/taskDefinition:TaskDefinition":
+				taskDefs = append(taskDefs, args.Inputs)
+			case "aws:ecs/service:Service":
+				ecsServices++
+			default:
+			}
+			mu.Unlock()
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	resp, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image":       property.New("myapp:latest"),
+				"volumesFrom": property.New(property.NewArray([]property.Value{property.New("helper")})),
+			})),
+			"helper": property.New(property.NewMap(map[string]property.Value{
+				"image":       property.New("helper:latest"),
+				"networkMode": property.New("service:app"),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, ecsServices, "sidecar must not become its own ECS service")
+	require.Len(t, taskDefs, 1)
+	var defs []awsprov.ContainerDefinition
+	require.NoError(t, json.Unmarshal([]byte(taskDefs[0].Get("containerDefinitions").AsString()), &defs))
+	require.Len(t, defs, 2, "task definition should hold the main container plus the sidecar")
+	names := []string{defs[0].Name, defs[1].Name}
+	assert.Contains(t, names, "app")
+	assert.Contains(t, names, "helper")
+
+	// The sidecar must not surface in the endpoints output.
+	_, hasHelper := resp.State.Get("endpoints").AsMap().GetOk("helper")
+	assert.False(t, hasHelper, "sidecar should not have an endpoint")
+}
+
+// TestConstructAwsProjectSidecarErrors covers invalid sidecar wiring.
+func TestConstructAwsProjectSidecarErrors(t *testing.T) {
+	sidecar := func(parent string) property.Value {
+		return property.New(property.NewMap(map[string]property.Value{
+			"image":       property.New("helper:latest"),
+			"networkMode": property.New("service:" + parent),
+		}))
+	}
+
+	tests := map[string]struct {
+		services map[string]property.Value
+		wantErr  string
+	}{
+		"unknown parent": {
+			services: map[string]property.Value{"helper": sidecar("missing")},
+			wantErr:  "sidecar parent service not found",
+		},
+		"parent is itself a sidecar": {
+			services: map[string]property.Value{
+				"app":    testutil.ServiceWithImage("myapp:latest"),
+				"mid":    sidecar("app"),
+				"helper": sidecar("mid"),
+			},
+			wantErr: "sidecar parent is itself a sidecar",
+		},
+		"parent is managed": {
+			services: map[string]property.Value{
+				"cache": property.New(property.NewMap(map[string]property.Value{
+					"image": property.New("redis:7"),
+					"redis": property.New(property.NewMap(map[string]property.Value{})),
+				})),
+				"helper": sidecar("cache"),
+			},
+			wantErr: "must be a container service",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			server := testutil.MakeAwsTestServer()
+			_, err := server.Construct(p.ConstructRequest{
+				Urn:    testutil.AwsURN("Project"),
+				Inputs: testutil.ServicesMap(tc.services),
+			})
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+// TestConstructAwsProjectInfraOutputs verifies the Project surfaces handles to
+// its shared infrastructure so externally managed resources (WAF, alarms,
+// resource-based policies) can attach to it.
+func TestConstructAwsProjectInfraOutputs(t *testing.T) {
+	server := testutil.MakeAwsTestServer()
+
+	resp, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app":    testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+			"worker": testutil.ServiceWithImage("myapp:worker"),
+		}),
+	})
+	require.NoError(t, err)
+
+	// The mock state keeps the raw pulumi tag for optional fields, hence
+	// "loadBalancerArn,optional" (same quirk as the pre-existing
+	// "loadBalancerDns,optional").
+	for _, key := range []string{"clusterName", "logGroupName", "loadBalancerArn,optional"} {
+		_, ok := resp.State.GetOk(key)
+		assert.True(t, ok, "missing output %q", key)
+	}
+	serviceNames := resp.State.Get("serviceNames").AsMap()
+	taskRoleArns := resp.State.Get("taskRoleArns").AsMap()
+	for _, svc := range []string{"app", "worker"} {
+		_, ok := serviceNames.GetOk(svc)
+		assert.True(t, ok, "serviceNames missing %q", svc)
+		_, ok = taskRoleArns.GetOk(svc)
+		assert.True(t, ok, "taskRoleArns missing %q", svc)
+	}
 }
 
 // TestConstructAwsProjectAllResourcesAreChildren asserts that every resource
@@ -56,7 +196,7 @@ func TestConstructAwsProjectAllResourcesAreChildren(t *testing.T) {
 				"worker": testutil.ServiceWithImage("myapp:worker"),
 				"builder": property.New(property.NewMap(map[string]property.Value{
 					"build": property.New(property.NewMap(map[string]property.Value{
-						"context": property.New("./app"),
+						"context": property.New("s3://bucket/uploads/digest.tar.gz"),
 					})),
 				})),
 				"db": property.New(property.NewMap(map[string]property.Value{
@@ -73,4 +213,191 @@ func TestConstructAwsProjectAllResourcesAreChildren(t *testing.T) {
 	require.NoError(t, err)
 
 	tracker.AssertAllDescendFrom(t, testutil.AwsURN("Project"))
+}
+
+func TestConstructAwsProjectRejectsForeignPolicies(t *testing.T) {
+	server := testutil.MakeAwsTestServer()
+
+	// No cross-cloud filtering: a GCP-qualified entry on an AWS deploy is a
+	// hard error pointing at per-stack variable values instead.
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New("arn:aws:iam::123456789012:policy/deployer"),
+					property.New("roles/run.developer"), // GCP entry: rejected on AWS
+				})),
+			})),
+		}),
+	})
+	require.ErrorContains(t, err, "is a full ARN")
+	require.ErrorContains(t, err, "${VAR}")
+}
+
+func TestConstructAwsProjectPoliciesNormalized(t *testing.T) {
+	// NewResourceF runs concurrently; the unsynchronized append here used to
+	// drop attachments occasionally, failing this test flakily in CI.
+	var mu sync.Mutex
+	var attachments []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				mu.Lock()
+				attachments = append(attachments, args.Inputs)
+				mu.Unlock()
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	// One comma-separated entry — a single interpolated ${VAR} carrying a
+	// variable-length list — splits into individual attachments; an empty
+	// entry (a "${EXTRA:-}" the stack leaves unset) is dropped.
+	const policyA = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	const policyB = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(policyA + "," + policyB),
+					property.New(""),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	arns := make([]string, 0, len(attachments))
+	for _, a := range attachments {
+		arns = append(arns, a.Get("policyArn").AsString())
+	}
+	assert.Contains(t, arns, policyA)
+	assert.Contains(t, arns, policyB)
+}
+
+func TestConstructAwsProjectDuplicatePoliciesDeduped(t *testing.T) {
+	var mu sync.Mutex
+	var attachments []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:iam/rolePolicyAttachment:RolePolicyAttachment" {
+				mu.Lock()
+				attachments = append(attachments, args.Inputs)
+				mu.Unlock()
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	// The attachment URN embeds policyName(policy), so without dedup a
+	// repeated entry would collide.
+	const awsPolicy = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": property.New(property.NewMap(map[string]property.Value{
+				"image": property.New("myapp:latest"),
+				"policies": property.New(property.NewArray([]property.Value{
+					property.New(awsPolicy),
+					property.New(awsPolicy),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	count := 0
+	for _, a := range attachments {
+		if a.Get("policyArn").AsString() == awsPolicy {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "duplicate x-defang-policies entries must be deduped")
+}
+
+// TestConstructAwsProjectBuildCarriesPluginIdentity asserts that the Build
+// resource the provider registers for itself tells the engine where to fetch
+// the plugin from, and that it pins no version. Registrations that go through a
+// generated SDK get the URL for free; the ones we make with a raw
+// ctx.RegisterResource do not, and omitting it strands the stack on any
+// operation run from a workspace whose plugin cache is empty.
+//
+// The version has to stay empty even when this build carries one. A pinned
+// version is recorded in the checkpoint and can afterwards only be resolved by
+// a plugin of exactly that version — which, for every build except a tagged
+// release, names a GitHub release that does not exist. See
+// common.PluginIdentityFrom.
+func TestConstructAwsProjectBuildCarriesPluginIdentity(t *testing.T) {
+	// Stamp a version the way the linker does, to prove it does not leak into
+	// the registration.
+	prev := defangaws.Version
+	defangaws.Version = "9.9.9"
+	t.Cleanup(func() { defangaws.Version = prev })
+
+	mock, tracker := testutil.NewPluginTracker()
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: property.NewMap(map[string]property.Value{
+			"domain": property.New("example.com"),
+			"services": property.New(property.NewMap(map[string]property.Value{
+				"builder": property.New(property.NewMap(map[string]property.Value{
+					"build": property.New(property.NewMap(map[string]property.Value{
+						"context": property.New("s3://bucket/uploads/digest.tar.gz"),
+					})),
+				})),
+			})),
+		}),
+	})
+	require.NoError(t, err)
+
+	tracker.AssertOwnCustomResourcesCarryPluginIdentity(t, common.PluginDownloadURL, "")
+}
+
+// TestConstructAwsProjectPrivateZoneForcesDestroy pins forceDestroy on the
+// project's private hosted zone. The zone's records are not all Pulumi's to
+// delete — the route53 sidecar writes each task's A record straight through the
+// Route53 API — so without this a zone that Pulumi's state believes is empty
+// fails to delete with HostedZoneNotEmpty, taking the deploy down with it.
+func TestConstructAwsProjectPrivateZoneForcesDestroy(t *testing.T) {
+	// NewResourceF runs concurrently, so the capture is mutex-guarded.
+	var mu sync.Mutex
+	var zones []property.Map
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			if string(args.TypeToken) == "aws:route53/zone:Zone" {
+				mu.Lock()
+				zones = append(zones, args.Inputs)
+				mu.Unlock()
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAwsTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AwsURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+		}),
+	})
+	require.NoError(t, err)
+
+	var private *property.Map
+	for i := range zones {
+		if zones[i].Get("vpcs").IsArray() { // the private zone is the VPC-attached one
+			private = &zones[i]
+			break
+		}
+	}
+	require.NotNil(t, private, "expected a VPC-attached private hosted zone")
+	assert.True(t, private.Get("forceDestroy").AsBool(),
+		"the private zone must force-destroy: the route53 sidecar writes records Pulumi cannot see")
 }

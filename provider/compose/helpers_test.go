@@ -53,14 +53,59 @@ func TestToPulumiStringArray(t *testing.T) {
 	})
 }
 
+func TestUDPIngressAsHost(t *testing.T) {
+	tcpIngress := ServicePortConfig{
+		Target: 53, Mode: PortModeIngress, Protocol: PortProtocolTCP,
+	}
+	udpHost := ServicePortConfig{
+		Target: 53, Mode: PortModeHost, Protocol: PortProtocolUDP,
+	}
+	udpIngress := ServicePortConfig{
+		Target: 53, Mode: PortModeIngress, Protocol: PortProtocolUDP,
+	}
+
+	oldCLI := Services{
+		"dns": {Ports: []ServicePortConfig{tcpIngress, udpHost}},
+	}
+	newCLI := Services{
+		"dns": {Ports: []ServicePortConfig{tcpIngress, udpIngress}},
+	}
+
+	normalizedOld := UDPIngressAsHost(oldCLI)
+	normalizedNew := UDPIngressAsHost(newCLI)
+
+	assert.Equal(t, normalizedOld, normalizedNew,
+		"old and new CLI inputs must produce the same provider configuration")
+	assert.Equal(t, PortModeIngress, normalizedNew["dns"].Ports[0].Mode,
+		"TCP ingress must remain ingress")
+	assert.Equal(t, PortModeHost, normalizedNew["dns"].Ports[1].Mode,
+		"UDP ingress must use the established host fallback")
+	assert.Equal(t, PortModeIngress, newCLI["dns"].Ports[1].Mode,
+		"normalization must not mutate provider inputs")
+
+	t.Run("unset mode defaults to ingress", func(t *testing.T) {
+		services := Services{"dns": {
+			Ports: []ServicePortConfig{{Target: 53, Protocol: PortProtocolUDP}},
+		}}
+		assert.Equal(t, PortModeHost, UDPIngressAsHost(services)["dns"].Ports[0].Mode)
+	})
+
+	t.Run("nil stays nil", func(t *testing.T) {
+		assert.Nil(t, UDPIngressAsHost(nil))
+	})
+}
+
 func TestGetConfigOrEnvValue(t *testing.T) {
 	tests := []struct {
 		name         string
-		environment  map[string]*string
+		environment  Environment
 		key          string
 		defaultValue string
 		configs      map[string]string
 		expected     string
+		// substituted is GetConfigOrEnvValue's "embeds a config-provided
+		// secret" flag — see DefangLabs/pulumi-defang#638.
+		substituted bool
 	}{
 		{
 			name:         "nil environment uses default",
@@ -71,37 +116,39 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 		},
 		{
 			name:         "key absent returns default",
-			environment:  map[string]*string{},
+			environment:  Environment{},
 			key:          "MY_KEY",
 			defaultValue: "default",
 			expected:     "default",
 		},
 		{
 			name:        "empty string value is literal empty",
-			environment: map[string]*string{"MY_KEY": ptr("")},
+			environment: Environment{"MY_KEY": pulumi.String("")},
 			key:         "MY_KEY",
 			expected:    "",
 		},
 		{
 			name:        "plain string value returned as-is",
-			environment: map[string]*string{"MY_KEY": ptr("hello")},
+			environment: Environment{"MY_KEY": pulumi.String("hello")},
 			key:         "MY_KEY",
 			expected:    "hello",
 		},
 		{
 			name:        "interpolated value resolves variables from config provider",
-			environment: map[string]*string{"MY_KEY": ptr("prefix_${SECRET}_suffix")},
+			environment: Environment{"MY_KEY": pulumi.String("prefix_${SECRET}_suffix")},
 			key:         "MY_KEY",
 			configs:     map[string]string{"SECRET": "resolved"},
 			expected:    "prefix_resolved_suffix",
+			substituted: true,
 		},
 		{
 			// Compose spec: "KEY:" (no value) → resolve from config at runtime.
 			name:        "nil value resolves from config provider via ${KEY}",
-			environment: map[string]*string{"MY_KEY": nil},
+			environment: Environment{"MY_KEY": nil},
 			key:         "MY_KEY",
 			configs:     map[string]string{"MY_KEY": "from-config"},
 			expected:    "from-config",
+			substituted: true,
 		},
 	}
 
@@ -110,7 +157,8 @@ func TestGetConfigOrEnvValue(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				svc := ServiceConfig{Environment: tt.environment}
 				provider := &mockConfigProvider{values: tt.configs}
-				out := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
+				out, substituted := GetConfigOrEnvValue(ctx, provider, svc, tt.key, tt.defaultValue)
+				assert.Equal(t, tt.substituted, substituted)
 
 				out.ApplyT(func(got string) string {
 					assert.Equal(t, tt.expected, got)
@@ -154,6 +202,11 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 		value    string
 		configs  map[string]string
 		expected string
+		// substituted is the "at least one variable was resolved" flag callers
+		// (Azure's buildEnvVars) use to decide whether the result embeds a
+		// config-provided secret and must be kept out of a plaintext resource
+		// property — see DefangLabs/station#198.
+		substituted bool
 	}{
 		{
 			name:     "plain literal",
@@ -161,28 +214,32 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "hello",
 		},
 		{
-			name:     "single variable",
-			value:    "${MY_VAR}",
-			configs:  map[string]string{"MY_VAR": "secret"},
-			expected: "secret",
+			name:        "single variable",
+			value:       "${MY_VAR}",
+			configs:     map[string]string{"MY_VAR": "secret"},
+			expected:    "secret",
+			substituted: true,
 		},
 		{
-			name:     "variable with prefix and suffix",
-			value:    "prefix_${MY_VAR}_suffix",
-			configs:  map[string]string{"MY_VAR": "value"},
-			expected: "prefix_value_suffix",
+			name:        "variable with prefix and suffix",
+			value:       "prefix_${MY_VAR}_suffix",
+			configs:     map[string]string{"MY_VAR": "value"},
+			expected:    "prefix_value_suffix",
+			substituted: true,
 		},
 		{
-			name:     "multiple variables",
-			value:    "${VAR1}_${VAR2}",
-			configs:  map[string]string{"VAR1": "hello", "VAR2": "world"},
-			expected: "hello_world",
+			name:        "multiple variables",
+			value:       "${VAR1}_${VAR2}",
+			configs:     map[string]string{"VAR1": "hello", "VAR2": "world"},
+			expected:    "hello_world",
+			substituted: true,
 		},
 		{
-			name:     "unbraced variable",
-			value:    "$MY_VAR",
-			configs:  map[string]string{"MY_VAR": "secret"},
-			expected: "secret",
+			name:        "unbraced variable",
+			value:       "$MY_VAR",
+			configs:     map[string]string{"MY_VAR": "secret"},
+			expected:    "secret",
+			substituted: true,
 		},
 		{
 			name:     "escaped dollar produces literal dollar",
@@ -190,10 +247,11 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "${NOT_A_VAR}",
 		},
 		{
-			name:     "missing variable resolves from config",
-			value:    "${SECRET}",
-			configs:  map[string]string{"SECRET": "found"},
-			expected: "found",
+			name:        "missing variable resolves from config",
+			value:       "${SECRET}",
+			configs:     map[string]string{"SECRET": "found"},
+			expected:    "found",
+			substituted: true,
 		},
 		{
 			name:     "empty string",
@@ -201,10 +259,11 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "variable adjacent to text on both sides without separators",
-			value:    "arn:aws:iam::${ACCOUNT_ID}:role/my-role",
-			configs:  map[string]string{"ACCOUNT_ID": "123456789"},
-			expected: "arn:aws:iam::123456789:role/my-role",
+			name:        "variable adjacent to text on both sides without separators",
+			value:       "arn:aws:iam::${ACCOUNT_ID}:role/my-role",
+			configs:     map[string]string{"ACCOUNT_ID": "123456789"},
+			expected:    "arn:aws:iam::123456789:role/my-role",
+			substituted: true,
 		},
 	}
 
@@ -212,7 +271,8 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				provider := &mockConfigProvider{values: tt.configs}
-				out := InterpolateEnvironmentVariable(ctx, provider, tt.value)
+				out, substituted := InterpolateEnvironmentVariable(ctx, provider, tt.value)
+				assert.Equal(t, tt.substituted, substituted)
 
 				out.ApplyT(func(got string) string {
 					assert.Equal(t, tt.expected, got)
@@ -226,7 +286,8 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 
 	t.Run("nil config provider returns raw string", func(t *testing.T) {
 		err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-			out := InterpolateEnvironmentVariable(ctx, nil, "value with ${VAR}")
+			out, substituted := InterpolateEnvironmentVariable(ctx, nil, "value with ${VAR}")
+			assert.False(t, substituted, "no config provider means nothing was substituted")
 
 			out.ApplyT(func(got string) string {
 				assert.Equal(t, "value with ${VAR}", got)
@@ -236,4 +297,158 @@ func TestInterpolateEnvironmentVariable(t *testing.T) {
 		}, pulumi.WithMocks("proj", "stack", testMocks{}))
 		require.NoError(t, err)
 	})
+}
+
+// healthCheckPathPortCases mirrors the TS suite at
+// defang-mvp/pulumi/test/healthcheck.test.ts (#convertHealthcheck) so behavior
+// parity with the legacy pipeline is explicit. Additional cases beyond the TS
+// suite cover Bun-style health checks and other forms we've seen in the wild.
+var healthCheckPathPortCases = []struct {
+	name     string
+	hc       *HealthCheckConfig
+	wantPath string
+	wantPort int
+}{
+	// --- defaults / no parse ---
+	{
+		name:     "nil healthcheck → defaults",
+		hc:       nil,
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "empty test slice → defaults",
+		hc:       &HealthCheckConfig{Test: []string{}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "test with only CMD and no args → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"CMD"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "NONE → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"NONE"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "non-CMD/CMD-SHELL test (gRPC binary) → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"grpc_health_probe", "-addr=:5000"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "CMD with non-URL test (test -f) → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "test", "-f", "/tmp/ready"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+
+	// --- bare localhost / 127.0.0.1 (no scheme) ---
+	{
+		name:     "curl bare localhost → defaults",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "localhost"}},
+		wantPath: "/",
+		wantPort: 80,
+	},
+	{
+		name:     "curl localhost:8080/foo (no scheme)",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "localhost:8080/foo"}},
+		wantPath: "/foo",
+		wantPort: 8080,
+	},
+	{
+		name:     "curl with -f flag before URL (no scheme)",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-f", "localhost:8080/foo"}},
+		wantPath: "/foo",
+		wantPort: 8080,
+	},
+
+	// --- http:// scheme variants ---
+	{
+		name:     "CMD curl http://localhost:8080/healthz",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8080/healthz"}},
+		wantPath: "/healthz",
+		wantPort: 8080,
+	},
+	{
+		name:     "wget pattern with trailing slash",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "wget", "-q", "--spider", "http://localhost:8080/"}},
+		wantPath: "/",
+		wantPort: 8080,
+	},
+	{
+		name: "URL embedded in Python urllib code → regex stops at '",
+		hc: &HealthCheckConfig{Test: []string{
+			"CMD", "python", "-c",
+			"import urllib; urllib.urlopen('http://localhost:8080/foo')",
+		}},
+		wantPath: "/foo",
+		wantPort: 8080,
+	},
+	{
+		name:     "CMD-SHELL with 127.0.0.1 (no port) and shell suffix",
+		hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "curl -f 127.0.0.1/healthz || exit 1"}},
+		wantPath: "/healthz",
+		wantPort: 80,
+	},
+	{
+		name:     "CMD-SHELL with 127.0.0.1 (no port) — Bun-style wget",
+		hc:       &HealthCheckConfig{Test: []string{"CMD-SHELL", "wget -q -O- http://localhost:3000/health || exit 1"}},
+		wantPath: "/health",
+		wantPort: 3000,
+	},
+	{
+		name:     "URL with explicit 127.0.0.1:port/path",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "-fsS", "http://127.0.0.1:5000/api/healthz"}},
+		wantPath: "/api/healthz",
+		wantPort: 5000,
+	},
+
+	// --- URL without explicit port or path ---
+	{
+		name:     "URL without explicit port → port default kept",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost/healthz"}},
+		wantPath: "/healthz",
+		wantPort: 80,
+	},
+	{
+		name:     "URL without path → path default kept",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:9000"}},
+		wantPath: "/",
+		wantPort: 9000,
+	},
+
+	// --- query strings and fragments ---
+	{
+		name:     "URL with path + query string",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000/?bar=baz"}},
+		wantPath: "/?bar=baz",
+		wantPort: 8000,
+	},
+	{
+		name:     "URL with query but no leading slash gets one added",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000?foo"}},
+		wantPath: "/?foo",
+		wantPort: 8000,
+	},
+	{
+		name:     "URL fragment stripped (not part of HTTP path)",
+		hc:       &HealthCheckConfig{Test: []string{"CMD", "curl", "http://localhost:8000/foo/bar#ignore"}},
+		wantPath: "/foo/bar",
+		wantPort: 8000,
+	},
+}
+
+func TestGetHealthCheckPathAndPort(t *testing.T) {
+	for _, tt := range healthCheckPathPortCases {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPath, gotPort := GetHealthCheckPathAndPort(tt.hc)
+			assert.Equal(t, tt.wantPath, gotPath)
+			assert.Equal(t, tt.wantPort, gotPort)
+		})
+	}
 }

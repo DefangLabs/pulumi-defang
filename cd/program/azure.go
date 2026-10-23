@@ -1,22 +1,29 @@
 package program
 
 import (
+	"context"
 	"fmt"
 	"net/url"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/DefangLabs/defang/src/pkg/clouds/azure/aca"
+	"github.com/DefangLabs/defang/src/pkg/dns"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	defangazure "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure"
 	azurecompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure/compose"
 	"github.com/pulumi/pulumi-azure-native-sdk/storage/v3"
 	pulumiazure "github.com/pulumi/pulumi-azure-native-sdk/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 )
 
-func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
+func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, ttl time.Duration, projectUpdate *defangv1.ProjectUpdate) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	providerArgs := &pulumiazure.ProviderArgs{
 		Location:                  pulumi.String(config.GetLocation(ctx)),
 		UseDefaultAzureCredential: pulumi.BoolPtr(true),
@@ -29,9 +36,57 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 	}
 
-	project, err := defangazure.NewProject(ctx, cf.Name, toAzureArgs(cf, etag), pulumi.Providers(azureProvider))
+	args := toAzureArgs(cf, domain, etag)
+	// Resolve each BYOD domain to an existing public Azure DNS zone and thread the
+	// zone ids into the project, so the provider writes the records into the
+	// customer's own zone.
+	dnsZones := findByodZones(ctx, cf)
+	if len(dnsZones) > 0 {
+		zones := pulumi.StringMap{}
+		for svcName, zoneID := range dnsZones {
+			zones[svcName] = pulumi.String(zoneID)
+		}
+		args.DnsZones = zones
+	}
+
+	project, err := defangazure.NewProject(ctx, cf.Name, args, pulumi.Providers(azureProvider))
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+	}
+
+	// Provision managed TLS certs as part of the CD task itself — not the CLI —
+	// so the deploy converges even if the user disconnects after
+	// `defang compose up`. The work is chained off project.Endpoints (which
+	// transitively depends on every per-service Container App + its CNAME +
+	// asuid TXT records) so Pulumi sequences it after all required resources
+	// exist, and waits on it before declaring the deploy done. Each per-host
+	// call is idempotent: re-deploys are cheap, partial failures pick up where
+	// they left off.
+	//
+	// Two sources of cert jobs:
+	//   - delegate domain: `<svc>.<domain>` for every ingress service.
+	//   - BYOD: a service's own `domainname` when a public DNS zone for it was
+	//     found above and the provider wrote records into that zone.
+	if certJobs := collectCertJobs(cf, domain, dnsZones); len(certJobs) > 0 {
+		rg := providerazure.ProjectResourceGroupName(ctx, cf.Name)
+		certsDone := project.Endpoints.ApplyT(func(map[string]string) (string, error) {
+			provisionCerts(ctx, certJobs, config.GetSubscriptionId(ctx), rg)
+			return "", nil
+		}).(pulumi.StringOutput)
+		// Export so Pulumi treats it as a stack output and won't garbage-collect
+		// the ApplyT before its side effects complete. The value is empty by
+		// design — we only care about the dependency edge.
+		ctx.Export("azureDelegateDomainCerts", certsDone)
+	}
+
+	// Self-destruct: schedule this stack's own `defang cd down` at now + TTL.
+	// Depends on the project component so the trigger lands in the (then
+	// existing) project resource group; every redeploy rewrites the schedule,
+	// extending the stack's life.
+	if ttl > 0 {
+		if err := createAzureSelfDestruct(ctx, cf, ttl, project, pulumi.Provider(azureProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
 	}
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed Azure Blob, gated on
@@ -60,7 +115,188 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, etag string, projectU
 	return project.Endpoints, project.LoadBalancerDns, nil
 }
 
-func toAzureArgs(cf *compose.Project, etag string) *defangazure.ProjectArgs {
+const (
+	// perServiceCertTimeout caps how long any single service's IssueCert call
+	// can hang. aca.IssueCert bounds its DNS/TXT/TLS polling loops internally
+	// (dnsWaitTimeout=30m, tokenDeadline=5m, tlsWaitTimeout=10m), but the ARM
+	// long-running operations (addHostnameDisabled, submitManagedCert,
+	// bindHostnameSniEnabled) run `poller.PollUntilDone(ctx, nil)` and have no
+	// deadline beyond this ctx — so a throttled or busy ARM PATCH would
+	// otherwise block the Pulumi run until the outer timeout fires. 45m fits
+	// the documented worst-case sum and still trips faster than a stuck poll.
+	perServiceCertTimeout = 45 * time.Minute
+
+	// maxConcurrentCertIssuance bounds how many per-service cert flows run at
+	// once. Each drives several long-running ARM operations against the same
+	// subscription, so we fan out for speed but cap the parallelism to avoid
+	// ARM throttling when a project has many ingress services.
+	maxConcurrentCertIssuance = 8
+)
+
+// certJob is a single managed-cert request: bind hostname to the Container App
+// named service (both live in the project resource group).
+type certJob struct {
+	service  string
+	hostname string
+}
+
+// findByodZones resolves each service's BYOD `domainname` to the ARM id of an
+// existing public Azure DNS zone in the deploy subscription, keyed by service
+// name. Services whose domain has no matching zone are absent from the result
+// and keep the delegate-domain / ACME behaviour.
+//
+// The lookup runs here rather than in the CLI (as AWS does in
+// ByocAws.UpdateServiceInfo) because the CD task executes inside the customer's
+// cloud with the deploy identity: it already has DNS read permission and knows
+// its subscription, so `defang compose up` needs no extra client-side role.
+//
+// A failed lookup is a warning, not an error: the Container App still deploys and
+// serves on its azurecontainerapps.io URL, and the delegate domain is unaffected.
+func findByodZones(pctx *pulumi.Context, cf *compose.Project) map[string]string {
+	// Every BYOD hostname the project asks for: each service's domainname plus its
+	// default-network aliases, which need not live in the same zone.
+	var hostnames []string
+	for _, svc := range cf.Services {
+		if !svc.HasIngressPorts() {
+			continue
+		}
+		hostnames = append(hostnames, common.ByodHostnames(svc)...)
+	}
+	if len(hostnames) == 0 {
+		return nil
+	}
+
+	subscriptionID := config.GetSubscriptionId(pctx)
+	if subscriptionID == "" {
+		_ = pctx.Log.Warn("BYOD DNS: skipping zone lookup; AZURE_SUBSCRIPTION_ID not set in Pulumi config", nil)
+		return nil
+	}
+
+	// One ARM listing answers every hostname (see FindZones).
+	zones, err := providerazure.FindZones(pctx.Context(), subscriptionID, hostnames)
+	if err != nil {
+		_ = pctx.Log.Warn(fmt.Sprintf(
+			"BYOD DNS: zone lookup failed (%v); custom hostnames keep the delegate domain only", err), nil)
+		return nil
+	}
+	// No zone for a hostname is a normal answer, not a failure: no records in a
+	// customer zone and no managed cert for it, while the service stays reachable
+	// at <svc>.<delegate domain>. Warned (not logged at info) with the same
+	// actionable hint as the AWS path, so the two clouds report it identically.
+	for _, hostname := range hostnames {
+		if _, ok := zones[common.NormalizeDNS(hostname)]; !ok {
+			_ = pctx.Log.Warn(fmt.Sprintf(
+				"BYOD DNS: no Azure DNS zone hosts %s; skipping its DNS records and managed cert. "+
+					"Run `defang cert gen` to issue a certificate via ACME, or create the zone and redeploy.",
+				hostname), nil)
+		}
+	}
+	if len(zones) == 0 {
+		return nil
+	}
+	return zones
+}
+
+// collectCertJobs builds the list of managed-cert jobs for a deploy:
+//   - delegate domain: `<svc>.<domain>` for every ingress service (when domain
+//     is set), whose records live in the delegate-domain zone.
+//   - BYOD: each of a service's own hostnames that findByodZones resolved a public
+//     DNS zone for, whose records the provider wrote into that customer zone.
+//
+// One service can yield several jobs — it is reachable on every one of those
+// hostnames, and Container Apps binds a certificate per hostname.
+func collectCertJobs(cf *compose.Project, domain string, dnsZones map[string]string) []certJob {
+	var jobs []certJob
+	if domain != "" {
+		for name, svc := range cf.Services {
+			if svc.HasIngressPorts() && !providerazure.IsVirtualMachineService(&svc) {
+				jobs = append(jobs, certJob{service: name, hostname: name + "." + domain})
+			}
+		}
+	}
+	for name, svc := range cf.Services {
+		if !svc.HasIngressPorts() || providerazure.IsVirtualMachineService(&svc) {
+			continue
+		}
+		for _, hostname := range common.ByodHostnames(svc) {
+			// Only enqueue a cert job when the provider will actually create the BYOD
+			// records for this hostname: a zone must host it and the hostname must be
+			// that zone's apex or a subdomain of it, and it must not be a wildcard
+			// (Front Door certifies those). See ByodRecordEligible. Otherwise
+			// aca.IssueCert would wait out its full DNS timeout for records that never
+			// appear.
+			hostname = common.NormalizeDNS(hostname)
+			if providerazure.ByodRecordEligible(hostname, dnsZones[hostname]) {
+				jobs = append(jobs, certJob{service: name, hostname: hostname})
+			}
+		}
+	}
+
+	return jobs
+}
+
+// provisionCerts asks Azure to issue + bind a managed cert for each job's
+// hostname on its Container App. Records (CNAME + asuid TXT) are already in
+// Azure DNS from the Pulumi-managed RecordSets — delegate-domain zone or the
+// customer's BYOD zone — so aca.IssueCert's "wait for DNS" step passes quickly
+// and the flow proceeds straight to registering the customDomain on the
+// Container App, issuing the cert via CNAME validation, and re-binding with
+// SniEnabled.
+//
+// Jobs are processed concurrently (bounded by maxConcurrentCertIssuance): each
+// aca.IssueCert can block up to perServiceCertTimeout, so a serial loop would
+// make the total wall-clock scale with the job count.
+//
+// Failures are logged as Pulumi warnings (so they surface in `pulumi up` and
+// the portal) but not surfaced as errors: the Container App is already serving
+// on its `*.azurecontainerapps.io` URL by this point, the cert flow is
+// idempotent, and the next deploy will retry. A hard error would force a
+// Pulumi destroy/replace cycle that doesn't actually fix anything cert-side.
+func provisionCerts(pctx *pulumi.Context, jobs []certJob, subscriptionID, resourceGroup string) {
+	if subscriptionID == "" {
+		// deployAzure forwards config.GetSubscriptionId(ctx) unconditionally;
+		// when Pulumi config doesn't carry it, the ARM SDK clients we'd
+		// construct below fail with an opaque URL parse error. Surface that
+		// early — the Container App is already serving on its
+		// azurecontainerapps.io URL; cert binding is a separate concern the
+		// next deploy can retry.
+		_ = pctx.Log.Warn("managed cert: skipping; AZURE_SUBSCRIPTION_ID not set in Pulumi config", nil)
+		return
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		_ = pctx.Log.Warn(fmt.Sprintf("managed cert: build credential: %v", err), nil)
+		return
+	}
+
+	ctx := pctx.Context()
+	var g errgroup.Group
+	g.SetLimit(maxConcurrentCertIssuance)
+	for _, job := range jobs {
+		g.Go(func() error {
+			// Bounded context per job; defer cancel so a panic inside IssueCert
+			// can't leak the timer goroutine for the full timeout.
+			svcCtx, cancel := context.WithTimeout(ctx, perServiceCertTimeout)
+			defer cancel()
+			_ = pctx.Log.Info(fmt.Sprintf("Issuing managed cert for %s at %s", job.service, job.hostname), nil)
+			// IssueCert defaults to term.Infof, which writes to the CD task's
+			// stdout; route its progress through the Pulumi log like the rest
+			// of this function.
+			certLog := func(format string, args ...any) {
+				_ = pctx.Log.Info(fmt.Sprintf(format, args...), nil)
+			}
+			if err := aca.IssueCert(svcCtx, cred, subscriptionID, resourceGroup, job.service, job.hostname, dns.DirectResolverAt, certLog); err != nil {
+				_ = pctx.Log.Warn(fmt.Sprintf("managed cert: issuance for %s failed: %v", job.hostname, err), nil)
+			}
+			// Errors are logged, not returned: one job's failure must not cancel
+			// the others' contexts via errgroup.
+			return nil
+		})
+	}
+	_ = g.Wait()
+}
+
+func toAzureArgs(cf *compose.Project, domain, etag string) *defangazure.ProjectArgs {
 	args := &defangazure.ProjectArgs{
 		Services: toAzureServices(cf.Services),
 	}
@@ -75,6 +311,10 @@ func toAzureArgs(cf *compose.Project, etag string) *defangazure.ProjectArgs {
 		e := etag
 		args.Etag = &e
 	}
+	if domain != "" {
+		d := domain
+		args.Domain = &d
+	}
 	return args
 }
 
@@ -88,11 +328,25 @@ func toAzureServices(services compose.Services) azurecompose.ServiceConfigMap {
 
 func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArgs {
 	args := azurecompose.ServiceConfigArgs{
-		Image:       pulumi.StringPtrFromPtr(svc.Image),
+		Image:       pulumi.StringPtrFromPtr(svc.StaticImage()),
 		Platform:    pulumi.StringPtrFromPtr(svc.Platform),
 		Environment: pulumi.ToStringMap(svc.ResolvedEnvironment()),
 		Command:     pulumi.ToStringArray(svc.Command),
 		Entrypoint:  pulumi.ToStringArray(svc.Entrypoint),
+
+		// Every field below is copied unconditionally, including the zero
+		// value: the compose types have no "unset" state for a bare bool or
+		// string, and a conditional write is how a field gets forgotten.
+		// See TestServiceArgsCopyEveryField.
+		Aliases:         pulumi.ToStringMap(svc.Aliases),
+		Autoscaling:     pulumi.Bool(svc.Autoscaling),
+		ContainerName:   pulumi.StringPtrFromPtr(svc.ContainerName),
+		NetworkMode:     pulumi.String(svc.NetworkMode),
+		Policies:        pulumi.ToStringArray(svc.Policies),
+		Restart:         pulumi.String(svc.Restart),
+		StopGracePeriod: pulumi.StringPtrFromPtr(svc.StopGracePeriod),
+		VolumesFrom:     pulumi.ToStringArray(svc.VolumesFrom),
+		WorkingDir:      pulumi.StringPtrFromPtr(svc.WorkingDir),
 	}
 	if svc.DomainName != "" {
 		args.DomainName = pulumi.StringPtr(svc.DomainName)
@@ -145,6 +399,11 @@ func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArg
 			FromSnapshot:  pulumi.StringPtrFromPtr(svc.Redis.FromSnapshot),
 		}
 	}
+	if svc.ObjectStore != nil {
+		args.ObjectStore = azurecompose.ObjectStoreConfigArgs{
+			Bucket: pulumi.String(svc.ObjectStore.Bucket),
+		}
+	}
 	if svc.HealthCheck != nil {
 		args.HealthCheck = azurecompose.HealthCheckConfigArgs{
 			Test:               pulumi.ToStringArray(svc.HealthCheck.Test),
@@ -171,6 +430,17 @@ func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArg
 	if svc.LLM != nil {
 		args.Llm = azurecompose.LlmConfigArgs{}
 	}
+	if len(svc.Volumes) > 0 {
+		volumes := make(azurecompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
+		for _, v := range svc.Volumes {
+			volumes = append(volumes, azurecompose.ServiceVolumeConfigArgs{
+				Source:   pulumi.String(v.Source),
+				Target:   pulumi.String(v.Target),
+				ReadOnly: pulumi.Bool(v.ReadOnly),
+			})
+		}
+		args.Volumes = volumes
+	}
 	return args
 }
 
@@ -192,13 +462,10 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 		return fmt.Errorf("DEFANG_STATE_URL %q missing storage_account", u.String())
 	}
 
-	// The CD storage account lives in the shared CD resource group, named
-	// `defang-cd-<location>` by convention (see defang/src/pkg/clouds/azure/cd/driver.go).
-	location := config.GetLocation(ctx)
-	if location == "" {
-		return fmt.Errorf("AZURE_LOCATION must be set to derive the CD resource group")
-	}
-	cdRG := "defang-cd-" + location
+	// The CD storage account lives in the shared CD resource group (single
+	// per subscription, location-independent — see
+	// defang/src/pkg/clouds/azure/cd/driver.go).
+	cdRG := CdResourceGroup
 
 	source := data.ApplyT(func(v any) (pulumi.Asset, error) {
 		return NewTempFileAsset("defang-cd-*-project.pb", v.([]byte))

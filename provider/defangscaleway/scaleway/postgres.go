@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/containers"
@@ -27,6 +28,7 @@ const defaultScalewayPostgresDB = "defang"
 
 // SharedInfra contains Scaleway resources shared by project-level components.
 type SharedInfra struct {
+	PluginIdentity common.PluginIdentity
 	Region         string
 	Zone           string
 	ProjectID      string
@@ -175,7 +177,14 @@ func CreatePostgres(
 	if configProvider == nil {
 		configProvider = &compose.PulumiConfigProvider{}
 	}
-	pg := svc.ResolvePostgres(ctx, configProvider)
+	parent := pulumi.Parent(nil)
+	for _, option := range opts {
+		if shared, ok := option.(pulumi.ResourceOrInvokeOption); ok {
+			parent = shared
+			break
+		}
+	}
+	pg := svc.ResolvePostgres(ctx, configProvider, parent)
 	if pg == nil {
 		return nil, ErrPostgresConfigNil
 	}

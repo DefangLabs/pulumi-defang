@@ -10,6 +10,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/monitor/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -28,11 +29,30 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Domain is the delegate domain for the project (e.g. "myproj-stack.tenant.defang.app").
+	// When non-empty and a public DNS zone of that name already exists in the project
+	// resource group (created by the CLI's PrepareDomainDelegation), every ingress
+	// service gets a `<service>.<domain>` CNAME pointing at its Container App, an
+	// `asuid.<service>` TXT record with the App's verification ID, and an ACA
+	// ManagedCertificate provisioned via CNAME validation. Empty disables this path
+	// — services keep only their auto-assigned `*.azurecontainerapps.io` hostname.
+	Domain string `pulumi:"domain,optional" yaml:"domain,omitempty"`
 	// Etag is the deployment identifier supplied by the CD program; the provider
 	// stamps it onto every resource (tags) and onto Container App revisions
 	// (RevisionSuffix) so that logs and Resource Graph queries can be filtered
 	// per-deployment.
 	Etag string `pulumi:"etag,optional" yaml:"etag,omitempty"`
+	// DnsZones maps a BYOD hostname — any service's `domainname` or default-network
+	// alias — to the ARM resource ID of the public Azure DNS zone (in the current
+	// subscription) that hosts it, as resolved by the CD task (cd/program/azure.go
+	// findByodZones). Hostnames present here get their routing + asuid TXT records
+	// written into that customer-owned zone (BYOD) and a managed cert from the CD
+	// program; hostnames absent from it keep the ACME / delegate-domain behaviour.
+	//
+	// Keyed by hostname rather than by service: a service can ask for several
+	// hostnames (aliases) that live in different zones, and the AWS path likewise
+	// resolves a zone per hostname rather than per service.
+	DnsZones map[string]string `pulumi:"dnsZones,optional" yaml:"dnsZones,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -44,6 +64,15 @@ type ProjectOutputs struct {
 
 	// Load balancer DNS name (unused for Azure, kept for interface compat)
 	LoadBalancerDNS pulumi.StringPtrOutput `pulumi:"loadBalancerDns,optional"`
+
+	// ServiceIds maps service names to the ARM resource ID of their primary
+	// backing resource — the Container App for container services, the
+	// PostgreSQL Flexible Server for Postgres, the Redis Enterprise cluster
+	// for Redis — the scope Azure Monitor alert rules target. LLM services
+	// are omitted (they share the project's Cognitive Services deployment).
+	// The components' typed resource handles are unreachable on Project
+	// children.
+	ServiceIds pulumi.StringMapOutput `pulumi:"serviceIds"`
 }
 
 // serviceTypes summarises which kinds of services are present in a project.
@@ -51,8 +80,10 @@ type ProjectOutputs struct {
 // kind, used as Pulumi logical names for project-shared DNS zones. Empty when
 // that kind has no services.
 type serviceTypes struct {
+	hasContainerApp  bool
 	hasBuild         bool
 	hasLLM           bool
+	hasVM            bool
 	pgServiceName    string
 	redisServiceName string
 	llmModels        map[string]string // LLM service name → model alias
@@ -87,6 +118,12 @@ func detectServiceTypes(services compose.Services) serviceTypes {
 			result.hasLLM = true
 			result.llmModels[svcName] = llmModelAlias(svcName, services)
 		}
+		if svc.Postgres == nil && svc.Redis == nil && svc.LLM == nil && !providerazure.IsVirtualMachineService(&svc) {
+			result.hasContainerApp = true
+		}
+		if providerazure.IsVirtualMachineService(&svc) {
+			result.hasVM = true
+		}
 	}
 	return result
 }
@@ -119,15 +156,15 @@ func createPostgresResources(
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	serviceIds pulumi.StringMap,
 	comp *serviceComponent,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if err := ctx.RegisterComponentResource("defang-azure:index:Postgres", svcName, comp, childOpts...); err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("registering Azure Postgres component %s: %w", svcName, err)
 	}
-	svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-	pgResult, err := providerazure.CreatePostgresFlexible(ctx, infra.ConfigProvider, svcName, svc, infra, svcOpts...)
+	pgResult, err := providerazure.CreatePostgresFlexible(
+		ctx, infra.ConfigProvider, svcName, svc, infra, pulumi.Parent(comp))
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating PostgreSQL for %s: %w", svcName, err)
 	}
@@ -143,6 +180,7 @@ func createPostgresResources(
 	endpoint := pulumi.Sprintf("%s:5432", fqdn)
 	managedEndpoints[svcName] = endpoint
 	serviceHosts[svcName] = fqdn
+	serviceIds[svcName] = pgResult.Server.ID().ToStringOutput()
 	return endpoint, nil
 }
 
@@ -153,6 +191,7 @@ func createRedisResources(
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	serviceIds pulumi.StringMap,
 	comp *serviceComponent,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
@@ -166,10 +205,17 @@ func createRedisResources(
 		return pulumi.StringOutput{}, fmt.Errorf("creating Redis for %s: %w", svcName, err)
 	}
 
+	// Fold the private-DNS readiness resources into the outputs apps consume so
+	// Pulumi won't create a Container App until the cluster's A record is published
+	// and resolvable in the VNet. Without this, the app starts before DNS is
+	// effective, ioredis exhausts its retry budget, and wedges permanently (#287).
 	// ConnectionURL is the full redis:// or rediss:// URL including auth.
-	managedEndpoints[svcName] = redisResult.ConnectionURL
-	serviceHosts[svcName] = redisResult.Cluster.HostName
-	return pulumi.Sprintf("%s:10000", redisResult.Cluster.HostName), nil
+	connURL := withResourceDeps(redisResult.ConnectionURL, redisResult.Readiness)
+	host := withResourceDeps(redisResult.Cluster.HostName, redisResult.Readiness)
+	managedEndpoints[svcName] = connURL
+	serviceHosts[svcName] = host
+	serviceIds[svcName] = redisResult.Cluster.ID().ToStringOutput()
+	return pulumi.Sprintf("%s:10000", host), nil
 }
 
 // createServiceResources creates the component resource and underlying cloud resources
@@ -182,7 +228,10 @@ func createServiceResources(
 	infra *providerazure.SharedInfra,
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
+	serviceIds pulumi.StringMap,
 	llmModels map[string]string,
+	dnsZones map[string]string,
+	pluginID common.PluginIdentity,
 	childOpts []pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	comp := &serviceComponent{}
@@ -191,14 +240,16 @@ func createServiceResources(
 	switch {
 	case svc.Postgres != nil:
 		var err error
-		endpoint, err = createPostgresResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, comp, childOpts)
+		endpoint, err = createPostgresResources(
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, comp, childOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
 
 	case svc.Redis != nil:
 		var err error
-		endpoint, err = createRedisResources(ctx, svcName, svc, infra, managedEndpoints, serviceHosts, comp, childOpts)
+		endpoint, err = createRedisResources(
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, comp, childOpts)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -223,25 +274,24 @@ func createServiceResources(
 		endpoint = infra.LLMInfra.BaseURL
 
 	default:
-		if err := ctx.RegisterComponentResource(
-			"defang-azure:index:AzureContainerApp", svcName, comp, childOpts...,
-		); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("registering Container App component %s: %w", svcName, err)
+		// Container service path uses the typed *ServiceOutputs so the runtime
+		// registration matches the SDK schema, and shares the worker with the
+		// standalone Service.Construct path.
+		svcComp := &ServiceOutputs{}
+		if err := ctx.RegisterComponentResource(ServiceComponentType, svcName, svcComp, childOpts...); err != nil {
+			return pulumi.StringOutput{}, fmt.Errorf("registering Service component %s: %w", svcName, err)
 		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-		imageURI, err := providerazure.GetServiceImage(ctx, svcName, svc, infra.BuildInfra, infra, svcOpts...)
+		imageURI, err := providerazure.GetServiceImage(
+			ctx, svcName, svc, infra.BuildInfra, infra, pluginID, pulumi.Parent(svcComp))
 		if err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("resolving image for %s: %w", svcName, err)
 		}
-
-		caResult, err := providerazure.CreateContainerApp(
-			ctx, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, svcOpts...,
-		)
+		err = createContainerService(ctx, svcComp, svcName, svc, infra, imageURI, managedEndpoints, serviceHosts, dnsZones)
 		if err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating Container App %s: %w", svcName, err)
+			return pulumi.StringOutput{}, err
 		}
-		endpoint = caResult.App.LatestRevisionFqdn.ApplyT(fqdnToHTTPS).(pulumi.StringOutput)
+		serviceIds[svcName] = svcComp.AppID
+		return svcComp.Endpoint, nil
 	}
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
@@ -290,42 +340,63 @@ func createProjectResourceGroup(
 	return rg, nil
 }
 
+// ACA log category names. In LogAnalyticsDestinationType=Dedicated mode the
+// category name doubles as the destination Log Analytics table name, so
+// createManagedEnvironment reuses these for both the DiagnosticSetting
+// category and the Table's TableName/import ID.
+const (
+	consoleLogsTable = "ContainerAppConsoleLogs"
+	systemLogsTable  = "ContainerAppSystemLogs"
+)
+
 // createManagedEnvironment provisions the Log Analytics workspace and Container
 // App managed environment, attaching VNet config when networking is present.
-// parentOpt carries the parent (and its provider) for the GetSharedKeys invoke,
-// which ResourceOption slices can't express because InvokeOption is a sibling
-// interface to ResourceOption.
+// parentOpt carries the parent (and its provider) for resource options that
+// ResourceOption slices can't express on their own.
 func createManagedEnvironment(
 	ctx *pulumi.Context,
 	name string,
 	infra *providerazure.SharedInfra,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*app.ManagedEnvironment, error) {
-	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, &operationalinsights.WorkspaceArgs{
+	wsArgs := &operationalinsights.WorkspaceArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		Sku: &operationalinsights.WorkspaceSkuArgs{
 			Name: pulumi.String(providerazure.LogWorkspaceSku.Get(ctx)),
 		},
-		RetentionInDays: pulumi.Int(max(30, common.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
-	}, parentOpt)
+		RetentionInDays: pulumi.Int(max(30, providerazure.LogRetentionDays.Get(ctx))), // 30≤…≤730 days
+	}
+	// Daily ingestion cap: once exceeded Azure stops ingesting for the day.
+	// Backstop against runaway $$$ from chatty containers (a single AI agent
+	// workload has been seen burning >$700/mo here). Omit the field entirely
+	// when quota=0 so the API doesn't see a 0 GB cap.
+	if quotaGB := providerazure.LogWorkspaceDailyQuotaGb.Get(ctx); quotaGB > 0 {
+		wsArgs.WorkspaceCapping = &operationalinsights.WorkspaceCappingArgs{
+			DailyQuotaGb: pulumi.Float64Ptr(float64(quotaGB)),
+		}
+	}
+	logWorkspace, err := operationalinsights.NewWorkspace(ctx, name, wsArgs, parentOpt)
 	if err != nil {
 		return nil, fmt.Errorf("creating Log Analytics workspace: %w", err)
 	}
-	logKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
-		ResourceGroupName: infra.ResourceGroup.Name,
-		WorkspaceName:     logWorkspace.Name,
-	}, parentOpt)
 
+	// "azure-monitor" routes through Azure Monitor + a DiagnosticSetting
+	// (below), landing ACA logs in the modern, DCR-based ContainerAppConsoleLogs
+	// / ContainerAppSystemLogs tables. The older "log-analytics" destination
+	// used the workspace shared-key API and wrote to Classic Custom Log
+	// ContainerAppConsoleLogs_CL tables, which don't support the Basic plan
+	// (Azure: "Basic Logs plan is not supported by CustomLog Classic tables"),
+	// so workspace ingest stayed locked to Analytics at ~$2.30/GB. The
+	// DiagnosticSetting path below unlocks the Basic plan at ~$0.50/GB on the
+	// modern tables. AppLogsConfiguration must omit LogAnalyticsConfiguration
+	// when Destination is azure-monitor — that field is only valid with
+	// log-analytics, and the shared-key lookup it needed is gone too.
 	envArgs := &app.ManagedEnvironmentArgs{
 		ResourceGroupName: infra.ResourceGroup.Name,
 		// Location:          pulumi.String(location),
 		AppLogsConfiguration: &app.AppLogsConfigurationArgs{
-			Destination: pulumi.String("log-analytics"),
-			LogAnalyticsConfiguration: &app.LogAnalyticsConfigurationArgs{
-				CustomerId: logWorkspace.CustomerId,
-				SharedKey:  logKeys.PrimarySharedKey(),
-			},
+			Destination: pulumi.String("azure-monitor"),
 		},
 	}
 	if infra.Networking != nil {
@@ -340,6 +411,56 @@ func createManagedEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("creating managed environment: %w", err)
 	}
+
+	// Route ACA's two log categories from the env (via Azure Monitor) into the
+	// workspace, landing in the modern DCR-based tables (Basic-plan eligible).
+	// LogAnalyticsDestinationType="Dedicated" forces per-resource-type tables;
+	// the default (null/AzureDiagnostics) would merge everything into the
+	// generic AzureDiagnostics table and bypass the schema the CLI expects.
+	//
+	// Use monitor/v3 (not insights/v1): in azure-native v3 the resource was
+	// renamed insights → monitor. The v3 plugin only knows the new token
+	// "azure-native:monitor:DiagnosticSetting" as creatable and keeps
+	// "azure-native:insights:DiagnosticSetting" as an alias for state
+	// migration only — creating via the legacy insights SDK registers with
+	// the old token and fails with "Resource type … not found".
+	diagSetting, err := monitor.NewDiagnosticSetting(ctx, name+"-aca-logs", &monitor.DiagnosticSettingArgs{
+		ResourceUri:                 env.ID().ToStringOutput(),
+		WorkspaceId:                 logWorkspace.ID().ToStringPtrOutput(),
+		LogAnalyticsDestinationType: pulumi.String("Dedicated"),
+		Logs: monitor.DiagnosticsLogSettingsArray{
+			&monitor.DiagnosticsLogSettingsArgs{Category: pulumi.StringPtr(consoleLogsTable), Enabled: pulumi.Bool(true)},
+			&monitor.DiagnosticsLogSettingsArgs{Category: pulumi.StringPtr(systemLogsTable), Enabled: pulumi.Bool(true)},
+		},
+	}, parentOpt, pulumi.Parent(env))
+	if err != nil {
+		return nil, fmt.Errorf("creating ACA diagnostic setting: %w", err)
+	}
+
+	// Pin the plan on the console logs table (Container Apps' stdout sink,
+	// what `defang logs` reads). The table isn't a workspace built-in — its
+	// schema is registered by the DiagnosticSetting above routing logs into
+	// it, so a plain Create would race that registration and fail with
+	// "cannot create already existing resource". Import + DependsOn(diagSetting)
+	// waits for the schema to exist, then applies the Plan diff on top of it.
+	consoleLogsPlan := providerazure.LogConsoleLogsPlan.Get(ctx)
+	consoleLogsImportID := logWorkspace.ID().ToStringOutput().ApplyT(func(id string) pulumi.ID {
+		return pulumi.ID(id + "/tables/" + consoleLogsTable)
+	}).(pulumi.IDOutput)
+	if _, err := operationalinsights.NewTable(ctx, name+"-console-logs", &operationalinsights.TableArgs{
+		ResourceGroupName: infra.ResourceGroup.Name,
+		WorkspaceName:     logWorkspace.Name,
+		TableName:         pulumi.String(consoleLogsTable),
+		Plan:              pulumi.String(consoleLogsPlan),
+	},
+		parentOpt,
+		pulumi.Parent(logWorkspace),
+		pulumi.DependsOn([]pulumi.Resource{diagSetting}),
+		pulumi.Import(consoleLogsImportID),
+	); err != nil {
+		return nil, fmt.Errorf("setting %s plan on %s: %w", consoleLogsPlan, consoleLogsTable, err)
+	}
+
 	return env, nil
 }
 
@@ -365,13 +486,28 @@ func setupSharedInfra(
 	keyVaultURL := "https://" + kvName + ".vault.azure.net"
 
 	infra := &providerazure.SharedInfra{
-		ResourceGroup:  rg,
-		KeyVaultURL:    keyVaultURL, // FIXME: don't set if vault doesn't exist
-		ConfigProvider: providerazure.NewConfigProvider(keyVaultURL),
-		Etag:           inputs.Etag,
+		ResourceGroup: rg,
+		KeyVaultURL:   keyVaultURL, // FIXME: don't set if vault doesn't exist
+		Etag:          inputs.Etag,
+		Domain:        inputs.Domain,
+		Networks:      inputs.Networks,
+	}
+	if ctx.DryRun() {
+		infra.ConfigProvider = &compose.DryRunConfigProvider{}
+	} else {
+		infra.ConfigProvider = providerazure.NewConfigProvider(keyVaultURL)
 	}
 
-	if types.pgServiceName != "" || types.redisServiceName != "" {
+	// Adopt the CLI-created delegate-domain DNS zone into Pulumi state (no-op when
+	// the project has no domain) so `defang compose down` cleans it up along with
+	// the per-service records CreateCustomDomain writes into it.
+	domainZone, err := providerazure.EnsureDomainZone(ctx, projectName, infra, parentOpt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("importing domain DNS zone: %w", err)
+	}
+	infra.DomainZone = domainZone
+
+	if types.pgServiceName != "" || types.redisServiceName != "" || types.hasVM {
 		networking, err := providerazure.CreateNetworking(ctx, projectName, infra, parentOpt)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating networking: %w", err)
@@ -387,11 +523,22 @@ func setupSharedInfra(
 		infra.DNS = dns
 	}
 
-	env, err := createManagedEnvironment(ctx, projectName, infra, parentOpt)
-	if err != nil {
-		return nil, nil, err
+	if types.hasContainerApp {
+		env, err := createManagedEnvironment(ctx, projectName, infra, parentOpt)
+		if err != nil {
+			return nil, nil, err
+		}
+		infra.Environment = env
 	}
-	infra.Environment = env
+
+	// Wildcard hostnames can't be bound on a Container App, so they get an Azure
+	// Front Door profile in front of it. Nothing is created — and nothing is
+	// billed — unless a service actually asks for one.
+	frontDoor, err := providerazure.EnsureFrontDoor(ctx, inputs.Services, infra, parentOpt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating Front Door: %w", err)
+	}
+	infra.FrontDoor = frontDoor
 
 	if types.hasLLM {
 		llmInfra, err := providerazure.CreateLLMInfra(ctx, projectName, infra, parentOpt)
@@ -450,12 +597,18 @@ func (*Project) Construct(
 	parentOpt := pulumi.Parent(comp)
 	childOpts := []pulumi.ResourceOption{parentOpt}
 
+	// The engine gives Construct the plugin identity for our own package;
+	// children do not inherit it, so carry it to the Build registration. No
+	// version is pinned on purpose — see common.PluginIdentityFrom.
+	pluginID := common.PluginIdentityFrom(opts)
+
 	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, parentOpt)
 	if err != nil {
 		return nil, err
 	}
 
 	endpoints := pulumi.StringMap{}
+	serviceIds := pulumi.StringMap{}
 
 	// managedEndpoints accumulates connection URLs for managed services (Postgres, Redis, LLM).
 	managedEndpoints := make(map[string]pulumi.StringOutput, len(inputs.Services))
@@ -474,7 +627,8 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones,
+			pluginID, childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -486,7 +640,8 @@ func (*Project) Construct(
 			continue
 		}
 		endpoint, err := createServiceResources(
-			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, llmModels, childOpts,
+			ctx, svcName, svc, infra, managedEndpoints, serviceHosts, serviceIds, llmModels, inputs.DnsZones,
+			pluginID, childOpts,
 		)
 		if err != nil {
 			return nil, err
@@ -498,10 +653,12 @@ func (*Project) Construct(
 
 	comp.Endpoints = endpoints.ToStringMapOutput()
 	comp.LoadBalancerDNS = loadBalancerDNS
+	comp.ServiceIds = serviceIds.ToStringMapOutput()
 
 	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
 		"endpoints":       endpoints.ToStringMapOutput(),
 		"loadBalancerDns": loadBalancerDNS,
+		"serviceIds":      serviceIds.ToStringMapOutput(),
 	}); err != nil {
 		return nil, err
 	}
@@ -509,17 +666,41 @@ func (*Project) Construct(
 	return comp, nil
 }
 
-// llmModelAlias finds the model alias for an LLM service by scanning dependent services'
-// environments. The CLI injects {UPPER(svcName)}_MODEL into every service that depends on
-// the LLM service. Returns the alias (e.g. "chat-default") or svcName as a fallback.
+// llmModelAlias finds the model alias for an LLM service, which becomes the name of
+// the Azure AI Foundry deployment. Dependent services send that name as the "model"
+// field, so getting it wrong yields DeploymentNotFound at runtime after a green deploy.
+//
+// The CLI writes the alias into the LLM service's own command ("--alias <alias>"), which
+// is authoritative: it is present whatever the dependents look like. Only if that is
+// missing do we fall back to scanning dependents for {UPPER(svcName)}_MODEL — the env
+// var the CLI injects by default. That scan alone is not enough, because compose lets a
+// dependent rename the variable (`models: {<svc>: {model_var: MODEL}}`), in which case
+// the lookup silently missed and we deployed under svcName while the CLI told the app to
+// ask for the alias.
 func llmModelAlias(svcName string, services compose.Services) string {
+	if svc, ok := services[svcName]; ok {
+		if alias := aliasFromCommand(svc.Command); alias != "" {
+			return alias
+		}
+	}
 	envKey := strings.ToUpper(svcName) + "_MODEL"
 	for _, svc := range services {
-		if v, ok := svc.Environment[envKey]; ok && v != nil && *v != "" {
-			return *v
+		if sv, _ := compose.StaticEnvValue(svc.Environment[envKey]); sv != nil && *sv != "" {
+			return *sv
 		}
 	}
 	return svcName // fallback: use service name as deployment name
+}
+
+// aliasFromCommand returns the value following "--alias" in the LiteLLM command the CLI
+// generates, or "" when absent.
+func aliasFromCommand(command []string) string {
+	for i, arg := range command {
+		if arg == "--alias" && i+1 < len(command) {
+			return command[i+1]
+		}
+	}
+	return ""
 }
 
 // fqdnToHTTPS converts a Container App FQDN to an https:// URL, or returns "" for empty FQDNs.

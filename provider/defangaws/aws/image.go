@@ -78,6 +78,7 @@ func buildServiceImage(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (*imageBuildResult, error) {
 	if svc.Build == nil {
@@ -85,6 +86,11 @@ func buildServiceImage(
 	}
 
 	platform := svc.GetPlatform()
+
+	// Computed up front so the same hash both tags the pushed image (giving
+	// Build.Create's post-build ECR digest lookup a tag no other build could
+	// have overwritten) and triggers replacement of the Build resource below.
+	triggerHash := common.BuildTriggerHash(svc.Build)
 
 	cbResult, err := createCodeBuildProject(
 		ctx,
@@ -94,6 +100,7 @@ func buildServiceImage(
 		infra.codeBuildRole,
 		infra.logGroup,
 		infra.ecrRepoURL,
+		pulumix.Output[string](triggerHash),
 		infra.region,
 		opts...,
 	)
@@ -104,8 +111,6 @@ func buildServiceImage(
 	// Create the Build custom resource to trigger the actual build.
 	// This resource calls the AWS SDK to start the build, polls until done, and returns the image URL.
 	// If Create fails, the resource is not in state → next `pulumi up` retries automatically.
-	triggerHash := common.BuildTriggerHash(svc.Build)
-
 	// region, err := aws.GetRegion(ctx, &aws.GetRegionArgs{}, opts...)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("getting AWS region: %w", err)
@@ -118,7 +123,7 @@ func buildServiceImage(
 		"region":      pulumi.String(infra.region),
 		"destination": cbResult.destination,
 		"triggers":    pulumi.StringArray{triggerHash},
-	}, &buildResource, opts...)
+	}, &buildResource, pluginID.ResourceOptions(opts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("creating CodeBuild build resource for %s: %w", serviceName, err)
 	}
@@ -138,10 +143,11 @@ func GetServiceImage(
 	serviceName string,
 	svc compose.ServiceConfig,
 	infra *BuildInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
 ) (pulumi.StringOutput, error) {
 	if svc.Build != nil && infra != nil {
-		result, err := buildServiceImage(ctx, serviceName, svc, infra, opts...)
+		result, err := buildServiceImage(ctx, serviceName, svc, infra, pluginID, opts...)
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
@@ -153,5 +159,5 @@ func GetServiceImage(
 	}
 
 	// Use pre-built image (either service.image or default)
-	return pulumi.String(*svc.Image).ToStringOutput(), nil
+	return svc.Image.ToStringOutput(), nil
 }

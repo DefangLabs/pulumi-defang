@@ -20,7 +20,7 @@ type PostgresInputs struct {
 	Postgres    *compose.PostgresConfig  `pulumi:"postgres,optional"`
 	Image       *string                  `pulumi:"image,optional"`
 	Deploy      *compose.DeployConfig    `pulumi:"deploy,optional"`
-	Environment map[string]*string       `pulumi:"environment,optional"`
+	Environment compose.Environment          `pulumi:"environment,optional"`
 	Infra       *provideraws.SharedInfra `pulumi:"aws,optional"`
 }
 
@@ -51,7 +51,7 @@ func (*Postgres) Construct(
 
 	svc := compose.ServiceConfig{
 		Postgres:    inputs.Postgres,
-		Image:       inputs.Image,
+		Image:       compose.ImageFromPtr(inputs.Image),
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
 	}
@@ -84,7 +84,7 @@ func createPostgres(
 
 	rdsResult, err := provideraws.CreateRDS(
 		ctx, configProvider, serviceName, svc,
-		infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID,
+		infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, infra.AlarmTopicArn,
 		deps, childOpt,
 	)
 	if err != nil {
@@ -93,7 +93,7 @@ func createPostgres(
 
 	var dependency pulumi.Resource = rdsResult.Instance
 	if infra.PrivateZoneID != nil {
-		privateFqdn := common.SafeLabel(serviceName) //+ "." + infra.PrivateDomain
+		privateFqdn := common.ServiceLabel(serviceName) //+ "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{rdsResult.Instance.Address},

@@ -21,14 +21,20 @@ type RedisInputs struct {
 	Image       *string                     `pulumi:"image,optional"`
 	Ports       []compose.ServicePortConfig `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig       `pulumi:"deploy,optional"`
-	Environment map[string]*string          `pulumi:"environment,optional"`
+	Environment compose.Environment             `pulumi:"environment,optional"`
 	AWS         *provideraws.SharedInfra    `pulumi:"aws,optional"`
+	// Aliases maps child resource kinds to pre-migration URNs; see
+	// compose.ServiceConfig.Aliases (x-defang-aliases).
+	Aliases map[string]string `pulumi:"aliases,optional"`
 }
 
 // RedisOutputs holds the outputs of an AWS Redis component.
 type RedisOutputs struct {
 	pulumi.ResourceState
 	Endpoint pulumi.StringOutput `pulumi:"endpoint"`
+	// ClusterId is the ElastiCache replication group ID or the MemoryDB
+	// cluster name, for downstream consumers such as CloudWatch alarms.
+	ClusterId pulumi.StringOutput `pulumi:"clusterId"`
 	// Dependency is an internal-only handle (CNAME record when a private zone
 	// exists, otherwise nil) used by downstream services for ordering. Untagged —
 	// not part of the SDK schema.
@@ -54,10 +60,11 @@ func (*Redis) Construct(
 
 	svc := compose.ServiceConfig{
 		Redis:       redis,
-		Image:       inputs.Image,
+		Image:       compose.ImageFromPtr(inputs.Image),
 		Ports:       inputs.Ports,
 		Deploy:      inputs.Deploy,
 		Environment: inputs.Environment,
+		Aliases:     inputs.Aliases,
 	}
 
 	if err := createRedis(ctx, comp, name, svc, inputs.AWS, nil); err != nil {
@@ -66,9 +73,11 @@ func (*Redis) Construct(
 	return comp, nil
 }
 
-// createRedis creates the ElastiCache cluster (plus optional private-zone CNAME)
-// under an already-registered Redis component, sets its Endpoint/Dependency, and
-// registers its outputs. Shared between Construct and the project-level dispatcher.
+// createRedis creates the managed Redis cluster (ElastiCache, or MemoryDB when
+// the redis-engine recipe says so), plus an optional private-zone CNAME, under
+// an already-registered Redis component, sets its Endpoint/ClusterId/Dependency,
+// and registers its outputs. Shared between Construct and the project-level
+// dispatcher.
 func createRedis(
 	ctx *pulumi.Context,
 	comp *RedisOutputs,
@@ -79,8 +88,12 @@ func createRedis(
 ) error {
 	childOpt := pulumi.Parent(comp)
 
-	redisResult, err := provideraws.CreateElasticache(
-		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, deps, childOpt,
+	createCluster := provideraws.CreateElasticache
+	if provideraws.RedisEngine.Get(ctx) == "memorydb" {
+		createCluster = provideraws.CreateMemoryDB
+	}
+	redisResult, err := createCluster(
+		ctx, serviceName, svc, infra.VpcID, infra.PrivateSubnetIDs, infra.PrivateSgID, infra.AlarmTopicArn, deps, childOpt,
 	)
 	if err != nil {
 		return fmt.Errorf("creating Redis for %s: %w", serviceName, err)
@@ -88,7 +101,7 @@ func createRedis(
 
 	var dependency pulumi.Resource // stays nil when no CNAME and no explicit cluster handle
 	if infra.PrivateZoneID != nil {
-		privateFqdn := common.SafeLabel(serviceName) //+ "." + infra.PrivateDomain
+		privateFqdn := common.ServiceLabel(serviceName) //+ "." + infra.PrivateDomain
 		record, cnameErr := provideraws.CreateRecord(ctx, privateFqdn, common.RecordTypeCNAME, &route53.RecordArgs{
 			ZoneId:  infra.PrivateZoneID.ToStringPtrOutput().Elem(),
 			Records: pulumi.StringArray{redisResult.Address},
@@ -108,8 +121,12 @@ func createRedis(
 	comp.Endpoint = pulumi.StringOutput(pulumix.Apply(redisResult.Address, func(addr string) string {
 		return fmt.Sprintf("%s:%d", addr, port)
 	}))
+	comp.ClusterId = redisResult.ClusterID
 
-	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{"endpoint": comp.Endpoint}); err != nil {
+	if err := ctx.RegisterResourceOutputs(comp, pulumi.Map{
+		"endpoint":  comp.Endpoint,
+		"clusterId": comp.ClusterId,
+	}); err != nil {
 		return fmt.Errorf("registering outputs for %s: %w", serviceName, err)
 	}
 	return nil

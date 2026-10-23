@@ -81,7 +81,7 @@ func TestConstructScalewayServiceWithImage(t *testing.T) {
 	container := findScalewayType(*records, scalewayContainerType)
 	require.NotNil(t, container, "expected Serverless Container resource")
 	assert.Equal(t, "nginx:latest", container.inputs.Get("registryImage").AsString())
-	assert.Equal(t, 8080.0, container.inputs.Get("port").AsNumber())
+	assert.InDelta(t, 8080.0, container.inputs.Get("port").AsNumber(), 0)
 	assert.Equal(t, "public", container.inputs.Get("privacy").AsString())
 }
 
@@ -120,7 +120,6 @@ func TestConstructScalewayProjectCreatesSharedInfraAndContainer(t *testing.T) {
 	assert.Equal(t, "nginx:latest", container.inputs.Get("registryImage").AsString())
 	assert.Equal(t, "name-private-network", container.inputs.Get("privateNetworkId").AsString())
 }
-
 
 func TestConstructScalewayProjectAllResourcesAreChildren(t *testing.T) {
 	mock, tracker := testutil.NewParentTracker()

@@ -17,10 +17,10 @@ type Postgres struct{}
 type ScalewayPostgresInputs struct {
 	ProjectName string                        `pulumi:"projectName"`
 	Postgres    *compose.PostgresConfig       `pulumi:"postgres,optional"`
-	Image       *string                       `pulumi:"image,optional"`
+	Image       pulumi.StringInput            `pulumi:"image,optional"`
 	Ports       []compose.ServicePortConfig   `pulumi:"ports,optional"`
 	Deploy      *compose.DeployConfig         `pulumi:"deploy,optional"`
-	Environment map[string]*string            `pulumi:"environment,optional"`
+	Environment compose.Environment           `pulumi:"environment,optional"`
 	Scaleway    *providerscaleway.SharedInfra `pulumi:"scaleway,optional"`
 }
 

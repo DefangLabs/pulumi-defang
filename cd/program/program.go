@@ -8,7 +8,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func parseCompose(data []byte, projectName string) (*compose.Project, error) {
@@ -33,6 +33,10 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		if etag == "" {
 			etag = defangCfg.Get("etag")
 		}
+		ttl, err := parseTTL(defangCfg.Get("ttl")) // optional self-destruct; 0 = never
+		if err != nil {
+			return err
+		}
 
 		if len(projectUpdate.Compose) == 0 {
 			return errors.New("ProjectUpdate has no compose field")
@@ -48,11 +52,11 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 
 		switch provider {
 		case "aws":
-			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployAWS(ctx, project, domain, etag, ttl, projectUpdate)
 		case "gcp":
-			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, ttl, defangCfg.Get("cdImage"), projectUpdate)
 		case "azure":
-			endpoints, loadBalancerDns, err = deployAzure(ctx, project, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, ttl, projectUpdate)
 		case "scaleway":
 			endpoints, loadBalancerDns, err = deployScaleway(ctx, project, etag, projectUpdate)
 		default:

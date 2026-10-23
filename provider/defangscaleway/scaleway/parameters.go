@@ -166,12 +166,14 @@ func (cp *ConfigProvider) listSecretsWithContext(ctx context.Context, apiURL, se
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }, error) {
+	//nolint:gosec // Internal caller constructs this URL with the fixed api.scaleway.com host.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-Auth-Token", secretKey)
 
+	//nolint:gosec // The request targets the fixed Scaleway API host above.
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -202,12 +204,14 @@ func (cp *ConfigProvider) accessSecretVersionWithContext(
 		secretID,
 	)
 
+	//nolint:gosec // The URL has a fixed api.scaleway.com host; variables only affect its path.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("X-Auth-Token", secretKey)
 
+	//nolint:gosec // The request targets the fixed Scaleway API host above.
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err

@@ -4,6 +4,18 @@
 
 Pulumi providers that deploy Docker Compose applications to AWS, GCP, and Azure. The repo produces three separate provider binaries (`pulumi-resource-defang-aws`, `pulumi-resource-defang-gcp`, `pulumi-resource-defang-azure`) and generates SDKs for Go, Node.js, Python, and .NET from each provider's schema.
 
+## Reporting bugs
+
+File issues at [github.com/DefangLabs/pulumi-defang/issues](https://github.com/DefangLabs/pulumi-defang/issues). A good report includes:
+
+- Which provider (`defang-aws`, `defang-gcp`, or `defang-azure`) and its version.
+- Pulumi CLI version (`pulumi version`) and language SDK (TypeScript/Python/Go/.NET) with version.
+- A minimal Pulumi program or `compose.yaml` snippet that reproduces the issue (redact secrets).
+- The full error output, including any `pulumi up --logtostderr -v=9` log if the failure is during a deployment.
+- Cloud region and, if relevant, the underlying resource (e.g. `aws_ecs_service`, `google_cloud_run_v2_service`) that the error references.
+
+For suspected security vulnerabilities, please **do not** open a public issue — email security@defang.io instead.
+
 ## Build & test
 
 Common targets (see `make help` for the full list):

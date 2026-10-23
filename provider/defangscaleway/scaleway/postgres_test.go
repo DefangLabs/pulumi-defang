@@ -104,11 +104,11 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 	dbName := "app"
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := CreatePostgres(ctx, &mockConfigProvider{}, "db", compose.ServiceConfig{
-			Image:    ptr("postgres:16"),
+			Image:    compose.ImageFromPtr(ptr("postgres:16")),
 			Postgres: &compose.PostgresConfig{},
-			Environment: map[string]*string{
-				"POSTGRES_PASSWORD": &password,
-				"POSTGRES_DB":       &dbName,
+			Environment: compose.Environment{
+				"POSTGRES_PASSWORD": pulumi.String(password),
+				"POSTGRES_DB":       pulumi.String(dbName),
 			},
 		}, nil)
 		return err
@@ -141,10 +141,10 @@ func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {
 			return err
 		}
 		_, err = CreatePostgres(ctx, &mockConfigProvider{}, "db", compose.ServiceConfig{
-			Image:    ptr("postgres:16"),
+			Image:    compose.ImageFromPtr(ptr("postgres:16")),
 			Postgres: &compose.PostgresConfig{},
-			Environment: map[string]*string{
-				"POSTGRES_PASSWORD": &password,
+			Environment: compose.Environment{
+				"POSTGRES_PASSWORD": pulumi.String(password),
 			},
 		}, &SharedInfra{Zone: "fr-par-1", PrivateNetwork: pn})
 		return err
@@ -164,7 +164,7 @@ func TestPostgresPreviewUsesCommonPlaceholderWithoutCloudCalls(t *testing.T) {
 		assert.True(t, ctx.DryRun())
 		_, err := CreatePostgres(ctx, &compose.DryRunConfigProvider{}, "db", compose.ServiceConfig{
 			Postgres:    &compose.PostgresConfig{},
-			Environment: map[string]*string{"POSTGRES_PASSWORD": nil},
+			Environment: compose.Environment{"POSTGRES_PASSWORD": nil},
 		}, nil)
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks), func(info *pulumi.RunInfo) { info.DryRun = true })

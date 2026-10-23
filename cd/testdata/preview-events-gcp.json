@@ -1,0 +1,3444 @@
+{
+  "events": [
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "preludeEvent": {
+        "config": {
+          "defang:cdImage": "",
+          "defang:etag": "defang",
+          "defang:org": "defang",
+          "defang:provider": "gcp",
+          "defang:stateUrl": "",
+          "defang:version": "development",
+          "gcp:project": "liotest-***",
+          "gcp:region": "us-central1",
+          "pulumi:autonaming": "{\"pattern\":\"Defang-${project}-${stack}-${name}-${hex(7)}\",\"providers\":{\"aws\":{\"resources\":{\"aws:ecr/repository:Repository\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\"},\"aws:ecs/service:Service\":{\"pattern\":\"${name}-${hex(7)}\"},\"aws:elasticache/subnetGroup:SubnetGroup\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\"},\"aws:lb/loadBalancer:LoadBalancer\":{\"pattern\":\"${project}-${stack}-${hex(4)}\"},\"aws:lb/targetGroup:TargetGroup\":{\"pattern\":\"${name}-${hex(4)}\"},\"aws:rds/subnetGroup:SubnetGroup\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\"}}},\"azure-native\":{\"resources\":{\"azure-native:app:ManagedEnvironment\":{\"pattern\":\"Defang-${project}-${stack}-${hex(7)}\"},\"azure-native:containerregistry:Registry\":{\"pattern\":\"${name}${stack}${hex(7)}\"},\"azure-native:containerregistry:Task\":{\"pattern\":\"${name}-${hex(7)}\"}}},\"gcp\":{\"pattern\":\"defang-${project}-${stack}-${name}-${hex(7)}\",\"resources\":{\"gcp:cloudrunv2/service:Service\":{\"pattern\":\"${project}-${stack}-${name}-${hex(7)}\"},\"gcp:redis/instance:Instance\":{\"pattern\":\"${project}-${name}-${hex(7)}\"},\"gcp:serviceaccount/account:Account\":{\"pattern\":\"${name}-${hex(4)}\"}}}}}",
+          "pulumi:disable-default-providers": "[\"aws-native\",\"aws\",\"azure-native\",\"azure\",\"eks\",\"gcp\",\"google-beta\",\"google-native\",\"kubernetes\"]"
+        }
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "diagnosticEvent": {
+        "prefix": "warning: ",
+        "message": "using pulumi-resource-gcp from $PATH at /nix/store/qxmm968fark5xdjbli8ljx9np1sfh15q-pulumi-3.230.0/bin/pulumi-resource-gcp\n",
+        "color": "never",
+        "severity": "warning"
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "diagnosticEvent": {
+        "prefix": "warning: ",
+        "message": "resource plugin gcp is expected to have version \u003e=9.21.0, but has 9.19.0; the wrong version may be on your path, or this may be a bug in the plugin\n",
+        "color": "never",
+        "severity": "warning"
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "diagnosticEvent": {
+        "prefix": "warning: ",
+        "message": "using pulumi-resource-defang-gcp from $PATH at ${HOME}/go/bin/pulumi-resource-defang-gcp\n",
+        "color": "never",
+        "severity": "warning"
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "summaryEvent": {
+        "maybeCorrupt": false,
+        "durationSeconds": 42,
+        "resourceChanges": {
+          "create": 35
+        },
+        "PolicyPacks": {},
+        "isPreview": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "cancelEvent": {},
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:cloudrunv2/service:Service::nginx",
+          "type": "gcp:cloudrunv2/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:cloudrunv2/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:cloudrunv2/service:Service::nginx",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "deletionProtection": false,
+              "ingress": "INGRESS_TRAFFIC_ALL",
+              "invokerIamDisabled": true,
+              "location": "us-central1",
+              "name": "cd-test-gcp-nginx-***",
+              "template": {
+                "__defaults": [],
+                "containers": [
+                  {
+                    "__defaults": [],
+                    "envs": [
+                      {
+                        "__defaults": [],
+                        "name": "DEFANG_SERVICE",
+                        "value": "nginx"
+                      },
+                      {
+                        "__defaults": [],
+                        "name": "DEFANG_ETAG",
+                        "value": "defang"
+                      }
+                    ],
+                    "image": "nginx",
+                    "ports": {
+                      "__defaults": [],
+                      "containerPort": 80
+                    },
+                    "resources": {
+                      "__defaults": []
+                    }
+                  }
+                ],
+                "maxInstanceRequestConcurrency": 80,
+                "scaling": {
+                  "__defaults": [],
+                  "maxInstanceCount": 1
+                },
+                "serviceAccount": "nginx-***@***.iam.gserviceaccount.com",
+                "vpcAccess": {
+                  "__defaults": [],
+                  "egress": "PRIVATE_RANGES_ONLY",
+                  "networkInterfaces": [
+                    {
+                      "__defaults": [],
+                      "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "subnetwork": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                    }
+                  ]
+                }
+              }
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:cloudrunv2/service:Service::nginx",
+          "type": "gcp:cloudrunv2/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:cloudrunv2/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:cloudrunv2/service:Service::nginx",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "deletionProtection": false,
+              "ingress": "INGRESS_TRAFFIC_ALL",
+              "invokerIamDisabled": true,
+              "location": "us-central1",
+              "name": "cd-test-gcp-nginx-***",
+              "template": {
+                "__defaults": [],
+                "containers": [
+                  {
+                    "__defaults": [],
+                    "envs": [
+                      {
+                        "__defaults": [],
+                        "name": "DEFANG_SERVICE",
+                        "value": "nginx"
+                      },
+                      {
+                        "__defaults": [],
+                        "name": "DEFANG_ETAG",
+                        "value": "defang"
+                      }
+                    ],
+                    "image": "nginx",
+                    "ports": {
+                      "__defaults": [],
+                      "containerPort": 80
+                    },
+                    "resources": {
+                      "__defaults": []
+                    }
+                  }
+                ],
+                "maxInstanceRequestConcurrency": 80,
+                "scaling": {
+                  "__defaults": [],
+                  "maxInstanceCount": 1
+                },
+                "serviceAccount": "nginx-***@***.iam.gserviceaccount.com",
+                "vpcAccess": {
+                  "__defaults": [],
+                  "egress": "PRIVATE_RANGES_ONLY",
+                  "networkInterfaces": [
+                    {
+                      "__defaults": [],
+                      "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "subnetwork": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                    }
+                  ]
+                }
+              }
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "annotations": null,
+              "binaryAuthorization": null,
+              "buildConfig": null,
+              "client": null,
+              "clientVersion": null,
+              "conditions": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "createTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "creator": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "customAudiences": null,
+              "defaultUriDisabled": null,
+              "deleteTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "deletionProtection": false,
+              "description": null,
+              "effectiveAnnotations": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "effectiveLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "etag": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "expireTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "generation": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "iapEnabled": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ingress": "INGRESS_TRAFFIC_ALL",
+              "invokerIamDisabled": true,
+              "labels": null,
+              "lastModifier": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "latestCreatedRevision": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "latestReadyRevision": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "launchStage": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "location": "us-central1",
+              "multiRegionSettings": null,
+              "name": "cd-test-gcp-nginx-***",
+              "observedGeneration": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "pulumiLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "reconciling": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "scaling": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "template": {
+                "annotations": null,
+                "containers": [
+                  {
+                    "args": null,
+                    "baseImageUri": null,
+                    "buildInfos": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "commands": null,
+                    "dependsOns": null,
+                    "envs": [
+                      {
+                        "name": "DEFANG_ETAG",
+                        "value": "defang",
+                        "valueSource": null
+                      },
+                      {
+                        "name": "DEFANG_SERVICE",
+                        "value": "nginx",
+                        "valueSource": null
+                      }
+                    ],
+                    "image": "nginx",
+                    "livenessProbe": null,
+                    "name": null,
+                    "ports": {
+                      "containerPort": 80,
+                      "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                    },
+                    "readinessProbe": null,
+                    "resources": {
+                      "cpuIdle": null,
+                      "limits": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "startupCpuBoost": null
+                    },
+                    "sourceCode": null,
+                    "startupProbe": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "volumeMounts": [],
+                    "workingDir": null
+                  }
+                ],
+                "encryptionKey": null,
+                "executionEnvironment": null,
+                "gpuZonalRedundancyDisabled": null,
+                "healthCheckDisabled": null,
+                "labels": null,
+                "maxInstanceRequestConcurrency": 80,
+                "nodeSelector": null,
+                "revision": null,
+                "scaling": {
+                  "maxInstanceCount": 1,
+                  "minInstanceCount": null
+                },
+                "serviceAccount": "nginx-***@***.iam.gserviceaccount.com",
+                "serviceMesh": null,
+                "sessionAffinity": null,
+                "timeout": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "volumes": [],
+                "vpcAccess": {
+                  "connector": null,
+                  "egress": "PRIVATE_RANGES_ONLY",
+                  "networkInterfaces": [
+                    {
+                      "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "subnetwork": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                      "tags": null
+                    }
+                  ]
+                }
+              },
+              "terminalConditions": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "trafficStatuses": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "traffics": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "uid": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "updateTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "uri": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "urls": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:serviceaccount/account:Account::nginx",
+          "type": "gcp:serviceaccount/account:Account",
+          "old": null,
+          "new": {
+            "type": "gcp:serviceaccount/account:Account",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:serviceaccount/account:Account::nginx",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "inputs": {
+              "__defaults": [
+                "accountId",
+                "disabled"
+              ],
+              "accountId": "nginx-***",
+              "description": "Service Account used by run services of cd-test project nginx service in gcp stack",
+              "disabled": false,
+              "displayName": "cd-test service gcp stack nginx Service Account"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:serviceaccount/account:Account::nginx",
+          "type": "gcp:serviceaccount/account:Account",
+          "old": null,
+          "new": {
+            "type": "gcp:serviceaccount/account:Account",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service$gcp:serviceaccount/account:Account::nginx",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "inputs": {
+              "__defaults": [
+                "accountId",
+                "disabled"
+              ],
+              "accountId": "nginx-***",
+              "description": "Service Account used by run services of cd-test project nginx service in gcp stack",
+              "disabled": false,
+              "displayName": "cd-test service gcp stack nginx Service Account"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":300000000000}}",
+              "accountId": "nginx-***",
+              "createIgnoreAlreadyExists": null,
+              "description": "Service Account used by run services of cd-test project nginx service in gcp stack",
+              "disabled": false,
+              "displayName": "cd-test service gcp stack nginx Service Account",
+              "email": "nginx-***@***.iam.gserviceaccount.com",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "member": "serviceAccount:nginx-***@***.iam.gserviceaccount.com",
+              "name": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "uniqueId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+          "type": "defang-gcp:index:Service",
+          "old": null,
+          "new": {
+            "type": "defang-gcp:index:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+          "type": "defang-gcp:index:Service",
+          "old": null,
+          "new": {
+            "type": "defang-gcp:index:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+          "type": "defang-gcp:index:Service",
+          "old": null,
+          "new": {
+            "type": "defang-gcp:index:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$defang-gcp:index:Service::nginx",
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {},
+            "outputs": {
+              "endpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:certificatemanager/certificateMap:CertificateMap::cd-test-cert-map",
+          "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+          "old": null,
+          "new": {
+            "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:certificatemanager/certificateMap:CertificateMap::cd-test-cert-map",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "description": "cd-test public load balancer certificate map",
+              "name": "defang-cd-test-gcp-cd-test-cert-map-***"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:certificatemanager/certificateMap:CertificateMap::cd-test-cert-map",
+          "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+          "old": null,
+          "new": {
+            "type": "gcp:certificatemanager/certificateMap:CertificateMap",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:certificatemanager/certificateMap:CertificateMap::cd-test-cert-map",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "description": "cd-test public load balancer certificate map",
+              "name": "defang-cd-test-gcp-cd-test-cert-map-***"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "createTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": "cd-test public load balancer certificate map",
+              "effectiveLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "gclbTargets": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "labels": null,
+              "name": "defang-cd-test-gcp-cd-test-cert-map-***",
+              "project": "liotest-***",
+              "pulumiLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "updateTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/backendService:BackendService::nginx-backend",
+          "type": "gcp:compute/backendService:BackendService",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/backendService:BackendService",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/backendService:BackendService::nginx-backend",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "connectionDrainingTimeoutSec",
+                "name"
+              ],
+              "backends": [
+                {
+                  "__defaults": [
+                    "balancingMode",
+                    "capacityScaler"
+                  ],
+                  "balancingMode": "UTILIZATION",
+                  "capacityScaler": 1,
+                  "group": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                }
+              ],
+              "connectionDrainingTimeoutSec": 300,
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "name": "defang-cd-test-gcp-nginx-backend-***",
+              "protocol": "HTTPS"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/backendService:BackendService::nginx-backend",
+          "type": "gcp:compute/backendService:BackendService",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/backendService:BackendService",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/backendService:BackendService::nginx-backend",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "connectionDrainingTimeoutSec",
+                "name"
+              ],
+              "backends": [
+                {
+                  "__defaults": [
+                    "balancingMode",
+                    "capacityScaler"
+                  ],
+                  "balancingMode": "UTILIZATION",
+                  "capacityScaler": 1,
+                  "group": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                }
+              ],
+              "connectionDrainingTimeoutSec": 300,
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "name": "defang-cd-test-gcp-nginx-backend-***",
+              "protocol": "HTTPS"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "affinityCookieTtlSec": null,
+              "backends": [
+                {
+                  "balancingMode": "UTILIZATION",
+                  "capacityScaler": 1,
+                  "customMetrics": [],
+                  "description": "",
+                  "group": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxConnections": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxConnectionsPerEndpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxConnectionsPerInstance": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxInFlightRequests": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxInFlightRequestsPerEndpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxInFlightRequestsPerInstance": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxRate": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxRatePerEndpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxRatePerInstance": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "maxUtilization": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "preference": "",
+                  "trafficDuration": ""
+                }
+              ],
+              "cdnPolicy": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "circuitBreakers": null,
+              "compressionMode": null,
+              "connectionDrainingTimeoutSec": 300,
+              "consistentHash": null,
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "customMetrics": [],
+              "customRequestHeaders": null,
+              "customResponseHeaders": null,
+              "description": null,
+              "dynamicForwarding": null,
+              "edgeSecurityPolicy": null,
+              "enableCdn": null,
+              "externalManagedMigrationState": null,
+              "externalManagedMigrationTestingPercentage": null,
+              "fingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "generatedId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "healthChecks": null,
+              "iap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipAddressSelectionPolicy": null,
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "localityLbPolicies": [],
+              "localityLbPolicy": null,
+              "logConfig": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "maxStreamDuration": null,
+              "name": "defang-cd-test-gcp-nginx-backend-***",
+              "networkPassThroughLbTrafficPolicy": null,
+              "outlierDetection": null,
+              "params": null,
+              "portName": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "protocol": "HTTPS",
+              "securityPolicy": null,
+              "securitySettings": null,
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "serviceLbPolicy": null,
+              "sessionAffinity": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "strongSessionAffinityCookie": null,
+              "timeoutSec": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tlsSettings": null
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-icmp",
+          "type": "gcp:compute/firewall:Firewall",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/firewall:Firewall",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-icmp",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name",
+                "priority"
+              ],
+              "allows": [
+                {
+                  "__defaults": [],
+                  "protocol": "icmp"
+                }
+              ],
+              "direction": "INGRESS",
+              "name": "defang-cd-test-gcp-cd-test-allow-icmp-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "priority": 1000,
+              "sourceRanges": [
+                "0.0.0.0/0"
+              ]
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-icmp",
+          "type": "gcp:compute/firewall:Firewall",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/firewall:Firewall",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-icmp",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name",
+                "priority"
+              ],
+              "allows": [
+                {
+                  "__defaults": [],
+                  "protocol": "icmp"
+                }
+              ],
+              "direction": "INGRESS",
+              "name": "defang-cd-test-gcp-cd-test-allow-icmp-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "priority": 1000,
+              "sourceRanges": [
+                "0.0.0.0/0"
+              ]
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "allows": [
+                {
+                  "ports": [],
+                  "protocol": "icmp"
+                }
+              ],
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "denies": [],
+              "description": null,
+              "destinationRanges": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "direction": "INGRESS",
+              "disabled": null,
+              "enableLogging": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "logConfig": null,
+              "name": "defang-cd-test-gcp-cd-test-allow-icmp-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "params": null,
+              "priority": 1000,
+              "project": "liotest-***",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "sourceRanges": [
+                "0.0.0.0/0"
+              ],
+              "sourceServiceAccounts": null,
+              "sourceTags": null,
+              "targetServiceAccounts": null,
+              "targetTags": null
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-ssh",
+          "type": "gcp:compute/firewall:Firewall",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/firewall:Firewall",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-ssh",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name",
+                "priority"
+              ],
+              "allows": [
+                {
+                  "__defaults": [],
+                  "ports": [
+                    "22"
+                  ],
+                  "protocol": "tcp"
+                }
+              ],
+              "direction": "INGRESS",
+              "name": "defang-cd-test-gcp-cd-test-allow-ssh-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "priority": 1000,
+              "sourceRanges": [
+                "0.0.0.0/0"
+              ]
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-ssh",
+          "type": "gcp:compute/firewall:Firewall",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/firewall:Firewall",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/firewall:Firewall::cd-test-allow-ssh",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name",
+                "priority"
+              ],
+              "allows": [
+                {
+                  "__defaults": [],
+                  "ports": [
+                    "22"
+                  ],
+                  "protocol": "tcp"
+                }
+              ],
+              "direction": "INGRESS",
+              "name": "defang-cd-test-gcp-cd-test-allow-ssh-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "priority": 1000,
+              "sourceRanges": [
+                "0.0.0.0/0"
+              ]
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "allows": [
+                {
+                  "ports": [
+                    "22"
+                  ],
+                  "protocol": "tcp"
+                }
+              ],
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "denies": [],
+              "description": null,
+              "destinationRanges": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "direction": "INGRESS",
+              "disabled": null,
+              "enableLogging": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "logConfig": null,
+              "name": "defang-cd-test-gcp-cd-test-allow-ssh-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "params": null,
+              "priority": 1000,
+              "project": "liotest-***",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "sourceRanges": [
+                "0.0.0.0/0"
+              ],
+              "sourceServiceAccounts": null,
+              "sourceTags": null,
+              "targetServiceAccounts": null,
+              "targetTags": null
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalAddress:GlobalAddress::cd-test-ip",
+          "type": "gcp:compute/globalAddress:GlobalAddress",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/globalAddress:GlobalAddress",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalAddress:GlobalAddress::cd-test-ip",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "addressType": "EXTERNAL",
+              "name": "defang-cd-test-gcp-cd-test-ip-***"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalAddress:GlobalAddress::cd-test-ip",
+          "type": "gcp:compute/globalAddress:GlobalAddress",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/globalAddress:GlobalAddress",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalAddress:GlobalAddress::cd-test-ip",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "addressType": "EXTERNAL",
+              "name": "defang-cd-test-gcp-cd-test-ip-***"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "address": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "addressType": null,
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": null,
+              "effectiveLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipVersion": null,
+              "labelFingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "labels": null,
+              "name": "defang-cd-test-gcp-cd-test-ip-***",
+              "network": null,
+              "prefixLength": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "pulumiLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "purpose": null,
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-http-rule",
+          "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-http-rule",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "ipAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipProtocol": "TCP",
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "name": "defang-cd-test-gcp-cd-test-http-rule-***",
+              "portRange": "80",
+              "target": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-http-rule",
+          "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-http-rule",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "ipAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipProtocol": "TCP",
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "name": "defang-cd-test-gcp-cd-test-http-rule-***",
+              "portRange": "80",
+              "target": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "allowPscGlobalAccess": null,
+              "baseForwardingRule": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": null,
+              "effectiveLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "externalManagedBackendBucketMigrationState": null,
+              "externalManagedBackendBucketMigrationTestingPercentage": null,
+              "forwardingRuleId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipProtocol": "TCP",
+              "ipVersion": null,
+              "labelFingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "labels": null,
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "metadataFilters": [],
+              "name": "defang-cd-test-gcp-cd-test-http-rule-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "networkTier": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "noAutomateDnsZone": null,
+              "portRange": "80",
+              "project": "liotest-***",
+              "pscConnectionId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "pscConnectionStatus": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "pulumiLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "serviceDirectoryRegistrations": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "sourceIpRanges": null,
+              "subnetwork": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "target": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-https-rule",
+          "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-https-rule",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "ipAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "name": "defang-cd-test-gcp-cd-test-https-rule-***",
+              "portRange": "443",
+              "target": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-https-rule",
+          "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/globalForwardingRule:GlobalForwardingRule",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/globalForwardingRule:GlobalForwardingRule::cd-test-https-rule",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "ipAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "name": "defang-cd-test-gcp-cd-test-https-rule-***",
+              "portRange": "443",
+              "target": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "allowPscGlobalAccess": null,
+              "baseForwardingRule": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": null,
+              "effectiveLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "externalManagedBackendBucketMigrationState": null,
+              "externalManagedBackendBucketMigrationTestingPercentage": null,
+              "forwardingRuleId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipProtocol": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipVersion": null,
+              "labelFingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "labels": null,
+              "loadBalancingScheme": "EXTERNAL_MANAGED",
+              "metadataFilters": [],
+              "name": "defang-cd-test-gcp-cd-test-https-rule-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "networkTier": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "noAutomateDnsZone": null,
+              "portRange": "443",
+              "project": "liotest-***",
+              "pscConnectionId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "pscConnectionStatus": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "pulumiLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "serviceDirectoryRegistrations": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "sourceIpRanges": null,
+              "subnetwork": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "target": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc",
+          "type": "gcp:compute/network:Network",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/network:Network",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [
+                "deleteBgpAlwaysCompareMed",
+                "deleteDefaultRoutesOnCreate",
+                "name",
+                "networkFirewallPolicyEnforcementOrder"
+              ],
+              "autoCreateSubnetworks": false,
+              "deleteBgpAlwaysCompareMed": false,
+              "deleteDefaultRoutesOnCreate": false,
+              "name": "defang-cd-test-gcp-cd-test-vpc-***",
+              "networkFirewallPolicyEnforcementOrder": "AFTER_CLASSIC_FIREWALL"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc",
+          "type": "gcp:compute/network:Network",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/network:Network",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/network:Network::cd-test-vpc",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [
+                "deleteBgpAlwaysCompareMed",
+                "deleteDefaultRoutesOnCreate",
+                "name",
+                "networkFirewallPolicyEnforcementOrder"
+              ],
+              "autoCreateSubnetworks": false,
+              "deleteBgpAlwaysCompareMed": false,
+              "deleteDefaultRoutesOnCreate": false,
+              "name": "defang-cd-test-gcp-cd-test-vpc-***",
+              "networkFirewallPolicyEnforcementOrder": "AFTER_CLASSIC_FIREWALL"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "autoCreateSubnetworks": false,
+              "bgpAlwaysCompareMed": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "bgpBestPathSelectionMode": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "bgpInterRegionCost": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "deleteBgpAlwaysCompareMed": false,
+              "deleteDefaultRoutesOnCreate": false,
+              "description": null,
+              "enableUlaInternalIpv6": null,
+              "gatewayIpv4": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "internalIpv6Range": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "mtu": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-vpc-***",
+              "networkFirewallPolicyEnforcementOrder": "AFTER_CLASSIC_FIREWALL",
+              "networkId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "networkProfile": null,
+              "numericId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "params": null,
+              "project": "liotest-***",
+              "routingMode": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::nginx-neg",
+          "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::nginx-neg",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "cloudRun": {
+                "__defaults": [],
+                "service": "cd-test-gcp-nginx-***"
+              },
+              "name": "defang-cd-test-gcp-nginx-neg-***",
+              "networkEndpointType": "SERVERLESS",
+              "region": "us-central1"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::nginx-neg",
+          "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup::nginx-neg",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "cloudRun": {
+                "__defaults": [],
+                "service": "cd-test-gcp-nginx-***"
+              },
+              "name": "defang-cd-test-gcp-nginx-neg-***",
+              "networkEndpointType": "SERVERLESS",
+              "region": "us-central1"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000}}",
+              "appEngine": null,
+              "cloudFunction": null,
+              "cloudRun": {
+                "service": "cd-test-gcp-nginx-***",
+                "tag": null,
+                "urlMask": null
+              },
+              "description": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-nginx-neg-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "networkEndpointType": "SERVERLESS",
+              "project": "liotest-***",
+              "pscData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "pscTargetService": null,
+              "region": "us-central1",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "serverlessDeployment": null,
+              "subnetwork": null
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::cd-test-subnet",
+          "type": "gcp:compute/subnetwork:Subnetwork",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/subnetwork:Subnetwork",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::cd-test-subnet",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "ipCidrRange": "10.0.0.0/16",
+              "name": "defang-cd-test-gcp-cd-test-subnet-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "region": "us-central1"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::cd-test-subnet",
+          "type": "gcp:compute/subnetwork:Subnetwork",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/subnetwork:Subnetwork",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/subnetwork:Subnetwork::cd-test-subnet",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "ipCidrRange": "10.0.0.0/16",
+              "name": "defang-cd-test-gcp-cd-test-subnet-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "region": "us-central1"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "allowSubnetCidrRoutesOverlap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": null,
+              "externalIpv6Prefix": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "fingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "gatewayAddress": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "internalIpv6Prefix": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipCidrRange": "10.0.0.0/16",
+              "ipCollection": null,
+              "ipv6AccessType": null,
+              "ipv6CidrRange": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "ipv6GceEndpoint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "logConfig": null,
+              "name": "defang-cd-test-gcp-cd-test-subnet-***",
+              "network": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "params": null,
+              "privateIpGoogleAccess": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "privateIpv6GoogleAccess": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "purpose": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "region": "us-central1",
+              "reservedInternalRange": null,
+              "resolveSubnetMask": null,
+              "role": null,
+              "secondaryIpRanges": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "sendSecondaryIpRangeIfEmpty": null,
+              "stackType": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "state": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "subnetworkId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpProxy:TargetHttpProxy::cd-test-http-proxy",
+          "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpProxy:TargetHttpProxy::cd-test-http-proxy",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "name": "defang-cd-test-gcp-cd-test-http-proxy-***",
+              "urlMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpProxy:TargetHttpProxy::cd-test-http-proxy",
+          "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/targetHttpProxy:TargetHttpProxy",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpProxy:TargetHttpProxy::cd-test-http-proxy",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "name": "defang-cd-test-gcp-cd-test-http-proxy-***",
+              "urlMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": null,
+              "fingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "httpKeepAliveTimeoutSec": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-http-proxy-***",
+              "project": "liotest-***",
+              "proxyBind": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "proxyId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "urlMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpsProxy:TargetHttpsProxy::cd-test-https-proxy",
+          "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpsProxy:TargetHttpsProxy::cd-test-https-proxy",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name",
+                "quicOverride"
+              ],
+              "certificateMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-https-proxy-***",
+              "quicOverride": "NONE",
+              "urlMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpsProxy:TargetHttpsProxy::cd-test-https-proxy",
+          "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/targetHttpsProxy:TargetHttpsProxy",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/targetHttpsProxy:TargetHttpsProxy::cd-test-https-proxy",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name",
+                "quicOverride"
+              ],
+              "certificateMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-https-proxy-***",
+              "quicOverride": "NONE",
+              "urlMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "certificateManagerCertificates": null,
+              "certificateMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": null,
+              "fingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "httpKeepAliveTimeoutSec": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-https-proxy-***",
+              "project": "liotest-***",
+              "proxyBind": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "proxyId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "quicOverride": "NONE",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "serverTlsPolicy": null,
+              "sslCertificates": null,
+              "sslPolicy": null,
+              "tlsEarlyData": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "urlMap": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-http-urlmap",
+          "type": "gcp:compute/uRLMap:URLMap",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/uRLMap:URLMap",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-http-urlmap",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "defaultUrlRedirect": {
+                "__defaults": [],
+                "httpsRedirect": true,
+                "redirectResponseCode": "MOVED_PERMANENTLY_DEFAULT",
+                "stripQuery": false
+              },
+              "name": "defang-cd-test-gcp-cd-test-http-urlmap-***"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-http-urlmap",
+          "type": "gcp:compute/uRLMap:URLMap",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/uRLMap:URLMap",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-http-urlmap",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "defaultUrlRedirect": {
+                "__defaults": [],
+                "httpsRedirect": true,
+                "redirectResponseCode": "MOVED_PERMANENTLY_DEFAULT",
+                "stripQuery": false
+              },
+              "name": "defang-cd-test-gcp-cd-test-http-urlmap-***"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "defaultCustomErrorResponsePolicy": null,
+              "defaultRouteAction": null,
+              "defaultService": null,
+              "defaultUrlRedirect": {
+                "hostRedirect": null,
+                "httpsRedirect": true,
+                "pathRedirect": null,
+                "prefixRedirect": null,
+                "redirectResponseCode": "MOVED_PERMANENTLY_DEFAULT",
+                "stripQuery": false
+              },
+              "description": null,
+              "fingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "headerAction": null,
+              "hostRules": [],
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "mapId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-http-urlmap-***",
+              "pathMatchers": [],
+              "project": "liotest-***",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tests": []
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-urlmap",
+          "type": "gcp:compute/uRLMap:URLMap",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/uRLMap:URLMap",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-urlmap",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "defaultService": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-urlmap-***",
+              "pathMatchers": [
+                {
+                  "__defaults": [],
+                  "defaultService": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "name": "nginx"
+                }
+              ]
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-urlmap",
+          "type": "gcp:compute/uRLMap:URLMap",
+          "old": null,
+          "new": {
+            "type": "gcp:compute/uRLMap:URLMap",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:compute/uRLMap:URLMap::cd-test-urlmap",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "name"
+              ],
+              "defaultService": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-urlmap-***",
+              "pathMatchers": [
+                {
+                  "__defaults": [],
+                  "defaultService": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "name": "nginx"
+                }
+              ]
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "creationTimestamp": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "defaultCustomErrorResponsePolicy": null,
+              "defaultRouteAction": null,
+              "defaultService": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "defaultUrlRedirect": null,
+              "description": null,
+              "fingerprint": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "headerAction": null,
+              "hostRules": [],
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "mapId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-urlmap-***",
+              "pathMatchers": [
+                {
+                  "defaultCustomErrorResponsePolicy": null,
+                  "defaultRouteAction": null,
+                  "defaultService": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                  "defaultUrlRedirect": null,
+                  "description": null,
+                  "headerAction": null,
+                  "name": "nginx",
+                  "pathRules": [],
+                  "routeRules": []
+                }
+              ],
+              "project": "liotest-***",
+              "selfLink": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "tests": []
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:dns/managedZone:ManagedZone::cd-test-private-dns",
+          "type": "gcp:dns/managedZone:ManagedZone",
+          "old": null,
+          "new": {
+            "type": "gcp:dns/managedZone:ManagedZone",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:dns/managedZone:ManagedZone::cd-test-private-dns",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "forceDestroy",
+                "name"
+              ],
+              "description": "Private DNS zone for cd-test",
+              "dnsName": "google.internal.",
+              "forceDestroy": false,
+              "name": "defang-cd-test-gcp-cd-test-private-dns-***",
+              "privateVisibilityConfig": {
+                "__defaults": [],
+                "networks": [
+                  {
+                    "__defaults": [],
+                    "networkUrl": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                  }
+                ]
+              },
+              "visibility": "private"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:dns/managedZone:ManagedZone::cd-test-private-dns",
+          "type": "gcp:dns/managedZone:ManagedZone",
+          "old": null,
+          "new": {
+            "type": "gcp:dns/managedZone:ManagedZone",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:dns/managedZone:ManagedZone::cd-test-private-dns",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "inputs": {
+              "__defaults": [
+                "forceDestroy",
+                "name"
+              ],
+              "description": "Private DNS zone for cd-test",
+              "dnsName": "google.internal.",
+              "forceDestroy": false,
+              "name": "defang-cd-test-gcp-cd-test-private-dns-***",
+              "privateVisibilityConfig": {
+                "__defaults": [],
+                "networks": [
+                  {
+                    "__defaults": [],
+                    "networkUrl": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                  }
+                ]
+              },
+              "visibility": "private"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"update\":1200000000000}}",
+              "cloudLoggingConfig": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "creationTime": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "description": "Private DNS zone for cd-test",
+              "dnsName": "google.internal.",
+              "dnssecConfig": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "effectiveLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "forceDestroy": false,
+              "forwardingConfig": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "labels": null,
+              "managedZoneId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "name": "defang-cd-test-gcp-cd-test-private-dns-***",
+              "nameServers": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "peeringConfig": null,
+              "privateVisibilityConfig": {
+                "gkeClusters": [],
+                "networks": [
+                  {
+                    "networkUrl": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                  }
+                ]
+              },
+              "project": "liotest-***",
+              "pulumiLabels": {
+                "4dabf18193072939515e22adb298388d": "1b47061264138c4ac30d75fd1eb44270",
+                "ciphertext": "[secret]"
+              },
+              "reverseLookup": null,
+              "serviceDirectoryConfig": null,
+              "visibility": "private"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::artifactregistry.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::artifactregistry.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "artifactregistry.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::artifactregistry.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::artifactregistry.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "artifactregistry.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "artifactregistry.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::certificatemanager.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::certificatemanager.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "certificatemanager.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::certificatemanager.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::certificatemanager.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "certificatemanager.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "certificatemanager.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudbuild.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudbuild.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "cloudbuild.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudbuild.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudbuild.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "cloudbuild.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "cloudbuild.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudresourcemanager.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudresourcemanager.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "cloudresourcemanager.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudresourcemanager.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::cloudresourcemanager.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "cloudresourcemanager.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "cloudresourcemanager.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::compute.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::compute.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "compute.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::compute.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::compute.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "compute.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "compute.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::dns.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::dns.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "dns.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::dns.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::dns.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "dns.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "dns.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::firestore.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::firestore.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "firestore.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::firestore.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::firestore.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "firestore.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "firestore.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::iam.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::iam.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "iam.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::iam.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::iam.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "iam.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "iam.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::redis.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::redis.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "redis.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::redis.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::redis.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "redis.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "redis.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::run.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::run.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "run.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::run.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::run.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "run.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "run.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::secretmanager.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::secretmanager.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "secretmanager.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::secretmanager.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::secretmanager.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "secretmanager.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "secretmanager.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::servicenetworking.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::servicenetworking.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "servicenetworking.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::servicenetworking.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::servicenetworking.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "servicenetworking.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "servicenetworking.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::sqladmin.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::sqladmin.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "sqladmin.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::sqladmin.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::sqladmin.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "sqladmin.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "sqladmin.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::storage.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::storage.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "storage.googleapis.com"
+            },
+            "outputs": {},
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::storage.googleapis.com",
+          "type": "gcp:projects/service:Service",
+          "old": null,
+          "new": {
+            "type": "gcp:projects/service:Service",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project$gcp:projects/service:Service::storage.googleapis.com",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "retainOnDelete": true,
+            "inputs": {
+              "__defaults": [],
+              "project": "liotest-***",
+              "service": "storage.googleapis.com"
+            },
+            "outputs": {
+              "__meta": "{\"_new_extra_shim\":{},\"e2bfb730-ecaa-11e6-8f88-34363bc7c4c0\":{\"create\":1200000000000,\"delete\":1200000000000,\"read\":600000000000,\"update\":1200000000000}}",
+              "checkIfServiceHasUsageOnDestroy": null,
+              "disableDependentServices": null,
+              "disableOnDestroy": null,
+              "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "project": "liotest-***",
+              "service": "storage.googleapis.com"
+            },
+            "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp::04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+          "type": "defang-gcp:index:Project",
+          "old": null,
+          "new": {
+            "type": "defang-gcp:index:Project",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+          "type": "defang-gcp:index:Project",
+          "old": null,
+          "new": {
+            "type": "defang-gcp:index:Project",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+          "type": "defang-gcp:index:Project",
+          "old": null,
+          "new": {
+            "type": "defang-gcp:index:Project",
+            "urn": "urn:pulumi:gcp::cd-test::defang-gcp:index:Project::cd-test",
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "inputs": {},
+            "outputs": {
+              "endpoints": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "loadBalancerDns": ""
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default_github_/api.github.com/DefangLabs/pulumi-defang",
+          "type": "pulumi:providers:defang-gcp",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:defang-gcp",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default_github_/api.github.com/DefangLabs/pulumi-defang",
+            "custom": true,
+            "id": "",
+            "parent": "",
+            "inputs": {
+              "__internal": {
+                "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang"
+              },
+              "__pulumi-go-provider-version": "1.2.0"
+            },
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default_github_/api.github.com/DefangLabs/pulumi-defang",
+          "type": "pulumi:providers:defang-gcp",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:defang-gcp",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:defang-gcp::default_github_/api.github.com/DefangLabs/pulumi-defang",
+            "custom": true,
+            "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "parent": "",
+            "inputs": {
+              "__internal": {
+                "pluginDownloadURL": "github://api.github.com/DefangLabs/pulumi-defang"
+              },
+              "__pulumi-go-provider-version": "1.2.0"
+            },
+            "outputs": {
+              "__pulumi-go-provider-version": "1.2.0"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp",
+          "type": "pulumi:providers:gcp",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:gcp",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp",
+            "custom": true,
+            "id": "",
+            "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "inputs": {
+              "__internal": {},
+              "defaultLabels": "{\"defang-etag\":\"defang\",\"defang-org\":\"lionello\",\"defang-project\":\"cd-test\",\"defang-stack\":\"gcp\"}",
+              "project": "liotest-***",
+              "region": "us-central1",
+              "version": "9.21.0"
+            },
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp",
+          "type": "pulumi:providers:gcp",
+          "old": null,
+          "new": {
+            "type": "pulumi:providers:gcp",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:providers:gcp::gcp",
+            "custom": true,
+            "id": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "parent": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "inputs": {
+              "__internal": {},
+              "defaultLabels": "{\"defang-etag\":\"defang\",\"defang-org\":\"lionello\",\"defang-project\":\"cd-test\",\"defang-stack\":\"gcp\"}",
+              "project": "liotest-***",
+              "region": "us-central1",
+              "version": "9.21.0"
+            },
+            "outputs": {
+              "defaultLabels": "{\"defang-etag\":\"defang\",\"defang-org\":\"lionello\",\"defang-project\":\"cd-test\",\"defang-stack\":\"gcp\"}",
+              "project": "liotest-***",
+              "region": "us-central1",
+              "version": "9.21.0"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resourcePreEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+          "type": "pulumi:pulumi:Stack",
+          "old": null,
+          "new": {
+            "type": "pulumi:pulumi:Stack",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "id": "",
+            "parent": "",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+          "type": "pulumi:pulumi:Stack",
+          "old": null,
+          "new": {
+            "type": "pulumi:pulumi:Stack",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "id": "",
+            "parent": "",
+            "inputs": {},
+            "outputs": {},
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    },
+    {
+      "sequence": 42,
+      "timestamp": 42,
+      "resOutputsEvent": {
+        "metadata": {
+          "op": "create",
+          "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+          "type": "pulumi:pulumi:Stack",
+          "old": null,
+          "new": {
+            "type": "pulumi:pulumi:Stack",
+            "urn": "urn:pulumi:gcp::cd-test::pulumi:pulumi:Stack::cd-test-gcp",
+            "id": "",
+            "parent": "",
+            "inputs": {},
+            "outputs": {
+              "endpoints": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+              "loadBalancerDns": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+            },
+            "provider": ""
+          },
+          "detailedDiff": null,
+          "logical": true,
+          "provider": ""
+        },
+        "planning": true
+      },
+      "Error": null
+    }
+  ]
+}
