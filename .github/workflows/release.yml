@@ -37,6 +37,8 @@ env:
   AZURE_REPO: defang.azurecr.io/cd
   # Defang public registry (from GCP SharedServices account)
   GCP_REPO: us-central1-docker.pkg.dev/defang-io/public/cd
+  # Defang public registry (from Scaleway SharedServices project)
+  SCALEWAY_REPO: rg.fr-par.scw.cloud/defang/cd
 
 jobs:
   publish_binary:
@@ -137,6 +139,7 @@ jobs:
           - aws
           - gcp
           - azure
+          - scaleway
 
   regenerate_examples:
     name: Regenerate Examples
@@ -203,7 +206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        clouds: [aws, gcp, azure] # skip 'all' because we only ever deploy cloud X to X
+        clouds: [aws, gcp, azure, scaleway] # skip 'all' because we only ever deploy cloud X to X
     steps:
       - name: Checkout Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -255,6 +258,14 @@ jobs:
         if: matrix.clouds == 'gcp' || matrix.clouds == 'all'
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
+      - name: Log in to Scaleway Container Registry
+        if: matrix.clouds == 'scaleway' || matrix.clouds == 'all'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: rg.fr-par.scw.cloud
+          username: nologin
+          password: ${{ secrets.SCW_SECRET_KEY }}
+
       - name: Compute image tags
         run: |
           TAG="${{ github.ref_name }}-${{ matrix.clouds }}"
@@ -263,9 +274,11 @@ jobs:
             aws)   TAGS+=$'\n'"${AWS_REPO}:${TAG}" ;;
             azure) TAGS+=$'\n'"${AZURE_REPO}:${TAG}" ;;
             gcp)   TAGS+=$'\n'"${GCP_REPO}:${TAG}" ;;
+            scaleway) TAGS+=$'\n'"${SCALEWAY_REPO}:${TAG}" ;;
             all)   TAGS+=$'\n'"${AWS_REPO}:${TAG}"
                    TAGS+=$'\n'"${AZURE_REPO}:${TAG}"
-                   TAGS+=$'\n'"${GCP_REPO}:${TAG}" ;;
+                   TAGS+=$'\n'"${GCP_REPO}:${TAG}"
+                   TAGS+=$'\n'"${SCALEWAY_REPO}:${TAG}" ;;
           esac
           # Use multiline env var syntax
           {
@@ -313,3 +326,4 @@ jobs:
           cd_image_aws: ${{ env.AWS_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_azure: ${{ env.AZURE_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_gcp: ${{ env.GCP_REPO }}@${{ steps.build-push.outputs.digest }}
+          cd_image_scaleway: ${{ env.SCALEWAY_REPO }}@${{ steps.build-push.outputs.digest }}

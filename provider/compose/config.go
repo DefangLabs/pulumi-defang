@@ -33,6 +33,7 @@ func ConfigNotFoundOutput(key string) pulumi.StringOutput {
 	}).(pulumi.StringOutput)
 }
 
+// DryRunConfigProvider returns placeholder values during preview (dry-run).
 type DryRunConfigProvider struct{}
 
 // GetConfigValue returns a dummy config value for dry runs.

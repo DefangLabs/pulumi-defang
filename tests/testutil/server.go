@@ -6,6 +6,7 @@ import (
 	defangaws "github.com/DefangLabs/pulumi-defang/provider/defangaws"
 	defangazure "github.com/DefangLabs/pulumi-defang/provider/defangazure"
 	defanggcp "github.com/DefangLabs/pulumi-defang/provider/defanggcp"
+	defangscaleway "github.com/DefangLabs/pulumi-defang/provider/defangscaleway"
 	"github.com/blang/semver"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/integration"
@@ -21,6 +22,10 @@ func MakeAzureTestServer(opts ...integration.ServerOption) integration.Server {
 
 func MakeGcpTestServer(opts ...integration.ServerOption) integration.Server {
 	return MustNewServer(defanggcp.Name, defanggcp.Provider(), opts...)
+}
+
+func MakeScalewayTestServer(opts ...integration.ServerOption) integration.Server {
+	return MustNewServer(defangscaleway.Name, defangscaleway.Provider(), opts...)
 }
 
 func MustNewServer(name string, provider p.Provider, opts ...integration.ServerOption) integration.Server {

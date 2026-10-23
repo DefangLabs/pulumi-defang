@@ -201,6 +201,8 @@ func addStackConfigFromEnv(config configMap) error {
 	// that pass the generic REGION var for their own region fallback below —
 	// this is exactly what "conflicting cloud providers configured" fired on.
 	awsRegion := os.Getenv("AWS_REGION")
+	scwProject := os.Getenv("SCW_DEFAULT_PROJECT_ID")
+	scwRegion := getenv("SCW_DEFAULT_REGION", "fr-par")
 	azureLocation := getenv("AZURE_LOCATION", region)         // Azure only
 	azureSubscriptionId := os.Getenv("AZURE_SUBSCRIPTION_ID") // Azure only; the project RG and Key Vault names are derived from (project, stack, location) and (subscription, RG) respectively — see provider/defangazure/azure/azure.go
 	cdImage := os.Getenv("DEFANG_CD_IMAGE")                   // GCP only; for cleanup
@@ -223,7 +225,12 @@ func addStackConfigFromEnv(config configMap) error {
 
 	// Cloud provider config read by the explicit providers in the program
 	var providers []string
-	if awsRegion != "" {
+	// Scaleway sets AWS_REGION for its S3-compatible state backend.
+	if scwProject != "" {
+		providers = append(providers, "scaleway")
+		config["scaleway:projectId"] = configValue{Value: scwProject}
+		config["scaleway:region"] = configValue{Value: scwRegion}
+	} else if awsRegion != "" {
 		providers = append(providers, "aws")
 		config["aws:region"] = configValue{Value: awsRegion}
 		if awsProfile != "" {
@@ -263,7 +270,8 @@ func addStackConfigFromEnv(config configMap) error {
 	}
 
 	if len(providers) == 0 {
-		return &usageError{msg: "no cloud provider configured: set AWS_REGION, GCLOUD_PROJECT, or AZURE_SUBSCRIPTION_ID environment variable"}
+		return &usageError{msg: "no cloud provider configured: set AWS_REGION, GCLOUD_PROJECT, " +
+			"AZURE_SUBSCRIPTION_ID, or SCW_DEFAULT_PROJECT_ID environment variable"}
 	} else if len(providers) > 1 {
 		return &usageError{msg: fmt.Sprintf("conflicting cloud providers configured: %v", providers)}
 	}

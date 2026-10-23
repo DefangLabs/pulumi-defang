@@ -27,7 +27,7 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
 		defangCfg := config.New(ctx, "defang")
 
-		provider := defangCfg.Require("provider") // "aws", "gcp", or "azure"
+		provider := defangCfg.Require("provider") // "aws", "gcp", "azure", or "scaleway"
 		domain := defangCfg.Get("domain")         // optional project domain
 		etag := projectUpdate.Etag                // deployment identifier
 		if etag == "" {
@@ -57,8 +57,10 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 			endpoints, loadBalancerDns, err = deployGCP(ctx, project, etag, ttl, defangCfg.Get("cdImage"), projectUpdate)
 		case "azure":
 			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, ttl, projectUpdate)
+		case "scaleway":
+			endpoints, loadBalancerDns, err = deployScaleway(ctx, project, etag, projectUpdate)
 		default:
-			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, or azure)", provider)
+			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, azure, or scaleway)", provider)
 		}
 		if err != nil {
 			return err

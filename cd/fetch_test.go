@@ -74,3 +74,25 @@ func TestFetchPayloadHTTP(t *testing.T) {
 		t.Errorf("got %q, want %q", got, body)
 	}
 }
+
+func TestFetchScalewayS3Endpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/state-bucket/project/project.pb" {
+			t.Errorf("unexpected S3 path %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte("project payload"))
+	}))
+	defer srv.Close()
+	t.Setenv("S3_ENDPOINT", srv.URL)
+	t.Setenv("AWS_REGION", "fr-par")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-access")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	data, err := fetchS3(t.Context(), "s3://state-bucket/project/project.pb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "project payload" {
+		t.Fatalf("unexpected payload %q", data)
+	}
+}

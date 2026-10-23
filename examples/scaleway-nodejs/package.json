@@ -1,0 +1,10 @@
+{
+	"name": "defang-scaleway",
+	"devDependencies": {
+		"@types/node": "latest"
+	},
+	"dependencies": {
+		"@pulumi/pulumi": "^3.0.0",
+		"@defang-io/pulumi-defang-scaleway": "2.0.0-beta.5"
+	}
+}
