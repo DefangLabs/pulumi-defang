@@ -372,6 +372,12 @@
         "image": {
           "type": "string"
         },
+        "logSelector": {
+          "type": "string"
+        },
+        "logsEndpoint": {
+          "type": "string"
+        },
         "maxWaitTime": {
           "type": "integer"
         },

@@ -15,17 +15,19 @@ import (
 type Build struct {
 	pulumi.CustomResourceState
 
-	BuildArgs   pulumi.StringMapOutput   `pulumi:"buildArgs"`
-	BuildId     pulumi.StringOutput      `pulumi:"buildId"`
-	Destination pulumi.StringOutput      `pulumi:"destination"`
-	Dockerfile  pulumi.StringPtrOutput   `pulumi:"dockerfile"`
-	Image       pulumi.StringOutput      `pulumi:"image"`
-	MaxWaitTime pulumi.IntPtrOutput      `pulumi:"maxWaitTime"`
-	ProjectId   pulumi.StringOutput      `pulumi:"projectId"`
-	Region      pulumi.StringOutput      `pulumi:"region"`
-	Source      pulumi.StringOutput      `pulumi:"source"`
-	Target      pulumi.StringPtrOutput   `pulumi:"target"`
-	Triggers    pulumi.StringArrayOutput `pulumi:"triggers"`
+	BuildArgs    pulumi.StringMapOutput   `pulumi:"buildArgs"`
+	BuildId      pulumi.StringOutput      `pulumi:"buildId"`
+	Destination  pulumi.StringOutput      `pulumi:"destination"`
+	Dockerfile   pulumi.StringPtrOutput   `pulumi:"dockerfile"`
+	Image        pulumi.StringOutput      `pulumi:"image"`
+	LogSelector  pulumi.StringPtrOutput   `pulumi:"logSelector"`
+	LogsEndpoint pulumi.StringPtrOutput   `pulumi:"logsEndpoint"`
+	MaxWaitTime  pulumi.IntPtrOutput      `pulumi:"maxWaitTime"`
+	ProjectId    pulumi.StringOutput      `pulumi:"projectId"`
+	Region       pulumi.StringOutput      `pulumi:"region"`
+	Source       pulumi.StringOutput      `pulumi:"source"`
+	Target       pulumi.StringPtrOutput   `pulumi:"target"`
+	Triggers     pulumi.StringArrayOutput `pulumi:"triggers"`
 }
 
 // NewBuild registers a new resource with the given unique name, arguments, and options.
@@ -159,6 +161,14 @@ func (o BuildOutput) Dockerfile() pulumi.StringPtrOutput {
 
 func (o BuildOutput) Image() pulumi.StringOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.Image }).(pulumi.StringOutput)
+}
+
+func (o BuildOutput) LogSelector() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.LogSelector }).(pulumi.StringPtrOutput)
+}
+
+func (o BuildOutput) LogsEndpoint() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.LogsEndpoint }).(pulumi.StringPtrOutput)
 }
 
 func (o BuildOutput) MaxWaitTime() pulumi.IntPtrOutput {
