@@ -3,12 +3,14 @@ package defangscaleway
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -19,13 +21,45 @@ import (
 )
 
 var (
-	ErrBuildFailed  = errors.New("build failed")
-	ErrBuildTimeout = errors.New("build timed out")
-	errScalewayAPI  = errors.New("scaleway API error")
-	errNoJobRuns    = errors.New("no job runs returned from start")
+	ErrBuildFailed           = errors.New("build failed")
+	ErrBuildTimeout          = errors.New("build timed out")
+	errScalewayAPI           = errors.New("scaleway API error")
+	errMissingAWSCredentials = errors.New("AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY not set")
 )
 
-// Build is a custom resource that triggers a Kaniko build via Scaleway Serverless Jobs.
+// defaultBuildInstanceType is the Compute Instance commercial type used for
+// builds. It must have non-zero quota in the target Scaleway project/account:
+// new Scaleway projects commonly start with zero Instance quota for every
+// commercial type until identity/payment is verified, which surfaces as a
+// clear "quota exceeded (0/0)" API error rather than a silent failure.
+const defaultBuildInstanceType = "STANDARD3-X2C-8G"
+
+// buildImageLabel is Scaleway's official "Docker" Marketplace InstantApp
+// image. It ships Docker + buildx already installed and running, is
+// maintained by Scaleway itself (not a Defang-authored artifact a BYOC
+// customer would otherwise have no reason to trust), and the Instance API
+// resolves this label directly without a separate Marketplace lookup.
+const buildImageLabel = "docker"
+
+// Build is a custom resource that builds a container image from a Compose
+// service's build context, on an ephemeral Scaleway Compute Instance.
+//
+// Scaleway Serverless Jobs (the previous execution backend) run under gVisor
+// with privilege escalation disabled and all root capabilities dropped. That
+// is enough to break both candidate "Kaniko is deprecated" replacements:
+// rootless BuildKit fails at daemon boot (needs newuidmap, which needs
+// privilege escalation), and Kaniko itself fails unpacking any ordinary base
+// image's rootfs (chown on files like /etc/shadow is denied) — this is not
+// specific to this provider's Dockerfiles, it reproduces with a one-line
+// `FROM alpine:3.19` + `RUN echo`. Neither tool is viable inside that
+// sandbox, independent of which one's "dead upstream" status is weighed.
+//
+// A plain Compute Instance has none of those restrictions (it's a normal
+// kernel, not a locked-down container sandbox), so the build step now runs
+// there instead: boot the official Docker Marketplace image (no custom
+// image baked by Defang — see buildImageLabel), drive the whole build via a
+// single cloud-init boot script (fetch context, `docker buildx build
+// --push`, report result), then terminate the instance.
 type Build struct{}
 
 type BuildInputs struct {
@@ -60,14 +94,32 @@ type BuildInputs struct {
 type BuildState struct {
 	BuildInputs
 
-	// The Scaleway Job Run ID
+	// The Scaleway Instance ID that ran the build (terminated by the time
+	// Create/Update returns; kept for diagnostics).
 	BuildId string `pulumi:"buildId"`
 
 	// The built image URL
 	Image string `pulumi:"image"`
+
+	// LogsEndpoint is the Cockpit logs data source this build's output was
+	// pushed to. It is a dedicated "custom"-origin data source created per
+	// build: the project's auto-provisioned data source only accepts writes
+	// from Scaleway's own managed services (confirmed: pushing to it
+	// directly is rejected with a bare 403), so builds need their own.
+	// Deleted by the time Create/Update returns; kept for diagnostics and
+	// for whoever wires this into the CLI's build-log support next
+	// (DefangLabs/defang#2105 currently stubs out Scaleway build logs
+	// entirely) — that still needs a decision on how this value reaches
+	// published deployment metadata, so it is not threaded any further than
+	// this resource's own state yet.
+	LogsEndpoint string `pulumi:"logsEndpoint,optional"`
+
+	// LogSelector is the LogQL stream selector for this build's log lines
+	// within LogsEndpoint (e.g. `{source="defang-build-<id>"}`).
+	LogSelector string `pulumi:"logSelector,optional"`
 }
 
-// Create starts a Kaniko build via Scaleway Serverless Jobs and waits for completion.
+// Create starts a build on an ephemeral Compute Instance and waits for completion.
 func (*Build) Create(
 	ctx context.Context, req infer.CreateRequest[BuildInputs],
 ) (infer.CreateResponse[BuildState], error) {
@@ -82,17 +134,19 @@ func (*Build) Create(
 		}, nil
 	}
 
-	runID, err := runKanikoBuild(ctx, inputs)
+	result, err := runInstanceBuild(ctx, inputs)
 	if err != nil {
-		return infer.CreateResponse[BuildState]{}, fmt.Errorf("kaniko build failed: %w", err)
+		return infer.CreateResponse[BuildState]{}, fmt.Errorf("build failed: %w", err)
 	}
 
 	return infer.CreateResponse[BuildState]{
 		ID: req.Name,
 		Output: BuildState{
-			BuildInputs: inputs,
-			BuildId:     runID,
-			Image:       inputs.Destination,
+			BuildInputs:  inputs,
+			BuildId:      result.instanceID,
+			Image:        inputs.Destination,
+			LogsEndpoint: result.logsEndpoint,
+			LogSelector:  result.logSelector,
 		},
 	}, nil
 }
@@ -106,52 +160,38 @@ func (*Build) Update(
 	if req.DryRun {
 		return infer.UpdateResponse[BuildState]{
 			Output: BuildState{
-				BuildInputs: inputs,
-				BuildId:     req.State.BuildId,
-				Image:       inputs.Destination,
+				BuildInputs:  inputs,
+				BuildId:      req.State.BuildId,
+				Image:        inputs.Destination,
+				LogsEndpoint: req.State.LogsEndpoint,
+				LogSelector:  req.State.LogSelector,
 			},
 		}, nil
 	}
 
 	// Re-run the build (source reference or config changed)
-	runID, err := runKanikoBuild(ctx, inputs)
+	result, err := runInstanceBuild(ctx, inputs)
 	if err != nil {
-		return infer.UpdateResponse[BuildState]{}, fmt.Errorf("kaniko build failed: %w", err)
+		return infer.UpdateResponse[BuildState]{}, fmt.Errorf("build failed: %w", err)
 	}
 
 	return infer.UpdateResponse[BuildState]{
 		Output: BuildState{
-			BuildInputs: inputs,
-			BuildId:     runID,
-			Image:       inputs.Destination,
+			BuildInputs:  inputs,
+			BuildId:      result.instanceID,
+			Image:        inputs.Destination,
+			LogsEndpoint: result.logsEndpoint,
+			LogSelector:  result.logSelector,
 		},
 	}, nil
 }
 
-// Delete cleans up any resources associated with the build.
-// Scaleway Serverless Jobs definitions are deleted immediately after the build
-// completes (see runKanikoBuild), so there is nothing to clean up here.
+// Delete cleans up any resources associated with the build. The Instance,
+// its Cockpit logs data source, and its Cockpit token are all torn down
+// synchronously at the end of Create/Update (see runInstanceBuild), so
+// there is nothing left to clean up here.
 func (*Build) Delete(ctx context.Context, req infer.DeleteRequest[BuildState]) error {
 	return nil
-}
-
-// dockerConfigJSON generates a Docker config.json for authenticating with the
-// Scaleway Container Registry. The registry uses "nologin" as the username
-// and the SCW_SECRET_KEY as the password.
-func dockerConfigJSON(registryHost, secretKey string) string {
-	auth := base64.StdEncoding.EncodeToString([]byte("nologin:" + secretKey))
-	config := map[string]map[string]map[string]string{
-		"auths": {
-			registryHost: map[string]string{
-				"auth": auth,
-			},
-		},
-	}
-	b, err := json.Marshal(config)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
 }
 
 // registryHost extracts the registry host from a full image destination.
@@ -163,189 +203,329 @@ func registryHost(destination string) string {
 	return destination
 }
 
-func kanikoEnvironment(inputs BuildInputs, shellCmd string) map[string]string {
-	return map[string]string{
-		"AWS_ACCESS_KEY_ID":         os.Getenv("AWS_ACCESS_KEY_ID"),
-		"AWS_REGION":                os.Getenv("AWS_REGION"),
-		"AWS_EC2_METADATA_DISABLED": "true", // Prevent SDK from falling through to IMDS
-		"S3_ENDPOINT":               "https://s3." + inputs.Region + ".scw.cloud",
-		"S3_FORCE_PATH_STYLE":       "true",
-		"KANIKO_DIR":                "/workspace", // Use writable dir; /kaniko is read-only in sandbox
-		"KANIKO_SCRIPT":             shellCmd,
-	}
+// defaultZone picks the single zone this build runs in. BuildInputs only
+// carries a region (matching the Job-based Source/Destination, which are
+// also region-scoped), so this is a simplifying "first zone in the region"
+// choice rather than something callers can override yet.
+func defaultZone(region string) string {
+	return region + "-1"
 }
 
-func waitForKanikoBuild(
-	ctx context.Context,
-	client *scwAPIClient,
-	runID string,
-	maxWait int,
-) error {
-	deadline := time.Now().Add(time.Duration(maxWait) * time.Second)
-	pollInterval := 5 * time.Second
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("build %s: %w after %ds", runID, ErrBuildTimeout, maxWait)
-		}
-		if err := common.SleepWithContext(ctx, pollInterval); err != nil {
-			return err
-		}
-
-		state, errMsg, err := client.getJobRunStatus(ctx, runID)
-		if err != nil {
-			return fmt.Errorf("polling build status: %w", err)
-		}
-
-		switch state {
-		case "succeeded":
-			return nil
-		case "failed", "interrupted":
-			return fmt.Errorf("build %s: %w: %s", runID, ErrBuildFailed, errMsg)
-		case "initialized", "validated", "queued", "running", "retrying":
-			continue
-		default:
-			continue
-		}
-	}
+// shQuote single-quotes s for safe embedding in a POSIX shell command line.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
-func runKanikoBuild(ctx context.Context, inputs BuildInputs) (string, error) {
-	secretKey := os.Getenv("SCW_SECRET_KEY")
-	client := &scwAPIClient{
-		secretKey: secretKey,
-		region:    inputs.Region,
-	}
+var errInvalidSource = errors.New("invalid build context source")
 
+// parseS3Source splits an "s3://bucket/key" URL into its bucket and key.
+func parseS3Source(source string) (bucket, key string, err error) {
+	const prefix = "s3://"
+	if !strings.HasPrefix(source, prefix) {
+		return "", "", fmt.Errorf("%w: %q: expected an s3:// URL", errInvalidSource, source)
+	}
+	rest := source[len(prefix):]
+	idx := strings.IndexByte(rest, '/')
+	if idx <= 0 || idx == len(rest)-1 {
+		return "", "", fmt.Errorf("%w: %q: expected s3://bucket/key", errInvalidSource, source)
+	}
+	return rest[:idx], rest[idx+1:], nil
+}
+
+// buildScript renders the plain shell script (not a #cloud-config YAML
+// document — a bare "#!/bin/bash" is cloud-init's "user-data script"
+// format, and executes exactly as written with no YAML indentation/quoting
+// concerns) that the build Instance runs at boot:
+//  1. fetch the build context from Object Storage (S3-compatible, signed
+//     the same way curl's own --aws-sigv4 support signs any S3 request —
+//     no AWS SDK or CLI needed on the instance),
+//  2. `docker buildx build --push` it to the destination registry,
+//  3. relay the build's output, line by line, to a dedicated Cockpit logs
+//     data source (the project's auto-provisioned one rejects writes from
+//     anything but Scaleway's own managed services), finishing with a
+//     RESULT:SUCCESS/RESULT:FAILURE line that doubles as the completion
+//     signal for waitForInstanceBuild,
+//  4. power off.
+func buildScript(
+	inputs BuildInputs,
+	bucket, key string,
+	registrySecret string,
+	logsEndpoint, logsToken, logSource string,
+) (string, error) {
 	dockerfile := "Dockerfile"
 	if inputs.Dockerfile != nil && *inputs.Dockerfile != "" {
 		dockerfile = *inputs.Dockerfile
 	}
 
-	// Build the Kaniko executor command line.
-	// --force is required because Scaleway Serverless Jobs uses a sandboxed
-	// runtime (like gVisor) that doesn't support chown on all files.
-	kanikoCmd := []string{
-		"/kaniko/executor",
-		"--context=" + inputs.Source,
-		"--destination=" + inputs.Destination,
-		"--dockerfile=" + dockerfile,
-		"--cache=true",
-		"--snapshot-mode=redo",
-		"--force",
-		"--verbosity=info",
+	var buildArgs strings.Builder
+	for k, v := range common.Sorted(inputs.BuildArgs) {
+		buildArgs.WriteString(" --build-arg " + shQuote(k+"="+v))
 	}
+
+	target := ""
 	if inputs.Target != nil && *inputs.Target != "" {
-		kanikoCmd = append(kanikoCmd, "--target="+*inputs.Target)
-	}
-	for k, v := range inputs.BuildArgs {
-		kanikoCmd = append(kanikoCmd, fmt.Sprintf("--build-arg=%s=%s", k, v))
+		target = " --target " + shQuote(*inputs.Target)
 	}
 
-	// Generate Docker config for Scaleway Container Registry auth
-	host := registryHost(inputs.Destination)
-	dockerConfig := dockerConfigJSON(host, secretKey)
-
-	// Build the shell script that writes Docker config for registry auth,
-	// then runs the Kaniko executor.
-	// Write Docker config for registry auth at both KANIKO_DIR (/workspace)
-	// and the default /kaniko/.docker/ location.
-	shellCmd := "mkdir -p /workspace/.docker /kaniko/.docker && " +
-		"echo \"$DOCKER_CONFIG_JSON\" > /workspace/.docker/config.json && " +
-		"cp /workspace/.docker/config.json /kaniko/.docker/config.json && " +
-		strings.Join(kanikoCmd, " ")
-
-	// Environment for Kaniko:
-	// - AWS SDK env vars for S3-compatible build context access
-	// - DOCKER_CONFIG_JSON for registry authentication (written by script)
-	// - KANIKO_SCRIPT holds the full build script
-	env := kanikoEnvironment(inputs, shellCmd)
-	secretEnv := map[string]string{
-		"AWS_SECRET_ACCESS_KEY": os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		"DOCKER_CONFIG_JSON":    dockerConfig,
+	awsAccessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
+	awsSecretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if awsAccessKeyID == "" || awsSecretAccessKey == "" {
+		return "", errMissingAWSCredentials
 	}
+	s3URL := fmt.Sprintf("https://s3.%s.scw.cloud/%s/%s", inputs.Region, bucket, key)
 
-	defID, err := client.createJobDefinition(ctx, inputs.ProjectId, sanitizeJobName(inputs.Destination), env)
+	var b strings.Builder
+	b.WriteString("#!/bin/bash\n")
+	b.WriteString("set -u\n\n")
+
+	// A per-line Loki push, not a batched/continuous shipper: good enough to
+	// get the full build log and a completion signal into Cockpit without
+	// the complexity of a real log-tailing agent. See the Build doc comment
+	// for the tradeoffs recorded around this.
+	//
+	// The -d argument is built by concatenating single- and double-quoted
+	// bash segments (JSON literal text in single quotes, $ts/$esc expansion
+	// in double quotes) rather than escaping embedded double quotes inside
+	// one double-quoted string: much easier to get right than a wall of
+	// backslashes, since single-quoted text needs no escaping at all here.
+	const lokiPushTemplate = `push_log() {
+  local ts; ts=$(date +%%s%%N)
+  local esc; esc=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1")
+  curl -s -o /dev/null -u %s -H 'Content-Type: application/json' \
+    -d '{"streams":[{"stream":{"source":"%s"},"values":[["'"$ts"'",'"$esc"']]}]}' \
+    %s/loki/api/v1/push >/dev/null 2>&1
+}
+
+`
+	fmt.Fprintf(&b, lokiPushTemplate, shQuote("api_key:"+logsToken), logSource, shQuote(logsEndpoint))
+
+	b.WriteString("push_log 'defang-build: fetching build context'\n")
+	b.WriteString("for i in 1 2 3 4 5; do\n")
+	// -H x-amz-content-sha256 is required explicitly: curl versions differ on
+	// whether --aws-sigv4 sends it automatically for a bodyless request, and
+	// Scaleway's S3-compatible endpoint rejects the request outright without
+	// it ("Required header missing: X-Amz-Content-Sha256", confirmed live
+	// against the older curl on Scaleway's official Docker Marketplace
+	// image). The AWS "UNSIGNED-PAYLOAD" sentinel is not honored here (it
+	// produced "SignatureDoesNotMatch", also confirmed live) — curl's own
+	// SigV4 signing still signs the real (empty, for a bodyless GET) payload
+	// hash, so the header must carry that same value: the well-known SHA-256
+	// of the empty string.
+	// SHA-256 of the empty string, per RFC: the well-known constant value.
+	const emptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	const curlFetchTemplate = "  CODE=$(curl -s --aws-sigv4 %s --user %s" +
+		" -H 'x-amz-content-sha256: " + emptyPayloadSHA256 + "'" +
+		" %s -o /root/context.tar.gz -w '%%{http_code}' 2>/root/context-fetch.log)\n"
+	fmt.Fprintf(&b, curlFetchTemplate,
+		shQuote("aws:amz:"+inputs.Region+":s3"),
+		shQuote(awsAccessKeyID+":"+awsSecretAccessKey),
+		shQuote(s3URL),
+	)
+	b.WriteString("  if [ \"$CODE\" = \"200\" ]; then break; fi\n")
+	const contextFetchFailureLog = "  push_log \"defang-build: context fetch attempt $i got HTTP $CODE: " +
+		"$(tr '\\n' ' ' < /root/context.tar.gz | head -c 300) $(tr '\\n' ' ' < /root/context-fetch.log)\"\n"
+	b.WriteString(contextFetchFailureLog)
+	b.WriteString("  sleep 3\n")
+	b.WriteString("done\n")
+	b.WriteString("if [ \"$CODE\" != \"200\" ]; then push_log 'RESULT:FAILURE'; poweroff; exit 1; fi\n")
+	b.WriteString("mkdir -p /root/buildctx\n")
+	b.WriteString("tar xzf /root/context.tar.gz -C /root/buildctx\n\n")
+
+	fmt.Fprintf(&b, "docker login %s -u nologin -p %s >/root/login.log 2>&1\n",
+		shQuote(registryHost(inputs.Destination)), shQuote(registrySecret))
+	b.WriteString("push_log \"docker login: $(tr '\\n' ' ' < /root/login.log)\"\n\n")
+
+	b.WriteString("cd /root/buildctx\n")
+	fmt.Fprintf(&b, "docker buildx build --progress=plain -f %s%s%s -t %s --push . > /root/build.log 2>&1\n",
+		shQuote(dockerfile), target, buildArgs.String(), shQuote(inputs.Destination))
+	b.WriteString("echo \"BUILD_EXIT=$?\" >> /root/build.log\n\n")
+
+	b.WriteString("while IFS= read -r line; do push_log \"$line\"; done < /root/build.log\n")
+	b.WriteString("if grep -q '^BUILD_EXIT=0$' /root/build.log; then\n")
+	b.WriteString("  push_log 'RESULT:SUCCESS'\n")
+	b.WriteString("else\n")
+	b.WriteString("  push_log 'RESULT:FAILURE'\n")
+	b.WriteString("fi\n")
+	b.WriteString("poweroff\n")
+
+	return b.String(), nil
+}
+
+type instanceBuildResult struct {
+	instanceID   string
+	logsEndpoint string
+	logSelector  string
+}
+
+func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildResult, error) {
+	secretKey := os.Getenv("SCW_SECRET_KEY")
+	client := &scwAPIClient{secretKey: secretKey, region: inputs.Region}
+	zone := defaultZone(inputs.Region)
+
+	bucket, key, err := parseS3Source(inputs.Source)
 	if err != nil {
-		return "", fmt.Errorf("creating Kaniko job definition: %w", err)
+		return instanceBuildResult{}, err
 	}
-	defer func() {
-		_ = client.deleteJobDefinition(ctx, defID)
-	}()
 
-	secrets, err := client.createBuildSecrets(ctx, inputs.ProjectId, defID, sanitizeJobName(inputs.Destination), secretEnv)
-	if err != nil {
-		return "", fmt.Errorf("creating Kaniko job secrets: %w", err)
-	}
-	defer func() {
-		for _, secret := range secrets {
-			_ = client.deleteSecret(ctx, secret.id)
-		}
-	}()
+	name := sanitizeResourceName(inputs.Destination)
+	logSource := "defang-build-" + name
 
-	runID, err := client.runJob(ctx, defID)
+	dataSourceID, logsEndpoint, err := client.createLogsDataSource(ctx, inputs.ProjectId, name+"-logs")
 	if err != nil {
-		return "", fmt.Errorf("starting Kaniko job: %w", err)
+		return instanceBuildResult{}, fmt.Errorf("creating Cockpit logs data source: %w", err)
 	}
+	// Retried, not best-effort-once: deleting a Cockpit resource immediately
+	// after it saw recent write activity occasionally fails transiently
+	// (observed live — a manual retry moments later always succeeded), and a
+	// silently-failed cleanup means a leftover data source/token/instance in
+	// the customer's own account on every such build.
+	defer retryCleanup(ctx, func(ctx context.Context) error { return client.deleteLogsDataSource(ctx, dataSourceID) })
+
+	tokenID, logsToken, err := client.createLogsToken(ctx, inputs.ProjectId, name+"-logs")
+	if err != nil {
+		return instanceBuildResult{}, fmt.Errorf("creating Cockpit logs token: %w", err)
+	}
+	defer retryCleanup(ctx, func(ctx context.Context) error { return client.deleteLogsToken(ctx, tokenID) })
+
+	script, err := buildScript(inputs, bucket, key, secretKey, logsEndpoint, logsToken, logSource)
+	if err != nil {
+		return instanceBuildResult{}, err
+	}
+
+	serverID, err := client.createServer(ctx, zone, inputs.ProjectId, name)
+	if err != nil {
+		return instanceBuildResult{}, fmt.Errorf("creating build instance: %w", err)
+	}
+	defer retryCleanup(ctx, func(ctx context.Context) error { return client.terminateServer(ctx, zone, serverID) })
+
+	if err := client.setCloudInit(ctx, zone, serverID, script); err != nil {
+		return instanceBuildResult{}, fmt.Errorf("setting build instance cloud-init: %w", err)
+	}
+	if err := client.powerOnServer(ctx, zone, serverID); err != nil {
+		return instanceBuildResult{}, fmt.Errorf("starting build instance: %w", err)
+	}
+
+	logSelector := fmt.Sprintf("{source=%q}", logSource)
 
 	maxWait := common.DefaultBuildMaxWaitTime
 	if inputs.MaxWaitTime != nil {
 		maxWait = *inputs.MaxWaitTime
 	}
-	return runID, waitForKanikoBuild(ctx, client, runID, maxWait)
+	if err := waitForInstanceBuild(ctx, logsEndpoint, logsToken, logSelector, maxWait); err != nil {
+		return instanceBuildResult{}, err
+	}
+
+	return instanceBuildResult{instanceID: serverID, logsEndpoint: logsEndpoint, logSelector: logSelector}, nil
 }
 
-// sanitizeJobName creates a safe job name from a destination string.
-func sanitizeJobName(dest string) string {
+// retryCleanup retries a best-effort teardown call a few times with a short
+// backoff before giving up, since a delete immediately after recent write
+// activity on the same resource has been observed to fail transiently (see
+// the callers in runInstanceBuild). It never returns an error: a cleanup
+// call runs in a defer, and the resource it fails to remove is a cost/tidiness
+// concern, not a build-correctness one.
+func retryCleanup(ctx context.Context, fn func(context.Context) error) {
+	const attempts = 3
+	for i := 0; i < attempts; i++ {
+		if err := fn(ctx); err == nil {
+			return
+		}
+		if i < attempts-1 {
+			_ = common.SleepWithContext(ctx, 2*time.Second)
+		}
+	}
+}
+
+// waitForInstanceBuild polls the build's Cockpit log stream for the
+// RESULT:SUCCESS/RESULT:FAILURE line buildScript writes as its last action,
+// which doubles as the completion signal: no separate Object Storage
+// marker or job-status API is needed, since the logs are already being
+// queried for the raw build output.
+func waitForInstanceBuild(ctx context.Context, logsEndpoint, logsToken, logSelector string, maxWait int) error {
+	deadline := time.Now().Add(time.Duration(maxWait) * time.Second)
+	pollInterval := 3 * time.Second
+	start := time.Now().Add(-time.Minute) // tolerate clock skew between here and the instance
+
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("build %w after %ds", ErrBuildTimeout, maxWait)
+		}
+		if err := common.SleepWithContext(ctx, pollInterval); err != nil {
+			return err
+		}
+
+		lines, err := queryLoki(ctx, logsEndpoint, logsToken, logSelector, start, time.Now())
+		if err != nil {
+			return fmt.Errorf("polling build logs: %w", err)
+		}
+		for _, line := range lines {
+			switch {
+			case strings.Contains(line, "RESULT:SUCCESS"):
+				return nil
+			case strings.Contains(line, "RESULT:FAILURE"):
+				return fmt.Errorf("%w: see build logs at %s (selector %s)", ErrBuildFailed, logsEndpoint, logSelector)
+			}
+		}
+	}
+}
+
+// sanitizeResourceName creates a safe, bounded, unique resource name from a
+// destination string, for use as the build's Instance/data-source/token
+// name. Bounded to 40 runes (not e.g. Cockpit's 50-rune data source name
+// limit) so callers have room to append a short suffix like "-logs". Two
+// destinations sharing a long common prefix (e.g. the same registry host)
+// would otherwise truncate to the same name — Cockpit rejects a duplicate
+// data source name outright (confirmed live: "resource already exists") —
+// so, like sanitizeRepoName in the GCP provider, a long name is truncated
+// with a hash of the full original name appended rather than cut blind.
+func sanitizeResourceName(dest string) string {
+	original := dest
 	s := strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(dest)
-	if len(s) > 50 {
-		s = s[:50]
+	if len(s) > 40 {
+		suffix := "-" + resourceNameHash(original)
+		s = strings.TrimRight(s[:40-len(suffix)], "-") + suffix
 	}
 	return strings.TrimRight(s, "-")
 }
 
-func sanitizeSecretName(name string) string {
-	s := strings.NewReplacer("/", "-", ":", "-", ".", "-", "_", "-").Replace(name)
-	if len(s) > 240 {
-		s = s[:240]
-	}
-	return strings.Trim(s, "-")
+func resourceNameHash(name string) string {
+	digest := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(digest[:])[:8]
 }
 
-// scwAPIClient is a minimal Scaleway API client for the Serverless Jobs API.
-// It lives in the provider package (not the CLI) to avoid importing the full
-// Scaleway Go SDK; the provider binary runs inside the CD task container.
+// scwAPIClient is a minimal Scaleway API client for the Instance and
+// Cockpit APIs. It lives in the provider package (not the CLI) to avoid
+// importing the full Scaleway Go SDK; the provider binary runs inside the
+// CD task container.
 type scwAPIClient struct {
 	secretKey string
 	region    string
 }
 
-type jobDefinitionResponse struct {
-	ID string `json:"id"`
+func (c *scwAPIClient) instanceBaseURL(zone string) string {
+	return "https://api.scaleway.com/instance/v1/zones/" + zone
 }
 
-type jobRunResponse struct {
-	ID           string `json:"id"`
-	State        string `json:"state"`
-	Reason       string `json:"reason"`
-	ErrorMessage string `json:"error_message"`
+func (c *scwAPIClient) cockpitBaseURL() string {
+	return "https://api.scaleway.com/cockpit/v1/regions/" + c.region
 }
 
-func (c *scwAPIClient) baseURL() string {
-	return "https://api.scaleway.com/serverless-jobs/v1alpha2/regions/" + c.region
-}
-
-func (c *scwAPIClient) secretManagerBaseURL() string {
-	return "https://api.scaleway.com/secret-manager/v1beta1/regions/" + c.region
-}
-
-func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body any) (*http.Response, error) {
+func (c *scwAPIClient) doRequest(
+	ctx context.Context, method, url string, body any, contentType string,
+) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling request: %w", err)
+		switch v := body.(type) {
+		case string:
+			reqBody = strings.NewReader(v)
+		default:
+			b, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("marshaling request: %w", err)
+			}
+			reqBody = bytes.NewReader(b)
+			contentType = "application/json"
 		}
-		reqBody = bytes.NewReader(b)
 	}
 
 	r, err := http.NewRequestWithContext(ctx, method, url, reqBody)
@@ -353,8 +533,8 @@ func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body a
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	r.Header.Set("X-Auth-Token", c.secretKey)
-	if body != nil {
-		r.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		r.Header.Set("Content-Type", contentType)
 	}
 
 	resp, err := http.DefaultClient.Do(r)
@@ -369,211 +549,171 @@ func (c *scwAPIClient) doRequest(ctx context.Context, method, url string, body a
 	return resp, nil
 }
 
-func (c *scwAPIClient) createJobDefinition(
-	ctx context.Context,
-	projectID string,
-	name string,
-	env map[string]string,
-) (string, error) {
+func (c *scwAPIClient) createServer(ctx context.Context, zone, projectID, name string) (string, error) {
 	body := map[string]any{
-		"name":                   name,
-		"project_id":             projectID,
-		"cpu_limit":              2000,  // 2 vCPU for builds
-		"memory_limit":           4096,  // 4 GB RAM for builds
-		"local_storage_capacity": 10000, // 10 GB local storage for builds
-		"image_uri":              "rg." + c.region + ".scw.cloud/defang-cd/kaniko-executor:patched",
-		"startup_command":        []string{"sh", "-c"},
-		"args":                   []string{"eval \"$KANIKO_SCRIPT\""},
-		"environment_variables":  env,
+		"name":                name,
+		"commercial_type":     defaultBuildInstanceType,
+		"image":               buildImageLabel,
+		"project":             projectID,
+		"dynamic_ip_required": true,
 	}
-
-	resp, err := c.doRequest(ctx, "POST", c.baseURL()+"/job-definitions", body)
-	if err != nil {
-		return "", err
-	}
-	defer closeBody(resp.Body)
-
-	var def jobDefinitionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&def); err != nil {
-		return "", fmt.Errorf("decoding job definition response: %w", err)
-	}
-	return def.ID, nil
-}
-
-type buildSecret struct {
-	id       string
-	revision int
-	envName  string
-}
-
-func (c *scwAPIClient) createSecret(ctx context.Context, projectID, name string) (string, error) {
-	body := map[string]string{
-		"name":       name,
-		"project_id": projectID,
-	}
-	resp, err := c.doRequest(ctx, "POST", c.secretManagerBaseURL()+"/secrets", body)
+	resp, err := c.doRequest(ctx, "POST", c.instanceBaseURL(zone)+"/servers", body, "")
 	if err != nil {
 		return "", err
 	}
 	defer closeBody(resp.Body)
 
 	var result struct {
-		ID string `json:"id"`
+		Server struct {
+			ID string `json:"id"`
+		} `json:"server"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding secret response: %w", err)
+		return "", fmt.Errorf("decoding server response: %w", err)
 	}
-	return result.ID, nil
+	return result.Server.ID, nil
 }
 
-func (c *scwAPIClient) createSecretVersion(ctx context.Context, secretID string, value string) (int, error) {
-	body := map[string]any{
-		"data": base64.StdEncoding.EncodeToString([]byte(value)),
-	}
-	resp, err := c.doRequest(ctx, "POST", c.secretManagerBaseURL()+"/secrets/"+secretID+"/versions", body)
-	if err != nil {
-		return 0, err
-	}
-	defer closeBody(resp.Body)
-
-	var result struct {
-		Revision int `json:"revision"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decoding secret version response: %w", err)
-	}
-	return result.Revision, nil
-}
-
-func (c *scwAPIClient) createJobSecrets(ctx context.Context, definitionID string, secrets []buildSecret) error {
-	if len(secrets) == 0 {
-		return nil
-	}
-	refs := make([]map[string]string, 0, len(secrets))
-	for _, secret := range secrets {
-		refs = append(refs, map[string]string{
-			"secret_manager_id":      secret.id,
-			"secret_manager_version": strconv.Itoa(secret.revision),
-			"env_var_name":           secret.envName,
-		})
-	}
-	body := map[string]any{
-		"job_definition_id": definitionID,
-		"secrets":           refs,
-	}
-	resp, err := c.doRequest(ctx, "POST", c.baseURL()+"/secrets", body)
+// setCloudInit must be called before powerOnServer: cloud-init only runs
+// the user-data it finds at first boot.
+func (c *scwAPIClient) setCloudInit(ctx context.Context, zone, serverID, script string) error {
+	resp, err := c.doRequest(ctx, "PATCH",
+		c.instanceBaseURL(zone)+"/servers/"+serverID+"/user_data/cloud-init", script, "text/plain")
 	if err != nil {
 		return err
 	}
-	func() {
-		_ = resp.Body.Close()
-	}()
+	defer closeBody(resp.Body)
 	return nil
 }
 
-func (c *scwAPIClient) createBuildSecrets(
-	ctx context.Context,
-	projectID string,
-	definitionID string,
-	buildName string,
-	env map[string]string,
-) ([]buildSecret, error) {
-	secrets := make([]buildSecret, 0, len(env))
-	suffix := time.Now().UTC().Format("20060102150405")
-	for _, key := range []string{"AWS_SECRET_ACCESS_KEY", "DOCKER_CONFIG_JSON"} {
-		value := env[key]
-		if value == "" {
-			continue
-		}
-		secretName := sanitizeSecretName(
-			"defang-build-" +
-				buildName + "-" +
-				strings.ToLower(strings.ReplaceAll(key, "_", "-")) +
-				"-" + suffix,
-		)
-		secretID, err := c.createSecret(ctx, projectID, secretName)
-		if err != nil {
-			for _, secret := range secrets {
-				_ = c.deleteSecret(ctx, secret.id)
-			}
-			return nil, err
-		}
-		revision, err := c.createSecretVersion(ctx, secretID, value)
-		if err != nil {
-			_ = c.deleteSecret(ctx, secretID)
-			for _, secret := range secrets {
-				_ = c.deleteSecret(ctx, secret.id)
-			}
-			return nil, err
-		}
-		secrets = append(secrets, buildSecret{id: secretID, revision: revision, envName: key})
+func (c *scwAPIClient) serverAction(ctx context.Context, zone, serverID, action string) error {
+	resp, err := c.doRequest(ctx, "POST",
+		c.instanceBaseURL(zone)+"/servers/"+serverID+"/action", map[string]string{"action": action}, "")
+	if err != nil {
+		return err
 	}
-	if err := c.createJobSecrets(ctx, definitionID, secrets); err != nil {
-		for _, secret := range secrets {
-			_ = c.deleteSecret(ctx, secret.id)
-		}
+	defer closeBody(resp.Body)
+	return nil
+}
+
+func (c *scwAPIClient) powerOnServer(ctx context.Context, zone, serverID string) error {
+	return c.serverAction(ctx, zone, serverID, "poweron")
+}
+
+func (c *scwAPIClient) terminateServer(ctx context.Context, zone, serverID string) error {
+	return c.serverAction(ctx, zone, serverID, "terminate")
+}
+
+func (c *scwAPIClient) createLogsDataSource(
+	ctx context.Context, projectID, name string,
+) (id, logsURL string, err error) {
+	body := map[string]any{"project_id": projectID, "name": name, "type": "logs"}
+	resp, reqErr := c.doRequest(ctx, "POST", c.cockpitBaseURL()+"/data-sources", body, "")
+	if reqErr != nil {
+		return "", "", reqErr
+	}
+	defer closeBody(resp.Body)
+
+	var result struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	}
+	if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr != nil {
+		return "", "", fmt.Errorf("decoding data source response: %w", decErr)
+	}
+	return result.ID, result.URL, nil
+}
+
+func (c *scwAPIClient) deleteLogsDataSource(ctx context.Context, id string) error {
+	resp, err := c.doRequest(ctx, "DELETE", c.cockpitBaseURL()+"/data-sources/"+id, nil, "")
+	if err != nil {
+		return err
+	}
+	defer closeBody(resp.Body)
+	return nil
+}
+
+func (c *scwAPIClient) createLogsToken(ctx context.Context, projectID, name string) (id, secret string, err error) {
+	body := map[string]any{
+		"project_id":   projectID,
+		"name":         name,
+		"token_scopes": []string{"write_only_logs", "read_only_logs"},
+	}
+	resp, reqErr := c.doRequest(ctx, "POST", c.cockpitBaseURL()+"/tokens", body, "")
+	if reqErr != nil {
+		return "", "", reqErr
+	}
+	defer closeBody(resp.Body)
+
+	var result struct {
+		ID        string `json:"id"`
+		SecretKey string `json:"secret_key"`
+	}
+	if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr != nil {
+		return "", "", fmt.Errorf("decoding token response: %w", decErr)
+	}
+	return result.ID, result.SecretKey, nil
+}
+
+func (c *scwAPIClient) deleteLogsToken(ctx context.Context, id string) error {
+	resp, err := c.doRequest(ctx, "DELETE", c.cockpitBaseURL()+"/tokens/"+id, nil, "")
+	if err != nil {
+		return err
+	}
+	defer closeBody(resp.Body)
+	return nil
+}
+
+type lokiQueryRangeResponse struct {
+	Data struct {
+		Result []struct {
+			Values [][]string `json:"values"` // each value is [timestamp_ns_string, log_line]
+		} `json:"result"`
+	} `json:"data"`
+}
+
+// queryLoki queries a Cockpit logs data source's Loki-compatible API for
+// log lines matching selector within [start, end).
+func queryLoki(ctx context.Context, endpoint, token, selector string, start, end time.Time) ([]string, error) {
+	params := url.Values{
+		"query":     {selector},
+		"start":     {strconv.FormatInt(start.UnixNano(), 10)},
+		"end":       {strconv.FormatInt(end.UnixNano(), 10)},
+		"direction": {"forward"},
+		"limit":     {"1000"},
+	}
+	reqURL := endpoint + "/loki/api/v1/query_range?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
 		return nil, err
 	}
-	return secrets, nil
-}
+	req.SetBasicAuth("api_key", token)
 
-func (c *scwAPIClient) deleteSecret(ctx context.Context, secretID string) error {
-	resp, err := c.doRequest(ctx, "DELETE", c.secretManagerBaseURL()+"/secrets/"+secretID, nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
-	}
-	func() {
-		_ = resp.Body.Close()
-	}()
-	return nil
-}
-
-func (c *scwAPIClient) runJob(ctx context.Context, definitionID string) (string, error) {
-	resp, err := c.doRequest(ctx, "POST", c.baseURL()+"/job-definitions/"+definitionID+"/start", map[string]any{})
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer closeBody(resp.Body)
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%w: status %d: %s", errScalewayAPI, resp.StatusCode, string(respBody))
+	}
 
-	// The start endpoint returns {"job_runs": [...]} not a flat object
-	var result struct {
-		JobRuns []jobRunResponse `json:"job_runs"`
+	var parsed lokiQueryRangeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("decoding Loki response: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding job run response: %w", err)
-	}
-	if len(result.JobRuns) == 0 {
-		return "", errNoJobRuns
-	}
-	return result.JobRuns[0].ID, nil
-}
 
-func (c *scwAPIClient) getJobRunStatus(ctx context.Context, runID string) (string, string, error) {
-	resp, err := c.doRequest(ctx, "GET", c.baseURL()+"/job-runs/"+runID, nil)
-	if err != nil {
-		return "", "", err
+	var lines []string
+	for _, stream := range parsed.Data.Result {
+		for _, v := range stream.Values {
+			if len(v) >= 2 {
+				lines = append(lines, v[1])
+			}
+		}
 	}
-	defer closeBody(resp.Body)
-
-	var run jobRunResponse
-	if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
-		return "", "", fmt.Errorf("decoding job run status: %w", err)
-	}
-	if run.ErrorMessage != "" {
-		return run.State, run.ErrorMessage, nil
-	}
-	return run.State, run.Reason, nil
-}
-
-func (c *scwAPIClient) deleteJobDefinition(ctx context.Context, definitionID string) error {
-	resp, err := c.doRequest(ctx, "DELETE", c.baseURL()+"/job-definitions/"+definitionID, nil)
-	if err != nil {
-		return err
-	}
-	func() {
-		_ = resp.Body.Close()
-	}()
-	return nil
+	return lines, nil
 }
 
 func closeBody(body io.Closer) {
