@@ -354,7 +354,7 @@
   "resources": {
     "defang-scaleway:index:Build": {
       "properties": {
-        "buildArgs": {
+        "args": {
           "type": "object",
           "additionalProperties": {
             "type": "string"
@@ -414,7 +414,7 @@
         "image"
       ],
       "inputProperties": {
-        "buildArgs": {
+        "args": {
           "type": "object",
           "additionalProperties": {
             "type": "string"

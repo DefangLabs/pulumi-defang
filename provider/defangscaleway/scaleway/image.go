@@ -68,7 +68,7 @@ func buildServiceImage(
 		"destination":  destination,
 		"dockerfile":   pulumi.StringPtrFromPtr(svc.Build.Dockerfile),
 		"target":       pulumi.StringPtrFromPtr(svc.Build.Target),
-		"buildArgs":    pulumi.ToStringMap(svc.Build.Args),
+		"args":         pulumi.ToStringMap(svc.Build.Args),
 		"triggers":     pulumi.StringArray{triggerHash},
 		"logsEndpoint": infra.LogsEndpoint,
 		"logsToken":    pulumi.ToSecret(infra.LogsToken),
