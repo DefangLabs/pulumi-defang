@@ -614,3 +614,26 @@ func Test_setDefaultStackConfigLowercasesAwsDatabaseNames(t *testing.T) {
 			"%s must be named in lowercase; AWS rejects the name otherwise", typeToken)
 	}
 }
+
+func TestScalewayStackConfigWithS3Region(t *testing.T) {
+	for _, region := range []string{"", "nl-ams"} {
+		t.Run("region="+region, func(t *testing.T) {
+			unsetenv(t, "REGION", "GCLOUD_PROJECT", "GCP_PROJECT", "AZURE_SUBSCRIPTION_ID", "SCW_DEFAULT_REGION")
+			t.Setenv("AWS_REGION", "fr-par") // The CLI also sets this for Scaleway Object Storage.
+			t.Setenv("SCW_DEFAULT_PROJECT_ID", "scaleway-project")
+			if region != "" {
+				t.Setenv("SCW_DEFAULT_REGION", region)
+			}
+			cfg := configMap{}
+			require.NoError(t, addStackConfigFromEnv(cfg))
+			require.Equal(t, "scaleway", cfg["defang:provider"].Value)
+			require.Equal(t, "scaleway-project", cfg["scaleway:projectId"].Value)
+			wantRegion := region
+			if wantRegion == "" {
+				wantRegion = "fr-par"
+			}
+			require.Equal(t, wantRegion, cfg["scaleway:region"].Value)
+			require.NotContains(t, cfg, "aws:region")
+		})
+	}
+}

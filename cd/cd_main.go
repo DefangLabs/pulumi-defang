@@ -129,6 +129,7 @@ func cdMain(ctx context.Context, args ...string) error {
 				"google-beta",
 				"google-native",
 				"kubernetes",
+				"scaleway",
 			},
 		},
 	}

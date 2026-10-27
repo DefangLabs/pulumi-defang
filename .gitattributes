@@ -1,0 +1,9 @@
+# Generated SDKs and schemas; source implementations remain expanded.
+sdk/** linguist-generated=true
+provider/cmd/*/schema.json linguist-generated=true
+
+# make examples regenerates these language examples from examples/*-yaml/.
+examples/*-dotnet/** linguist-generated=true
+examples/*-go/** linguist-generated=true
+examples/*-nodejs/** linguist-generated=true
+examples/*-python/** linguist-generated=true
