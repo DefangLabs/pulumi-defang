@@ -144,6 +144,14 @@ image_binary_providers:
 .PHONY: images
 images: image_aws image_gcp image_azure image_scaleway image_all
 
+# Same as image_%, from `make image_binaries` instead of compiling in Docker.
+# Passes the same versions to both, so the binaries match their plugin paths.
+.PHONY: image_prebuilt_%
+image_prebuilt_%: go_sdk image_binaries
+	$(DOCKER_BUILDX) $(PUSH) --target $* --build-arg BINARIES=prebuilt \
+	  --build-arg CD_VERSION=$(CD_VERSION) --build-arg PROVIDER_VERSION=$(PROVIDER_VERSION) \
+	  -t $(IMAGE_REPO):$(CD_VERSION)-$* .
+
 .PHONY: image_%
 image_%: go_sdk
 	$(DOCKER_BUILDX) $(PUSH) --target $* \

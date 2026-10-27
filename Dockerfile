@@ -17,7 +17,9 @@ ARG CD_VERSION=0.0.1
 ARG PROVIDER_VERSION=0.0.1
 # Where the Go binaries come from: "build" compiles them in the build-* stages
 # below; "prebuilt" copies bin/image/<arch>/ from `make image_binaries` (what
-# CI uses, so its Go build cache survives between runs).
+# CI uses, so its Go build cache survives between runs). Prebuilt binaries
+# must be built with the CD_VERSION/PROVIDER_VERSION passed here, or they
+# disagree with their plugin paths; `make image_prebuilt_<target>` does both.
 ARG BINARIES=build
 
 # Shared build stage: downloads modules, copies source, builds the cd binary.
