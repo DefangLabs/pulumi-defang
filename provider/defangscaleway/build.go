@@ -219,7 +219,7 @@ func shQuote(s string) string {
 var errInvalidSource = errors.New("invalid build context source")
 
 // parseS3Source splits an "s3://bucket/key" URL into its bucket and key.
-func parseS3Source(source string) (bucket, key string, err error) {
+func parseS3Source(source string) (string, string, error) {
 	const prefix = "s3://"
 	if !strings.HasPrefix(source, prefix) {
 		return "", "", fmt.Errorf("%w: %q: expected an s3:// URL", errInvalidSource, source)
@@ -426,7 +426,7 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 // concern, not a build-correctness one.
 func retryCleanup(ctx context.Context, fn func(context.Context) error) {
 	const attempts = 3
-	for i := 0; i < attempts; i++ {
+	for i := range attempts {
 		if err := fn(ctx); err == nil {
 			return
 		}
@@ -528,6 +528,7 @@ func (c *scwAPIClient) doRequest(
 		}
 	}
 
+	//nolint:gosec // G704: url is always built from this client's own fixed Scaleway API paths, never external input
 	r, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -537,7 +538,7 @@ func (c *scwAPIClient) doRequest(
 		r.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := http.DefaultClient.Do(r)
+	resp, err := http.DefaultClient.Do(r) //nolint:gosec // G704: see above
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +607,7 @@ func (c *scwAPIClient) terminateServer(ctx context.Context, zone, serverID strin
 
 func (c *scwAPIClient) createLogsDataSource(
 	ctx context.Context, projectID, name string,
-) (id, logsURL string, err error) {
+) (string, string, error) {
 	body := map[string]any{"project_id": projectID, "name": name, "type": "logs"}
 	resp, reqErr := c.doRequest(ctx, "POST", c.cockpitBaseURL()+"/data-sources", body, "")
 	if reqErr != nil {
@@ -633,7 +634,7 @@ func (c *scwAPIClient) deleteLogsDataSource(ctx context.Context, id string) erro
 	return nil
 }
 
-func (c *scwAPIClient) createLogsToken(ctx context.Context, projectID, name string) (id, secret string, err error) {
+func (c *scwAPIClient) createLogsToken(ctx context.Context, projectID, name string) (string, string, error) {
 	body := map[string]any{
 		"project_id":   projectID,
 		"name":         name,
@@ -684,7 +685,7 @@ func queryLoki(ctx context.Context, endpoint, token, selector string, start, end
 	}
 	reqURL := endpoint + "/loki/api/v1/query_range?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}

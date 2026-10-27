@@ -53,7 +53,9 @@ RUN whoami && id && touch /home/appuser/created-by-appuser.txt && ls -la /home/a
 		t.Fatal(err)
 	}
 	tarPath := workdir + "/context.tar.gz"
-	if out, err := exec.Command("tar", "-C", workdir, "-czf", tarPath, "Dockerfile", "testfile.txt").CombinedOutput(); err != nil {
+	//nolint:gosec // G204: test-authored command, workdir/tarPath are from t.TempDir()
+	tarCmd := exec.CommandContext(ctx, "tar", "-C", workdir, "-czf", tarPath, "Dockerfile", "testfile.txt")
+	if out, err := tarCmd.CombinedOutput(); err != nil {
 		t.Fatalf("tar: %v: %s", err, out)
 	}
 
@@ -64,7 +66,8 @@ RUN whoami && id && touch /home/appuser/created-by-appuser.txt && ls -la /home/a
 	userArg := accessKey + ":" + secretKey
 
 	run := func(args ...string) string {
-		out, err := exec.Command("curl", args...).CombinedOutput()
+		//nolint:gosec // G204: test-authored args, this test's own S3 setup/teardown calls
+		out, err := exec.CommandContext(ctx, "curl", args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("curl %v: %v: %s", args, err, out)
 		}
