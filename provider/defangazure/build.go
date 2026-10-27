@@ -164,8 +164,9 @@ func scheduleAndWaitACRRun(
 	isArchiveEnabled := false
 	osLinux := armcontainerregistry.OSLinux
 	// TODO(build-size): build.shm_size is not honored on Azure. ACR Tasks' shared
-	// agents are sized by CPU count only, with no memory setting to map it to;
-	// dedicated agent pools have sizes but need a Premium registry.
+	// agents accept only cpu: 2; any other value is rejected with
+	// InvalidCPUCoreCount (checked 2026-10-27). Larger builds need a dedicated
+	// agent pool (S2: 4 CPU/8 GB, S3: 8 CPU/16 GB), which needs a Premium registry.
 	cpu := int32(2)
 	poller, err := regClient.BeginScheduleRun(ctx, rgName, registryName, &armcontainerregistry.EncodedTaskRunRequest{
 		Type:               &runType,
