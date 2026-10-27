@@ -138,18 +138,23 @@ func leftoverCheckForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zo
 // zone, as "volume <id>" / "ip <id>".
 func listLeftoversForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zone, projectID string) []string {
 	t.Helper()
-	var out []string
+	out := make([]string, 0, 16)
 	for _, l := range []struct{ kind, url, field string }{
 		{"volume", c.blockBaseURL(zone) + "/volumes?page_size=100&project_id=" + projectID, "volumes"},
 		{"ip", c.instanceBaseURL(zone) + "/ips?per_page=100&project=" + projectID, "ips"},
 	} {
-		page, err := getJSONForTest[map[string][]struct {
-			ID string `json:"id"`
-		}](ctx, c, l.url)
+		// The list sits beside a numeric total_count, so decode it separately.
+		page, err := getJSONForTest[map[string]json.RawMessage](ctx, c, l.url)
 		if err != nil {
 			t.Fatalf("listing %ss: %v", l.kind, err)
 		}
-		for _, item := range page[l.field] {
+		var items []struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(page[l.field], &items); err != nil {
+			t.Fatalf("decoding %ss: %v", l.kind, err)
+		}
+		for _, item := range items {
 			out = append(out, l.kind+" "+item.ID)
 		}
 	}
