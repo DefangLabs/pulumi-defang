@@ -17,6 +17,15 @@ type BuildInfra struct {
 	// RegistryEndpoint is the Scaleway Container Registry endpoint
 	// (e.g., "rg.fr-par.scw.cloud/namespace")
 	RegistryEndpoint pulumi.StringOutput
+
+	// LogsEndpoint is the Cockpit logs data source every build's output is
+	// pushed to. One persistent, project-level data source (not one created
+	// and torn down per build) so the customer has a stable place to see
+	// past build logs in the Scaleway Cockpit console.
+	LogsEndpoint pulumi.StringOutput
+
+	// LogsToken is a Cockpit token (query+write logs) scoped to LogsEndpoint.
+	LogsToken pulumi.StringOutput
 }
 
 // imageBuildResource is a Pulumi resource state for the Build custom resource.
@@ -26,9 +35,8 @@ type imageBuildResource struct {
 	Image   pulumi.StringOutput `pulumi:"image"`
 }
 
-// buildServiceImage registers a Build custom resource that triggers a Kaniko build
-// via Scaleway Serverless Jobs. The resource creates a temporary job definition,
-// runs the Kaniko executor to build and push the image, then cleans up.
+// buildServiceImage registers a Build custom resource that builds the image on
+// an ephemeral Scaleway Compute Instance (see provider/defangscaleway/build.go).
 func buildServiceImage(
 	ctx *pulumi.Context,
 	serviceName string,
@@ -54,14 +62,16 @@ func buildServiceImage(
 
 	var buildResource imageBuildResource
 	err := ctx.RegisterResource("defang-scaleway:index:Build", serviceName, pulumi.Map{
-		"region":      pulumi.String(sharedInfra.Region),
-		"projectId":   pulumi.String(sharedInfra.ProjectID),
-		"source":      svc.Build.Context.ToStringOutput(),
-		"destination": destination,
-		"dockerfile":  pulumi.StringPtrFromPtr(svc.Build.Dockerfile),
-		"target":      pulumi.StringPtrFromPtr(svc.Build.Target),
-		"buildArgs":   pulumi.ToStringMap(svc.Build.Args),
-		"triggers":    pulumi.StringArray{triggerHash},
+		"region":       pulumi.String(sharedInfra.Region),
+		"projectId":    pulumi.String(sharedInfra.ProjectID),
+		"source":       svc.Build.Context.ToStringOutput(),
+		"destination":  destination,
+		"dockerfile":   pulumi.StringPtrFromPtr(svc.Build.Dockerfile),
+		"target":       pulumi.StringPtrFromPtr(svc.Build.Target),
+		"buildArgs":    pulumi.ToStringMap(svc.Build.Args),
+		"triggers":     pulumi.StringArray{triggerHash},
+		"logsEndpoint": infra.LogsEndpoint,
+		"logsToken":    pulumi.ToSecret(infra.LogsToken),
 	}, &buildResource, sharedInfra.PluginIdentity.ResourceOptions(opts...)...)
 	if err != nil {
 		return pulumi.StringOutput{}, fmt.Errorf("creating build resource for %s: %w", serviceName, err)

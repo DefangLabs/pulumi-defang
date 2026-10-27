@@ -92,19 +92,107 @@ RUN whoami && id && touch /home/appuser/created-by-appuser.txt && ls -la /home/a
 		_ = deleteRegistryNamespaceForTest(ctx, regClient, nsName, projectID)
 	})
 
+	// runInstanceBuild no longer creates its own Cockpit data source/token
+	// (see project.go: these are persistent, project-level resources now) —
+	// this test stands in for project.go and creates its own throwaway pair.
+	logsEndpoint, logsToken := setupCockpitForTest(ctx, t, regClient, projectID, nsName+"-logs")
+
 	inputs := BuildInputs{
-		Region:      region,
-		ProjectId:   projectID,
-		Source:      fmt.Sprintf("s3://%s/%s", bucket, key),
-		Destination: destination,
+		Region:       region,
+		ProjectId:    projectID,
+		Source:       fmt.Sprintf("s3://%s/%s", bucket, key),
+		Destination:  destination,
+		LogsEndpoint: logsEndpoint,
+		LogsToken:    logsToken,
 	}
 
 	result, err := runInstanceBuild(ctx, inputs)
 	if err != nil {
 		t.Fatalf("runInstanceBuild: %v", err)
 	}
-	t.Logf("build succeeded: instance=%s logsEndpoint=%s logSelector=%s",
-		result.instanceID, result.logsEndpoint, result.logSelector)
+	t.Logf("build succeeded: instance=%s logSelector=%s", result.instanceID, result.logSelector)
+}
+
+// setupCockpitForTest creates a throwaway Cockpit data source + token
+// standing in for the persistent, project-level ones project.go now creates,
+// registers their teardown, and returns (logsEndpoint, logsToken).
+func setupCockpitForTest(
+	ctx context.Context, t *testing.T, c *scwAPIClient, projectID, name string,
+) (string, string) {
+	t.Helper()
+	dataSourceID, logsEndpoint, err := createCockpitDataSourceForTest(ctx, c, projectID, name)
+	if err != nil {
+		t.Fatalf("creating Cockpit data source: %v", err)
+	}
+	t.Cleanup(func() { _ = deleteCockpitDataSourceForTest(ctx, c, dataSourceID) })
+	tokenID, logsToken, err := createCockpitTokenForTest(ctx, c, projectID, name)
+	if err != nil {
+		t.Fatalf("creating Cockpit token: %v", err)
+	}
+	t.Cleanup(func() { _ = deleteCockpitTokenForTest(ctx, c, tokenID) })
+	return logsEndpoint, logsToken
+}
+
+func (c *scwAPIClient) cockpitBaseURLForTest() string {
+	return "https://api.scaleway.com/cockpit/v1/regions/" + c.region
+}
+
+func createCockpitDataSourceForTest(
+	ctx context.Context, c *scwAPIClient, projectID, name string,
+) (string, string, error) {
+	body := map[string]any{"project_id": projectID, "name": name, "type": "logs"}
+	resp, err := c.doRequest(ctx, "POST", c.cockpitBaseURLForTest()+"/data-sources", body, "")
+	if err != nil {
+		return "", "", err
+	}
+	defer closeBody(resp.Body)
+	var result struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", err
+	}
+	return result.ID, result.URL, nil
+}
+
+func deleteCockpitDataSourceForTest(ctx context.Context, c *scwAPIClient, id string) error {
+	resp, err := c.doRequest(ctx, "DELETE", c.cockpitBaseURLForTest()+"/data-sources/"+id, nil, "")
+	if err != nil {
+		return err
+	}
+	defer closeBody(resp.Body)
+	return nil
+}
+
+func createCockpitTokenForTest(ctx context.Context, c *scwAPIClient, projectID, name string) (string, string, error) {
+	body := map[string]any{
+		"project_id":   projectID,
+		"name":         name,
+		"token_scopes": []string{"write_only_logs", "read_only_logs"},
+	}
+	resp, err := c.doRequest(ctx, "POST", c.cockpitBaseURLForTest()+"/tokens", body, "")
+	if err != nil {
+		return "", "", err
+	}
+	defer closeBody(resp.Body)
+	var result struct {
+		ID        string `json:"id"`
+		SecretKey string `json:"secret_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", err
+	}
+	return result.ID, result.SecretKey, nil
+}
+
+func deleteCockpitTokenForTest(ctx context.Context, c *scwAPIClient, id string) error {
+	resp, err := c.doRequest(ctx, "DELETE", c.cockpitBaseURLForTest()+"/tokens/"+id, nil, "")
+	if err != nil {
+		return err
+	}
+	defer closeBody(resp.Body)
+	return nil
 }
 
 func createRegistryNamespaceForTest(ctx context.Context, c *scwAPIClient, projectID, name string) error {

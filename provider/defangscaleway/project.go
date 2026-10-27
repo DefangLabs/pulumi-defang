@@ -10,7 +10,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	scalewayconfig "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/config"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/network"
+	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/observability"
 )
+
+// buildLogsRetentionDays is how long build logs are kept in the project's
+// Cockpit data source. Short-lived: build output isn't an audit trail, just
+// something to look at shortly after a `defang up` finishes or fails.
+const buildLogsRetentionDays = 7
 
 // Project is the controller struct for the defang-scaleway:index:Project component.
 type Project struct{}
@@ -151,6 +157,30 @@ func buildSharedInfra(
 	if infra.ProjectID == "" {
 		infra.ProjectID = scalewayconfig.GetProjectId(ctx)
 	}
+
+	logsSource, err := observability.NewSource(ctx, projectName+"-build-logs", &observability.SourceArgs{
+		ProjectId:     pulumi.StringPtr(infra.ProjectID),
+		Name:          pulumi.StringPtr(projectName + "-build-logs"),
+		Type:          pulumi.StringPtr("logs"),
+		RetentionDays: pulumi.Int(buildLogsRetentionDays),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating Cockpit build-logs data source: %w", err)
+	}
+	logsToken, err := observability.NewToken(ctx, projectName+"-build-logs", &observability.TokenArgs{
+		ProjectId: pulumi.StringPtr(infra.ProjectID),
+		Name:      pulumi.StringPtr(projectName + "-build-logs"),
+		Scopes: &observability.TokenScopesArgs{
+			QueryLogs: pulumi.Bool(true),
+			WriteLogs: pulumi.Bool(true),
+		},
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating Cockpit build-logs token: %w", err)
+	}
+	infra.BuildInfra.LogsEndpoint = logsSource.Url
+	infra.BuildInfra.LogsToken = logsToken.SecretKey
+
 	return infra, nil
 }
 

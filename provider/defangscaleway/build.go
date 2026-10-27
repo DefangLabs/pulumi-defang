@@ -89,6 +89,19 @@ type BuildInputs struct {
 
 	// Trigger replacements when these change
 	Triggers []string `pulumi:"triggers,optional"`
+
+	// LogsEndpoint is the project's persistent Cockpit logs data source
+	// (created once in project.go, not per build — the project's
+	// auto-provisioned data source only accepts writes from Scaleway's own
+	// managed services, confirmed live: pushing to it directly is rejected
+	// with a bare 403, so a dedicated "custom"-origin one is created instead;
+	// persistent, not per-build, so the customer has one stable place in
+	// Scaleway Cockpit to see past build logs rather than a data source
+	// that's deleted the moment each build finishes).
+	LogsEndpoint string `pulumi:"logsEndpoint"`
+
+	// LogsToken is a Cockpit token (query+write logs) scoped to LogsEndpoint.
+	LogsToken string `pulumi:"logsToken"`
 }
 
 type BuildState struct {
@@ -101,21 +114,11 @@ type BuildState struct {
 	// The built image URL
 	Image string `pulumi:"image"`
 
-	// LogsEndpoint is the Cockpit logs data source this build's output was
-	// pushed to. It is a dedicated "custom"-origin data source created per
-	// build: the project's auto-provisioned data source only accepts writes
-	// from Scaleway's own managed services (confirmed: pushing to it
-	// directly is rejected with a bare 403), so builds need their own.
-	// Deleted by the time Create/Update returns; kept for diagnostics and
-	// for whoever wires this into the CLI's build-log support next
-	// (DefangLabs/defang#2105 currently stubs out Scaleway build logs
-	// entirely) — that still needs a decision on how this value reaches
-	// published deployment metadata, so it is not threaded any further than
-	// this resource's own state yet.
-	LogsEndpoint string `pulumi:"logsEndpoint,optional"`
-
 	// LogSelector is the LogQL stream selector for this build's log lines
-	// within LogsEndpoint (e.g. `{source="defang-build-<id>"}`).
+	// within LogsEndpoint (e.g. `{source="defang-build-<id>"}`) — for
+	// whoever wires this into the CLI's build-log support next
+	// (DefangLabs/defang#2105 currently stubs out Scaleway build logs
+	// entirely); not threaded any further than this resource's own state yet.
 	LogSelector string `pulumi:"logSelector,optional"`
 }
 
@@ -142,11 +145,10 @@ func (*Build) Create(
 	return infer.CreateResponse[BuildState]{
 		ID: req.Name,
 		Output: BuildState{
-			BuildInputs:  inputs,
-			BuildId:      result.instanceID,
-			Image:        inputs.Destination,
-			LogsEndpoint: result.logsEndpoint,
-			LogSelector:  result.logSelector,
+			BuildInputs: inputs,
+			BuildId:     result.instanceID,
+			Image:       inputs.Destination,
+			LogSelector: result.logSelector,
 		},
 	}, nil
 }
@@ -160,11 +162,10 @@ func (*Build) Update(
 	if req.DryRun {
 		return infer.UpdateResponse[BuildState]{
 			Output: BuildState{
-				BuildInputs:  inputs,
-				BuildId:      req.State.BuildId,
-				Image:        inputs.Destination,
-				LogsEndpoint: req.State.LogsEndpoint,
-				LogSelector:  req.State.LogSelector,
+				BuildInputs: inputs,
+				BuildId:     req.State.BuildId,
+				Image:       inputs.Destination,
+				LogSelector: req.State.LogSelector,
 			},
 		}, nil
 	}
@@ -177,19 +178,19 @@ func (*Build) Update(
 
 	return infer.UpdateResponse[BuildState]{
 		Output: BuildState{
-			BuildInputs:  inputs,
-			BuildId:      result.instanceID,
-			Image:        inputs.Destination,
-			LogsEndpoint: result.logsEndpoint,
-			LogSelector:  result.logSelector,
+			BuildInputs: inputs,
+			BuildId:     result.instanceID,
+			Image:       inputs.Destination,
+			LogSelector: result.logSelector,
 		},
 	}, nil
 }
 
-// Delete cleans up any resources associated with the build. The Instance,
-// its Cockpit logs data source, and its Cockpit token are all torn down
-// synchronously at the end of Create/Update (see runInstanceBuild), so
-// there is nothing left to clean up here.
+// Delete cleans up any resources associated with the build. The build
+// Instance is terminated synchronously at the end of Create/Update (see
+// runInstanceBuild), so there is nothing left to clean up here. The
+// project's Cockpit logs data source/token are persistent, project-level
+// resources (see project.go), not owned by this resource.
 func (*Build) Delete(ctx context.Context, req infer.DeleteRequest[BuildState]) error {
 	return nil
 }
@@ -240,17 +241,18 @@ func parseS3Source(source string) (string, string, error) {
 //     the same way curl's own --aws-sigv4 support signs any S3 request —
 //     no AWS SDK or CLI needed on the instance),
 //  2. `docker buildx build --push` it to the destination registry,
-//  3. relay the build's output, line by line, to a dedicated Cockpit logs
-//     data source (the project's auto-provisioned one rejects writes from
-//     anything but Scaleway's own managed services), finishing with a
-//     RESULT:SUCCESS/RESULT:FAILURE line that doubles as the completion
-//     signal for waitForInstanceBuild,
+//  3. relay the build's output, line by line, to the project's persistent
+//     Cockpit logs data source (inputs.LogsEndpoint/LogsToken — the
+//     project's auto-provisioned data source rejects writes from anything
+//     but Scaleway's own managed services, so project.go creates a
+//     dedicated one instead), finishing with a RESULT:SUCCESS/RESULT:FAILURE
+//     line that doubles as the completion signal for waitForInstanceBuild,
 //  4. power off.
 func buildScript(
 	inputs BuildInputs,
 	bucket, key string,
 	registrySecret string,
-	logsEndpoint, logsToken, logSource string,
+	logSource string,
 ) (string, error) {
 	dockerfile := "Dockerfile"
 	if inputs.Dockerfile != nil && *inputs.Dockerfile != "" {
@@ -297,7 +299,7 @@ func buildScript(
 }
 
 `
-	fmt.Fprintf(&b, lokiPushTemplate, shQuote("api_key:"+logsToken), logSource, shQuote(logsEndpoint))
+	fmt.Fprintf(&b, lokiPushTemplate, shQuote("api_key:"+inputs.LogsToken), logSource, shQuote(inputs.LogsEndpoint))
 
 	b.WriteString("push_log 'defang-build: fetching build context'\n")
 	b.WriteString("for i in 1 2 3 4 5; do\n")
@@ -352,9 +354,8 @@ func buildScript(
 }
 
 type instanceBuildResult struct {
-	instanceID   string
-	logsEndpoint string
-	logSelector  string
+	instanceID  string
+	logSelector string
 }
 
 func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildResult, error) {
@@ -370,24 +371,7 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 	name := sanitizeResourceName(inputs.Destination)
 	logSource := "defang-build-" + name
 
-	dataSourceID, logsEndpoint, err := client.createLogsDataSource(ctx, inputs.ProjectId, name+"-logs")
-	if err != nil {
-		return instanceBuildResult{}, fmt.Errorf("creating Cockpit logs data source: %w", err)
-	}
-	// Retried, not best-effort-once: deleting a Cockpit resource immediately
-	// after it saw recent write activity occasionally fails transiently
-	// (observed live — a manual retry moments later always succeeded), and a
-	// silently-failed cleanup means a leftover data source/token/instance in
-	// the customer's own account on every such build.
-	defer retryCleanup(ctx, func(ctx context.Context) error { return client.deleteLogsDataSource(ctx, dataSourceID) })
-
-	tokenID, logsToken, err := client.createLogsToken(ctx, inputs.ProjectId, name+"-logs")
-	if err != nil {
-		return instanceBuildResult{}, fmt.Errorf("creating Cockpit logs token: %w", err)
-	}
-	defer retryCleanup(ctx, func(ctx context.Context) error { return client.deleteLogsToken(ctx, tokenID) })
-
-	script, err := buildScript(inputs, bucket, key, secretKey, logsEndpoint, logsToken, logSource)
+	script, err := buildScript(inputs, bucket, key, secretKey, logSource)
 	if err != nil {
 		return instanceBuildResult{}, err
 	}
@@ -396,6 +380,10 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 	if err != nil {
 		return instanceBuildResult{}, fmt.Errorf("creating build instance: %w", err)
 	}
+	// Retried, not best-effort-once: deleting a Scaleway resource immediately
+	// after it saw recent activity has been observed to fail transiently (a
+	// manual retry moments later always succeeded), and a silently-failed
+	// cleanup means a leftover instance in the customer's own account.
 	defer retryCleanup(ctx, func(ctx context.Context) error { return client.terminateServer(ctx, zone, serverID) })
 
 	if err := client.setCloudInit(ctx, zone, serverID, script); err != nil {
@@ -411,11 +399,11 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 	if inputs.MaxWaitTime != nil {
 		maxWait = *inputs.MaxWaitTime
 	}
-	if err := waitForInstanceBuild(ctx, logsEndpoint, logsToken, logSelector, maxWait); err != nil {
+	if err := waitForInstanceBuild(ctx, inputs.LogsEndpoint, inputs.LogsToken, logSelector, maxWait); err != nil {
 		return instanceBuildResult{}, err
 	}
 
-	return instanceBuildResult{instanceID: serverID, logsEndpoint: logsEndpoint, logSelector: logSelector}, nil
+	return instanceBuildResult{instanceID: serverID, logSelector: logSelector}, nil
 }
 
 // retryCleanup retries a best-effort teardown call a few times with a short
@@ -506,10 +494,6 @@ func (c *scwAPIClient) instanceBaseURL(zone string) string {
 	return "https://api.scaleway.com/instance/v1/zones/" + zone
 }
 
-func (c *scwAPIClient) cockpitBaseURL() string {
-	return "https://api.scaleway.com/cockpit/v1/regions/" + c.region
-}
-
 func (c *scwAPIClient) doRequest(
 	ctx context.Context, method, url string, body any, contentType string,
 ) (*http.Response, error) {
@@ -528,7 +512,6 @@ func (c *scwAPIClient) doRequest(
 		}
 	}
 
-	//nolint:gosec // G704: url is always built from this client's own fixed Scaleway API paths, never external input
 	r, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -538,7 +521,7 @@ func (c *scwAPIClient) doRequest(
 		r.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := http.DefaultClient.Do(r) //nolint:gosec // G704: see above
+	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		return nil, err
 	}
@@ -618,66 +601,6 @@ func (c *scwAPIClient) powerOnServer(ctx context.Context, zone, serverID string)
 
 func (c *scwAPIClient) terminateServer(ctx context.Context, zone, serverID string) error {
 	return c.serverAction(ctx, zone, serverID, "terminate")
-}
-
-func (c *scwAPIClient) createLogsDataSource(
-	ctx context.Context, projectID, name string,
-) (string, string, error) {
-	body := map[string]any{"project_id": projectID, "name": name, "type": "logs"}
-	resp, reqErr := c.doRequest(ctx, "POST", c.cockpitBaseURL()+"/data-sources", body, "")
-	if reqErr != nil {
-		return "", "", reqErr
-	}
-	defer closeBody(resp.Body)
-
-	var result struct {
-		ID  string `json:"id"`
-		URL string `json:"url"`
-	}
-	if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr != nil {
-		return "", "", fmt.Errorf("decoding data source response: %w", decErr)
-	}
-	return result.ID, result.URL, nil
-}
-
-func (c *scwAPIClient) deleteLogsDataSource(ctx context.Context, id string) error {
-	resp, err := c.doRequest(ctx, "DELETE", c.cockpitBaseURL()+"/data-sources/"+id, nil, "")
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp.Body)
-	return nil
-}
-
-func (c *scwAPIClient) createLogsToken(ctx context.Context, projectID, name string) (string, string, error) {
-	body := map[string]any{
-		"project_id":   projectID,
-		"name":         name,
-		"token_scopes": []string{"write_only_logs", "read_only_logs"},
-	}
-	resp, reqErr := c.doRequest(ctx, "POST", c.cockpitBaseURL()+"/tokens", body, "")
-	if reqErr != nil {
-		return "", "", reqErr
-	}
-	defer closeBody(resp.Body)
-
-	var result struct {
-		ID        string `json:"id"`
-		SecretKey string `json:"secret_key"`
-	}
-	if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr != nil {
-		return "", "", fmt.Errorf("decoding token response: %w", decErr)
-	}
-	return result.ID, result.SecretKey, nil
-}
-
-func (c *scwAPIClient) deleteLogsToken(ctx context.Context, id string) error {
-	resp, err := c.doRequest(ctx, "DELETE", c.cockpitBaseURL()+"/tokens/"+id, nil, "")
-	if err != nil {
-		return err
-	}
-	defer closeBody(resp.Body)
-	return nil
 }
 
 type lokiQueryRangeResponse struct {
