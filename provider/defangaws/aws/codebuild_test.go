@@ -299,3 +299,21 @@ func TestGetSetupMirrorStepsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, steps)
 }
+
+func TestCodeBuildComputeType(t *testing.T) {
+	tests := []struct {
+		memMiB int
+		want   string
+	}{
+		{compose.DefaultBuildMemoryMiB, "BUILD_GENERAL1_MEDIUM"},
+		{4096, "BUILD_GENERAL1_SMALL"},
+		{4097, "BUILD_GENERAL1_MEDIUM"},
+		{8192, "BUILD_GENERAL1_MEDIUM"},
+		{16384, "BUILD_GENERAL1_LARGE"},
+		{65536, "BUILD_GENERAL1_XLARGE"},
+		{65537, "BUILD_GENERAL1_2XLARGE"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, codeBuildComputeType(tt.memMiB), "memMiB=%d", tt.memMiB)
+	}
+}

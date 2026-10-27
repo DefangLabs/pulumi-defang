@@ -705,10 +705,16 @@ func (b BuildConfig) GetTarget() string {
 	return ""
 }
 
-// GetShmSizeBytes returns the shared memory size in bytes, defaulting to 0.
-func (b BuildConfig) GetShmSizeBytes() int {
+// DefaultBuildMemoryMiB is the build machine memory every provider sizes for
+// when build.shm_size is unset, so the same compose.yaml gets an equally
+// sized build machine on every cloud.
+const DefaultBuildMemoryMiB = 8192
+
+// GetBuildMemoryMiB returns build.shm_size in MiB, which every provider uses to
+// size its build machine, or DefaultBuildMemoryMiB when it is unset.
+func (b BuildConfig) GetBuildMemoryMiB() int {
 	if b.ShmSize != nil {
-		return ParseMemoryMiB(*b.ShmSize) * 1024 * 1024
+		return ParseMemoryMiB(*b.ShmSize)
 	}
-	return 0
+	return DefaultBuildMemoryMiB
 }
