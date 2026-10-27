@@ -21,9 +21,10 @@ type BuildInstanceType struct {
 }
 
 // buildInstanceFamilies are the families the build-instance-family recipe
-// setting chooses between, each ordered smallest first. A static table rather
-// than a lookup against Scaleway's product API, so the same compose.yaml and
-// recipe always pick the same type.
+// setting chooses between, each ordered by memory, listing only the cheapest
+// type at each memory size. A static table rather than a lookup against
+// Scaleway's product API, so the same compose.yaml and recipe always pick the
+// same type.
 var buildInstanceFamilies = map[string][]BuildInstanceType{
 	// Scaleway's Development range: shared vCPU, local boot disk.
 	"dev": {
@@ -34,30 +35,49 @@ var buildInstanceFamilies = map[string][]BuildInstanceType{
 		{"GP1-XS", 16384, 150},
 		{"GP1-S", 32768, 300},
 		{"GP1-M", 65536, 600},
+		{"GP1-L", 131072, 600},
+		{"GP1-XL", 262144, 600},
 	},
 	"basic3": {
 		{"BASIC3-X2C-4G", 4096, 0},
 		{"BASIC3-X2C-8G", 8192, 0},
+		{"BASIC3-X6C-12G", 12288, 0},
 		{"BASIC3-X4C-16G", 16384, 0},
+		{"BASIC3-X6C-24G", 24576, 0},
 		{"BASIC3-X8C-32G", 32768, 0},
+		{"BASIC3-X12C-48G", 49152, 0},
 		{"BASIC3-X16C-64G", 65536, 0},
 	},
 	"standard3": {
 		{"STANDARD3-X2C-8G", 8192, 0},
 		{"STANDARD3-X4C-16G", 16384, 0},
+		{"STANDARD3-X6C-24G", 24576, 0},
 		{"STANDARD3-X8C-32G", 32768, 0},
+		{"STANDARD3-X12C-48G", 49152, 0},
 		{"STANDARD3-X16C-64G", 65536, 0},
+		{"STANDARD3-X24C-96G", 98304, 0},
+		{"STANDARD3-X32C-128G", 131072, 0},
+		{"STANDARD3-X48C-192G", 196608, 0},
+		{"STANDARD3-X64C-256G", 262144, 0},
 	},
 	"pop2": {
 		{"POP2-2C-8G", 8192, 0},
 		{"POP2-4C-16G", 16384, 0},
+		{"POP2-6C-24G", 24576, 0},
 		{"POP2-8C-32G", 32768, 0},
+		{"POP2-12C-48G", 49152, 0},
 		{"POP2-16C-64G", 65536, 0},
+		{"POP2-24C-96G", 98304, 0},
+		{"POP2-32C-128G", 131072, 0},
+		{"POP2-48C-192G", 196608, 0},
+		{"POP2-64C-256G", 262144, 0},
 	},
 }
 
 // SelectBuildInstanceType returns the smallest type in family with at least
-// memMiB of memory, or the family's largest when none is big enough.
+// memMiB of memory. A request beyond the family's largest type gets that type,
+// as AWS and GCP cap at their largest build machine; pick a family that goes
+// higher (standard3 and pop2 reach 256 GiB) for bigger builds.
 func SelectBuildInstanceType(family string, memMiB int) (BuildInstanceType, error) {
 	types, ok := buildInstanceFamilies[strings.ToLower(family)]
 	if !ok {
