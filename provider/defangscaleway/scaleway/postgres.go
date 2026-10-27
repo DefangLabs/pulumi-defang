@@ -91,9 +91,12 @@ var (
 		{"DB-GP-L", 32, 131072, true},
 		{"DB-GP-XL", 48, 262144, true},
 	}
+	// postgresNodeTypeCatalogs maps postgres-node-type values to the node
+	// families they search, in order, with the same names as AWS's
+	// rds-node-type: "general" leaves out the shared-vCPU DB-DEV nodes.
 	postgresNodeTypeCatalogs = map[string][]postgresNode{
-		"dev": append(slices.Clone(postgresDevNodes), postgresGPNodes...),
-		"gp":  postgresGPNodes,
+		"burstable": append(slices.Clone(postgresDevNodes), postgresGPNodes...),
+		"general":   postgresGPNodes,
 	}
 )
 
@@ -102,7 +105,7 @@ var (
 func postgresNodeType(family string, cpus float64, memMiB int) postgresNode {
 	nodes, ok := postgresNodeTypeCatalogs[strings.ToLower(family)]
 	if !ok {
-		nodes = postgresNodeTypeCatalogs["dev"]
+		nodes = postgresNodeTypeCatalogs["burstable"]
 	}
 	for _, n := range nodes {
 		if float64(n.vcpus) >= cpus && n.memMiB >= memMiB {

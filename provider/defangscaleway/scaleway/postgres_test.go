@@ -97,18 +97,18 @@ func TestPostgresNodeType(t *testing.T) {
 		memMiB int
 		want   string
 	}{
-		{"dev", 0.25, 512, "DB-DEV-S"},
-		{"dev", 2, 2048, "DB-DEV-S"},
-		{"dev", 2, 2049, "DB-DEV-M"},
-		{"dev", 2, 4096, "DB-DEV-M"},
-		{"dev", 4, 8192, "DB-DEV-L"},
-		{"dev", 4, 12288, "DB-DEV-XL"},
-		{"dev", 4, 16384, "DB-GP-XS"},
-		{"dev", 8, 16384, "DB-GP-S"},
-		{"dev", 16, 32768, "DB-GP-M"},
-		{"dev", 64, 1 << 20, "DB-GP-XL"},
-		{"gp", 0.25, 512, "DB-GP-XS"},
-		{"GP", 8, 16384, "DB-GP-S"},
+		{"burstable", 0.25, 512, "DB-DEV-S"},
+		{"burstable", 2, 2048, "DB-DEV-S"},
+		{"burstable", 2, 2049, "DB-DEV-M"},
+		{"burstable", 2, 4096, "DB-DEV-M"},
+		{"burstable", 4, 8192, "DB-DEV-L"},
+		{"burstable", 4, 12288, "DB-DEV-XL"},
+		{"burstable", 4, 16384, "DB-GP-XS"},
+		{"burstable", 8, 16384, "DB-GP-S"},
+		{"burstable", 16, 32768, "DB-GP-M"},
+		{"burstable", 64, 1 << 20, "DB-GP-XL"},
+		{"general", 0.25, 512, "DB-GP-XS"},
+		{"GENERAL", 8, 16384, "DB-GP-S"},
 		{"unknown", 0.25, 512, "DB-DEV-S"},
 	}
 	for _, tt := range tests {
@@ -155,7 +155,7 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 func TestCreatePostgresRecipe(t *testing.T) {
 	t.Setenv("PULUMI_CONFIG", `{
 		"defang-scaleway:backup-retention-days": "7",
-		"defang-scaleway:postgres-node-type": "gp",
+		"defang-scaleway:postgres-node-type": "general",
 		"defang-scaleway:high-availability": "true"
 	}`)
 	mocks := &recordingMocks{}
@@ -179,8 +179,8 @@ func TestCreatePostgresRecipe(t *testing.T) {
 }
 
 func TestPostgresNodeTypeRequiresHA(t *testing.T) {
-	assert.False(t, postgresNodeType("dev", 16, 65536).haRequired)
-	assert.True(t, postgresNodeType("dev", 16, 65537).haRequired, "DB-GP-L is only offered with a standby")
+	assert.False(t, postgresNodeType("burstable", 16, 65536).haRequired)
+	assert.True(t, postgresNodeType("burstable", 16, 65537).haRequired, "DB-GP-L is only offered with a standby")
 }
 
 func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {
