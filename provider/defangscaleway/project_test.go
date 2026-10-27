@@ -200,7 +200,31 @@ func TestBuildProjectCreatesBuildResourceForBuildOnlyServices(t *testing.T) {
 
 	require.NoError(t, err)
 	build := mocks.findType("defang-scaleway:index:Build")
-	assert.NotNil(t, build, "a Build resource should be created for build-only services")
+	require.NotNil(t, build, "a Build resource should be created for build-only services")
+	assert.Equal(t, "DEV1-L", build.inputs[resource.PropertyKey("instanceType")].StringValue())
+	logs := mocks.findType("scaleway:observability/source:Source")
+	require.NotNil(t, logs)
+	assert.Equal(t, 1, int(logs.inputs[resource.PropertyKey("retentionDays")].NumberValue()))
+}
+
+func TestBuildProjectRecipe(t *testing.T) {
+	t.Setenv("PULUMI_CONFIG",
+		`{"defang-scaleway:log-retention-days": "14", "defang-scaleway:build-instance-family": "standard3"}`)
+	mocks := &projectRecordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := buildProject(ctx, "demo", ProjectInputs{
+			Services: compose.Services{"app": {Build: &compose.BuildConfig{Context: pulumi.String(".")}}},
+		}, common.PluginIdentityFrom(nil))
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+
+	require.NoError(t, err)
+	build := mocks.findType("defang-scaleway:index:Build")
+	require.NotNil(t, build)
+	assert.Equal(t, "STANDARD3-X2C-8G", build.inputs[resource.PropertyKey("instanceType")].StringValue())
+	logs := mocks.findType("scaleway:observability/source:Source")
+	require.NotNil(t, logs)
+	assert.Equal(t, 14, int(logs.inputs[resource.PropertyKey("retentionDays")].NumberValue()))
 }
 
 func TestProjectBuildCarriesPluginIdentity(t *testing.T) {

@@ -80,3 +80,25 @@ func TestCreateRedisAttachesPrivateNetwork(t *testing.T) {
 	require.Len(t, privateNetworks, 1)
 	assert.Equal(t, "fr-par-1", privateNetworks[0].ObjectValue()[resource.PropertyKey("zone")].StringValue())
 }
+
+func TestCreateRedisTransitEncryptionRecipe(t *testing.T) {
+	t.Setenv("PULUMI_CONFIG", `{"defang-scaleway:transit-encryption-disabled": "false"}`)
+	mocks := &recordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		pn, err := network.NewPrivateNetwork(ctx, "pn", &network.PrivateNetworkArgs{})
+		if err != nil {
+			return err
+		}
+		_, err = CreateRedis(ctx, &mockConfigProvider{}, "cache", compose.ServiceConfig{
+			Image:       compose.ImageFromPtr(&[]string{"redis:7"}[0]),
+			Redis:       &compose.RedisConfig{},
+			Environment: compose.Environment{"REDIS_PASSWORD": pulumi.String("secret")},
+		}, &SharedInfra{Zone: "fr-par-1", PrivateNetwork: pn})
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+
+	require.NoError(t, err)
+	cluster := mocks.findType("scaleway:redis/cluster:Cluster")
+	require.NotNil(t, cluster)
+	assert.True(t, cluster.inputs[resource.PropertyKey("tlsEnabled")].BoolValue())
+}

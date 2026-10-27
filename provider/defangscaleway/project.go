@@ -13,11 +13,6 @@ import (
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/observability"
 )
 
-// buildLogsRetentionDays is how long build logs are kept in the project's
-// Cockpit data source. Short-lived: build output isn't an audit trail, just
-// something to look at shortly after a `defang up` finishes or fails.
-const buildLogsRetentionDays = 7
-
 // Project is the controller struct for the defang-scaleway:index:Project component.
 type Project struct{}
 
@@ -162,7 +157,7 @@ func buildSharedInfra(
 		ProjectId:     pulumi.StringPtr(infra.ProjectID),
 		Name:          pulumi.StringPtr(projectName + "-build-logs"),
 		Type:          pulumi.StringPtr("logs"),
-		RetentionDays: pulumi.Int(buildLogsRetentionDays),
+		RetentionDays: pulumi.Int(providerscaleway.LogRetentionDays.Get(ctx)),
 	}, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Cockpit build-logs data source: %w", err)

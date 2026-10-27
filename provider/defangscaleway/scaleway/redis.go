@@ -99,7 +99,7 @@ func CreateRedis(
 		PasswordWo:        redisPassword(password),
 		PasswordWoVersion: pulumi.Int(1),
 		ClusterSize:       pulumi.Int(redisClusterSize(svc)),
-		TlsEnabled:        pulumi.Bool(false),
+		TlsEnabled:        pulumi.Bool(!TransitEncryptionDisabled.Get(ctx)),
 	}
 	if infra != nil {
 		if infra.ProjectID != "" {
