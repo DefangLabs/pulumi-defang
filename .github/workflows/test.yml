@@ -174,6 +174,17 @@ jobs:
 
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
+        with:
+          # The image builds with CGO_ENABLED=0 and -trimpath, which share no
+          # compiled packages with the test job's cache, so keep its own.
+          cache-key-prefix: defang-go-image
+
+      # Compile the image's Go binaries here, where setup-go's cache survives
+      # between runs; inside BuildKit every run recompiled every cloud SDK.
+      # The versions are the Dockerfile's defaults, which this image has
+      # always been built with.
+      - name: Build the image's Go binaries
+        run: make image_binaries CD_VERSION=0.0.1 PROVIDER_VERSION=0.0.1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -206,6 +217,7 @@ jobs:
           context: . # build context must be repo root to include generated Go SDK
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           target: all
+          build-args: BINARIES=prebuilt
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=${{ github.workflow }}
           cache-to: type=gha,scope=${{ github.workflow }},mode=max

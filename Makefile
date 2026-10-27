@@ -116,6 +116,31 @@ IMAGE_REPO     := defangio/cd-sandbox
 CD_VERSION     := $(shell git describe --tags --always --dirty)
 PROVIDER_VERSION := $(shell $(MAKE) -s -f defang-aws.mk version)
 
+# The image's Go binaries, built on the host with the same flags as the
+# Dockerfile's build-* stages, for `--build-arg BINARIES=prebuilt`. CI builds
+# the image this way so the Go build cache survives between runs. Like the
+# Dockerfile, cd builds before the providers: all five at once can exhaust a
+# 16 GB runner's memory.
+IMAGE_ARCH ?= $(shell go env GOARCH)
+IMAGE_BIN  := $(WORKING_DIR)/bin/image/$(IMAGE_ARCH)
+IMAGE_GO   := CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -buildvcs=false
+
+.PHONY: image_binaries
+image_binaries:
+	$(MAKE) image_binary_cd
+	$(MAKE) image_binary_providers
+
+.PHONY: image_binary_cd
+image_binary_cd:
+	cd cd && $(IMAGE_GO) -ldflags="-w -s -X main.version=$(CD_VERSION)" -o $(IMAGE_BIN)/cd .
+
+IMAGE_PROVIDERS := aws gcp azure scaleway
+IMAGE_LDFLAGS   := -w -s $(foreach p,$(IMAGE_PROVIDERS),-X github.com/DefangLabs/pulumi-defang/provider/defang$(p).Version=$(PROVIDER_VERSION))
+
+.PHONY: image_binary_providers
+image_binary_providers:
+	$(IMAGE_GO) -o $(IMAGE_BIN)/ -ldflags="$(IMAGE_LDFLAGS)" $(foreach p,$(IMAGE_PROVIDERS),./provider/cmd/pulumi-resource-defang-$(p))
+
 .PHONY: images
 images: image_aws image_gcp image_azure image_scaleway image_all
 

@@ -19,3 +19,8 @@
 !/sdk
 !/sdk/v2
 !/sdk/v2/**
+
+# Prebuilt binaries for --build-arg BINARIES=prebuilt (make image_binaries)
+!/bin
+!/bin/image
+!/bin/image/**

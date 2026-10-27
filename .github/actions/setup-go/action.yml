@@ -6,6 +6,10 @@ inputs:
     description: Whether to restore-and-save the Go cache or restore it only.
     required: false
     default: read-write
+  cache-key-prefix:
+    description: Key prefix of the Go cache, for jobs whose build flags share no compiled packages with the default.
+    required: false
+    default: defang-go
 
 runs:
   using: composite
@@ -44,9 +48,9 @@ runs:
         path: |
           ${{ steps.go-cache-paths.outputs.gomodcache }}
           ${{ steps.go-cache-paths.outputs.gocache }}
-        key: defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
 
     - name: Restore Go cache
       if: inputs.cache == 'restore'
@@ -55,9 +59,9 @@ runs:
         path: |
           ${{ steps.go-cache-paths.outputs.gomodcache }}
           ${{ steps.go-cache-paths.outputs.gocache }}
-        key: defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          defang-go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
 
     - name: Install pulumictl
       shell: bash
