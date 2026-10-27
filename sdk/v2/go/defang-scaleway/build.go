@@ -21,7 +21,8 @@ type Build struct {
 	Dockerfile   pulumi.StringPtrOutput   `pulumi:"dockerfile"`
 	Image        pulumi.StringOutput      `pulumi:"image"`
 	LogSelector  pulumi.StringPtrOutput   `pulumi:"logSelector"`
-	LogsEndpoint pulumi.StringPtrOutput   `pulumi:"logsEndpoint"`
+	LogsEndpoint pulumi.StringOutput      `pulumi:"logsEndpoint"`
+	LogsToken    pulumi.StringOutput      `pulumi:"logsToken"`
 	MaxWaitTime  pulumi.IntPtrOutput      `pulumi:"maxWaitTime"`
 	ProjectId    pulumi.StringOutput      `pulumi:"projectId"`
 	Region       pulumi.StringOutput      `pulumi:"region"`
@@ -39,6 +40,12 @@ func NewBuild(ctx *pulumi.Context,
 
 	if args.Destination == nil {
 		return nil, errors.New("invalid value for required argument 'Destination'")
+	}
+	if args.LogsEndpoint == nil {
+		return nil, errors.New("invalid value for required argument 'LogsEndpoint'")
+	}
+	if args.LogsToken == nil {
+		return nil, errors.New("invalid value for required argument 'LogsToken'")
 	}
 	if args.ProjectId == nil {
 		return nil, errors.New("invalid value for required argument 'ProjectId'")
@@ -82,28 +89,32 @@ func (BuildState) ElementType() reflect.Type {
 }
 
 type buildArgs struct {
-	BuildArgs   map[string]string `pulumi:"buildArgs"`
-	Destination string            `pulumi:"destination"`
-	Dockerfile  *string           `pulumi:"dockerfile"`
-	MaxWaitTime *int              `pulumi:"maxWaitTime"`
-	ProjectId   string            `pulumi:"projectId"`
-	Region      string            `pulumi:"region"`
-	Source      string            `pulumi:"source"`
-	Target      *string           `pulumi:"target"`
-	Triggers    []string          `pulumi:"triggers"`
+	BuildArgs    map[string]string `pulumi:"buildArgs"`
+	Destination  string            `pulumi:"destination"`
+	Dockerfile   *string           `pulumi:"dockerfile"`
+	LogsEndpoint string            `pulumi:"logsEndpoint"`
+	LogsToken    string            `pulumi:"logsToken"`
+	MaxWaitTime  *int              `pulumi:"maxWaitTime"`
+	ProjectId    string            `pulumi:"projectId"`
+	Region       string            `pulumi:"region"`
+	Source       string            `pulumi:"source"`
+	Target       *string           `pulumi:"target"`
+	Triggers     []string          `pulumi:"triggers"`
 }
 
 // The set of arguments for constructing a Build resource.
 type BuildArgs struct {
-	BuildArgs   pulumi.StringMapInput
-	Destination pulumi.StringInput
-	Dockerfile  pulumi.StringPtrInput
-	MaxWaitTime pulumi.IntPtrInput
-	ProjectId   pulumi.StringInput
-	Region      pulumi.StringInput
-	Source      pulumi.StringInput
-	Target      pulumi.StringPtrInput
-	Triggers    pulumi.StringArrayInput
+	BuildArgs    pulumi.StringMapInput
+	Destination  pulumi.StringInput
+	Dockerfile   pulumi.StringPtrInput
+	LogsEndpoint pulumi.StringInput
+	LogsToken    pulumi.StringInput
+	MaxWaitTime  pulumi.IntPtrInput
+	ProjectId    pulumi.StringInput
+	Region       pulumi.StringInput
+	Source       pulumi.StringInput
+	Target       pulumi.StringPtrInput
+	Triggers     pulumi.StringArrayInput
 }
 
 func (BuildArgs) ElementType() reflect.Type {
@@ -167,8 +178,12 @@ func (o BuildOutput) LogSelector() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.LogSelector }).(pulumi.StringPtrOutput)
 }
 
-func (o BuildOutput) LogsEndpoint() pulumi.StringPtrOutput {
-	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.LogsEndpoint }).(pulumi.StringPtrOutput)
+func (o BuildOutput) LogsEndpoint() pulumi.StringOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.LogsEndpoint }).(pulumi.StringOutput)
+}
+
+func (o BuildOutput) LogsToken() pulumi.StringOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.LogsToken }).(pulumi.StringOutput)
 }
 
 func (o BuildOutput) MaxWaitTime() pulumi.IntPtrOutput {

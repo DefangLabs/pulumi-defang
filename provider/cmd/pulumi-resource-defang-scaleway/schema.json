@@ -378,6 +378,9 @@
         "logsEndpoint": {
           "type": "string"
         },
+        "logsToken": {
+          "type": "string"
+        },
         "maxWaitTime": {
           "type": "integer"
         },
@@ -405,6 +408,8 @@
         "projectId",
         "source",
         "destination",
+        "logsEndpoint",
+        "logsToken",
         "buildId",
         "image"
       ],
@@ -419,6 +424,12 @@
           "type": "string"
         },
         "dockerfile": {
+          "type": "string"
+        },
+        "logsEndpoint": {
+          "type": "string"
+        },
+        "logsToken": {
           "type": "string"
         },
         "maxWaitTime": {
@@ -447,7 +458,9 @@
         "region",
         "projectId",
         "source",
-        "destination"
+        "destination",
+        "logsEndpoint",
+        "logsToken"
       ]
     },
     "defang-scaleway:index:Postgres": {
