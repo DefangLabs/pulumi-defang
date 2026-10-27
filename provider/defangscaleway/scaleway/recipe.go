@@ -27,6 +27,9 @@ var (
 	// TransitEncryptionDisabled turns off TLS to managed Redis. It defaults to
 	// true, unlike GCP: Scaleway's Redis TLS certificate is not publicly
 	// trusted, so a client connecting with rediss:// fails verification unless
-	// it is given the cluster's certificate.
+	// it is given the cluster's certificate. Setting this false is for clients
+	// that are: the certificate is the Redis cluster's `certificate` output,
+	// and the Scaleway console offers it for download. It is not passed to
+	// the service.
 	TransitEncryptionDisabled = recipe.Bool("transit-encryption-disabled", true)
 )
