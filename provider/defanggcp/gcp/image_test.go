@@ -50,42 +50,40 @@ func (m *buildDepsSpy) Call(args pulumi.MockCallArgs) (resource.PropertyMap, err
 }
 
 func TestCloudBuildMachineType(t *testing.T) {
-	MiB := 1024 * 1024
 	tests := []struct {
-		name     string
-		shmBytes int
-		want     string
+		name   string
+		memMiB int
+		want   string
 	}{
-		{"zero defaults to 8 GiB -> E2_HIGHCPU_8", 0, "E2_HIGHCPU_8"},
-		{"4096 MiB -> E2_MEDIUM", 4096 * MiB, "E2_MEDIUM"},
-		{"4097 MiB -> E2_HIGHCPU_8", 4097 * MiB, "E2_HIGHCPU_8"},
-		{"8192 MiB -> E2_HIGHCPU_8", 8192 * MiB, "E2_HIGHCPU_8"},
-		{"8193 MiB -> E2_HIGHCPU_32", 8193 * MiB, "E2_HIGHCPU_32"},
-		{"32768 MiB -> E2_HIGHCPU_32", 32768 * MiB, "E2_HIGHCPU_32"},
+		{"default 8 GiB -> E2_HIGHCPU_8", compose.DefaultBuildMemoryMiB, "E2_HIGHCPU_8"},
+		{"4096 MiB -> E2_MEDIUM", 4096, "E2_MEDIUM"},
+		{"4097 MiB -> E2_HIGHCPU_8", 4097, "E2_HIGHCPU_8"},
+		{"8192 MiB -> E2_HIGHCPU_8", 8192, "E2_HIGHCPU_8"},
+		{"8193 MiB -> E2_HIGHCPU_32", 8193, "E2_HIGHCPU_32"},
+		{"32768 MiB -> E2_HIGHCPU_32", 32768, "E2_HIGHCPU_32"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, cloudBuildMachineType(tt.shmBytes))
+			assert.Equal(t, tt.want, cloudBuildMachineType(tt.memMiB))
 		})
 	}
 }
 
 func TestCloudBuildDiskSizeGb(t *testing.T) {
-	MiB := 1024 * 1024
 	tests := []struct {
-		name     string
-		shmBytes int
-		want     int
+		name   string
+		memMiB int
+		want   int
 	}{
-		{"zero defaults to 8 GiB -> 16 GB", 0, 16},
-		{"4096 MiB -> 8 GB, clamped to 16", 4096 * MiB, 16},
-		{"8192 MiB -> 16 GB", 8192 * MiB, 16},
-		{"16384 MiB -> 32 GB", 16384 * MiB, 32},
-		{"32768 MiB -> 64 GB", 32768 * MiB, 64},
+		{"default 8 GiB -> 16 GB", compose.DefaultBuildMemoryMiB, 16},
+		{"4096 MiB -> 8 GB, clamped to 16", 4096, 16},
+		{"8192 MiB -> 16 GB", 8192, 16},
+		{"16384 MiB -> 32 GB", 16384, 32},
+		{"32768 MiB -> 64 GB", 32768, 64},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, cloudBuildDiskSizeGb(tt.shmBytes))
+			assert.Equal(t, tt.want, cloudBuildDiskSizeGb(tt.memMiB))
 		})
 	}
 }

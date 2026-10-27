@@ -452,3 +452,9 @@ func TestGetHealthCheckPathAndPort(t *testing.T) {
 		})
 	}
 }
+
+func TestGetBuildMemoryMiB(t *testing.T) {
+	assert.Equal(t, DefaultBuildMemoryMiB, BuildConfig{}.GetBuildMemoryMiB())
+	shm := "16g"
+	assert.Equal(t, 16384, BuildConfig{ShmSize: &shm}.GetBuildMemoryMiB())
+}

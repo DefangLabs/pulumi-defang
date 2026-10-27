@@ -217,13 +217,9 @@ func GetServiceImage(
 	return pulumi.String(info.FullImage()).ToStringOutput(), nil
 }
 
-// cloudBuildMachineType returns the Cloud Build machine type string for a given
-// shm_size in bytes, using the same thresholds as the CD implementation.
-func cloudBuildMachineType(shmBytes int) string {
-	memMiB := shmBytes / (1024 * 1024)
-	if memMiB == 0 {
-		memMiB = 8192
-	}
+// cloudBuildMachineType returns the Cloud Build machine type string for the
+// build memory (shm_size, in MiB), using the same thresholds as the CD implementation.
+func cloudBuildMachineType(memMiB int) string {
 	if memMiB <= 4096 {
 		return "E2_MEDIUM"
 	}
@@ -233,13 +229,9 @@ func cloudBuildMachineType(shmBytes int) string {
 	return "E2_HIGHCPU_32"
 }
 
-// cloudBuildDiskSizeGb returns the disk size in GB for a given shm_size in bytes
-// (2× memory, minimum 16 GB).
-func cloudBuildDiskSizeGb(shmBytes int) int {
-	memMiB := shmBytes / (1024 * 1024)
-	if memMiB == 0 {
-		memMiB = 8192
-	}
+// cloudBuildDiskSizeGb returns the disk size in GB for the build memory
+// (shm_size, in MiB): 2× memory, minimum 16 GB.
+func cloudBuildDiskSizeGb(memMiB int) int {
 	gb := memMiB * 2 / 1024
 	if gb < 16 {
 		gb = 16
@@ -306,7 +298,7 @@ func buildServiceImage(
 	// post-hoc lookup by tag, so this is a hygiene fix, not a correctness one.
 	dest := pulumi.Sprintf("%s/%s:%s", infra.RepositoryURL, serviceName, common.BuildTriggerHash(svc.Build))
 	steps := generateBuildSteps(svc.Build, dest)
-	shmBytes := svc.Build.GetShmSizeBytes()
+	buildMemMiB := svc.Build.GetBuildMemoryMiB()
 
 	sourceURI, err := resolveSourceURI(serviceName, svc.Build)
 	if err != nil {
@@ -336,8 +328,8 @@ func buildServiceImage(
 			"steps":          steps,
 			"images":         pulumi.StringArray{dest},
 			"serviceAccount": infra.ServiceAccount.Email,
-			"machineType":    pulumi.String(cloudBuildMachineType(shmBytes)),
-			"diskSizeGb":     pulumi.Int(cloudBuildDiskSizeGb(shmBytes)),
+			"machineType":    pulumi.String(cloudBuildMachineType(buildMemMiB)),
+			"diskSizeGb":     pulumi.Int(cloudBuildDiskSizeGb(buildMemMiB)),
 		},
 		&buildRes,
 		pluginID.ResourceOptions(buildOpts...)...,
