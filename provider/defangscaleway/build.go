@@ -560,6 +560,21 @@ func (c *scwAPIClient) createServer(ctx context.Context, zone, projectID, name s
 	}
 	resp, err := c.doRequest(ctx, "POST", c.instanceBaseURL(zone)+"/servers", body, "")
 	if err != nil {
+		// "quotas_exceeded" here means the Scaleway account/project itself has
+		// zero Instance quota, not that defaultBuildInstanceType was a bad
+		// choice: every commercial type returns the same (0/0) until the
+		// account's payment method and identity are verified (confirmed
+		// against Scaleway's own docs) — there is no quota-exempt type to
+		// fall back to, so the fix has to be pointing the customer at
+		// verification, not picking a different instance type.
+		if strings.Contains(err.Error(), "quotas_exceeded") {
+			return "", fmt.Errorf(
+				"%w: this Scaleway project has no Compute Instance quota yet — "+
+					"verify the account's payment method and identity in the Scaleway console, "+
+					"then contact Scaleway Support if quota is still 0 afterward",
+				err,
+			)
+		}
 		return "", err
 	}
 	defer closeBody(resp.Body)
