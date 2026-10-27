@@ -512,7 +512,6 @@ func (c *scwAPIClient) doRequest(
 		}
 	}
 
-	//nolint:gosec // G704: url is always built from this client's own fixed Scaleway API paths, never external input
 	r, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -522,7 +521,7 @@ func (c *scwAPIClient) doRequest(
 		r.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := http.DefaultClient.Do(r) //nolint:gosec // G704: see above
+	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		return nil, err
 	}
