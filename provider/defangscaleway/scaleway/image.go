@@ -60,8 +60,14 @@ func buildServiceImage(
 
 	triggerHash := common.BuildTriggerHash(svc.Build)
 
+	buildMemMiB := svc.Build.GetBuildMemoryMiB()
+	instanceType, err := SelectBuildInstanceType(BuildInstanceFamily.Get(ctx), buildMemMiB)
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("service %s: %w", serviceName, err)
+	}
+
 	var buildResource imageBuildResource
-	err := ctx.RegisterResource("defang-scaleway:index:Build", serviceName, pulumi.Map{
+	err = ctx.RegisterResource("defang-scaleway:index:Build", serviceName, pulumi.Map{
 		"region":       pulumi.String(sharedInfra.Region),
 		"projectId":    pulumi.String(sharedInfra.ProjectID),
 		"source":       svc.Build.Context.ToStringOutput(),
@@ -70,6 +76,8 @@ func buildServiceImage(
 		"target":       pulumi.StringPtrFromPtr(svc.Build.Target),
 		"args":         pulumi.ToStringMap(svc.Build.Args),
 		"triggers":     pulumi.StringArray{triggerHash},
+		"instanceType": pulumi.String(instanceType.Name),
+		"diskSizeGb":   pulumi.Int(BuildDiskSizeGB(instanceType, buildMemMiB)),
 		"logsEndpoint": infra.LogsEndpoint,
 		"logsToken":    pulumi.ToSecret(infra.LogsToken),
 	}, &buildResource, sharedInfra.PluginIdentity.ResourceOptions(opts...)...)

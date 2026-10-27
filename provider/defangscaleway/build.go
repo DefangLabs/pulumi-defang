@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	providerscaleway "github.com/DefangLabs/pulumi-defang/provider/defangscaleway/scaleway"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
@@ -29,12 +30,13 @@ var (
 	errMissingAWSCredentials = errors.New("AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY not set")
 )
 
-// defaultBuildInstanceType is the Compute Instance commercial type used for
-// builds. It must have non-zero quota in the target Scaleway project/account:
-// new Scaleway projects commonly start with zero Instance quota for every
-// commercial type until identity/payment is verified, which surfaces as a
-// clear "quota exceeded (0/0)" API error rather than a silent failure.
-const defaultBuildInstanceType = "STANDARD3-X2C-8G"
+// defaultBuildInstanceType and defaultBuildDiskSizeGB are what the Project
+// component picks for the default "dev" recipe family and the default 8 GiB
+// build memory, for a Build created without them.
+const (
+	defaultBuildInstanceType = "DEV1-L"
+	defaultBuildDiskSizeGB   = 16
+)
 
 // buildImageLabel is Scaleway's official "Docker" Marketplace InstantApp
 // image. It ships Docker + buildx already installed and running, is
@@ -91,6 +93,13 @@ type BuildInputs struct {
 
 	// Trigger replacements when these change
 	Triggers []string `pulumi:"triggers,optional"`
+
+	// Compute Instance commercial type to build on (default: DEV1-L). A type
+	// with local storage boots from a local disk, deleted with the instance.
+	InstanceType *string `pulumi:"instanceType,optional"`
+
+	// Boot disk size in GB (default: 16)
+	DiskSizeGb *int `pulumi:"diskSizeGb,optional"`
 
 	// LogsEndpoint is the project's persistent Cockpit logs data source
 	// (created once in project.go, not per build — the project's
@@ -378,7 +387,16 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 		return instanceBuildResult{}, err
 	}
 
-	serverID, err := client.createServer(ctx, zone, inputs.ProjectId, name)
+	typeName := defaultBuildInstanceType
+	if inputs.InstanceType != nil {
+		typeName = *inputs.InstanceType
+	}
+	diskSizeGB := defaultBuildDiskSizeGB
+	if inputs.DiskSizeGb != nil {
+		diskSizeGB = *inputs.DiskSizeGb
+	}
+	instanceType := providerscaleway.LookupBuildInstanceType(typeName)
+	serverID, err := client.createServer(ctx, zone, inputs.ProjectId, name, instanceType, diskSizeGB)
 	if err != nil {
 		return instanceBuildResult{}, fmt.Errorf("creating build instance: %w", err)
 	}
@@ -410,8 +428,10 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 
 // teardownServer removes the build instance and what terminating it leaves
 // behind: neither the terminate action nor DELETE /servers removes the
-// server's SBS boot volume or its public IPs, so each build would otherwise
-// leave a billed volume (and possibly an IP) in the customer's account.
+// server's SBS boot volume or its public IPs, and DELETE /servers (the path
+// for a server that never booted) leaves a local volume too, so each build
+// would otherwise leave a billed volume (and possibly an IP) in the
+// customer's account.
 // They are read before the server goes, since afterwards nothing links them.
 func (c *scwAPIClient) teardownServer(ctx context.Context, zone, serverID string) {
 	log := p.GetLogger(ctx)
@@ -604,18 +624,29 @@ func (c *scwAPIClient) doRequest(
 	return resp, nil
 }
 
-func (c *scwAPIClient) createServer(ctx context.Context, zone, projectID, name string) (string, error) {
+func (c *scwAPIClient) createServer(
+	ctx context.Context, zone, projectID, name string, instanceType providerscaleway.BuildInstanceType, diskSizeGB int,
+) (string, error) {
+	// Asking for an l_ssd boot volume makes the API pick the image label's
+	// local variant (confirmed live); otherwise it picks the SBS one.
+	volumeType := "sbs_volume"
+	if instanceType.MaxLocalDiskGB > 0 {
+		volumeType = "l_ssd"
+	}
 	body := map[string]any{
 		"name":                name,
-		"commercial_type":     defaultBuildInstanceType,
+		"commercial_type":     instanceType.Name,
 		"image":               buildImageLabel,
 		"project":             projectID,
 		"dynamic_ip_required": true,
+		"volumes": map[string]any{
+			"0": map[string]any{"volume_type": volumeType, "size": diskSizeGB * 1_000_000_000},
+		},
 	}
 	resp, err := c.doRequest(ctx, "POST", c.instanceBaseURL(zone)+"/servers", body, "")
 	if err != nil {
-		// "quotas_exceeded" here means the Scaleway account/project itself has
-		// zero Instance quota, not that defaultBuildInstanceType was a bad
+		// "quotas_exceeded" here usually means the Scaleway account/project
+		// itself has zero Instance quota, not that the instance type was a bad
 		// choice: every commercial type returns the same (0/0) until the
 		// account's payment method and identity are verified (confirmed
 		// against Scaleway's own docs) — there is no quota-exempt type to
@@ -693,8 +724,9 @@ func (c *scwAPIClient) terminateServer(ctx context.Context, zone, serverID strin
 
 // serverResources are the parts of a build instance that outlive it.
 type serverResources struct {
-	volumeIDs []string // SBS volumes only; local (l_ssd) volumes go with the server
-	ipIDs     []string
+	volumeIDs      []string // SBS volumes, deleted through the Block Storage API
+	localVolumeIDs []string // l_ssd volumes; terminate deletes them, DELETE /servers doesn't
+	ipIDs          []string
 }
 
 func (c *scwAPIClient) getServerResources(ctx context.Context, zone, serverID string) (serverResources, error) {
@@ -723,8 +755,14 @@ func (c *scwAPIClient) getServerResources(ctx context.Context, zone, serverID st
 
 	var res serverResources
 	for _, v := range common.Sorted(result.Server.Volumes) {
-		if v.VolumeType == "sbs_volume" && v.ID != "" {
+		if v.ID == "" {
+			continue
+		}
+		switch v.VolumeType {
+		case "sbs_volume":
 			res.volumeIDs = append(res.volumeIDs, v.ID)
+		case "l_ssd":
+			res.localVolumeIDs = append(res.localVolumeIDs, v.ID)
 		}
 	}
 	ips := result.Server.PublicIPs
@@ -750,10 +788,18 @@ var volumeDetachPoll = 5 * time.Second
 // behind. Already-deleted ones (404) count as done, so a retry is safe.
 func (c *scwAPIClient) deleteServerResources(ctx context.Context, zone string, res serverResources) error {
 	var errs []error
+	volumeURLs := make([]string, 0, len(res.volumeIDs)+len(res.localVolumeIDs))
 	for _, id := range res.volumeIDs {
+		volumeURLs = append(volumeURLs, c.blockBaseURL(zone)+"/volumes/"+id)
+	}
+	for _, id := range res.localVolumeIDs {
+		volumeURLs = append(volumeURLs, c.instanceBaseURL(zone)+"/volumes/"+id)
+	}
+	for _, volumeURL := range volumeURLs {
+		id := volumeURL[strings.LastIndex(volumeURL, "/")+1:]
 		deadline := time.Now().Add(volumeDetachTimeout)
 		for {
-			err := c.deleteIfExists(ctx, c.blockBaseURL(zone)+"/volumes/"+id)
+			err := c.deleteIfExists(ctx, volumeURL)
 			if err == nil {
 				break
 			}
