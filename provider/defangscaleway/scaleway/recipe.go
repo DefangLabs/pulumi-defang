@@ -14,6 +14,8 @@ var (
 	// The affordable "dev" family also boots from a local disk, which is
 	// deleted along with the build instance.
 	BuildInstanceFamily = recipe.String("build-instance-family", "dev")
+	// HighAvailability adds a standby node to managed Postgres instances.
+	HighAvailability = recipe.Bool("high-availability", false)
 	// LogRetentionDays is how long the project's Cockpit build-logs data
 	// source keeps logs.
 	LogRetentionDays = recipe.Int("log-retention-days", 1)

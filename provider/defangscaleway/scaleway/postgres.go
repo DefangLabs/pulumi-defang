@@ -67,26 +67,27 @@ func postgresEngine(version int) string {
 }
 
 type postgresNode struct {
-	name   string
-	vcpus  int
-	memMiB int
+	name       string
+	vcpus      int
+	memMiB     int
+	haRequired bool // Scaleway only offers this node with a standby
 }
 
 // Managed Postgres node types by size, as Scaleway's RDB API lists them
 // (memory there is in decimal GB, so DB-DEV-S's "2 GB" is 1907 MiB).
 var (
 	postgresDevNodes = []postgresNode{
-		{"DB-DEV-S", 2, 1907},
-		{"DB-DEV-M", 3, 3814},
-		{"DB-DEV-L", 4, 7629},
-		{"DB-DEV-XL", 4, 11444},
+		{"DB-DEV-S", 2, 1907, false},
+		{"DB-DEV-M", 3, 3814, false},
+		{"DB-DEV-L", 4, 7629, false},
+		{"DB-DEV-XL", 4, 11444, false},
 	}
 	postgresGPNodes = []postgresNode{
-		{"DB-GP-XS", 4, 15258},
-		{"DB-GP-S", 8, 30517},
-		{"DB-GP-M", 16, 61035},
-		{"DB-GP-L", 32, 122070},
-		{"DB-GP-XL", 48, 244140},
+		{"DB-GP-XS", 4, 15258, false},
+		{"DB-GP-S", 8, 30517, false},
+		{"DB-GP-M", 16, 61035, false},
+		{"DB-GP-L", 32, 122070, true},
+		{"DB-GP-XL", 48, 244140, true},
 	}
 	postgresNodeTypeCatalogs = map[string][]postgresNode{
 		"dev": append(slices.Clone(postgresDevNodes), postgresGPNodes...),
@@ -96,17 +97,17 @@ var (
 
 // postgresNodeType returns the smallest node in the recipe's family with at
 // least the service's CPUs and memory, or the family's largest.
-func postgresNodeType(family string, cpus float64, memMiB int) string {
+func postgresNodeType(family string, cpus float64, memMiB int) postgresNode {
 	nodes, ok := postgresNodeTypeCatalogs[strings.ToLower(family)]
 	if !ok {
 		nodes = postgresNodeTypeCatalogs["dev"]
 	}
 	for _, n := range nodes {
 		if float64(n.vcpus) >= cpus && n.memMiB >= memMiB {
-			return n.name
+			return n
 		}
 	}
-	return nodes[len(nodes)-1].name
+	return nodes[len(nodes)-1]
 }
 
 func postgresPassword(password pulumi.StringInput) pulumi.StringPtrInput {
@@ -232,14 +233,15 @@ func CreatePostgres(
 		engine = pulumi.String(postgresEngine(0)).ToStringOutput()
 	}
 
+	node := postgresNodeType(PostgresNodeType.Get(ctx), svc.GetCPUs(), svc.GetMemoryMiB())
 	args := &databases.InstanceArgs{
 		Name:              pulumi.String(serviceName),
-		NodeType:          pulumi.String(postgresNodeType(PostgresNodeType.Get(ctx), svc.GetCPUs(), svc.GetMemoryMiB())),
+		NodeType:          pulumi.String(node.name),
 		Engine:            engine,
 		UserName:          username.ToStringOutput().ToStringPtrOutput(),
 		PasswordWo:        postgresPassword(pg.Password),
 		PasswordWoVersion: pulumi.Int(1),
-		IsHaCluster:       pulumi.Bool(svc.GetReplicas() > 1),
+		IsHaCluster:       pulumi.Bool(HighAvailability.Get(ctx) || node.haRequired),
 		EncryptionAtRest:  pulumi.Bool(true),
 	}
 	if days := BackupRetentionDays.Get(ctx); days > 0 {

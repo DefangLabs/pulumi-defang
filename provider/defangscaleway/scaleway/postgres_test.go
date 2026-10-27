@@ -110,7 +110,7 @@ func TestPostgresNodeType(t *testing.T) {
 		{"unknown", 0.25, 512, "DB-DEV-S"},
 	}
 	for _, tt := range tests {
-		assert.Equal(t, tt.want, postgresNodeType(tt.family, tt.cpus, tt.memMiB),
+		assert.Equal(t, tt.want, postgresNodeType(tt.family, tt.cpus, tt.memMiB).name,
 			"family=%s cpus=%v memMiB=%d", tt.family, tt.cpus, tt.memMiB)
 	}
 }
@@ -138,6 +138,7 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 	assert.Equal(t, "PostgreSQL-16", inst.inputs[resource.PropertyKey("engine")].StringValue())
 	assert.True(t, inst.inputs[resource.PropertyKey("encryptionAtRest")].BoolValue())
 	assert.True(t, inst.inputs[resource.PropertyKey("disableBackup")].BoolValue(), "backups off by default")
+	assert.False(t, inst.inputs[resource.PropertyKey("isHaCluster")].BoolValue(), "standalone by default")
 	assert.Equal(t, defaultScalewayPostgresUser, inst.inputs[resource.PropertyKey("userName")].StringValue())
 
 	db := mocks.findType("scaleway:databases/database:Database")
@@ -150,7 +151,11 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 }
 
 func TestCreatePostgresRecipe(t *testing.T) {
-	t.Setenv("PULUMI_CONFIG", `{"defang-scaleway:backup-retention-days": "7", "defang-scaleway:postgres-node-type": "gp"}`)
+	t.Setenv("PULUMI_CONFIG", `{
+		"defang-scaleway:backup-retention-days": "7",
+		"defang-scaleway:postgres-node-type": "gp",
+		"defang-scaleway:high-availability": "true"
+	}`)
 	mocks := &recordingMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := CreatePostgres(ctx, &mockConfigProvider{}, "db", compose.ServiceConfig{
@@ -168,6 +173,12 @@ func TestCreatePostgresRecipe(t *testing.T) {
 	assert.False(t, inst.inputs[resource.PropertyKey("disableBackup")].BoolValue())
 	assert.Equal(t, 7, int(inst.inputs[resource.PropertyKey("backupScheduleRetention")].NumberValue()))
 	assert.Equal(t, 24, int(inst.inputs[resource.PropertyKey("backupScheduleFrequency")].NumberValue()))
+	assert.True(t, inst.inputs[resource.PropertyKey("isHaCluster")].BoolValue())
+}
+
+func TestPostgresNodeTypeRequiresHA(t *testing.T) {
+	assert.False(t, postgresNodeType("dev", 16, 32768).haRequired)
+	assert.True(t, postgresNodeType("dev", 32, 65536).haRequired, "DB-GP-L is only offered with a standby")
 }
 
 func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {
