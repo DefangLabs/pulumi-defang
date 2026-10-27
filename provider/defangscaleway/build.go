@@ -82,7 +82,7 @@ type BuildInputs struct {
 	Target *string `pulumi:"target,optional"`
 
 	// Build arguments
-	BuildArgs map[string]string `pulumi:"buildArgs,optional"`
+	Args map[string]string `pulumi:"args,optional"`
 
 	// Max wait time in seconds (default: common.DefaultBuildMaxWaitTime)
 	MaxWaitTime *int `pulumi:"maxWaitTime,optional"`
@@ -260,7 +260,7 @@ func buildScript(
 	}
 
 	var buildArgs strings.Builder
-	for k, v := range common.Sorted(inputs.BuildArgs) {
+	for k, v := range common.Sorted(inputs.Args) {
 		buildArgs.WriteString(" --build-arg " + shQuote(k+"="+v))
 	}
 

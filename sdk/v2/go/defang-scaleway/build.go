@@ -15,7 +15,7 @@ import (
 type Build struct {
 	pulumi.CustomResourceState
 
-	BuildArgs    pulumi.StringMapOutput   `pulumi:"buildArgs"`
+	Args         pulumi.StringMapOutput   `pulumi:"args"`
 	BuildId      pulumi.StringOutput      `pulumi:"buildId"`
 	Destination  pulumi.StringOutput      `pulumi:"destination"`
 	Dockerfile   pulumi.StringPtrOutput   `pulumi:"dockerfile"`
@@ -89,7 +89,7 @@ func (BuildState) ElementType() reflect.Type {
 }
 
 type buildArgs struct {
-	BuildArgs    map[string]string `pulumi:"buildArgs"`
+	Args         map[string]string `pulumi:"args"`
 	Destination  string            `pulumi:"destination"`
 	Dockerfile   *string           `pulumi:"dockerfile"`
 	LogsEndpoint string            `pulumi:"logsEndpoint"`
@@ -104,7 +104,7 @@ type buildArgs struct {
 
 // The set of arguments for constructing a Build resource.
 type BuildArgs struct {
-	BuildArgs    pulumi.StringMapInput
+	Args         pulumi.StringMapInput
 	Destination  pulumi.StringInput
 	Dockerfile   pulumi.StringPtrInput
 	LogsEndpoint pulumi.StringInput
@@ -154,8 +154,8 @@ func (o BuildOutput) ToBuildOutputWithContext(ctx context.Context) BuildOutput {
 	return o
 }
 
-func (o BuildOutput) BuildArgs() pulumi.StringMapOutput {
-	return o.ApplyT(func(v *Build) pulumi.StringMapOutput { return v.BuildArgs }).(pulumi.StringMapOutput)
+func (o BuildOutput) Args() pulumi.StringMapOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringMapOutput { return v.Args }).(pulumi.StringMapOutput)
 }
 
 func (o BuildOutput) BuildId() pulumi.StringOutput {
