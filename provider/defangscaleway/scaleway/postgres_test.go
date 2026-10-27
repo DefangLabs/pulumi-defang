@@ -97,16 +97,16 @@ func TestPostgresNodeType(t *testing.T) {
 		memMiB int
 		want   string
 	}{
-		{"burstable", 0.25, 512, "DB-DEV-S"},
-		{"burstable", 2, 2048, "DB-DEV-S"},
-		{"burstable", 2, 2049, "DB-DEV-M"},
-		{"burstable", 2, 4096, "DB-DEV-M"},
-		{"burstable", 4, 8192, "DB-DEV-L"},
-		{"burstable", 4, 12288, "DB-DEV-XL"},
-		{"burstable", 4, 16384, "DB-GP-XS"},
-		{"burstable", 8, 16384, "DB-GP-S"},
-		{"burstable", 16, 32768, "DB-GP-M"},
-		{"burstable", 64, 1 << 20, "DB-GP-XL"},
+		{"any", 0.25, 512, "DB-DEV-S"},
+		{"any", 2, 2048, "DB-DEV-S"},
+		{"any", 2, 2049, "DB-DEV-M"},
+		{"any", 2, 4096, "DB-DEV-M"},
+		{"any", 4, 8192, "DB-DEV-L"},
+		{"any", 4, 12288, "DB-DEV-XL"},
+		{"any", 4, 16384, "DB-GP-XS"},
+		{"any", 8, 16384, "DB-GP-S"},
+		{"any", 16, 32768, "DB-GP-M"},
+		{"any", 64, 1 << 20, "DB-GP-XL"},
 		{"general", 0.25, 512, "DB-GP-XS"},
 		{"GENERAL", 8, 16384, "DB-GP-S"},
 		{"unknown", 0.25, 512, "DB-DEV-S"},
@@ -179,8 +179,8 @@ func TestCreatePostgresRecipe(t *testing.T) {
 }
 
 func TestPostgresNodeTypeRequiresHA(t *testing.T) {
-	assert.False(t, postgresNodeType("burstable", 16, 65536).haRequired)
-	assert.True(t, postgresNodeType("burstable", 16, 65537).haRequired, "DB-GP-L is only offered with a standby")
+	assert.False(t, postgresNodeType("any", 16, 65536).haRequired)
+	assert.True(t, postgresNodeType("any", 16, 65537).haRequired, "DB-GP-L is only offered with a standby")
 }
 
 func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {
