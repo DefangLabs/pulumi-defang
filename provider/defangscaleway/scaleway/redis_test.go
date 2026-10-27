@@ -29,10 +29,15 @@ func TestRedisAddressFromConnectionString(t *testing.T) {
 
 func TestRedisNodeType(t *testing.T) {
 	assert.Equal(t, "RED1-MICRO", redisNodeType(512))
-	assert.Equal(t, "RED1-S", redisNodeType(2048))
-	assert.Equal(t, "RED1-M", redisNodeType(4096))
-	assert.Equal(t, "RED1-L", redisNodeType(8192))
-	assert.Equal(t, "RED1-XL", redisNodeType(16384))
+	assert.Equal(t, "RED1-MICRO", redisNodeType(2048))
+	assert.Equal(t, "RED1-2XS", redisNodeType(2049))
+	assert.Equal(t, "RED1-2XS", redisNodeType(4096))
+	assert.Equal(t, "RED1-XS", redisNodeType(8192))
+	assert.Equal(t, "RED1-S", redisNodeType(12288))
+	assert.Equal(t, "RED1-M", redisNodeType(16384))
+	assert.Equal(t, "RED1-L", redisNodeType(32768))
+	assert.Equal(t, "RED1-XL", redisNodeType(65536))
+	assert.Equal(t, "RED1-XL", redisNodeType(1<<20))
 }
 
 func TestCreateRedisClusterRequiresPrivateNetwork(t *testing.T) {

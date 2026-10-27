@@ -73,21 +73,23 @@ type postgresNode struct {
 	haRequired bool // Scaleway only offers this node with a standby
 }
 
-// Managed Postgres node types by size, as Scaleway's RDB API lists them
-// (memory there is in decimal GB, so DB-DEV-S's "2 GB" is 1907 MiB).
+// Managed Postgres node types by size. Memory is the size the Scaleway console
+// shows ("2 GB"), taken as GiB, so `memory: 2g` in compose.yaml selects the
+// node labelled 2 GB. The RDB API reports it in decimal bytes (2e9), which
+// would push a 2g request onto the 4 GB node.
 var (
 	postgresDevNodes = []postgresNode{
-		{"DB-DEV-S", 2, 1907, false},
-		{"DB-DEV-M", 3, 3814, false},
-		{"DB-DEV-L", 4, 7629, false},
-		{"DB-DEV-XL", 4, 11444, false},
+		{"DB-DEV-S", 2, 2048, false},
+		{"DB-DEV-M", 3, 4096, false},
+		{"DB-DEV-L", 4, 8192, false},
+		{"DB-DEV-XL", 4, 12288, false},
 	}
 	postgresGPNodes = []postgresNode{
-		{"DB-GP-XS", 4, 15258, false},
-		{"DB-GP-S", 8, 30517, false},
-		{"DB-GP-M", 16, 61035, false},
-		{"DB-GP-L", 32, 122070, true},
-		{"DB-GP-XL", 48, 244140, true},
+		{"DB-GP-XS", 4, 16384, false},
+		{"DB-GP-S", 8, 32768, false},
+		{"DB-GP-M", 16, 65536, false},
+		{"DB-GP-L", 32, 131072, true},
+		{"DB-GP-XL", 48, 262144, true},
 	}
 	postgresNodeTypeCatalogs = map[string][]postgresNode{
 		"dev": append(slices.Clone(postgresDevNodes), postgresGPNodes...),
