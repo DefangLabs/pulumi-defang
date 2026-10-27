@@ -89,6 +89,18 @@ linters:
     # - wrapcheck
     - zerologlint
 
+  exclusions:
+    rules:
+      # gosec's G704 taint analysis flags doRequest's fixed Scaleway API URLs
+      # on some runs and not others, so an inline //nolint flips between
+      # needed and unused (nolintlint). A config exclusion is stable. Scoped
+      # to doRequest's two lines so queryLoki's caller-supplied URL stays checked.
+      - path: provider/defangscaleway/build\.go
+        linters:
+          - gosec
+        text: G704
+        source: 'http\.(NewRequestWithContext\(ctx, method, url, reqBody\)|DefaultClient\.Do\(r\))'
+
   settings:
     funlen:
       lines: 100
