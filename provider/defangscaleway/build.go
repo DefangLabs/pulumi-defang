@@ -512,6 +512,7 @@ func (c *scwAPIClient) doRequest(
 		}
 	}
 
+	//nolint:gosec // G704: url is always built from this client's own fixed Scaleway API paths, never external input
 	r, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -521,7 +522,7 @@ func (c *scwAPIClient) doRequest(
 		r.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := http.DefaultClient.Do(r)
+	resp, err := http.DefaultClient.Do(r) //nolint:gosec // G704: see above
 	if err != nil {
 		return nil, err
 	}
@@ -599,8 +600,25 @@ func (c *scwAPIClient) powerOnServer(ctx context.Context, zone, serverID string)
 	return c.serverAction(ctx, zone, serverID, "poweron")
 }
 
+// terminateServer removes the build instance. The "terminate" action only
+// applies to a server that has been booted at least once (confirmed live:
+// a server that was created but never powered on — e.g. because
+// setCloudInit or powerOnServer itself failed, the exact case this guards
+// against — sits in a "stopped" state whose only allowed actions are
+// poweron/backup, and "terminate" is rejected outright). A direct DELETE on
+// the server resource works regardless of power state, so it's the fallback
+// rather than the primary path: deleting a server the normal way (having
+// run its build and powered itself off) goes through the documented
+// terminate action first.
 func (c *scwAPIClient) terminateServer(ctx context.Context, zone, serverID string) error {
-	return c.serverAction(ctx, zone, serverID, "terminate")
+	if err := c.serverAction(ctx, zone, serverID, "terminate"); err != nil {
+		resp, delErr := c.doRequest(ctx, "DELETE", c.instanceBaseURL(zone)+"/servers/"+serverID, nil, "")
+		if delErr != nil {
+			return fmt.Errorf("terminate action failed (%w), delete fallback also failed: %w", err, delErr)
+		}
+		defer closeBody(resp.Body)
+	}
+	return nil
 }
 
 type lokiQueryRangeResponse struct {
