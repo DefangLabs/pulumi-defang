@@ -15,9 +15,20 @@ ARG CDBASE_ALPINE=alpine:3.21
 ARG PULUMIBASE=pulumi/pulumi-base:${PULUMI_VERSION}
 ARG CD_VERSION=0.0.1
 ARG PROVIDER_VERSION=0.0.1
+# Where the Go binaries come from: "build" compiles them in the build-* stages
+# below; "prebuilt" copies bin/image/<arch>/ from `make image_binaries` (what
+# CI uses, so its Go build cache survives between runs). Prebuilt binaries
+# must be built with the CD_VERSION/PROVIDER_VERSION passed here, or they
+# disagree with their plugin paths; `make image_prebuilt_<target>` does both.
+ARG BINARIES=build
 
-# Shared build stage: downloads modules, copies source, builds the cd binary
-FROM --platform=${BUILDPLATFORM} ${BUILDBASE} AS build-base
+# Shared build stage: downloads modules, copies source, builds the cd binary.
+# The providers build on top of it, so cd compiles first and the four
+# providers then compile together: building all five at once exceeds the
+# memory of a standard 16 GB GitHub runner.
+FROM --platform=${BUILDPLATFORM} ${BUILDBASE} AS go-base
+
+FROM go-base AS build-base
 
 # These two are automatically set by docker buildx
 ARG TARGETOS
@@ -44,6 +55,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     go build -trimpath -buildvcs=false \
     -ldflags="-w -s -X main.version=${CD_VERSION}" \
     -o /out/cd .
+
+FROM build-base AS build-cd
 
 # Per-cloud provider builds (BuildKit runs these in parallel when building 'all')
 FROM build-base AS build-aws
@@ -77,6 +90,34 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     go build -trimpath -buildvcs=false \
     -ldflags="-w -s -X github.com/DefangLabs/pulumi-defang/provider/defangscaleway.Version=${PROVIDER_VERSION}" \
     -o /out/pulumi-resource-defang-scaleway ./provider/cmd/pulumi-resource-defang-scaleway
+
+# Prebuilt binaries: the same builds as above, from `make image_binaries`.
+FROM scratch AS prebuilt-cd
+ARG TARGETARCH
+COPY --link bin/image/${TARGETARCH}/cd /out/cd
+
+FROM scratch AS prebuilt-aws
+ARG TARGETARCH
+COPY --link bin/image/${TARGETARCH}/pulumi-resource-defang-aws /out/pulumi-resource-defang-aws
+
+FROM scratch AS prebuilt-gcp
+ARG TARGETARCH
+COPY --link bin/image/${TARGETARCH}/pulumi-resource-defang-gcp /out/pulumi-resource-defang-gcp
+
+FROM scratch AS prebuilt-azure
+ARG TARGETARCH
+COPY --link bin/image/${TARGETARCH}/pulumi-resource-defang-azure /out/pulumi-resource-defang-azure
+
+FROM scratch AS prebuilt-scaleway
+ARG TARGETARCH
+COPY --link bin/image/${TARGETARCH}/pulumi-resource-defang-scaleway /out/pulumi-resource-defang-scaleway
+
+# The binaries the image uses, per ARG BINARIES.
+FROM ${BINARIES}-cd AS bin-cd
+FROM ${BINARIES}-aws AS bin-aws
+FROM ${BINARIES}-gcp AS bin-gcp
+FROM ${BINARIES}-azure AS bin-azure
+FROM ${BINARIES}-scaleway AS bin-scaleway
 
 # Install Pulumi cloud-provider plugins (versions extracted from go.mod)
 # This stage runs on the target platform so pulumi downloads the correct plugin binaries.
@@ -116,7 +157,7 @@ RUN pulumi plugin install resource aws $(grep 'pulumi-aws/sdk/v7' cd/go.mod | aw
 
 FROM plugins-base AS plugins-aws-defang
 ARG PROVIDER_VERSION
-COPY --link --from=build-aws /out/pulumi-resource-defang-aws /tmp/
+COPY --link --from=bin-aws /out/pulumi-resource-defang-aws /tmp/
 RUN pulumi plugin install resource defang-aws ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-aws
 
 FROM plugins-base AS plugins-gcp-upstream
@@ -124,7 +165,7 @@ RUN pulumi plugin install resource gcp $(grep 'pulumi-gcp/sdk/v9' cd/go.mod | aw
 
 FROM plugins-base AS plugins-gcp-defang
 ARG PROVIDER_VERSION
-COPY --link --from=build-gcp /out/pulumi-resource-defang-gcp /tmp/
+COPY --link --from=bin-gcp /out/pulumi-resource-defang-gcp /tmp/
 RUN pulumi plugin install resource defang-gcp ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-gcp
 
 FROM plugins-base AS plugins-azure-upstream
@@ -133,7 +174,7 @@ RUN pulumi plugin install resource azure-native $(grep 'pulumi-azure-native-sdk/
 
 FROM plugins-base AS plugins-azure-defang
 ARG PROVIDER_VERSION
-COPY --link --from=build-azure /out/pulumi-resource-defang-azure /tmp/
+COPY --link --from=bin-azure /out/pulumi-resource-defang-azure /tmp/
 RUN pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
 
 FROM plugins-base AS plugins-scaleway-upstream
@@ -141,7 +182,7 @@ RUN pulumi plugin install resource scaleway $(grep 'pulumiverse/pulumi-scaleway/
 
 FROM plugins-base AS plugins-scaleway-defang
 ARG PROVIDER_VERSION
-COPY --link --from=build-scaleway /out/pulumi-resource-defang-scaleway /tmp/
+COPY --link --from=bin-scaleway /out/pulumi-resource-defang-scaleway /tmp/
 RUN mkdir -p /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION} && \
     cp /tmp/pulumi-resource-defang-scaleway /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION}/pulumi-resource-defang-scaleway && \
     chmod 700 /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION} && \
@@ -150,7 +191,7 @@ RUN mkdir -p /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION}
 # Final minimal image — no OS, no language runtimes
 FROM ${CDBASE} AS cd-base
 # CA certs for HTTPS
-COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Pulumi CLI only (no language runtimes)
 COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
@@ -158,12 +199,11 @@ ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
 # `WORKDIR /tmp` used to stand in for creating it, but whether WORKDIR materialises a directory
 # in the exported image is builder-specific: BuildKit does, buildah/podman does not, and the
 # image then fails at runtime with "unable to create tmp directory for workspace: stat /tmp: no
-# such file or directory" only once it is deployed. build-base's own /tmp is empty and already
-# empty, so copying it works the same way in every builder and needs no stage of its own.
-COPY --link --from=build-base /tmp /tmp
+# such file or directory" only once it is deployed. the Go image's own /tmp is empty, so copying it works the same way in every builder and needs no stage of its own.
+COPY --link --from=go-base /tmp /tmp
 # App
 WORKDIR /app
-COPY --link --from=build-base /out/cd ./
+COPY --link --from=bin-cd /out/cd ./
 ENTRYPOINT [ "/app/cd" ]
 
 # Same as cd-base, but on a shell-having base: aws and all run as an AWS CodeBuild build
@@ -171,11 +211,11 @@ ENTRYPOINT [ "/app/cd" ]
 # SINGLE_BUILD_CONTAINER_DEAD), and CD code that shells out to build customer images (the Docker
 # Hub mirror setup in provider/defangaws/aws/codebuild.go) needs jq/awk.
 FROM ${CDBASE_ALPINE} AS cd-base-alpine
-COPY --link --from=build-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root
 WORKDIR /app
-COPY --link --from=build-base /out/cd ./
+COPY --link --from=bin-cd /out/cd ./
 ENTRYPOINT [ "/app/cd" ]
 RUN apk add --no-cache jq
 
