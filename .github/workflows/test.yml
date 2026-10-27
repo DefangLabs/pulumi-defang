@@ -219,8 +219,9 @@ jobs:
           target: all
           build-args: BINARIES=prebuilt
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=${{ github.workflow }}
-          cache-to: type=gha,scope=${{ github.workflow }},mode=max
+          # No layer cache: with the binaries prebuilt, every remaining step is
+          # a 10-15s download, while exporting the cache took 1-4 minutes and
+          # several GB of the repo's Actions cache quota.
 
       # Pin the staging Azure CD image ref (digest) in the Defang Fabric. Only on main-branch
       # pushes — PR runs would otherwise have every contributor overwrite the staging config.
