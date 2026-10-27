@@ -23,19 +23,31 @@ type RedisResult struct {
 	ConnectionURL pulumi.StringOutput
 }
 
+// redisNodeTypes are the managed Redis node types by size. Memory is the size
+// the Scaleway console shows ("2 GB"), taken as GiB, so `memory: 2g` in
+// compose.yaml selects the node labelled 2 GB; see postgresDevNodes.
+var redisNodeTypes = []struct {
+	name   string
+	memMiB int
+}{
+	{"RED1-MICRO", 2048},
+	{"RED1-2XS", 4096},
+	{"RED1-XS", 8192},
+	{"RED1-S", 12288},
+	{"RED1-M", 16384},
+	{"RED1-L", 32768},
+	{"RED1-XL", 65536},
+}
+
+// redisNodeType returns the smallest node type with at least memMiB of
+// memory, or the largest.
 func redisNodeType(memMiB int) string {
-	switch {
-	case memMiB <= 512:
-		return "RED1-MICRO"
-	case memMiB <= 2048:
-		return "RED1-S"
-	case memMiB <= 4096:
-		return "RED1-M"
-	case memMiB <= 8192:
-		return "RED1-L"
-	default:
-		return "RED1-XL"
+	for _, n := range redisNodeTypes {
+		if n.memMiB >= memMiB {
+			return n.name
+		}
 	}
+	return redisNodeTypes[len(redisNodeTypes)-1].name
 }
 
 func redisVersionFromImage(image *string) string {
@@ -99,7 +111,7 @@ func CreateRedis(
 		PasswordWo:        redisPassword(password),
 		PasswordWoVersion: pulumi.Int(1),
 		ClusterSize:       pulumi.Int(redisClusterSize(svc)),
-		TlsEnabled:        pulumi.Bool(false),
+		TlsEnabled:        pulumi.Bool(!TransitEncryptionDisabled.Get(ctx)),
 	}
 	if infra != nil {
 		if infra.ProjectID != "" {
