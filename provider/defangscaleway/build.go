@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
+	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 )
 
@@ -384,7 +386,7 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 	// after it saw recent activity has been observed to fail transiently (a
 	// manual retry moments later always succeeded), and a silently-failed
 	// cleanup means a leftover instance in the customer's own account.
-	defer retryCleanup(ctx, func(ctx context.Context) error { return client.terminateServer(ctx, zone, serverID) })
+	defer client.teardownServer(ctx, zone, serverID)
 
 	if err := client.setCloudInit(ctx, zone, serverID, script); err != nil {
 		return instanceBuildResult{}, fmt.Errorf("setting build instance cloud-init: %w", err)
@@ -406,22 +408,61 @@ func runInstanceBuild(ctx context.Context, inputs BuildInputs) (instanceBuildRes
 	return instanceBuildResult{instanceID: serverID, logSelector: logSelector}, nil
 }
 
-// retryCleanup retries a best-effort teardown call a few times with a short
-// backoff before giving up, since a delete immediately after recent write
-// activity on the same resource has been observed to fail transiently (see
-// the callers in runInstanceBuild). It never returns an error: a cleanup
-// call runs in a defer, and the resource it fails to remove is a cost/tidiness
-// concern, not a build-correctness one.
-func retryCleanup(ctx context.Context, fn func(context.Context) error) {
-	const attempts = 3
-	for i := range attempts {
-		if err := fn(ctx); err == nil {
-			return
+// teardownServer removes the build instance and what terminating it leaves
+// behind: neither the terminate action nor DELETE /servers removes the
+// server's SBS boot volume or its public IPs, so each build would otherwise
+// leave a billed volume (and possibly an IP) in the customer's account.
+// They are read before the server goes, since afterwards nothing links them.
+func (c *scwAPIClient) teardownServer(ctx context.Context, zone, serverID string) {
+	log := p.GetLogger(ctx)
+	var res serverResources
+	gone := false
+	if err := retryCleanup(ctx, func(ctx context.Context) error {
+		var err error
+		res, err = c.getServerResources(ctx, zone, serverID)
+		gone = isNotFound(err)
+		if gone {
+			return nil
 		}
-		if i < attempts-1 {
-			_ = common.SleepWithContext(ctx, 2*time.Second)
+		return err
+	}); err != nil {
+		log.Warningf("build instance %s (%s): could not list its volumes and IPs, which may be left behind: %v",
+			serverID, zone, err)
+	}
+	if !gone {
+		if err := retryCleanup(ctx, func(ctx context.Context) error {
+			return c.terminateServer(ctx, zone, serverID)
+		}); err != nil {
+			log.Warningf("build instance %s (%s) was not removed: %v", serverID, zone, err)
 		}
 	}
+	if err := retryCleanup(ctx, func(ctx context.Context) error {
+		return c.deleteServerResources(ctx, zone, res)
+	}); err != nil {
+		log.Warningf("build instance %s (%s) left resources behind: %v", serverID, zone, err)
+	}
+}
+
+// retryCleanup retries a teardown call a few times with a short backoff,
+// since a delete immediately after recent write activity on the same
+// resource has been observed to fail transiently (see teardownServer). It
+// returns the last error; callers report it rather than fail the build, since
+// a resource it fails to remove is a cost/tidiness concern, not a
+// build-correctness one.
+var cleanupRetryDelay = 2 * time.Second
+
+func retryCleanup(ctx context.Context, fn func(context.Context) error) error {
+	const attempts = 3
+	var err error
+	for i := range attempts {
+		if err = fn(ctx); err == nil {
+			return nil
+		}
+		if i < attempts-1 {
+			_ = common.SleepWithContext(ctx, cleanupRetryDelay)
+		}
+	}
+	return err
 }
 
 // waitForInstanceBuild polls the build's Cockpit log stream for the
@@ -488,10 +529,40 @@ func resourceNameHash(name string) string {
 type scwAPIClient struct {
 	secretKey string
 	region    string
+	apiURL    string // empty means https://api.scaleway.com; tests point it at a fake
+}
+
+// scwAPIError is a non-2xx response; its message keeps the "status N: body"
+// shape callers already match on (e.g. "quotas_exceeded").
+type scwAPIError struct {
+	Status int
+	Body   string
+}
+
+func (e *scwAPIError) Error() string {
+	return fmt.Sprintf("%s: status %d: %s", errScalewayAPI, e.Status, e.Body)
+}
+
+func (e *scwAPIError) Unwrap() error { return errScalewayAPI }
+
+func isNotFound(err error) bool {
+	var apiErr *scwAPIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound
+}
+
+func (c *scwAPIClient) baseURL() string {
+	if c.apiURL != "" {
+		return c.apiURL
+	}
+	return "https://api.scaleway.com"
 }
 
 func (c *scwAPIClient) instanceBaseURL(zone string) string {
-	return "https://api.scaleway.com/instance/v1/zones/" + zone
+	return c.baseURL() + "/instance/v1/zones/" + zone
+}
+
+func (c *scwAPIClient) blockBaseURL(zone string) string {
+	return c.baseURL() + "/block/v1alpha1/zones/" + zone
 }
 
 func (c *scwAPIClient) doRequest(
@@ -528,7 +599,7 @@ func (c *scwAPIClient) doRequest(
 	if resp.StatusCode >= 400 {
 		defer closeBody(resp.Body)
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%w: status %d: %s", errScalewayAPI, resp.StatusCode, string(respBody))
+		return nil, &scwAPIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 	return resp, nil
 }
@@ -599,8 +670,140 @@ func (c *scwAPIClient) powerOnServer(ctx context.Context, zone, serverID string)
 	return c.serverAction(ctx, zone, serverID, "poweron")
 }
 
+// terminateServer removes the build instance. The "terminate" action only
+// applies to a server that has been booted at least once (confirmed live:
+// a server that was created but never powered on — e.g. because
+// setCloudInit or powerOnServer itself failed, the exact case this guards
+// against — sits in a "stopped" state whose only allowed actions are
+// poweron/backup, and "terminate" is rejected outright). A direct DELETE on
+// the server resource works regardless of power state, so it's the fallback
+// rather than the primary path: deleting a server the normal way (having
+// run its build and powered itself off) goes through the documented
+// terminate action first.
 func (c *scwAPIClient) terminateServer(ctx context.Context, zone, serverID string) error {
-	return c.serverAction(ctx, zone, serverID, "terminate")
+	if err := c.serverAction(ctx, zone, serverID, "terminate"); err != nil {
+		resp, delErr := c.doRequest(ctx, "DELETE", c.instanceBaseURL(zone)+"/servers/"+serverID, nil, "")
+		if delErr != nil {
+			return fmt.Errorf("terminate action failed (%w), delete fallback also failed: %w", err, delErr)
+		}
+		defer closeBody(resp.Body)
+	}
+	return nil
+}
+
+// serverResources are the parts of a build instance that outlive it.
+type serverResources struct {
+	volumeIDs []string // SBS volumes only; local (l_ssd) volumes go with the server
+	ipIDs     []string
+}
+
+func (c *scwAPIClient) getServerResources(ctx context.Context, zone, serverID string) (serverResources, error) {
+	resp, err := c.doRequest(ctx, "GET", c.instanceBaseURL(zone)+"/servers/"+serverID, nil, "")
+	if err != nil {
+		return serverResources{}, err
+	}
+	defer closeBody(resp.Body)
+
+	type ip struct {
+		ID string `json:"id"`
+	}
+	var result struct {
+		Server struct {
+			Volumes map[string]struct {
+				ID         string `json:"id"`
+				VolumeType string `json:"volume_type"`
+			} `json:"volumes"`
+			PublicIP  *ip  `json:"public_ip"`
+			PublicIPs []ip `json:"public_ips"`
+		} `json:"server"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return serverResources{}, fmt.Errorf("decoding server response: %w", err)
+	}
+
+	var res serverResources
+	for _, v := range common.Sorted(result.Server.Volumes) {
+		if v.VolumeType == "sbs_volume" && v.ID != "" {
+			res.volumeIDs = append(res.volumeIDs, v.ID)
+		}
+	}
+	ips := result.Server.PublicIPs
+	if result.Server.PublicIP != nil {
+		ips = append(ips, *result.Server.PublicIP)
+	}
+	for _, i := range ips {
+		if i.ID != "" && !slices.Contains(res.ipIDs, i.ID) {
+			res.ipIDs = append(res.ipIDs, i.ID)
+		}
+	}
+	return res, nil
+}
+
+// volumeDetachTimeout bounds how long deleteServerResources waits for a
+// volume to come free: terminate is asynchronous, and the block API refuses
+// to delete a volume while it is still attached to the stopping server.
+const volumeDetachTimeout = 5 * time.Minute
+
+var volumeDetachPoll = 5 * time.Second
+
+// deleteServerResources deletes the volumes and IPs a terminated server left
+// behind. Already-deleted ones (404) count as done, so a retry is safe.
+func (c *scwAPIClient) deleteServerResources(ctx context.Context, zone string, res serverResources) error {
+	var errs []error
+	for _, id := range res.volumeIDs {
+		deadline := time.Now().Add(volumeDetachTimeout)
+		for {
+			err := c.deleteIfExists(ctx, c.blockBaseURL(zone)+"/volumes/"+id)
+			if err == nil {
+				break
+			}
+			if !isRetryableVolumeDelete(err) || time.Now().After(deadline) {
+				errs = append(errs, fmt.Errorf("deleting volume %s: %w", id, err))
+				break
+			}
+			if err := common.SleepWithContext(ctx, volumeDetachPoll); err != nil {
+				return err
+			}
+		}
+	}
+	for _, id := range res.ipIDs {
+		if err := c.deleteIfExists(ctx, c.instanceBaseURL(zone)+"/ips/"+id); err != nil {
+			errs = append(errs, fmt.Errorf("deleting IP %s: %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// isRetryableVolumeDelete reports whether a volume DELETE failed only because
+// the volume is still attached to the terminating server, or transiently.
+// Anything else (a 403, a malformed request) will not fix itself by waiting.
+func isRetryableVolumeDelete(err error) bool {
+	var apiErr *scwAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch {
+	case apiErr.Status == http.StatusConflict,
+		apiErr.Status == http.StatusPreconditionFailed,
+		apiErr.Status == http.StatusTooManyRequests,
+		apiErr.Status >= http.StatusInternalServerError:
+		return true
+	case apiErr.Status == http.StatusBadRequest:
+		return strings.Contains(apiErr.Body, "in_use")
+	}
+	return false
+}
+
+func (c *scwAPIClient) deleteIfExists(ctx context.Context, url string) error {
+	resp, err := c.doRequest(ctx, "DELETE", url, nil, "")
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	defer closeBody(resp.Body)
+	return nil
 }
 
 type lokiQueryRangeResponse struct {
