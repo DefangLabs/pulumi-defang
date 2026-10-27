@@ -705,13 +705,14 @@ func (b BuildConfig) GetTarget() string {
 	return ""
 }
 
-// DefaultBuildMemoryMiB is the build machine memory every provider sizes for
-// when build.shm_size is unset, so the same compose.yaml gets an equally
-// sized build machine on every cloud.
+// DefaultBuildMemoryMiB is the build machine memory a provider sizes for when
+// build.shm_size is unset, so the same compose.yaml gets an equally sized build
+// machine on every cloud that can be sized. Azure can't: ACR Tasks runs on a
+// fixed 2-CPU agent (see defangazure/build.go).
 const DefaultBuildMemoryMiB = 8192
 
-// GetBuildMemoryMiB returns build.shm_size in MiB, which every provider uses to
-// size its build machine, or DefaultBuildMemoryMiB when it is unset.
+// GetBuildMemoryMiB returns build.shm_size in MiB, which providers that can
+// size their build machine use to do so, or DefaultBuildMemoryMiB when it is unset.
 func (b BuildConfig) GetBuildMemoryMiB() int {
 	if b.ShmSize != nil {
 		return ParseMemoryMiB(*b.ShmSize)
