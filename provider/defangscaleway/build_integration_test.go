@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"testing"
 	"time"
 )
@@ -106,11 +107,53 @@ RUN whoami && id && touch /home/appuser/created-by-appuser.txt && ls -la /home/a
 		LogsToken:    logsToken,
 	}
 
+	assertNoLeftovers := leftoverCheckForTest(ctx, t, regClient, defaultZone(region), projectID)
+
 	result, err := runInstanceBuild(ctx, inputs)
 	if err != nil {
 		t.Fatalf("runInstanceBuild: %v", err)
 	}
 	t.Logf("build succeeded: instance=%s logSelector=%s", result.instanceID, result.logSelector)
+	// Teardown ran in runInstanceBuild's defer, so the build instance's
+	// boot volume and IPs must already be gone.
+	assertNoLeftovers()
+}
+
+// leftoverCheckForTest records the project's SBS volumes and Instance IPs in
+// zone, and returns a check that fails the test for any that appeared since.
+func leftoverCheckForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zone, projectID string) func() {
+	t.Helper()
+	before := listLeftoversForTest(ctx, t, c, zone, projectID)
+	return func() {
+		t.Helper()
+		for _, id := range listLeftoversForTest(ctx, t, c, zone, projectID) {
+			if !slices.Contains(before, id) {
+				t.Errorf("build left %s behind", id)
+			}
+		}
+	}
+}
+
+// listLeftoversForTest lists the project's SBS volumes and Instance IPs in
+// zone, as "volume <id>" / "ip <id>".
+func listLeftoversForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zone, projectID string) []string {
+	t.Helper()
+	var out []string
+	for _, l := range []struct{ kind, url, field string }{
+		{"volume", c.blockBaseURL(zone) + "/volumes?page_size=100&project_id=" + projectID, "volumes"},
+		{"ip", c.instanceBaseURL(zone) + "/ips?per_page=100&project=" + projectID, "ips"},
+	} {
+		page, err := getJSONForTest[map[string][]struct {
+			ID string `json:"id"`
+		}](ctx, c, l.url)
+		if err != nil {
+			t.Fatalf("listing %ss: %v", l.kind, err)
+		}
+		for _, item := range page[l.field] {
+			out = append(out, l.kind+" "+item.ID)
+		}
+	}
+	return out
 }
 
 // setupCockpitForTest creates a throwaway Cockpit data source + token
@@ -232,4 +275,15 @@ func deleteRegistryNamespaceForTest(ctx context.Context, c *scwAPIClient, name, 
 		defer closeBody(resp.Body)
 	}
 	return nil
+}
+
+func getJSONForTest[T any](ctx context.Context, c *scwAPIClient, url string) (T, error) {
+	var v T
+	resp, err := c.doRequest(ctx, "GET", url, nil, "")
+	if err != nil {
+		return v, err
+	}
+	defer closeBody(resp.Body)
+	err = json.NewDecoder(resp.Body).Decode(&v)
+	return v, err
 }
