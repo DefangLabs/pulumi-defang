@@ -10,8 +10,11 @@
 # MVS keep the higher of the two, so this never downgrades anything.
 #
 # Raising versions can pull in further shared modules, so it repeats until a
-# pass finds no new ones. Each module is required at most once: one that still
-# differs afterwards is one the SDK needs at a higher version than the root.
+# pass finds no new ones. Each module is required at most once, because two
+# kinds legitimately still differ afterwards: modules the SDK needs at a
+# higher version than the root, and modules that are only in its module graph
+# (no package imported, so tidy drops the requirement again; they are neither
+# built into the SDK nor listed in its go.mod).
 # Bash 3.2-compatible (macOS's system bash).
 #
 # Usage: scripts/align-sdk-deps.sh <sdk-module-dir>
