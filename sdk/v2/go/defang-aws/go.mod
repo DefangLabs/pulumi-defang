@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/kr/text v0.2.0 // indirect
-	go.mongodb.org/mongo-driver v1.17.4 // indirect
+	go.mongodb.org/mongo-driver v1.17.10 // indirect
 )
 
 require (

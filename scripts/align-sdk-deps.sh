@@ -9,29 +9,41 @@
 # go.mod never reached the published SDKs. Requiring the root's version lets
 # MVS keep the higher of the two, so this never downgrades anything.
 #
+# Raising versions can pull in further shared modules, so it repeats until a
+# pass finds no new ones. Each module is required at most once: one that still
+# differs afterwards is one the SDK needs at a higher version than the root.
+# Bash 3.2-compatible (macOS's system bash).
+#
 # Usage: scripts/align-sdk-deps.sh <sdk-module-dir>
 set -euo pipefail
 
 sdk_dir=$1
 root_dir=$(cd "$(dirname "$0")/.." && pwd)
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 
 list_modules() {
-  (cd "$1" && go list -m -f '{{if not .Main}}{{.Path}} {{.Version}}{{end}}' all)
+  (cd "$1" && go list -m -f '{{if not .Main}}{{.Path}} {{.Version}}{{end}}' all) > "$2"
 }
 
-declare -A root_version
-while read -r mod ver; do
-  [ -n "$mod" ] && root_version[$mod]=$ver
-done < <(list_modules "$root_dir")
+list_modules "$root_dir" "$tmp/root"
+: > "$tmp/done"
 
-requires=()
-while read -r mod ver; do
-  want=${root_version[$mod]:-}
-  if [ -n "$want" ] && [ "$want" != "$ver" ]; then
-    requires+=("-require=$mod@$want")
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  list_modules "$sdk_dir" "$tmp/sdk"
+  awk 'FILENAME == ARGV[1] { done[$1] = 1; next }
+       FILENAME == ARGV[2] { if ($1 != "") want[$1] = $2; next }
+       ($1 in want) && !($1 in done) && want[$1] != $2 {
+         print "-require=" $1 "@" want[$1]
+       }' "$tmp/done" "$tmp/root" "$tmp/sdk" > "$tmp/requires"
+  if [ ! -s "$tmp/requires" ]; then
+    exit 0
   fi
-done < <(list_modules "$sdk_dir")
+  sed -e 's/^-require=//' -e 's/@.*//' "$tmp/requires" >> "$tmp/done"
+  # shellcheck disable=SC2046 # one flag per line, no spaces in module@version
+  (cd "$sdk_dir" && go mod edit $(cat "$tmp/requires") && go mod tidy)
+done
 
-if [ ${#requires[@]} -gt 0 ]; then
-  (cd "$sdk_dir" && go mod edit "${requires[@]}" && go mod tidy)
-fi
+echo "align-sdk-deps: $sdk_dir still differs from the root after 10 passes:" >&2
+cat "$tmp/requires" >&2
+exit 1

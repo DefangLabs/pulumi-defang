@@ -40,7 +40,7 @@ version:
 .PHONY: go_sdk
 go_sdk: .sdk.go.$(PACK).stamp
 
-.sdk.go.$(PACK).stamp: $(WORKING_DIR)/bin/$(PROVIDER)
+.sdk.go.$(PACK).stamp: $(WORKING_DIR)/bin/$(PROVIDER) $(WORKING_DIR)/go.mod $(WORKING_DIR)/go.sum scripts/align-sdk-deps.sh
 	rm -rf "$(SDK_GO_DIR)"
 	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language go -o "$(WORKING_DIR)/.sdk.tmp.$(PACK)"
 	mkdir -p "$(dir $(SDK_GO_DIR))" && mv "$(WORKING_DIR)/.sdk.tmp.$(PACK)/go/defanggcp" "$(SDK_GO_DIR)" && rm -rf "$(WORKING_DIR)/.sdk.tmp.$(PACK)"
