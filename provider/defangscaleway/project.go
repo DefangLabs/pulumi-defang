@@ -73,7 +73,14 @@ func buildProject(
 	parentOpts ...pulumi.ResourceOption,
 ) (*projectResult, error) {
 	childOpts := append([]pulumi.ResourceOption{}, parentOpts...)
-	infra, err := buildSharedInfra(ctx, projectName, childOpts...)
+	needsBuild := false
+	for _, service := range args.Services {
+		if service.Build != nil {
+			needsBuild = true
+			break
+		}
+	}
+	infra, err := buildSharedInfra(ctx, projectName, needsBuild, childOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +131,7 @@ func buildProject(
 func buildSharedInfra(
 	ctx *pulumi.Context,
 	projectName string,
+	needsBuild bool,
 	opts ...pulumi.ResourceOption,
 ) (*providerscaleway.SharedInfra, error) {
 	infra := providerscaleway.NewStandaloneInfra(ctx, projectName)
@@ -134,18 +142,18 @@ func buildSharedInfra(
 		return nil, err
 	}
 	infra.Namespace = namespace
-	// Serverless Containers no longer creates a registry alongside its namespace.
-	// Own the build destination explicitly and use its assigned endpoint.
-	buildRegistry, err := registry.NewNamespace(ctx, projectName+"-registry", &registry.NamespaceArgs{
-		ProjectId: pulumi.StringPtr(infra.ProjectID),
-		Region:    pulumi.StringPtr(infra.Region),
-		IsPublic:  pulumi.Bool(false),
-	}, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("creating Scaleway build registry: %w", err)
-	}
-	infra.BuildInfra = &providerscaleway.BuildInfra{
-		RegistryEndpoint: buildRegistry.Endpoint,
+	infra.BuildInfra = &providerscaleway.BuildInfra{}
+	if needsBuild {
+		// Serverless Containers no longer creates a registry alongside its namespace.
+		buildRegistry, err := registry.NewNamespace(ctx, projectName+"-registry", &registry.NamespaceArgs{
+			ProjectId: pulumi.StringPtr(infra.ProjectID),
+			Region:    pulumi.StringPtr(infra.Region),
+			IsPublic:  pulumi.Bool(false),
+		}, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("creating Scaleway build registry: %w", err)
+		}
+		infra.BuildInfra.RegistryEndpoint = buildRegistry.Endpoint
 	}
 	infra.ManagedHosts = make(map[string]pulumi.StringOutput)
 	infra.ManagedConnectionURLs = make(map[string]pulumi.StringOutput)

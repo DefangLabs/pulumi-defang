@@ -648,3 +648,50 @@ func TestScalewayStackConfigWithS3Region(t *testing.T) {
 		})
 	}
 }
+
+func TestScalewayRecipeRegistryAutonaming(t *testing.T) {
+	const globalPattern = "Custom-${name}"
+	t.Setenv("SCW_DEFAULT_PROJECT_ID", "test-project")
+	for _, tt := range []struct {
+		name, recipe, global, registry string
+		wantErr                        bool
+	}{
+		{"empty recipe config", "config: {}", "", scalewayRegistryPattern, false},
+		{"legacy global pattern",
+			"config:\n  pulumi:autonaming:\n    pattern: Custom-${name}",
+			globalPattern, scalewayRegistryPattern, false},
+		{"preserve explicit override", `config:
+  pulumi:autonaming:
+    pattern: Custom-${name}
+    providers:
+      scaleway:
+        resources:
+          scaleway:registry/namespace:Namespace:
+            pattern: custom-${hex(7)}`, globalPattern, "custom-${hex(7)}", false},
+		{"JSON encoded object",
+			`{"pulumi:autonaming":{"value":"{\"pattern\":\"Custom-${name}\"}"}}`,
+			globalPattern, scalewayRegistryPattern, false},
+		{"invalid object", "config:\n  pulumi:autonaming:\n    providers: invalid", "", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			encoded, err := stackConfigJson(tt.recipe)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			var config configMap
+			require.NoError(t, json.Unmarshal([]byte(encoded), &config))
+			var autonaming map[string]any
+			require.NoError(t, json.Unmarshal([]byte(config["pulumi:autonaming"].Value.(string)), &autonaming))
+			if tt.global != "" {
+				require.Equal(t, tt.global, autonaming["pattern"])
+			}
+			providers := autonaming["providers"].(map[string]any)
+			scaleway := providers["scaleway"].(map[string]any)
+			resources := scaleway[autonamingResourcesKey].(map[string]any)
+			registry := resources[scalewayRegistryType].(map[string]any)
+			require.Equal(t, tt.registry, registry["pattern"])
+		})
+	}
+}

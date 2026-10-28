@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,6 +27,11 @@ func stackConfigJson(recipePulumiConfig string) (string, error) {
 	err := addStackConfigFromEnv(config)
 	if err != nil {
 		return "", err
+	}
+	if config["defang:provider"].Value == scalewayProvider {
+		if err := ensureScalewayRegistryAutonaming(config); err != nil {
+			return "", err
+		}
 	}
 	configJson, err := json.Marshal(config)
 	if err != nil {
@@ -76,7 +82,12 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 // lowercased) is prepended where one is still wanted.
 const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
 
+var errAutonamingObject = errors.New("autonaming config entry must be an object")
+
+const scalewayProvider = "scaleway"
 const autonamingResourcesKey = "resources"
+const scalewayRegistryType = "scaleway:registry/namespace:Namespace"
+const scalewayRegistryPattern = "defang-${name}-${hex(7)}"
 const shortAutonamingPattern = "${name}-${hex(7)}"
 
 func setDefaultStackConfig(prefix string, config configMap) {
@@ -94,9 +105,9 @@ func setDefaultStackConfig(prefix string, config configMap) {
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
 		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
-			"scaleway": map[string]any{
+			scalewayProvider: map[string]any{
 				autonamingResourcesKey: map[string]any{
-					"scaleway:registry/namespace:Namespace": map[string]string{"pattern": "defang-${name}-${hex(7)}"},
+					scalewayRegistryType: map[string]string{"pattern": scalewayRegistryPattern},
 				},
 			},
 			"aws": map[string]any{
@@ -235,7 +246,7 @@ func addStackConfigFromEnv(config configMap) error {
 	var providers []string
 	// Scaleway sets AWS_REGION for its S3-compatible state backend.
 	if scwProject != "" {
-		providers = append(providers, "scaleway")
+		providers = append(providers, scalewayProvider)
 		config["scaleway:projectId"] = configValue{Value: scwProject}
 		config["scaleway:region"] = configValue{Value: scwRegion}
 	} else if awsRegion != "" {
@@ -324,4 +335,44 @@ func (c configValue) MarshalJSON() ([]byte, error) {
 		}
 		return json.Marshal(map[string]any{"value": string(value), "objectValue": json.RawMessage(value)})
 	}
+}
+
+// Recipes written before Scaleway builds had no registry naming override.
+// Backfill only that entry, preserving the recipe's explicit resource settings.
+func ensureScalewayRegistryAutonaming(config configMap) error {
+	value := config["pulumi:autonaming"]
+	data, err := json.Marshal(value.Value)
+	if err != nil {
+		return fmt.Errorf("encoding autonaming config: %w", err)
+	}
+	if encoded, ok := value.Value.(string); ok {
+		data = []byte(encoded)
+	}
+	var autonaming map[string]any
+	if err := json.Unmarshal(data, &autonaming); err != nil {
+		return fmt.Errorf("reading autonaming config: %w", err)
+	}
+	if autonaming == nil {
+		autonaming = make(map[string]any)
+	}
+	current := autonaming
+	for _, key := range []string{"providers", scalewayProvider, autonamingResourcesKey} {
+		if child, exists := current[key]; exists {
+			object, ok := child.(map[string]any)
+			if !ok {
+				return fmt.Errorf("autonaming config %q: %w", key, errAutonamingObject)
+			}
+			current = object
+		} else {
+			object := make(map[string]any)
+			current[key] = object
+			current = object
+		}
+	}
+	if _, exists := current[scalewayRegistryType]; !exists {
+		current[scalewayRegistryType] = map[string]any{"pattern": scalewayRegistryPattern}
+	}
+	value.Value = autonaming
+	config["pulumi:autonaming"] = value
+	return nil
 }

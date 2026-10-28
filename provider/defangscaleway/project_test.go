@@ -109,6 +109,7 @@ func TestBuildProjectCreatesServerlessContainerResources(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, mocks.findType("scaleway:containers/namespace:Namespace"))
+	assert.Nil(t, mocks.findType("scaleway:registry/namespace:Namespace"), "prebuilt images need no build registry")
 	require.NotNil(t, mocks.findType("scaleway:network/privateNetwork:PrivateNetwork"))
 	container := mocks.findType("scaleway:containers/container:Container")
 	require.NotNil(t, container)
