@@ -26,10 +26,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.50.0
-	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.28.0
-	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.28.0
-	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.28.0
-	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.28.0
+	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.29.0
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.29.0
+	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.29.0
+	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.29.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
 	github.com/pulumi/pulumi/sdk/v3 v3.269.0
 	github.com/stretchr/testify v1.12.1
@@ -169,18 +169,18 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.11.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.28.0 // indirect
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.28.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.29.0 // indirect
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.29.0 // indirect
 	github.com/pulumi/pulumi-cloud-sdk/go v1.20260924.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
