@@ -315,13 +315,13 @@ jobs:
 
       # Pin the CD image refs (digests) in the Defang Fabric so deployments use this exact build.
       - name: Set cd_image_ configs in Defang
-        if: matrix.clouds == 'azure'
+        if: matrix.clouds == 'azure' || matrix.clouds == 'scaleway'
         uses: DefangLabs/defang-github-action@981924edd6d4dec17d6ddb03e956174223bcec55 # v2.5.0
         with:
           cli-version: nightly
           project: ecs
           stack: awsprod1oidc
-          command: "config set -e cd_image_azure" # TODO: only Azure for now; AWS/GCP/DO are still handled by old TS code
+          command: "config set -e cd_image_${{ matrix.clouds }}" # AWS/GCP/DO are still handled by old TS code
         env:
           cd_image_aws: ${{ env.AWS_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_azure: ${{ env.AZURE_REPO }}@${{ steps.build-push.outputs.digest }}
