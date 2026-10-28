@@ -25,6 +25,13 @@ archives:
       - goos: windows
         formats: [zip]
 
+  - id: defang-scaleway
+    ids: [pulumi-resource-defang-scaleway]
+    name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
 before:
   hooks: []
 
