@@ -11,6 +11,7 @@ import (
 	scalewayconfig "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/config"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/network"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/observability"
+	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/registry"
 )
 
 // Project is the controller struct for the defang-scaleway:index:Project component.
@@ -133,8 +134,18 @@ func buildSharedInfra(
 		return nil, err
 	}
 	infra.Namespace = namespace
+	// Serverless Containers no longer creates a registry alongside its namespace.
+	// Own the build destination explicitly and use its assigned endpoint.
+	buildRegistry, err := registry.NewNamespace(ctx, projectName+"-registry", &registry.NamespaceArgs{
+		ProjectId: pulumi.StringPtr(infra.ProjectID),
+		Region:    pulumi.StringPtr(infra.Region),
+		IsPublic:  pulumi.Bool(false),
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating Scaleway build registry: %w", err)
+	}
 	infra.BuildInfra = &providerscaleway.BuildInfra{
-		RegistryEndpoint: namespace.RegistryEndpoint,
+		RegistryEndpoint: buildRegistry.Endpoint,
 	}
 	infra.ManagedHosts = make(map[string]pulumi.StringOutput)
 	infra.ManagedConnectionURLs = make(map[string]pulumi.StringOutput)
