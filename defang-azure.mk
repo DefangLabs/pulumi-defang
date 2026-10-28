@@ -40,13 +40,14 @@ version:
 .PHONY: go_sdk
 go_sdk: .sdk.go.$(PACK).stamp
 
-.sdk.go.$(PACK).stamp: $(WORKING_DIR)/bin/$(PROVIDER)
+.sdk.go.$(PACK).stamp: $(WORKING_DIR)/bin/$(PROVIDER) $(WORKING_DIR)/go.mod $(WORKING_DIR)/go.sum scripts/align-sdk-deps.sh
 	rm -rf "$(SDK_GO_DIR)"
 	pulumi package gen-sdk "$(WORKING_DIR)/bin/$(PROVIDER)" --language go -o "$(WORKING_DIR)/.sdk.tmp.$(PACK)"
 	mkdir -p "$(dir $(SDK_GO_DIR))" && mv "$(WORKING_DIR)/.sdk.tmp.$(PACK)/go/defangazure" "$(SDK_GO_DIR)" && rm -rf "$(WORKING_DIR)/.sdk.tmp.$(PACK)"
 	cd "$(SDK_GO_DIR)" && go mod init "$(SDK_MODULE)" && \
 		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
 		go mod tidy
+	scripts/align-sdk-deps.sh "$(SDK_GO_DIR)"
 	cp sdk/LICENSE "$(SDK_GO_DIR)/LICENSE"
 	@touch $@
 
