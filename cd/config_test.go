@@ -615,6 +615,17 @@ func Test_setDefaultStackConfigLowercasesAwsDatabaseNames(t *testing.T) {
 	}
 }
 
+func TestScalewayRegistryAutonaming(t *testing.T) {
+	config := configMap{}
+	setDefaultStackConfig("Defang", config)
+	autonaming := config["pulumi:autonaming"].Value.(map[string]any)
+	providers := autonaming["providers"].(map[string]any)
+	scaleway := providers["scaleway"].(map[string]any)
+	resources := scaleway["resources"].(map[string]any)
+	registry := resources["scaleway:registry/namespace:Namespace"].(map[string]string)
+	require.Equal(t, "defang-"+defaultAutonamingSuffix, registry["pattern"])
+}
+
 func TestScalewayStackConfigWithS3Region(t *testing.T) {
 	for _, region := range []string{"", "nl-ams"} {
 		t.Run("region="+region, func(t *testing.T) {

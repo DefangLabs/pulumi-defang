@@ -91,6 +91,11 @@ func setDefaultStackConfig(prefix string, config configMap) {
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
 		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
+			"scaleway": map[string]any{
+				"resources": map[string]any{
+					"scaleway:registry/namespace:Namespace": lowercased,
+				},
+			},
 			"aws": map[string]any{
 				"resources": map[string]any{
 					"aws:lb/loadBalancer:LoadBalancer": map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
