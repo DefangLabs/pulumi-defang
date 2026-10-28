@@ -76,6 +76,9 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 // lowercased) is prepended where one is still wanted.
 const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
 
+const autonamingResourcesKey = "resources"
+const shortAutonamingPattern = "${name}-${hex(7)}"
+
 func setDefaultStackConfig(prefix string, config configMap) {
 	// defang:prefix holds the bare prefix (e.g. "Defang"); its consumers
 	// (common.Prefix, e.g. ProjectResourceGroupName) append their own "-"
@@ -92,17 +95,17 @@ func setDefaultStackConfig(prefix string, config configMap) {
 		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
 			"scaleway": map[string]any{
-				"resources": map[string]any{
-					"scaleway:registry/namespace:Namespace": lowercased,
+				autonamingResourcesKey: map[string]any{
+					"scaleway:registry/namespace:Namespace": map[string]string{"pattern": shortAutonamingPattern},
 				},
 			},
 			"aws": map[string]any{
-				"resources": map[string]any{
+				autonamingResourcesKey: map[string]any{
 					"aws:lb/loadBalancer:LoadBalancer": map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
 					"aws:lb/targetGroup:TargetGroup":   map[string]string{"pattern": "${name}-${hex(4)}"},
 					// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
 					// full prefix already disambiguates it; no need to repeat it here.
-					"aws:ecs/service:Service": map[string]string{"pattern": "${name}-${hex(7)}"},
+					"aws:ecs/service:Service": map[string]string{"pattern": shortAutonamingPattern},
 					// Every type below rejects an uppercase physical name, so the
 					// prefix is lowercased for them. The databases matter as much
 					// as the groups they sit in: a managed Postgres deploy failed
@@ -120,7 +123,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 				},
 			},
 			"azure-native": map[string]any{
-				"resources": map[string]any{
+				autonamingResourcesKey: map[string]any{
 					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
 					// The default pattern includes hyphens from project/stack names, so override it.
 					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
@@ -128,7 +131,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"}, // name = sanitized project name
 					// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 					// 5-50	Alphanumerics, hyphens, and underscores
-					"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
+					"azure-native:containerregistry:Task": map[string]string{"pattern": shortAutonamingPattern},
 					// Requirements for Container App Environment resource names:
 					// Between 2 and 60 characters long.
 					// This resource name is not case-sensitive even though it is written as lowercase only in the docs.
@@ -145,7 +148,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// so drop them; ${name} is the only Job's fixed 21-char logical name
 					// today, so ${name}-${hex(7)} fits -- revisit if a longer-named Job shows up.
 					// https://learn.microsoft.com/en-us/rest/api/containerapps/jobs/create-or-update
-					"azure-native:app:Job": map[string]string{"pattern": "${name}-${hex(7)}"},
+					"azure-native:app:Job": map[string]string{"pattern": shortAutonamingPattern},
 				},
 			},
 			// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
@@ -153,7 +156,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 			// (e.g. "Defang-"), so force the entire pattern to use the lowercased prefix.
 			"gcp": map[string]any{
 				"pattern": lowerPrefix + defaultAutonamingSuffix, // TODO: sanitize project name
-				"resources": map[string]any{
+				autonamingResourcesKey: map[string]any{
 					// Service account ID must be between 6 and 30 characters.
 					// Service account ID must start with a lower case letter, followed by one or more lower case alphanumerical characters that can be separated by hyphens.
 					"gcp:serviceaccount/account:Account": map[string]string{"pattern": "${name}-${hex(4)}"},
