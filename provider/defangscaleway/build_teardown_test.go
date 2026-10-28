@@ -17,6 +17,7 @@ import (
 type fakeScaleway struct {
 	mu             sync.Mutex
 	serverGone     bool
+	localGone      bool // terminate deletes the local volume; DELETE /servers leaves it
 	terminateFails bool // a never-booted server rejects the terminate action
 	attachedPolls  int  // volume DELETEs refused before the volume comes free
 	volumeDenied   bool // volume DELETE answers 403, which waiting cannot fix
@@ -51,6 +52,7 @@ func (f *fakeScaleway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.serverGone = true
+		f.localGone = true
 		w.WriteHeader(http.StatusAccepted)
 	case r.Method == http.MethodDelete && r.URL.Path == zone+"/servers/srv":
 		f.serverGone = true
@@ -66,6 +68,14 @@ func (f *fakeScaleway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.deleted = append(f.deleted, "vol-sbs")
+		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodDelete && r.URL.Path == zone+"/volumes/vol-local":
+		if f.localGone {
+			http.NotFound(w, r)
+			return
+		}
+		f.localGone = true
+		f.deleted = append(f.deleted, "vol-local")
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodDelete && (r.URL.Path == zone+"/ips/ip-1" || r.URL.Path == zone+"/ips/ip-2"):
 		f.deleted = append(f.deleted, r.URL.Path[len(zone+"/ips/"):])
@@ -83,9 +93,16 @@ func TestTeardownServerDeletesVolumesAndIPs(t *testing.T) {
 		name           string
 		terminateFails bool
 		wantDelete     bool
+		wantDeleted    []string
 	}{
-		{name: "terminate action", terminateFails: false, wantDelete: false},
-		{name: "never booted, DELETE fallback", terminateFails: true, wantDelete: true},
+		{
+			name: "terminate action", terminateFails: false, wantDelete: false,
+			wantDeleted: []string{"ip-1", "ip-2", "vol-sbs"},
+		},
+		{
+			name: "never booted, DELETE fallback", terminateFails: true, wantDelete: true,
+			wantDeleted: []string{"ip-1", "ip-2", "vol-local", "vol-sbs"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &fakeScaleway{terminateFails: tc.terminateFails, attachedPolls: 2}
@@ -99,8 +116,11 @@ func TestTeardownServerDeletesVolumesAndIPs(t *testing.T) {
 				t.Errorf("server not removed; calls: %v", fake.calls)
 			}
 			slices.Sort(fake.deleted)
-			if want := []string{"ip-1", "ip-2", "vol-sbs"}; !slices.Equal(fake.deleted, want) {
-				t.Errorf("deleted %v, want %v; calls: %v", fake.deleted, want, fake.calls)
+			if !slices.Equal(fake.deleted, tc.wantDeleted) {
+				t.Errorf("deleted %v, want %v; calls: %v", fake.deleted, tc.wantDeleted, fake.calls)
+			}
+			if !fake.localGone {
+				t.Errorf("local volume left behind; calls: %v", fake.calls)
 			}
 			if got := slices.Contains(fake.calls, "DELETE /instance/v1/zones/fr-par-1/servers/srv"); got != tc.wantDelete {
 				t.Errorf("DELETE fallback used = %v, want %v", got, tc.wantDelete)

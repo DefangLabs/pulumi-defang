@@ -3,6 +3,7 @@ package scaleway
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -65,19 +66,54 @@ func postgresEngine(version int) string {
 	}
 }
 
-func postgresNodeType(cpus float64, memMiB int) string {
-	switch {
-	case cpus <= 1 && memMiB <= 2048:
-		return "DB-DEV-S"
-	case cpus <= 2 && memMiB <= 4096:
-		return "DB-GP-S"
-	case cpus <= 4 && memMiB <= 8192:
-		return "DB-GP-M"
-	case cpus <= 8 && memMiB <= 16384:
-		return "DB-GP-L"
-	default:
-		return "DB-GP-XL"
+type postgresNode struct {
+	name       string
+	vcpus      int
+	memMiB     int
+	haRequired bool // Scaleway only offers this node with a standby
+}
+
+// Managed Postgres node types by size. Memory is the size the Scaleway console
+// shows ("2 GB"), taken as GiB, so `memory: 2g` in compose.yaml selects the
+// node labelled 2 GB. The RDB API reports it in decimal bytes (2e9), which
+// would push a 2g request onto the 4 GB node.
+var (
+	postgresDevNodes = []postgresNode{
+		{"DB-DEV-S", 2, 2048, false},
+		{"DB-DEV-M", 3, 4096, false},
+		{"DB-DEV-L", 4, 8192, false},
+		{"DB-DEV-XL", 4, 12288, false},
 	}
+	postgresGPNodes = []postgresNode{
+		{"DB-GP-XS", 4, 16384, false},
+		{"DB-GP-S", 8, 32768, false},
+		{"DB-GP-M", 16, 65536, false},
+		{"DB-GP-L", 32, 131072, true},
+		{"DB-GP-XL", 48, 262144, true},
+	}
+	// postgresNodeTypeCatalogs maps postgres-node-type values to the node
+	// families they search, in order: "any" searches every family, cheapest
+	// first; "general" (as in AWS's rds-node-type) leaves out the shared-vCPU
+	// DB-DEV nodes.
+	postgresNodeTypeCatalogs = map[string][]postgresNode{
+		"any":     append(slices.Clone(postgresDevNodes), postgresGPNodes...),
+		"general": postgresGPNodes,
+	}
+)
+
+// postgresNodeType returns the smallest node in the recipe's family with at
+// least the service's CPUs and memory, or the family's largest.
+func postgresNodeType(family string, cpus float64, memMiB int) postgresNode {
+	nodes, ok := postgresNodeTypeCatalogs[strings.ToLower(family)]
+	if !ok {
+		nodes = postgresNodeTypeCatalogs["any"]
+	}
+	for _, n := range nodes {
+		if float64(n.vcpus) >= cpus && n.memMiB >= memMiB {
+			return n
+		}
+	}
+	return nodes[len(nodes)-1]
 }
 
 func postgresPassword(password pulumi.StringInput) pulumi.StringPtrInput {
@@ -203,16 +239,23 @@ func CreatePostgres(
 		engine = pulumi.String(postgresEngine(0)).ToStringOutput()
 	}
 
+	node := postgresNodeType(PostgresNodeType.Get(ctx), svc.GetCPUs(), svc.GetMemoryMiB())
 	args := &databases.InstanceArgs{
 		Name:              pulumi.String(serviceName),
-		NodeType:          pulumi.String(postgresNodeType(svc.GetCPUs(), svc.GetMemoryMiB())),
+		NodeType:          pulumi.String(node.name),
 		Engine:            engine,
 		UserName:          username.ToStringOutput().ToStringPtrOutput(),
 		PasswordWo:        postgresPassword(pg.Password),
 		PasswordWoVersion: pulumi.Int(1),
-		IsHaCluster:       pulumi.Bool(svc.GetReplicas() > 1),
-		DisableBackup:     pulumi.Bool(false),
+		IsHaCluster:       pulumi.Bool(HighAvailability.Get(ctx) || node.haRequired),
 		EncryptionAtRest:  pulumi.Bool(true),
+	}
+	if days := BackupRetentionDays.Get(ctx); days > 0 {
+		args.DisableBackup = pulumi.Bool(false)
+		args.BackupScheduleFrequency = pulumi.Int(24)
+		args.BackupScheduleRetention = pulumi.Int(days)
+	} else {
+		args.DisableBackup = pulumi.Bool(true)
 	}
 	if pg.FromSnapshot != "" {
 		args.SnapshotId = pulumi.StringPtr(pg.FromSnapshot)

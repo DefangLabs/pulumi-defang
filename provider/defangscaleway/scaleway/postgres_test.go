@@ -91,11 +91,30 @@ func TestPostgresEngine(t *testing.T) {
 }
 
 func TestPostgresNodeType(t *testing.T) {
-	assert.Equal(t, "DB-DEV-S", postgresNodeType(0.25, 512))
-	assert.Equal(t, "DB-GP-S", postgresNodeType(2, 4096))
-	assert.Equal(t, "DB-GP-M", postgresNodeType(4, 8192))
-	assert.Equal(t, "DB-GP-L", postgresNodeType(8, 16384))
-	assert.Equal(t, "DB-GP-XL", postgresNodeType(16, 32768))
+	tests := []struct {
+		family string
+		cpus   float64
+		memMiB int
+		want   string
+	}{
+		{"any", 0.25, 512, "DB-DEV-S"},
+		{"any", 2, 2048, "DB-DEV-S"},
+		{"any", 2, 2049, "DB-DEV-M"},
+		{"any", 2, 4096, "DB-DEV-M"},
+		{"any", 4, 8192, "DB-DEV-L"},
+		{"any", 4, 12288, "DB-DEV-XL"},
+		{"any", 4, 16384, "DB-GP-XS"},
+		{"any", 8, 16384, "DB-GP-S"},
+		{"any", 16, 32768, "DB-GP-M"},
+		{"any", 64, 1 << 20, "DB-GP-XL"},
+		{"general", 0.25, 512, "DB-GP-XS"},
+		{"GENERAL", 8, 16384, "DB-GP-S"},
+		{"unknown", 0.25, 512, "DB-DEV-S"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, postgresNodeType(tt.family, tt.cpus, tt.memMiB).name,
+			"family=%s cpus=%v memMiB=%d", tt.family, tt.cpus, tt.memMiB)
+	}
 }
 
 func TestCreatePostgresManagedResources(t *testing.T) {
@@ -120,7 +139,8 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 	assert.Equal(t, "DB-DEV-S", inst.inputs[resource.PropertyKey("nodeType")].StringValue())
 	assert.Equal(t, "PostgreSQL-16", inst.inputs[resource.PropertyKey("engine")].StringValue())
 	assert.True(t, inst.inputs[resource.PropertyKey("encryptionAtRest")].BoolValue())
-	assert.False(t, inst.inputs[resource.PropertyKey("disableBackup")].BoolValue())
+	assert.True(t, inst.inputs[resource.PropertyKey("disableBackup")].BoolValue(), "backups off by default")
+	assert.False(t, inst.inputs[resource.PropertyKey("isHaCluster")].BoolValue(), "standalone by default")
 	assert.Equal(t, defaultScalewayPostgresUser, inst.inputs[resource.PropertyKey("userName")].StringValue())
 
 	db := mocks.findType("scaleway:databases/database:Database")
@@ -130,6 +150,37 @@ func TestCreatePostgresManagedResources(t *testing.T) {
 	privilege := mocks.findType("scaleway:databases/privilege:Privilege")
 	require.NotNil(t, privilege)
 	assert.Equal(t, "all", privilege.inputs[resource.PropertyKey("permission")].StringValue())
+}
+
+func TestCreatePostgresRecipe(t *testing.T) {
+	t.Setenv("PULUMI_CONFIG", `{
+		"defang-scaleway:backup-retention-days": "7",
+		"defang-scaleway:postgres-node-type": "general",
+		"defang-scaleway:high-availability": "true"
+	}`)
+	mocks := &recordingMocks{}
+	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+		_, err := CreatePostgres(ctx, &mockConfigProvider{}, "db", compose.ServiceConfig{
+			Image:       compose.ImageFromPtr(ptr("postgres:16")),
+			Postgres:    &compose.PostgresConfig{},
+			Environment: compose.Environment{"POSTGRES_PASSWORD": pulumi.String("Secret123!")},
+		}, nil)
+		return err
+	}, pulumi.WithMocks("proj", "stack", mocks))
+
+	require.NoError(t, err)
+	inst := mocks.findType("scaleway:databases/instance:Instance")
+	require.NotNil(t, inst)
+	assert.Equal(t, "DB-GP-XS", inst.inputs[resource.PropertyKey("nodeType")].StringValue())
+	assert.False(t, inst.inputs[resource.PropertyKey("disableBackup")].BoolValue())
+	assert.Equal(t, 7, int(inst.inputs[resource.PropertyKey("backupScheduleRetention")].NumberValue()))
+	assert.Equal(t, 24, int(inst.inputs[resource.PropertyKey("backupScheduleFrequency")].NumberValue()))
+	assert.True(t, inst.inputs[resource.PropertyKey("isHaCluster")].BoolValue())
+}
+
+func TestPostgresNodeTypeRequiresHA(t *testing.T) {
+	assert.False(t, postgresNodeType("any", 16, 65536).haRequired)
+	assert.True(t, postgresNodeType("any", 16, 65537).haRequired, "DB-GP-L is only offered with a standby")
 }
 
 func TestCreatePostgresAttachesPrivateNetwork(t *testing.T) {

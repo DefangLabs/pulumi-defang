@@ -366,10 +366,16 @@
         "destination": {
           "type": "string"
         },
+        "diskSizeGb": {
+          "type": "integer"
+        },
         "dockerfile": {
           "type": "string"
         },
         "image": {
+          "type": "string"
+        },
+        "instanceType": {
           "type": "string"
         },
         "logSelector": {
@@ -423,7 +429,13 @@
         "destination": {
           "type": "string"
         },
+        "diskSizeGb": {
+          "type": "integer"
+        },
         "dockerfile": {
+          "type": "string"
+        },
+        "instanceType": {
           "type": "string"
         },
         "logsEndpoint": {

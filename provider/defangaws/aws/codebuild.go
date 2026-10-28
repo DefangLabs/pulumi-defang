@@ -135,13 +135,9 @@ type codeBuildResult struct {
 	destination pulumix.Output[string] // ECR image URL (repo:tag) where the built image is pushed
 }
 
-// codeBuildComputeType maps shm_size (in bytes) to CodeBuild compute type.
-// Matches TS: undefined→LARGE, <=4096MiB→SMALL, <=8192→MEDIUM, <=16384→LARGE, <=65536→XLARGE, else 2XLARGE.
-func codeBuildComputeType(shmSizeBytes int) string {
-	mib := shmSizeBytes / (1024 * 1024)
-	if mib <= 0 {
-		return "BUILD_GENERAL1_LARGE"
-	}
+// codeBuildComputeType maps the build memory (shm_size, in MiB) to a CodeBuild
+// compute type: <=4096→SMALL, <=8192→MEDIUM, <=16384→LARGE, <=65536→XLARGE, else 2XLARGE.
+func codeBuildComputeType(mib int) string {
 	switch {
 	case mib <= 4096:
 		return "BUILD_GENERAL1_SMALL"
@@ -431,7 +427,7 @@ func createCodeBuildProject(
 		baseImage = "aws/codebuild/amazonlinux-aarch64-standard:3.0"
 	}
 
-	computeType := codeBuildComputeType(build.GetShmSizeBytes())
+	computeType := codeBuildComputeType(build.GetBuildMemoryMiB())
 
 	// Destination: repo:tag where we push the built image. The tag is a
 	// content hash of the build inputs (BuildTriggerHash), not the mutable

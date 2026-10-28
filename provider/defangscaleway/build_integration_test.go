@@ -106,6 +106,10 @@ RUN whoami && id && touch /home/appuser/created-by-appuser.txt && ls -la /home/a
 		LogsEndpoint: logsEndpoint,
 		LogsToken:    logsToken,
 	}
+	// Unset builds on the default local-disk type; set it to cover a block-only one.
+	if instanceType := os.Getenv("SCW_LIVE_TEST_INSTANCE_TYPE"); instanceType != "" {
+		inputs.InstanceType = &instanceType
+	}
 
 	assertNoLeftovers := leftoverCheckForTest(ctx, t, regClient, defaultZone(region), projectID)
 
@@ -119,7 +123,7 @@ RUN whoami && id && touch /home/appuser/created-by-appuser.txt && ls -la /home/a
 	assertNoLeftovers()
 }
 
-// leftoverCheckForTest records the project's SBS volumes and Instance IPs in
+// leftoverCheckForTest records the project's SBS and local volumes and Instance IPs in
 // zone, and returns a check that fails the test for any that appeared since.
 func leftoverCheckForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zone, projectID string) func() {
 	t.Helper()
@@ -134,13 +138,14 @@ func leftoverCheckForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zo
 	}
 }
 
-// listLeftoversForTest lists the project's SBS volumes and Instance IPs in
-// zone, as "volume <id>" / "ip <id>".
+// listLeftoversForTest lists the project's SBS and local volumes and Instance
+// IPs in zone, as "volume <id>" / "local volume <id>" / "ip <id>".
 func listLeftoversForTest(ctx context.Context, t *testing.T, c *scwAPIClient, zone, projectID string) []string {
 	t.Helper()
 	out := make([]string, 0, 16)
 	for _, l := range []struct{ kind, url, field string }{
 		{"volume", c.blockBaseURL(zone) + "/volumes?page_size=100&project_id=" + projectID, "volumes"},
+		{"local volume", c.instanceBaseURL(zone) + "/volumes?per_page=100&project=" + projectID, "volumes"},
 		{"ip", c.instanceBaseURL(zone) + "/ips?per_page=100&project=" + projectID, "ips"},
 	} {
 		// The list sits beside a numeric total_count, so decode it separately.

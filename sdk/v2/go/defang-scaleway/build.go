@@ -18,8 +18,10 @@ type Build struct {
 	Args         pulumi.StringMapOutput   `pulumi:"args"`
 	BuildId      pulumi.StringOutput      `pulumi:"buildId"`
 	Destination  pulumi.StringOutput      `pulumi:"destination"`
+	DiskSizeGb   pulumi.IntPtrOutput      `pulumi:"diskSizeGb"`
 	Dockerfile   pulumi.StringPtrOutput   `pulumi:"dockerfile"`
 	Image        pulumi.StringOutput      `pulumi:"image"`
+	InstanceType pulumi.StringPtrOutput   `pulumi:"instanceType"`
 	LogSelector  pulumi.StringPtrOutput   `pulumi:"logSelector"`
 	LogsEndpoint pulumi.StringOutput      `pulumi:"logsEndpoint"`
 	LogsToken    pulumi.StringOutput      `pulumi:"logsToken"`
@@ -91,7 +93,9 @@ func (BuildState) ElementType() reflect.Type {
 type buildArgs struct {
 	Args         map[string]string `pulumi:"args"`
 	Destination  string            `pulumi:"destination"`
+	DiskSizeGb   *int              `pulumi:"diskSizeGb"`
 	Dockerfile   *string           `pulumi:"dockerfile"`
+	InstanceType *string           `pulumi:"instanceType"`
 	LogsEndpoint string            `pulumi:"logsEndpoint"`
 	LogsToken    string            `pulumi:"logsToken"`
 	MaxWaitTime  *int              `pulumi:"maxWaitTime"`
@@ -106,7 +110,9 @@ type buildArgs struct {
 type BuildArgs struct {
 	Args         pulumi.StringMapInput
 	Destination  pulumi.StringInput
+	DiskSizeGb   pulumi.IntPtrInput
 	Dockerfile   pulumi.StringPtrInput
+	InstanceType pulumi.StringPtrInput
 	LogsEndpoint pulumi.StringInput
 	LogsToken    pulumi.StringInput
 	MaxWaitTime  pulumi.IntPtrInput
@@ -166,12 +172,20 @@ func (o BuildOutput) Destination() pulumi.StringOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.Destination }).(pulumi.StringOutput)
 }
 
+func (o BuildOutput) DiskSizeGb() pulumi.IntPtrOutput {
+	return o.ApplyT(func(v *Build) pulumi.IntPtrOutput { return v.DiskSizeGb }).(pulumi.IntPtrOutput)
+}
+
 func (o BuildOutput) Dockerfile() pulumi.StringPtrOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.Dockerfile }).(pulumi.StringPtrOutput)
 }
 
 func (o BuildOutput) Image() pulumi.StringOutput {
 	return o.ApplyT(func(v *Build) pulumi.StringOutput { return v.Image }).(pulumi.StringOutput)
+}
+
+func (o BuildOutput) InstanceType() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *Build) pulumi.StringPtrOutput { return v.InstanceType }).(pulumi.StringPtrOutput)
 }
 
 func (o BuildOutput) LogSelector() pulumi.StringPtrOutput {
