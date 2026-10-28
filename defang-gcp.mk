@@ -47,6 +47,7 @@ go_sdk: .sdk.go.$(PACK).stamp
 	cd "$(SDK_GO_DIR)" && go mod init "$(SDK_MODULE)" && \
 		go get "github.com/pulumi/pulumi/sdk/v3@$(shell grep 'pulumi/pulumi/sdk/v3 ' $(WORKING_DIR)/go.mod | awk '{print $$2}')" && \
 		go mod tidy
+	scripts/align-sdk-deps.sh "$(SDK_GO_DIR)"
 	cp sdk/LICENSE "$(SDK_GO_DIR)/LICENSE"
 	@touch $@
 
