@@ -48,7 +48,7 @@ require (
 	github.com/pulumi/pulumi-go-provider v1.7.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.4
 	github.com/pulumi/pulumi/pkg/v3 v3.270.0
-	github.com/pulumi/pulumi/sdk/v3 v3.270.0
+	github.com/pulumi/pulumi/sdk/v3 v3.271.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.306.0
 	google.golang.org/grpc v1.84.0
