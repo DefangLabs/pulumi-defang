@@ -623,7 +623,7 @@ func TestScalewayRegistryAutonaming(t *testing.T) {
 	scaleway := providers["scaleway"].(map[string]any)
 	resources := scaleway["resources"].(map[string]any)
 	registry := resources["scaleway:registry/namespace:Namespace"].(map[string]string)
-	require.Equal(t, "${name}-${hex(7)}", registry["pattern"])
+	require.Equal(t, "defang-${name}-${hex(7)}", registry["pattern"])
 }
 
 func TestScalewayStackConfigWithS3Region(t *testing.T) {

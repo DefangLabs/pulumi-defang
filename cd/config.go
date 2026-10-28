@@ -96,7 +96,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 		"providers": map[string]any{
 			"scaleway": map[string]any{
 				autonamingResourcesKey: map[string]any{
-					"scaleway:registry/namespace:Namespace": map[string]string{"pattern": shortAutonamingPattern},
+					"scaleway:registry/namespace:Namespace": map[string]string{"pattern": "defang-${name}-${hex(7)}"},
 				},
 			},
 			"aws": map[string]any{
