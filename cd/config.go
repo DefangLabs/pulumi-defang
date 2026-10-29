@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,6 +27,11 @@ func stackConfigJson(recipePulumiConfig string) (string, error) {
 	err := addStackConfigFromEnv(config)
 	if err != nil {
 		return "", err
+	}
+	if config["defang:provider"].Value == scalewayProvider {
+		if err := ensureScalewayRegistryAutonaming(config); err != nil {
+			return "", err
+		}
 	}
 	configJson, err := json.Marshal(config)
 	if err != nil {
@@ -76,6 +82,14 @@ func unmarshalRecipe(recipePulumiConfig string, config configMap) error {
 // lowercased) is prepended where one is still wanted.
 const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
 
+var errAutonamingObject = errors.New("autonaming config entry must be an object")
+
+const scalewayProvider = "scaleway"
+const autonamingResourcesKey = "resources"
+const scalewayRegistryType = "scaleway:registry/namespace:Namespace"
+const scalewayRegistryPattern = "defang-${name}-${hex(7)}"
+const shortAutonamingPattern = "${name}-${hex(7)}"
+
 func setDefaultStackConfig(prefix string, config configMap) {
 	// defang:prefix holds the bare prefix (e.g. "Defang"); its consumers
 	// (common.Prefix, e.g. ProjectResourceGroupName) append their own "-"
@@ -91,13 +105,18 @@ func setDefaultStackConfig(prefix string, config configMap) {
 	config["pulumi:autonaming"] = configValue{Value: map[string]any{
 		"pattern": prefix + defaultAutonamingSuffix,
 		"providers": map[string]any{
+			scalewayProvider: map[string]any{
+				autonamingResourcesKey: map[string]any{
+					scalewayRegistryType: map[string]string{"pattern": scalewayRegistryPattern},
+				},
+			},
 			"aws": map[string]any{
-				"resources": map[string]any{
+				autonamingResourcesKey: map[string]any{
 					"aws:lb/loadBalancer:LoadBalancer": map[string]string{"pattern": "${project}-${stack}-${hex(4)}"},
 					"aws:lb/targetGroup:TargetGroup":   map[string]string{"pattern": "${name}-${hex(4)}"},
 					// ecs.Service is always scoped to an ecs.Cluster, so the cluster's
 					// full prefix already disambiguates it; no need to repeat it here.
-					"aws:ecs/service:Service": map[string]string{"pattern": "${name}-${hex(7)}"},
+					"aws:ecs/service:Service": map[string]string{"pattern": shortAutonamingPattern},
 					// Every type below rejects an uppercase physical name, so the
 					// prefix is lowercased for them. The databases matter as much
 					// as the groups they sit in: a managed Postgres deploy failed
@@ -115,7 +134,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 				},
 			},
 			"azure-native": map[string]any{
-				"resources": map[string]any{
+				autonamingResourcesKey: map[string]any{
 					// ACR registry names must be alphanumeric only (^[a-zA-Z0-9]*$, 5–50 chars).
 					// The default pattern includes hyphens from project/stack names, so override it.
 					// ${name} is already sanitized to alphanumeric by sanitizeRegistryName() in image.go.
@@ -123,7 +142,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					"azure-native:containerregistry:Registry": map[string]string{"pattern": "${name}${stack}${hex(7)}"}, // name = sanitized project name
 					// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftcontainerregistry
 					// 5-50	Alphanumerics, hyphens, and underscores
-					"azure-native:containerregistry:Task": map[string]string{"pattern": "${name}-${hex(7)}"},
+					"azure-native:containerregistry:Task": map[string]string{"pattern": shortAutonamingPattern},
 					// Requirements for Container App Environment resource names:
 					// Between 2 and 60 characters long.
 					// This resource name is not case-sensitive even though it is written as lowercase only in the docs.
@@ -140,7 +159,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 					// so drop them; ${name} is the only Job's fixed 21-char logical name
 					// today, so ${name}-${hex(7)} fits -- revisit if a longer-named Job shows up.
 					// https://learn.microsoft.com/en-us/rest/api/containerapps/jobs/create-or-update
-					"azure-native:app:Job": map[string]string{"pattern": "${name}-${hex(7)}"},
+					"azure-native:app:Job": map[string]string{"pattern": shortAutonamingPattern},
 				},
 			},
 			// Most GCP resources require names matching ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
@@ -148,7 +167,7 @@ func setDefaultStackConfig(prefix string, config configMap) {
 			// (e.g. "Defang-"), so force the entire pattern to use the lowercased prefix.
 			"gcp": map[string]any{
 				"pattern": lowerPrefix + defaultAutonamingSuffix, // TODO: sanitize project name
-				"resources": map[string]any{
+				autonamingResourcesKey: map[string]any{
 					// Service account ID must be between 6 and 30 characters.
 					// Service account ID must start with a lower case letter, followed by one or more lower case alphanumerical characters that can be separated by hyphens.
 					"gcp:serviceaccount/account:Account": map[string]string{"pattern": "${name}-${hex(4)}"},
@@ -227,7 +246,7 @@ func addStackConfigFromEnv(config configMap) error {
 	var providers []string
 	// Scaleway sets AWS_REGION for its S3-compatible state backend.
 	if scwProject != "" {
-		providers = append(providers, "scaleway")
+		providers = append(providers, scalewayProvider)
 		config["scaleway:projectId"] = configValue{Value: scwProject}
 		config["scaleway:region"] = configValue{Value: scwRegion}
 	} else if awsRegion != "" {
@@ -316,4 +335,44 @@ func (c configValue) MarshalJSON() ([]byte, error) {
 		}
 		return json.Marshal(map[string]any{"value": string(value), "objectValue": json.RawMessage(value)})
 	}
+}
+
+// Recipes written before Scaleway builds had no registry naming override.
+// Backfill only that entry, preserving the recipe's explicit resource settings.
+func ensureScalewayRegistryAutonaming(config configMap) error {
+	value := config["pulumi:autonaming"]
+	data, err := json.Marshal(value.Value)
+	if err != nil {
+		return fmt.Errorf("encoding autonaming config: %w", err)
+	}
+	if encoded, ok := value.Value.(string); ok {
+		data = []byte(encoded)
+	}
+	var autonaming map[string]any
+	if err := json.Unmarshal(data, &autonaming); err != nil {
+		return fmt.Errorf("reading autonaming config: %w", err)
+	}
+	if autonaming == nil {
+		autonaming = make(map[string]any)
+	}
+	current := autonaming
+	for _, key := range []string{"providers", scalewayProvider, autonamingResourcesKey} {
+		if child, exists := current[key]; exists {
+			object, ok := child.(map[string]any)
+			if !ok {
+				return fmt.Errorf("autonaming config %q: %w", key, errAutonamingObject)
+			}
+			current = object
+		} else {
+			object := make(map[string]any)
+			current[key] = object
+			current = object
+		}
+	}
+	if _, exists := current[scalewayRegistryType]; !exists {
+		current[scalewayRegistryType] = map[string]any{"pattern": scalewayRegistryPattern}
+	}
+	value.Value = autonaming
+	config["pulumi:autonaming"] = value
+	return nil
 }

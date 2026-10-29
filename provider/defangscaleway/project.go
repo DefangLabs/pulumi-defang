@@ -72,7 +72,7 @@ func buildProject(
 	parentOpts ...pulumi.ResourceOption,
 ) (*projectResult, error) {
 	childOpts := append([]pulumi.ResourceOption{}, parentOpts...)
-	infra, err := buildSharedInfra(ctx, projectName, childOpts...)
+	infra, err := buildSharedInfra(ctx, projectName, args.Services, childOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +123,7 @@ func buildProject(
 func buildSharedInfra(
 	ctx *pulumi.Context,
 	projectName string,
+	services map[string]compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*providerscaleway.SharedInfra, error) {
 	infra := providerscaleway.NewStandaloneInfra(ctx, projectName)
@@ -133,9 +134,7 @@ func buildSharedInfra(
 		return nil, err
 	}
 	infra.Namespace = namespace
-	infra.BuildInfra = &providerscaleway.BuildInfra{
-		RegistryEndpoint: namespace.RegistryEndpoint,
-	}
+	infra.BuildInfra = &providerscaleway.BuildInfra{}
 	infra.ManagedHosts = make(map[string]pulumi.StringOutput)
 	infra.ManagedConnectionURLs = make(map[string]pulumi.StringOutput)
 
@@ -151,6 +150,17 @@ func buildSharedInfra(
 	}
 	if infra.ProjectID == "" {
 		infra.ProjectID = scalewayconfig.GetProjectId(ctx)
+	}
+
+	for _, svc := range services {
+		if svc.NeedsBuild() {
+			endpoint, err := providerscaleway.CreateBuildRegistry(ctx, projectName, infra, opts...)
+			if err != nil {
+				return nil, err
+			}
+			infra.BuildInfra.RegistryEndpoint = endpoint
+			break
+		}
 	}
 
 	logsSource, err := observability.NewSource(ctx, projectName+"-build-logs", &observability.SourceArgs{

@@ -31,8 +31,8 @@ func (m *projectRecordingMocks) NewResource(args pulumi.MockResourceArgs) (strin
 		outputs[k] = v
 	}
 	switch args.TypeToken {
-	case "scaleway:containers/namespace:Namespace":
-		outputs[resource.PropertyKey("registryEndpoint")] = resource.NewStringProperty("rg.fr-par.scw.cloud/defang")
+	case "scaleway:registry/namespace:Namespace":
+		outputs[resource.PropertyKey("endpoint")] = resource.NewStringProperty("rg.fr-par.scw.cloud/project-registry")
 	case "scaleway:containers/container:Container":
 		outputs[resource.PropertyKey("domainName")] = resource.NewStringProperty("app.functions.fnc.fr-par.scw.cloud")
 	case "scaleway:network/privateNetwork:PrivateNetwork":
@@ -109,6 +109,7 @@ func TestBuildProjectCreatesServerlessContainerResources(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, mocks.findType("scaleway:containers/namespace:Namespace"))
+	assert.Nil(t, mocks.findType("scaleway:registry/namespace:Namespace"), "prebuilt images need no build registry")
 	require.NotNil(t, mocks.findType("scaleway:network/privateNetwork:PrivateNetwork"))
 	container := mocks.findType("scaleway:containers/container:Container")
 	require.NotNil(t, container)
@@ -189,6 +190,7 @@ func TestBuildProjectCreatesBuildResourceForBuildOnlyServices(t *testing.T) {
 	mocks := &projectRecordingMocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		_, err := buildProject(ctx, "demo", ProjectInputs{
+			Etag: "registry-test",
 			Services: compose.Services{
 				"app": {
 					Build: &compose.BuildConfig{Context: pulumi.String(".")},
@@ -201,6 +203,11 @@ func TestBuildProjectCreatesBuildResourceForBuildOnlyServices(t *testing.T) {
 	require.NoError(t, err)
 	build := mocks.findType("defang-scaleway:index:Build")
 	require.NotNil(t, build, "a Build resource should be created for build-only services")
+	assert.Equal(t, "rg.fr-par.scw.cloud/project-registry/app:registry-test",
+		build.inputs[resource.PropertyKey("destination")].StringValue())
+	buildRegistry := mocks.findType("scaleway:registry/namespace:Namespace")
+	require.NotNil(t, buildRegistry)
+	assert.False(t, buildRegistry.inputs[resource.PropertyKey("isPublic")].BoolValue())
 	assert.Equal(t, "DEV1-L", build.inputs[resource.PropertyKey("instanceType")].StringValue())
 	logs := mocks.findType("scaleway:observability/source:Source")
 	require.NotNil(t, logs)
