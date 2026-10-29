@@ -11,7 +11,6 @@ import (
 	scalewayconfig "github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/config"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/network"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/observability"
-	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/registry"
 )
 
 // Project is the controller struct for the defang-scaleway:index:Project component.
@@ -73,14 +72,7 @@ func buildProject(
 	parentOpts ...pulumi.ResourceOption,
 ) (*projectResult, error) {
 	childOpts := append([]pulumi.ResourceOption{}, parentOpts...)
-	needsBuild := false
-	for _, service := range args.Services {
-		if service.Build != nil {
-			needsBuild = true
-			break
-		}
-	}
-	infra, err := buildSharedInfra(ctx, projectName, needsBuild, childOpts...)
+	infra, err := buildSharedInfra(ctx, projectName, args.Services, childOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +123,7 @@ func buildProject(
 func buildSharedInfra(
 	ctx *pulumi.Context,
 	projectName string,
-	needsBuild bool,
+	services map[string]compose.ServiceConfig,
 	opts ...pulumi.ResourceOption,
 ) (*providerscaleway.SharedInfra, error) {
 	infra := providerscaleway.NewStandaloneInfra(ctx, projectName)
@@ -143,18 +135,6 @@ func buildSharedInfra(
 	}
 	infra.Namespace = namespace
 	infra.BuildInfra = &providerscaleway.BuildInfra{}
-	if needsBuild {
-		// Serverless Containers no longer creates a registry alongside its namespace.
-		buildRegistry, err := registry.NewNamespace(ctx, projectName+"-registry", &registry.NamespaceArgs{
-			ProjectId: pulumi.StringPtr(infra.ProjectID),
-			Region:    pulumi.StringPtr(infra.Region),
-			IsPublic:  pulumi.Bool(false),
-		}, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("creating Scaleway build registry: %w", err)
-		}
-		infra.BuildInfra.RegistryEndpoint = buildRegistry.Endpoint
-	}
 	infra.ManagedHosts = make(map[string]pulumi.StringOutput)
 	infra.ManagedConnectionURLs = make(map[string]pulumi.StringOutput)
 
@@ -170,6 +150,17 @@ func buildSharedInfra(
 	}
 	if infra.ProjectID == "" {
 		infra.ProjectID = scalewayconfig.GetProjectId(ctx)
+	}
+
+	for _, svc := range services {
+		if svc.NeedsBuild() {
+			endpoint, err := providerscaleway.CreateBuildRegistry(ctx, projectName, infra, opts...)
+			if err != nil {
+				return nil, err
+			}
+			infra.BuildInfra.RegistryEndpoint = endpoint
+			break
+		}
 	}
 
 	logsSource, err := observability.NewSource(ctx, projectName+"-build-logs", &observability.SourceArgs{

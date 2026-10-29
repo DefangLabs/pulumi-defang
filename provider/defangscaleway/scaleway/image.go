@@ -7,6 +7,7 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/registry"
 )
 
 var errBuildConfigNil = errors.New("build config is nil")
@@ -26,6 +27,27 @@ type BuildInfra struct {
 
 	// LogsToken is a Cockpit token (query+write logs) scoped to LogsEndpoint.
 	LogsToken pulumi.StringOutput
+}
+
+// CreateBuildRegistry creates the private Container Registry namespace that holds built
+// images (the counterpart of the ECR repo, Artifact Registry repo and ACR on the other
+// clouds) and returns its endpoint. Serverless Containers no longer creates one alongside
+// its namespace. The physical name comes from the Scaleway registry autonaming rule in cd/config.go.
+func CreateBuildRegistry(
+	ctx *pulumi.Context,
+	projectName string,
+	infra *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) (pulumi.StringOutput, error) {
+	ns, err := registry.NewNamespace(ctx, projectName+"-registry", &registry.NamespaceArgs{
+		ProjectId: pulumi.StringPtr(infra.ProjectID),
+		Region:    pulumi.StringPtr(infra.Region),
+		IsPublic:  pulumi.Bool(false),
+	}, opts...)
+	if err != nil {
+		return pulumi.StringOutput{}, fmt.Errorf("creating Scaleway build registry: %w", err)
+	}
+	return ns.Endpoint, nil
 }
 
 // imageBuildResource is a Pulumi resource state for the Build custom resource.
