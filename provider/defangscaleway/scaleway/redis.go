@@ -28,6 +28,8 @@ type RedisResult struct {
 	ConnectionURL pulumi.StringOutput
 }
 
+const redisVersionProperty = "version"
+
 // redisNodeTypes are the managed Redis node types by size. Memory is the size
 // the Scaleway console shows ("2 GB"), taken as GiB, so `memory: 2g` in
 // compose.yaml selects the node labelled 2 GB; see postgresDevNodes.
@@ -172,7 +174,7 @@ func CreateRedis(
 	args.Version = pulumi.String(latest.String())
 
 	// Catalog rotation must not migrate an existing cluster on an unchanged deploy.
-	clusterOpts := common.MergeOptions(opts, pulumi.IgnoreChanges([]string{"version"}))
+	clusterOpts := common.MergeOptions(opts, pulumi.IgnoreChanges([]string{redisVersionProperty}))
 	cluster, err := redis.NewCluster(ctx, serviceName, args, clusterOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Scaleway Redis cluster: %w", err)

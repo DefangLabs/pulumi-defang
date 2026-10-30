@@ -12,7 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const redisPasswordKey = "REDIS_PASSWORD"
+const (
+	redisPasswordKey = "REDIS_PASSWORD"
+	testRedisVersion = "8.6.6"
+)
 
 func ptr[T any](v T) *T {
 	return &v
@@ -40,7 +43,7 @@ func (m *redisCatalogMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap
 	m.zone = args.Args["zone"].StringValue()
 	versions := []any{}
 	for _, version := range m.versions {
-		versions = append(versions, map[string]any{"version": version})
+		versions = append(versions, map[string]any{redisVersionProperty: version})
 	}
 	return resource.NewPropertyMapFromMap(map[string]any{"versions": versions}), m.err
 }
@@ -53,9 +56,9 @@ func TestCreateRedisUsesSupportedVersion(t *testing.T) {
 		apiErr      error
 		wantErr     string
 	}{
-		{name: "current catalog", versions: []string{"8.6.6"}, wantVersion: "8.6.6"},
+		{name: "current catalog", versions: []string{testRedisVersion}, wantVersion: testRedisVersion},
 		{name: "catalog changes", versions: []string{"9.0.1"}, wantVersion: "9.0.1"},
-		{name: "unordered catalog", versions: []string{"8.9.1", "8.10.0", "8.6.6"}, wantVersion: "8.10.0"},
+		{name: "unordered catalog", versions: []string{"8.9.1", "8.10.0", testRedisVersion}, wantVersion: "8.10.0"},
 		{name: "no available versions", wantErr: "no supported Scaleway Redis versions"},
 		{name: "invalid version", versions: []string{"invalid"}, wantErr: "parsing Scaleway Redis version"},
 		{name: "API failure", apiErr: os.ErrPermission, wantErr: "permission denied"},
@@ -86,8 +89,8 @@ func TestCreateRedisUsesSupportedVersion(t *testing.T) {
 			require.NoError(t, err)
 			cluster := mocks.findType("scaleway:redis/cluster:Cluster")
 			require.NotNil(t, cluster)
-			assert.Equal(t, tt.wantVersion, cluster.inputs["version"].StringValue())
-			assert.Contains(t, mocks.ignored, "version", "catalog changes must not upgrade existing clusters")
+			assert.Equal(t, tt.wantVersion, cluster.inputs[redisVersionProperty].StringValue())
+			assert.Contains(t, mocks.ignored, redisVersionProperty, "catalog changes must not upgrade existing clusters")
 		})
 	}
 }
