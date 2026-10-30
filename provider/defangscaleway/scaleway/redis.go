@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	"github.com/blang/semver"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/redis"
 )
@@ -157,9 +159,21 @@ func CreateRedis(
 	if len(versions.Versions) == 0 {
 		return nil, errRedisVersionsUnavailable
 	}
-	args.Version = pulumi.String(versions.Versions[0].Version)
+	var latest semver.Version
+	for _, version := range versions.Versions {
+		parsed, parseErr := semver.Parse(version.Version)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parsing Scaleway Redis version %q: %w", version.Version, parseErr)
+		}
+		if parsed.GT(latest) {
+			latest = parsed
+		}
+	}
+	args.Version = pulumi.String(latest.String())
 
-	cluster, err := redis.NewCluster(ctx, serviceName, args, opts...)
+	// Catalog rotation must not migrate an existing cluster on an unchanged deploy.
+	clusterOpts := common.MergeOptions(opts, pulumi.IgnoreChanges([]string{"version"}))
+	cluster, err := redis.NewCluster(ctx, serviceName, args, clusterOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating Scaleway Redis cluster: %w", err)
 	}

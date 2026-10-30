@@ -20,9 +20,17 @@ func ptr[T any](v T) *T {
 
 type redisCatalogMocks struct {
 	recordingMocks
-	version string
-	err     error
-	zone    string
+	versions []string
+	err      error
+	zone     string
+	ignored  []string
+}
+
+func (m *redisCatalogMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if args.TypeToken == "scaleway:redis/cluster:Cluster" {
+		m.ignored = args.RegisterRPC.GetIgnoreChanges()
+	}
+	return m.recordingMocks.NewResource(args)
 }
 
 func (m *redisCatalogMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
@@ -31,26 +39,29 @@ func (m *redisCatalogMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap
 	}
 	m.zone = args.Args["zone"].StringValue()
 	versions := []any{}
-	if m.version != "" {
-		versions = append(versions, map[string]any{"version": m.version})
+	for _, version := range m.versions {
+		versions = append(versions, map[string]any{"version": version})
 	}
 	return resource.NewPropertyMapFromMap(map[string]any{"versions": versions}), m.err
 }
 
 func TestCreateRedisUsesSupportedVersion(t *testing.T) {
 	for _, tt := range []struct {
-		name    string
-		version string
-		apiErr  error
-		wantErr string
+		name        string
+		versions    []string
+		wantVersion string
+		apiErr      error
+		wantErr     string
 	}{
-		{name: "current catalog", version: "8.6.6"},
-		{name: "catalog changes", version: "9.0.1"},
+		{name: "current catalog", versions: []string{"8.6.6"}, wantVersion: "8.6.6"},
+		{name: "catalog changes", versions: []string{"9.0.1"}, wantVersion: "9.0.1"},
+		{name: "unordered catalog", versions: []string{"8.9.1", "8.10.0", "8.6.6"}, wantVersion: "8.10.0"},
 		{name: "no available versions", wantErr: "no supported Scaleway Redis versions"},
+		{name: "invalid version", versions: []string{"invalid"}, wantErr: "parsing Scaleway Redis version"},
 		{name: "API failure", apiErr: os.ErrPermission, wantErr: "permission denied"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			mocks := &redisCatalogMocks{version: tt.version, err: tt.apiErr}
+			mocks := &redisCatalogMocks{versions: tt.versions, err: tt.apiErr}
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				pn, err := network.NewPrivateNetwork(ctx, "pn", &network.PrivateNetworkArgs{})
 				if err != nil {
@@ -66,13 +77,17 @@ func TestCreateRedisUsesSupportedVersion(t *testing.T) {
 			assert.Equal(t, "nl-ams-1", mocks.zone)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
+				if tt.apiErr != nil {
+					require.ErrorIs(t, err, tt.apiErr)
+				}
 				assert.Nil(t, mocks.findType("scaleway:redis/cluster:Cluster"))
 				return
 			}
 			require.NoError(t, err)
 			cluster := mocks.findType("scaleway:redis/cluster:Cluster")
 			require.NotNil(t, cluster)
-			assert.Equal(t, tt.version, cluster.inputs["version"].StringValue())
+			assert.Equal(t, tt.wantVersion, cluster.inputs["version"].StringValue())
+			assert.Contains(t, mocks.ignored, "version", "catalog changes must not upgrade existing clusters")
 		})
 	}
 }
