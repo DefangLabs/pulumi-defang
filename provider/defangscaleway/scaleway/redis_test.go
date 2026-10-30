@@ -1,6 +1,7 @@
 package scaleway
 
 import (
+	"os"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -11,15 +12,126 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	redisPasswordKey = "REDIS_PASSWORD"
+	testRedisVersion = "8.6.6"
+)
+
 func ptr[T any](v T) *T {
 	return &v
 }
 
-func TestRedisVersionFromImage(t *testing.T) {
-	// Scaleway only offers Redis 8.4.0 as of 2026-05
-	assert.Equal(t, "8.4.0", redisVersionFromImage(nil))
-	assert.Equal(t, "8.4.0", redisVersionFromImage(ptr("redis:7")))
-	assert.Equal(t, "8.4.0", redisVersionFromImage(ptr("redis:6")))
+type redisCatalogMocks struct {
+	recordingMocks
+	versions []string
+	err      error
+	zone     string
+	ignored  []string
+}
+
+func (m *redisCatalogMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
+	if args.TypeToken == "scaleway:redis/cluster:Cluster" {
+		m.ignored = args.RegisterRPC.GetIgnoreChanges()
+	}
+	return m.recordingMocks.NewResource(args)
+}
+
+func (m *redisCatalogMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	if args.Token != "scaleway:redis/getClusterVersions:getClusterVersions" {
+		return m.recordingMocks.Call(args)
+	}
+	m.zone = args.Args["zone"].StringValue()
+	versions := []any{}
+	for _, version := range m.versions {
+		versions = append(versions, map[string]any{redisVersionProperty: version})
+	}
+	return resource.NewPropertyMapFromMap(map[string]any{"versions": versions}), m.err
+}
+
+func TestCreateRedisUsesSupportedVersion(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		image       string
+		versions    []string
+		wantVersion string
+		apiErr      error
+		wantErr     string
+	}{
+		{name: "current catalog", versions: []string{testRedisVersion}, wantVersion: testRedisVersion},
+		{name: "catalog changes", versions: []string{"9.0.1"}, wantVersion: "9.0.1"},
+		{
+			name:        "unordered catalog",
+			image:       "redis:latest",
+			versions:    []string{"8.9.1", "8.10.0", testRedisVersion},
+			wantVersion: "8.10.0",
+		},
+		{
+			name:        "image is a minimum",
+			image:       "redis:8.9",
+			versions:    []string{testRedisVersion, "8.10.0", "8.9.1"},
+			wantVersion: "8.9.1",
+		},
+		{
+			name:        "image with suffix",
+			image:       "redis:8-alpine",
+			versions:    []string{"9.0.1", testRedisVersion},
+			wantVersion: testRedisVersion,
+		},
+		{
+			name:        "oldest satisfying",
+			versions:    []string{"8.9.1", "8.10.0", testRedisVersion},
+			wantVersion: testRedisVersion,
+		},
+		{
+			name:        "unversioned tag",
+			image:       "redis:latest",
+			versions:    []string{"8.9.1", testRedisVersion},
+			wantVersion: "8.9.1",
+		},
+		{
+			name:     "catalog older than image",
+			image:    "redis:9",
+			versions: []string{testRedisVersion},
+			wantErr:  "no Scaleway Redis version satisfies",
+		},
+		{name: "no available versions", wantErr: "no supported Scaleway Redis versions"},
+		{name: "invalid version", versions: []string{"invalid"}, wantErr: "parsing Scaleway Redis version"},
+		{name: "API failure", apiErr: os.ErrPermission, wantErr: "permission denied"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mocks := &redisCatalogMocks{versions: tt.versions, err: tt.apiErr}
+			image := "redis:6.2"
+			if tt.image != "" {
+				image = tt.image
+			}
+			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
+				pn, err := network.NewPrivateNetwork(ctx, "pn", &network.PrivateNetworkArgs{})
+				if err != nil {
+					return err
+				}
+				_, err = CreateRedis(ctx, &mockConfigProvider{}, "cache", compose.ServiceConfig{
+					Image:       compose.ImageFromPtr(ptr(image)),
+					Redis:       &compose.RedisConfig{},
+					Environment: compose.Environment{redisPasswordKey: pulumi.String("secret")},
+				}, &SharedInfra{Zone: "nl-ams-1", PrivateNetwork: pn})
+				return err
+			}, pulumi.WithMocks("proj", "stack", mocks))
+			assert.Equal(t, "nl-ams-1", mocks.zone)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				if tt.apiErr != nil {
+					require.ErrorIs(t, err, tt.apiErr)
+				}
+				assert.Nil(t, mocks.findType("scaleway:redis/cluster:Cluster"))
+				return
+			}
+			require.NoError(t, err)
+			cluster := mocks.findType("scaleway:redis/cluster:Cluster")
+			require.NotNil(t, cluster)
+			assert.Equal(t, tt.wantVersion, cluster.inputs[redisVersionProperty].StringValue())
+			assert.Contains(t, mocks.ignored, redisVersionProperty, "catalog changes must not upgrade existing clusters")
+		})
+	}
 }
 
 func TestRedisAddressFromConnectionString(t *testing.T) {
@@ -48,7 +160,7 @@ func TestCreateRedisClusterRequiresPrivateNetwork(t *testing.T) {
 			Image: compose.ImageFromPtr(&[]string{"redis:7"}[0]),
 			Redis: &compose.RedisConfig{},
 			Environment: compose.Environment{
-				"REDIS_PASSWORD": pulumi.String(password),
+				redisPasswordKey: pulumi.String(password),
 			},
 		}, nil)
 		return err
@@ -70,7 +182,7 @@ func TestCreateRedisAttachesPrivateNetwork(t *testing.T) {
 			Image: compose.ImageFromPtr(&[]string{"redis:7"}[0]),
 			Redis: &compose.RedisConfig{},
 			Environment: compose.Environment{
-				"REDIS_PASSWORD": pulumi.String(password),
+				redisPasswordKey: pulumi.String(password),
 			},
 		}, &SharedInfra{Zone: "fr-par-1", PrivateNetwork: pn})
 		return err
@@ -83,7 +195,8 @@ func TestCreateRedisAttachesPrivateNetwork(t *testing.T) {
 	assert.True(t, cluster.inputs[resource.PropertyKey("acls")].IsNull())
 	privateNetworks := cluster.inputs[resource.PropertyKey("privateNetworks")].ArrayValue()
 	require.Len(t, privateNetworks, 1)
-	assert.Equal(t, "fr-par-1", privateNetworks[0].ObjectValue()[resource.PropertyKey("zone")].StringValue())
+	assert.Equal(t, "fr-par-1", cluster.inputs["zone"].StringValue())
+	assert.True(t, privateNetworks[0].ObjectValue()["zone"].IsNull(), "attachment zone is computed by Scaleway")
 }
 
 func TestCreateRedisTransitEncryptionRecipe(t *testing.T) {
@@ -97,7 +210,7 @@ func TestCreateRedisTransitEncryptionRecipe(t *testing.T) {
 		_, err = CreateRedis(ctx, &mockConfigProvider{}, "cache", compose.ServiceConfig{
 			Image:       compose.ImageFromPtr(&[]string{"redis:7"}[0]),
 			Redis:       &compose.RedisConfig{},
-			Environment: compose.Environment{"REDIS_PASSWORD": pulumi.String("secret")},
+			Environment: compose.Environment{redisPasswordKey: pulumi.String("secret")},
 		}, &SharedInfra{Zone: "fr-par-1", PrivateNetwork: pn})
 		return err
 	}, pulumi.WithMocks("proj", "stack", mocks))

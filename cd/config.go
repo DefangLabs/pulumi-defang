@@ -248,7 +248,21 @@ func addStackConfigFromEnv(config configMap) error {
 	if scwProject != "" {
 		providers = append(providers, scalewayProvider)
 		config["scaleway:projectId"] = configValue{Value: scwProject}
+		if zone := os.Getenv("SCW_DEFAULT_ZONE"); zone != "" {
+			config["scaleway:zone"] = configValue{Value: zone}
+		}
+		// An explicit zone implies its region unless the region is set too.
+		if _, ok := os.LookupEnv("SCW_DEFAULT_REGION"); !ok {
+			if zone, _ := config["scaleway:zone"].Value.(string); zone != "" {
+				if i := strings.LastIndex(zone, "-"); i > 0 {
+					scwRegion = zone[:i]
+				}
+			}
+		}
 		config["scaleway:region"] = configValue{Value: scwRegion}
+		if _, configured := config["scaleway:zone"]; !configured {
+			config["scaleway:zone"] = configValue{Value: scwRegion + "-1"}
+		}
 	} else if awsRegion != "" {
 		providers = append(providers, "aws")
 		config["aws:region"] = configValue{Value: awsRegion}
