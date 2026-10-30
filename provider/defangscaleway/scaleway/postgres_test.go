@@ -70,6 +70,11 @@ func (m *recordingMocks) NewResource(args pulumi.MockResourceArgs) (string, reso
 }
 
 func (m *recordingMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	if args.Token == "scaleway:redis/getClusterVersions:getClusterVersions" {
+		return resource.NewPropertyMapFromMap(map[string]any{
+			"versions": []any{map[string]any{"version": "8.6.6"}},
+		}), nil
+	}
 	return args.Args, nil
 }
 

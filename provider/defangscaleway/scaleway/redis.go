@@ -16,6 +16,9 @@ var (
 	errRedisPrivateNetwork  = errors.New(
 		"redis requires a private network for security; public access is not allowed",
 	)
+	errRedisVersionsUnavailable = errors.New(
+		"no supported Scaleway Redis versions available; choose another deployment zone",
+	)
 )
 
 type RedisResult struct {
@@ -48,11 +51,6 @@ func redisNodeType(memMiB int) string {
 		}
 	}
 	return redisNodeTypes[len(redisNodeTypes)-1].name
-}
-
-func redisVersionFromImage(image *string) string {
-	// Scaleway only offers Redis 8.4.0 as of 2026-05; always use it.
-	return "8.4.0"
 }
 
 func redisPassword(password pulumi.StringInput) pulumi.StringPtrInput {
@@ -105,7 +103,6 @@ func CreateRedis(
 	password, _ := compose.GetConfigOrEnvValue(ctx, configProvider, svc, "REDIS_PASSWORD", "")
 	args := &redis.ClusterArgs{
 		Name:              pulumi.String(serviceName),
-		Version:           pulumi.String(redisVersionFromImage(svc.StaticImage())),
 		NodeType:          pulumi.String(redisNodeType(svc.GetMemoryMiB())),
 		UserName:          pulumi.String("default"),
 		PasswordWo:        redisPassword(password),
@@ -140,6 +137,27 @@ func CreateRedis(
 	} else {
 		return nil, errRedisPrivateNetwork
 	}
+
+	// Scaleway retires engine versions independently of Compose image tags.
+	// Resolve its current supported version in the cluster's own zone.
+	var invokeOpts []pulumi.InvokeOption
+	for _, option := range opts {
+		if invokeOption, ok := option.(pulumi.InvokeOption); ok {
+			invokeOpts = append(invokeOpts, invokeOption)
+		}
+	}
+	var zone *string
+	if infra.Zone != "" {
+		zone = &infra.Zone
+	}
+	versions, err := redis.GetClusterVersions(ctx, &redis.GetClusterVersionsArgs{Zone: zone}, invokeOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("getting supported Scaleway Redis versions: %w", err)
+	}
+	if len(versions.Versions) == 0 {
+		return nil, errRedisVersionsUnavailable
+	}
+	args.Version = pulumi.String(versions.Versions[0].Version)
 
 	cluster, err := redis.NewCluster(ctx, serviceName, args, opts...)
 	if err != nil {
