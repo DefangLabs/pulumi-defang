@@ -645,19 +645,31 @@ func TestScalewayStackConfigWithS3Region(t *testing.T) {
 				wantRegion = "fr-par"
 			}
 			require.Equal(t, wantRegion, cfg["scaleway:region"].Value)
-			require.Equal(t, wantRegion+"-1", cfg["scaleway:zone"].Value)
+			require.Equal(t, wantRegion+"-1", cfg[scalewayZoneKey].Value)
 			require.NotContains(t, cfg, "aws:region")
 		})
 	}
 }
 
-func TestScalewayStackConfigExplicitZone(t *testing.T) {
-	t.Setenv("SCW_DEFAULT_PROJECT_ID", "scaleway-project")
-	t.Setenv("SCW_DEFAULT_REGION", "nl-ams")
-	t.Setenv("SCW_DEFAULT_ZONE", "nl-ams-2")
-	cfg := configMap{}
-	require.NoError(t, addStackConfigFromEnv(cfg))
-	require.Equal(t, "nl-ams-2", cfg["scaleway:zone"].Value)
+func TestScalewayStackConfigZonePrecedence(t *testing.T) {
+	for _, tt := range []struct{ name, recipeZone, envZone, want string }{
+		{"default", "", "", "nl-ams-1"},
+		{"recipe", "nl-ams-2", "", "nl-ams-2"},
+		{"environment", "", "nl-ams-2", "nl-ams-2"},
+		{"environment overrides recipe", "nl-ams-2", "nl-ams-1", "nl-ams-1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SCW_DEFAULT_PROJECT_ID", "scaleway-project")
+			t.Setenv("SCW_DEFAULT_REGION", "nl-ams")
+			t.Setenv("SCW_DEFAULT_ZONE", tt.envZone)
+			cfg := configMap{}
+			if tt.recipeZone != "" {
+				require.NoError(t, unmarshalRecipe("config:\n  scaleway:zone: "+tt.recipeZone, cfg))
+			}
+			require.NoError(t, addStackConfigFromEnv(cfg))
+			require.Equal(t, tt.want, cfg[scalewayZoneKey].Value)
+		})
+	}
 }
 
 func TestScalewayRecipeRegistryAutonaming(t *testing.T) {
