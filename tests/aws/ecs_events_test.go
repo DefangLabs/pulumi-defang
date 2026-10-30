@@ -66,10 +66,10 @@ func constructProjectForEvents(t *testing.T, services map[string]property.Value)
 				captured.eventRule = args.Inputs
 			case "aws:cloudwatch/eventTarget:EventTarget":
 				captured.eventTarget = args.Inputs
-			case "aws:ecs/service:Service":
+			case ecsServiceType:
 				captured.ecsServices = append(captured.ecsServices, args.Name)
 				captured.ecsServiceArgs = append(captured.ecsServiceArgs, args.Inputs)
-			case "aws:ecs/taskDefinition:TaskDefinition":
+			case ecsTaskDefinitionType:
 				captured.taskDefs = append(captured.taskDefs, args.Inputs)
 			default:
 			}

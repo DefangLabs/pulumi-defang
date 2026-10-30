@@ -23,7 +23,10 @@ func parseCompose(data []byte, projectName string) (*compose.Project, error) {
 // projectUpdate is the ProjectUpdate protobuf; each per-provider deploy
 // function uploads it as a Pulumi-managed blob at the end of the deploy
 // (gated on the project component so the upload only happens on success).
-func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
+//
+// seeds, when given, returns the model seeds established from the stack's
+// state; it is called when the program runs, after the stack is selected.
+func NewRun(projectUpdate *defangv1.ProjectUpdate, seeds ...func() ModelSeeds) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
 		defangCfg := config.New(ctx, "defang")
 
@@ -45,6 +48,9 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate) pulumi.RunFunc {
 		project, err := parseCompose(projectUpdate.Compose, ctx.Project())
 		if err != nil {
 			return err
+		}
+		for _, seed := range seeds {
+			applySeeds(project, seed())
 		}
 
 		var endpoints pulumi.StringMapOutput

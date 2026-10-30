@@ -218,7 +218,7 @@ func constructAwsServiceContainerDef(t *testing.T, env map[string]property.Value
 	var taskDef property.Map
 	mock := &integration.MockResourceMonitor{
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
-			if args.TypeToken == "aws:ecs/taskDefinition:TaskDefinition" {
+			if args.TypeToken == ecsTaskDefinitionType {
 				taskDef = args.Inputs
 			}
 			return args.Name, args.Inputs, nil

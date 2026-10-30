@@ -190,6 +190,12 @@ RUN mkdir -p /root/.pulumi/plugins/resource-defang-scaleway-v${PROVIDER_VERSION}
 
 # Final minimal image — no OS, no language runtimes
 FROM ${CDBASE} AS cd-base
+# Capabilities the CLI checks on the exact CD image it is about to run, read
+# from the image config (not the tag). io.defang.model-contract: this CD
+# resolves managed model requests (x-defang-llm `model` + `bindings`) from the
+# recipe's defang-<cloud>:models; bump it (here and in cd-base-alpine) when
+# that payload contract changes.
+LABEL io.defang.model-contract="1"
 # CA certs for HTTPS
 COPY --link --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Pulumi CLI only (no language runtimes)
@@ -211,6 +217,7 @@ ENTRYPOINT [ "/app/cd" ]
 # SINGLE_BUILD_CONTAINER_DEAD), and CD code that shells out to build customer images (the Docker
 # Hub mirror setup in provider/defangaws/aws/codebuild.go) needs jq/awk.
 FROM ${CDBASE_ALPINE} AS cd-base-alpine
+LABEL io.defang.model-contract="1"
 COPY --link --from=go-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --link --from=plugins-base /pulumi/bin/pulumi /pulumi/bin/pulumi
 ENV PATH="/pulumi/bin:${PATH}" HOME="/root" USER=root

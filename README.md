@@ -25,6 +25,8 @@ Each provider (`defang-aws`, `defang-gcp`, `defang-azure`, `defang-scaleway`) ex
 - **`Build`** — an image-build resource used internally by `Project` where supported.
 - **`Postgres`** / **`Redis`** — managed database / cache components. Can be used standalone or as part of a `Project`.
 
+Compose `models:` are served from each cloud's model API (Bedrock, Vertex AI, AI Foundry, Scaleway Generative APIs). The deployment's recipe chooses the concrete model, and the choice is recorded so redeployments keep it; see [docs/managed-models.md](docs/managed-models.md).
+
 Managed components (`Service`, `Postgres`, `Redis`) share one implementation between standalone and project-scoped use. Standalone instantiations skip the shared-infra provisioning and therefore don't support features that depend on it (VPC access, build-from-source, external load-balancer wiring).
 
 ### Resource naming

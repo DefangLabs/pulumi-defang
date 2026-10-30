@@ -44,6 +44,7 @@ type projectArgs struct {
 	DnsZones map[string]string                `pulumi:"dnsZones"`
 	Domain   *string                          `pulumi:"domain"`
 	Etag     *string                          `pulumi:"etag"`
+	Models   map[string]compose.ModelConfig   `pulumi:"models"`
 	Networks map[string]compose.NetworkConfig `pulumi:"networks"`
 	Services map[string]compose.ServiceConfig `pulumi:"services"`
 }
@@ -53,6 +54,7 @@ type ProjectArgs struct {
 	DnsZones pulumi.StringMapInput
 	Domain   *string
 	Etag     *string
+	Models   compose.ModelConfigMapInput
 	Networks compose.NetworkConfigMapInput
 	Services compose.ServiceConfigMapInput
 }

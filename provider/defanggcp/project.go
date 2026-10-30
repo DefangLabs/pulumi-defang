@@ -19,6 +19,8 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Models map: name -> model (top-level Compose `models:`)
+	Models compose.Models `pulumi:"models,optional" yaml:"models,omitempty"`
 	// Domain is the delegate domain for the project (e.g. "example.com"). When non-empty,
 	// a wildcard certificate and DNS zone are created.
 	Domain string `pulumi:"domain,optional" yaml:"domain,omitempty"`
@@ -111,6 +113,12 @@ func buildProject(
 	config.Etag = args.Etag
 
 	if err := providergcp.EnableGcpAPIs(ctx, childOpts...); err != nil {
+		return nil, err
+	}
+
+	services, err = providergcp.PrepareModels(
+		ctx, services, args.Models, config.GcpProject, config.Region, pluginID, childOpts...)
+	if err != nil {
 		return nil, err
 	}
 

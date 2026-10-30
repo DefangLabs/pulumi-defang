@@ -34,6 +34,9 @@ type Project struct {
 
 	// Networks map: name -> network config (only needed if using custom networks in Compose)
 	Networks Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+
+	// Models map: name -> model (top-level Compose `models:`)
+	Models Models `pulumi:"models,optional" yaml:"models,omitempty"`
 }
 
 // ServiceConfig defines the configuration for a single service.
@@ -130,7 +133,13 @@ type ServiceConfig struct {
 	// Matches the x-defang-aliases extension.
 	Aliases map[string]string `pulumi:"aliases,optional" yaml:"x-defang-aliases,omitempty"`
 
-	// Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
+	// Models binds this service to top-level models; see ServiceModelConfig.
+	Models map[string]*ServiceModelConfig `pulumi:"models,optional" yaml:"models,omitempty"`
+
+	// GeneratedCommand, when set, replaces Command with a value only known at
+	// deploy time (a managed model gateway's resolved target). Internal: not
+	// part of the schema or of Compose.
+	GeneratedCommand pulumi.StringArrayInput `yaml:"-"`
 }
 
 // UnmarshalYAML decodes a service, converting the literal "image" field into a
@@ -231,7 +240,71 @@ type ServiceVolumeConfig struct {
 	ReadOnly bool `pulumi:"readOnly,optional" yaml:"read_only,omitempty"`
 }
 
+// LlmConfig marks a service that uses the cloud's model API. A CLI-generated
+// model gateway (named after a top-level Compose model and without a command)
+// is configured by the provider from the recipe; any other service only gets
+// model access.
 type LlmConfig struct{}
+
+// Models maps a Compose model name to its definition (top-level `models:`).
+type Models = map[string]ModelConfig
+
+// ModelConfig is a top-level Compose model. Docker Model Runner parameters
+// (context_size, runtime_flags) do not apply to cloud models and are ignored.
+type ModelConfig struct {
+	// Model is the requested model, e.g. "chat-default", "ai/embedding-default",
+	// a recipe key, or a provider-native model ID.
+	Model string `pulumi:"model" yaml:"model"`
+
+	// Seed is the target this model was deployed with before its selection
+	// was persisted. Set by the CD from stack state, never by Compose.
+	Seed *ModelTarget `pulumi:"seed,optional" yaml:"-"`
+}
+
+// ServiceModelConfig binds a service to a top-level model
+// (`services.<svc>.models.<name>`).
+type ServiceModelConfig struct {
+	// ModelVar receives the model name the application sends.
+	ModelVar string `pulumi:"modelVar,optional" yaml:"model_var,omitempty"`
+
+	// EndpointVar receives the OpenAI-compatible endpoint URL.
+	EndpointVar string `pulumi:"endpointVar,optional" yaml:"endpoint_var,omitempty"`
+}
+
+// ModelTarget is a concrete model a deployment selected.
+type ModelTarget struct {
+	// Model is the provider-native model ID (no LiteLLM provider prefix).
+	Model string `pulumi:"model,optional" yaml:"model,omitempty"`
+	// Version is the Azure model revision.
+	Version string `pulumi:"version,optional" yaml:"version,omitempty"`
+	// Location is the GCP Vertex AI location.
+	Location string `pulumi:"location,optional" yaml:"location,omitempty"`
+	// Format is the Azure model format.
+	Format string `pulumi:"format,optional" yaml:"format,omitempty"`
+	// Sku is the Azure deployment SKU.
+	Sku string `pulumi:"sku,optional" yaml:"sku,omitempty"`
+	// Existed is true when the model was already deployed, whether or not
+	// its target could be established (seeds only).
+	Existed bool `pulumi:"existed,optional" yaml:"existed,omitempty"`
+}
+
+// ModelCandidate is one entry of a defang-<cloud>:models recipe selector.
+type ModelCandidate struct {
+	// Model is the provider-native model ID or name.
+	Model string `pulumi:"model"`
+	// Version is an exact Azure model revision; set means pinned.
+	Version string `pulumi:"version,optional"`
+	// Role is "chat" or "embedding".
+	Role string `pulumi:"role,optional"`
+	// Location is the GCP Vertex AI location.
+	Location string `pulumi:"location,optional"`
+	// Format is the Azure model format.
+	Format string `pulumi:"format,optional"`
+	// Sku is the Azure deployment SKU.
+	Sku string `pulumi:"sku,optional"`
+	// AllowPreview lets a floating candidate select a preview revision.
+	AllowPreview bool `pulumi:"allowPreview,optional"`
+}
 
 // UnmarshalYAML allows `x-defang-llm: true` (bare boolean) in addition to an object.
 func (c *LlmConfig) UnmarshalYAML(value *yaml.Node) error {
@@ -241,8 +314,6 @@ func (c *LlmConfig) UnmarshalYAML(value *yaml.Node) error {
 	type raw LlmConfig
 	return value.Decode((*raw)(c))
 }
-
-// type ServiceModelConfig struct {}
 
 type DependsOnConfig map[string]ServiceDependency
 

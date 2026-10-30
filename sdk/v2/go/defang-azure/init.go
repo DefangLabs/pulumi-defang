@@ -23,6 +23,8 @@ func (m *module) Construct(ctx *pulumi.Context, name, typ, urn string) (r pulumi
 	switch typ {
 	case "defang-azure:index:Build":
 		r = &Build{}
+	case "defang-azure:index:ModelSelection":
+		r = &ModelSelection{}
 	case "defang-azure:index:Postgres":
 		r = &Postgres{}
 	case "defang-azure:index:Project":
