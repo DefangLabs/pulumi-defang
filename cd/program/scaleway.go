@@ -26,6 +26,7 @@ func deployScaleway(
 	scwProvider, err := scaleway.NewProvider(ctx, "scaleway", &scaleway.ProviderArgs{
 		ProjectId: pulumi.StringPtr(scalewayconfig.GetProjectId(ctx)),
 		Region:    pulumi.StringPtr(scalewayconfig.GetRegion(ctx)),
+		Zone:      pulumi.StringPtr(scalewayconfig.GetZone(ctx)),
 	})
 	if err != nil {
 		return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err

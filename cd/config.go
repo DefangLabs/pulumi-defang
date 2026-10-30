@@ -249,6 +249,7 @@ func addStackConfigFromEnv(config configMap) error {
 		providers = append(providers, scalewayProvider)
 		config["scaleway:projectId"] = configValue{Value: scwProject}
 		config["scaleway:region"] = configValue{Value: scwRegion}
+		config["scaleway:zone"] = configValue{Value: getenv("SCW_DEFAULT_ZONE", scwRegion+"-1")}
 	} else if awsRegion != "" {
 		providers = append(providers, "aws")
 		config["aws:region"] = configValue{Value: awsRegion}
