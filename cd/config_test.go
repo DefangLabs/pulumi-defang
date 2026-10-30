@@ -652,11 +652,15 @@ func TestScalewayStackConfigWithS3Region(t *testing.T) {
 }
 
 func TestScalewayStackConfigZonePrecedence(t *testing.T) {
+	const (
+		defaultZone = "nl-ams-1"
+		recipeZone  = "nl-ams-2"
+	)
 	for _, tt := range []struct{ name, recipeZone, envZone, want string }{
-		{"default", "", "", "nl-ams-1"},
-		{"recipe", "nl-ams-2", "", "nl-ams-2"},
-		{"environment", "", "nl-ams-2", "nl-ams-2"},
-		{"environment overrides recipe", "nl-ams-2", "nl-ams-1", "nl-ams-1"},
+		{"default", "", "", defaultZone},
+		{"recipe", recipeZone, "", recipeZone},
+		{"environment", "", recipeZone, recipeZone},
+		{"environment overrides recipe", recipeZone, defaultZone, defaultZone},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("SCW_DEFAULT_PROJECT_ID", "scaleway-project")
