@@ -156,7 +156,8 @@ func TestCreateRedisAttachesPrivateNetwork(t *testing.T) {
 	assert.True(t, cluster.inputs[resource.PropertyKey("acls")].IsNull())
 	privateNetworks := cluster.inputs[resource.PropertyKey("privateNetworks")].ArrayValue()
 	require.Len(t, privateNetworks, 1)
-	assert.Equal(t, "fr-par-1", privateNetworks[0].ObjectValue()[resource.PropertyKey("zone")].StringValue())
+	assert.Equal(t, "fr-par-1", cluster.inputs["zone"].StringValue())
+	assert.True(t, privateNetworks[0].ObjectValue()["zone"].IsNull(), "attachment zone is computed by Scaleway")
 }
 
 func TestCreateRedisTransitEncryptionRecipe(t *testing.T) {

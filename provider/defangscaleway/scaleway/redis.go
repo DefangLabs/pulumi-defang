@@ -127,14 +127,6 @@ func CreateRedis(
 					Id: infra.PrivateNetwork.ID(),
 				},
 			}
-			if infra.Zone != "" {
-				args.PrivateNetworks = redis.ClusterPrivateNetworkArray{
-					&redis.ClusterPrivateNetworkArgs{
-						Id:   infra.PrivateNetwork.ID(),
-						Zone: pulumi.StringPtr(infra.Zone),
-					},
-				}
-			}
 		} else {
 			return nil, errRedisPrivateNetwork
 		}
