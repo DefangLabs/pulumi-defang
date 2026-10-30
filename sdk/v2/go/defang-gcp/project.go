@@ -43,6 +43,7 @@ func NewProject(ctx *pulumi.Context,
 type projectArgs struct {
 	Domain   *string                          `pulumi:"domain"`
 	Etag     *string                          `pulumi:"etag"`
+	Models   map[string]compose.ModelConfig   `pulumi:"models"`
 	Networks map[string]compose.NetworkConfig `pulumi:"networks"`
 	Services map[string]compose.ServiceConfig `pulumi:"services"`
 }
@@ -51,6 +52,7 @@ type projectArgs struct {
 type ProjectArgs struct {
 	Domain   *string
 	Etag     *string
+	Models   compose.ModelConfigMapInput
 	Networks compose.NetworkConfigMapInput
 	Services compose.ServiceConfigMapInput
 }

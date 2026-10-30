@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -995,7 +996,7 @@ func getCloudInitConfig(
       Environment="HOME=/home/container-user"
       %[9]s
       ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries %[5]s-docker.pkg.dev
-      ExecStart=/usr/bin/docker run --pull=always --rm --name=%[7]s %[3]s %%s%%s %[4]s
+      ExecStart=/usr/bin/docker run --pull=always --rm --name=%[7]s %[3]s %%s%%s %%s
       ExecStop=/usr/bin/docker stop -t %[6]d %[7]s
       StandardOutput=journal+console
       StandardError=journal+console
@@ -1009,17 +1010,30 @@ runcmd:
 		serviceName,
 		escapePercent(dependencies),
 		escapePercent(strings.Join(params, " ")),
-		escapePercent(strings.Join(command, " ")),
+		"", // the command is substituted below, as an Input
 		region,
 		stopGraceSeconds(svc),
 		containerName,
 		escapePercent(strings.Join(runcmds, "\n  - ")),
 		escapePercent(secretExecPre))
 
-	// buf now contains four %s placeholders (secret script, env flags, image,
-	// and extra units — the Inputs that may resolve at apply time); all other
-	// dynamic text had its '%' doubled.
-	return pulumi.Sprintf(buf.String(), secretWriteFile, envFlags, image, extraUnits)
+	// buf now contains five %s placeholders (secret script, env flags, image,
+	// command and extra units — the Inputs that may resolve at apply time);
+	// all other dynamic text had its '%' doubled.
+	return pulumi.Sprintf(buf.String(), secretWriteFile, envFlags, image, dockerCommandText(svc, command), extraUnits)
+}
+
+// dockerCommandText is the command line after the image in `docker run`. A
+// managed model gateway's command depends on the resolved model, so it is an
+// Input; the entrypoint arguments before it stay literal.
+func dockerCommandText(svc compose.ServiceConfig, command []string) pulumi.StringInput {
+	if svc.GeneratedCommand == nil {
+		return pulumi.String(strings.Join(command, " "))
+	}
+	prefix := command[:len(command)-len(svc.Command)] // entrypoint arguments
+	return svc.GeneratedCommand.ToStringArrayOutput().ApplyT(func(generated []string) string {
+		return strings.Join(append(slices.Clone(prefix), generated...), " ")
+	}).(pulumi.StringOutput)
 }
 
 // fluentBitLabelsCmd returns the runcmd that stamps the defang-* LogEntry

@@ -67,6 +67,8 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Models map: name -> model (top-level Compose `models:`)
+	Models compose.Models `pulumi:"models,optional" yaml:"models,omitempty"`
 
 	AWS *AWSConfig `pulumi:"aws,optional" yaml:"x-defang-aws,omitempty"`
 
@@ -196,6 +198,11 @@ func buildProject(
 		return nil, fmt.Errorf("creating shared infrastructure: %w", err)
 	}
 	infra.Etag = args.Etag
+
+	if services, err = provideraws.PrepareModels(
+		ctx, services, args.Models, infra.Region, pluginID, parentOpt); err != nil {
+		return nil, err
+	}
 
 	albDNS := pulumix.Val[*string](nil).Untyped().(pulumi.StringPtrOutput)
 	albArn := pulumix.Val[*string](nil).Untyped().(pulumi.StringPtrOutput)

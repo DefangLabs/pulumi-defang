@@ -42,6 +42,7 @@ func NewProject(ctx *pulumi.Context,
 
 type projectArgs struct {
 	Etag     *string                          `pulumi:"etag"`
+	Models   map[string]compose.ModelConfig   `pulumi:"models"`
 	Networks map[string]compose.NetworkConfig `pulumi:"networks"`
 	Services map[string]compose.ServiceConfig `pulumi:"services"`
 }
@@ -49,6 +50,7 @@ type projectArgs struct {
 // The set of arguments for constructing a Project resource.
 type ProjectArgs struct {
 	Etag     *string
+	Models   compose.ModelConfigMapInput
 	Networks compose.NetworkConfigMapInput
 	Services compose.ServiceConfigMapInput
 }

@@ -11,258 +11,276 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/DefangLabs/pulumi-defang/provider/common"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
-var (
-	ErrNoAIServicesAccount = errors.New("no AIServices account found")
-	ErrUnknownModelRole    = errors.New("unknown model role")
-	ErrNoSuitableModel     = errors.New("no suitable model available in this account/region")
+var ErrInvalidAccountScope = errors.New("invalid AI Foundry account ID")
+
+// chatPreference and embeddingPreference are the compatibility defaults for
+// the built-in aliases when a recipe has no defang-azure:models entry for
+// them: the first candidate deployable in the account's region wins. Format
+// "OpenAI" models are fully compatible with the OpenAI SDK; marketplace models
+// may have compatibility gaps. Preview revisions were always eligible here,
+// so every entry allows them.
+var chatPreference = azureCandidates(
+	"gpt-5.1", "OpenAI",
+	"gpt-5", "OpenAI",
+	"gpt-5-mini", "OpenAI",
+	"gpt-4.1", "OpenAI",
+	"gpt-4.1-mini", "OpenAI",
+	"gpt-4o", "OpenAI",
+	"gpt-4o-mini", "OpenAI",
+	"gpt-4", "OpenAI",
+	"gpt-35-turbo", "OpenAI",
+	"Phi-4", "Microsoft",
+	"DeepSeek-V3", "DeepSeek",
+	"Mistral-small", "Mistral AI",
+	"Meta-Llama-3.1-8B-Instruct", "Meta",
 )
 
-// ModelSpec describes an Azure AI model to deploy.
-type ModelSpec struct {
-	Name    string // e.g. "Phi-4", "text-embedding-3-small"
-	Format  string // e.g. "OpenAI", "Microsoft", "Cohere"
-	Version string // e.g. "5", "1"
-	SKU     string // e.g. "Standard", "GlobalStandard"
-}
-
-// ModelRole identifies what kind of model is needed.
-type ModelRole string
-
-const (
-	ModelRoleChat      ModelRole = "chat"
-	ModelRoleEmbedding ModelRole = "embedding"
+var embeddingPreference = azureCandidates(
+	"text-embedding-3-small", "OpenAI",
+	"text-embedding-3-large", "OpenAI",
+	"text-embedding-ada-002", "OpenAI",
+	"Cohere-embed-v3-english", "Cohere",
+	"Cohere-embed-v3-multilingual", "Cohere",
 )
 
-// ModelSelector picks the best available model for a given role. Returns a
-// pulumi Output so the ARM "list models" call is deferred until the Account's
-// Name output resolves, i.e. after the AIServices account has actually been
-// created in Azure (not just registered in Pulumi state).
-type ModelSelector interface {
-	SelectModel(role ModelRole) pulumi.Output
+func azureCandidates(nameFormat ...string) []compose.ModelCandidate {
+	out := make([]compose.ModelCandidate, 0, len(nameFormat)/2)
+	for i := 0; i+1 < len(nameFormat); i += 2 {
+		out = append(out, compose.ModelCandidate{Model: nameFormat[i], Format: nameFormat[i+1], AllowPreview: true})
+	}
+	return out
 }
 
-type StaticModelSelector struct {
-	ChatModel      ModelSpec
-	EmbeddingModel ModelSpec
+// ModelCloud is Azure's recipe contract: defang-azure:models candidates take
+// `model`, `role`, `version`, `format`, `sku` and `allow-preview`. A model
+// name selects a family; `version` pins one ARM model revision.
+var ModelCloud = common.ModelCloud{
+	Name:      "azure",
+	Namespace: "defang-azure",
+	Fields: []string{
+		common.ModelFieldVersion, common.ModelFieldFormat, common.ModelFieldSku, common.ModelFieldAllowPreview,
+	},
+	Defaults: map[string][]compose.ModelCandidate{
+		"chat-default":      chatPreference,
+		"chat-large":        chatPreference,
+		"embedding-default": embeddingPreference,
+	},
+	CandidateExact:  func(c compose.ModelCandidate) bool { return c.Version != "" },
+	RoleFromCatalog: true,
 }
 
-func (s *StaticModelSelector) SelectModel(role ModelRole) pulumi.Output {
-	var spec ModelSpec
-	switch role {
-	case ModelRoleChat:
-		spec = s.ChatModel
-	case ModelRoleEmbedding:
-		spec = s.EmbeddingModel
+// AvailableModel is a model revision returned by the account's ListModels.
+type AvailableModel struct {
+	Name            string
+	Format          string
+	Version         string
+	SKUs            []string
+	LifecycleStatus string // e.g. "GenerallyAvailable", "Preview", "Deprecating", "Deprecated"
+	Capabilities    map[string]string
+}
+
+// FoundryResolver resolves defang-azure:models candidates against the models
+// an AI Foundry account can deploy. Each account's catalog is listed once.
+type FoundryResolver struct {
+	List func(ctx context.Context, subscriptionID, resourceGroup, account string) ([]AvailableModel, error)
+
+	mu       sync.Mutex
+	catalogs map[string][]AvailableModel
+}
+
+// NewFoundryResolver returns a resolver using the default Azure credential.
+func NewFoundryResolver() *FoundryResolver {
+	return &FoundryResolver{List: listModels}
+}
+
+// ResolveCandidate implements common.ModelResolver.
+func (r *FoundryResolver) ResolveCandidate(
+	ctx context.Context, in common.ModelSelectionInputs, c compose.ModelCandidate,
+) (common.ResolvedModel, error) {
+	models, err := r.catalog(ctx, in.Scope)
+	if err != nil {
+		return common.ResolvedModel{}, err
+	}
+	m, err := pickRevision(models, c)
+	if err != nil {
+		return common.ResolvedModel{}, err
+	}
+	sku := c.Sku
+	switch {
+	case sku == "":
+		// The existing default: Standard when offered, else GlobalStandard.
+		sku = "GlobalStandard"
+		for _, s := range m.SKUs {
+			if s == "Standard" {
+				sku = "Standard"
+				break
+			}
+		}
+	case !containsFold(m.SKUs, sku):
+		return common.ResolvedModel{}, fmt.Errorf("%w: %s version %s does not offer SKU %s (offered: %s)",
+			common.ErrModelUnavailable, m.Name, m.Version, sku, strings.Join(m.SKUs, ", "))
+	}
+	log.Printf("FoundryResolver: selected %s (%s, v%s, %s) for %s", m.Name, m.Format, m.Version, sku, in.Request)
+	return common.ResolvedModel{
+		Target: compose.ModelTarget{Model: m.Name, Format: m.Format, Version: m.Version, Sku: sku},
+		Role:   foundryRole(m.Capabilities),
+	}, nil
+}
+
+// pickRevision selects one revision of exactly the candidate's model name
+// (case-insensitive, never a prefix match). A pinned version must exist and
+// be deployable; otherwise the highest deployable revision wins, ordered
+// numerically ("10" after "9", "2025-04-14" after "2024-11-20").
+func pickRevision(models []AvailableModel, c compose.ModelCandidate) (*AvailableModel, error) {
+	var named []*AvailableModel
+	formats := map[string]bool{}
+	for i := range models {
+		m := &models[i]
+		if !strings.EqualFold(m.Name, c.Model) || (c.Format != "" && !strings.EqualFold(m.Format, c.Format)) {
+			continue
+		}
+		named = append(named, m)
+		formats[strings.ToLower(m.Format)] = true
+	}
+	if len(named) == 0 {
+		return nil, fmt.Errorf("%w: %s is not offered by this account", common.ErrModelUnavailable, describeCandidate(c))
+	}
+	if len(formats) > 1 {
+		return nil, fmt.Errorf("%w: %s exists in several formats; set `format` in the recipe candidate",
+			common.ErrModelAmbiguous, c.Model)
+	}
+
+	if c.Version != "" {
+		for _, m := range named {
+			if m.Version != c.Version {
+				continue
+			}
+			if !isDeployable(m.LifecycleStatus) {
+				return nil, fmt.Errorf("%w: %s version %s is %s and cannot be deployed; pin a current version",
+					common.ErrModelUnavailable, m.Name, m.Version, m.LifecycleStatus)
+			}
+			return m, nil
+		}
+		return nil, fmt.Errorf("%w: %s version %s is not offered by this account", common.ErrModelUnavailable,
+			c.Model, c.Version)
+	}
+
+	var best *AvailableModel
+	for _, m := range named {
+		if !isDeployable(m.LifecycleStatus) || (isPreview(m.LifecycleStatus) && !c.AllowPreview) {
+			continue
+		}
+		if best == nil || common.CompareRevisions(m.Version, best.Version) > 0 {
+			best = m
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("%w: %s has no deployable revision (preview revisions need allow-preview)",
+			common.ErrModelUnavailable, describeCandidate(c))
+	}
+	return best, nil
+}
+
+func describeCandidate(c compose.ModelCandidate) string {
+	if c.Format != "" {
+		return c.Model + " (" + c.Format + ")"
+	}
+	return c.Model
+}
+
+// foundryRole classifies a model from the capabilities ListModels reports.
+func foundryRole(capabilities map[string]string) string {
+	switch {
+	case strings.EqualFold(capabilities["embeddings"], "true"):
+		return common.ModelRoleEmbedding
+	case strings.EqualFold(capabilities["chatCompletion"], "true"):
+		return common.ModelRoleChat
 	default:
-		return common.ErrorOutput(fmt.Errorf("unsupported ModelRole: %q", role)) //nolint:err113
-	}
-	return pulumi.ToOutput(spec)
-}
-
-// chatPreference and embeddingPreference define model preference order.
-// Earlier entries are preferred. Format "OpenAI" models are fully compatible
-// with the OpenAI SDK; marketplace models may have compatibility gaps.
-//
-// Lead with the current GA GPT-5 / GPT-4.1 families; the older GPT-4 line is
-// kept only as a deep fallback. Because findBest skips versions Azure has
-// closed to new deployments (see isDeployable), a family whose only versions
-// are deprecating is transparently passed over for the next entry — so as
-// individual models retire this list degrades gracefully instead of failing.
-var chatPreference = []struct {
-	name, format string
-}{
-	{"gpt-5.1", "OpenAI"},
-	{"gpt-5", "OpenAI"},
-	{"gpt-5-mini", "OpenAI"},
-	{"gpt-4.1", "OpenAI"},
-	{"gpt-4.1-mini", "OpenAI"},
-	{"gpt-4o", "OpenAI"},
-	{"gpt-4o-mini", "OpenAI"},
-	{"gpt-4", "OpenAI"},
-	{"gpt-35-turbo", "OpenAI"},
-	{"Phi-4", "Microsoft"},
-	{"DeepSeek-V3", "DeepSeek"},
-	{"Mistral-small", "Mistral AI"},
-	{"Meta-Llama-3.1-8B-Instruct", "Meta"},
-}
-
-var embeddingPreference = []struct {
-	name, format string
-}{
-	{"text-embedding-3-small", "OpenAI"},
-	{"text-embedding-3-large", "OpenAI"},
-	{"text-embedding-ada-002", "OpenAI"},
-	{"Cohere-embed-v3-english", "Cohere"},
-	{"Cohere-embed-v3-multilingual", "Cohere"},
-}
-
-// availableModel is a model returned by the Azure API.
-type availableModel struct {
-	name            string
-	format          string
-	version         string
-	skus            []string
-	lifecycleStatus string // e.g. "GenerallyAvailable", "Deprecating", "Deprecated"
-}
-
-// DynamicModelSelector queries the Azure AI account for available models
-// at deploy time (not preview) after the account has been created.
-//
-// Model listing runs inside a pulumi ApplyT gated on rgName+accountName, so
-// it blocks until the account's Name output is known — i.e. after Azure has
-// finished creating it. The result is cached via sync.Once so every
-// SelectModel call shares the same ARM round-trip.
-type DynamicModelSelector struct {
-	subscriptionID string
-	rgName         pulumi.StringOutput
-	accountName    pulumi.StringOutput
-
-	once   sync.Once
-	models pulumi.Output // cached []availableModel
-}
-
-// NewDynamicModelSelector builds a selector that lists models lazily, after
-// the Account represented by accountName has been created.
-func NewDynamicModelSelector(subscriptionID string, rgName, accountName pulumi.StringOutput) *DynamicModelSelector {
-	return &DynamicModelSelector{
-		subscriptionID: subscriptionID,
-		rgName:         rgName,
-		accountName:    accountName,
+		return ""
 	}
 }
 
-// modelsOutput returns a lazily-computed pulumi.Output wrapping []availableModel.
-// The ARM list call runs at most once per selector.
-func (s *DynamicModelSelector) modelsOutput() pulumi.Output {
-	s.once.Do(func() {
-		s.models = pulumi.All(s.rgName, s.accountName).ApplyT(
-			func(args []interface{}) ([]availableModel, error) {
-				rg, _ := args[0].(string)
-				acct, _ := args[1].(string)
-				return listModels(s.subscriptionID, rg, acct)
-			},
-		)
-	})
-	return s.models
+func (r *FoundryResolver) catalog(ctx context.Context, scope string) ([]AvailableModel, error) {
+	account, err := parseAccountID(scope)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if models, ok := r.catalogs[scope]; ok {
+		return models, nil
+	}
+	models, err := r.List(ctx, account.subscriptionID, account.resourceGroup, account.name)
+	if err != nil {
+		return nil, err
+	}
+	if r.catalogs == nil {
+		r.catalogs = map[string][]AvailableModel{}
+	}
+	r.catalogs[scope] = models
+	return models, nil
 }
 
-// SelectModel returns a pulumi.Output that resolves to a ModelSpec for the
-// given role. The resolution depends on the Account's Name output, so it
-// runs only after Azure has created the AIServices account.
-func (s *DynamicModelSelector) SelectModel(role ModelRole) pulumi.Output {
-	return s.modelsOutput().ApplyT(func(raw any) (ModelSpec, error) {
-		models, _ := raw.([]availableModel)
-		return pickModel(models, role)
-	})
+// accountRef names an AI Foundry account.
+type accountRef struct {
+	subscriptionID, resourceGroup, name string
+}
+
+// parseAccountID splits
+// /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<name>.
+func parseAccountID(id string) (accountRef, error) {
+	parts := strings.Split(strings.Trim(id, "/"), "/")
+	if len(parts) != 8 || !strings.EqualFold(parts[0], "subscriptions") ||
+		!strings.EqualFold(parts[2], "resourceGroups") || !strings.EqualFold(parts[6], "accounts") {
+		return accountRef{}, fmt.Errorf("%w: %q", ErrInvalidAccountScope, id)
+	}
+	return accountRef{subscriptionID: parts[1], resourceGroup: parts[3], name: parts[7]}, nil
 }
 
 // listModels lists the models available for a specific Azure AI Foundry account.
-func listModels(subscriptionID, resourceGroup, accountName string) ([]availableModel, error) {
+func listModels(ctx context.Context, subscriptionID, resourceGroup, accountName string) ([]AvailableModel, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential for model listing: %w", err)
 	}
-
 	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating cognitive services client: %w", err)
 	}
-
-	ctx := context.TODO()
-
-	if accountName == "" {
-		return nil, fmt.Errorf("%w: resource group %s", ErrNoAIServicesAccount, resourceGroup)
-	}
-
 	pager := client.NewListModelsPager(resourceGroup, accountName, nil)
-
-	var models []availableModel
+	var models []AvailableModel
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("listing models: %w", err)
+			return nil, fmt.Errorf("listing models of account %s: %w", accountName, err)
 		}
 		for _, m := range page.Value {
-			if m.Name == nil {
+			if m == nil || m.Name == nil {
 				continue
 			}
-			am := availableModel{
-				name:   *m.Name,
-				format: derefStr(m.Format),
-			}
-			if m.Version != nil {
-				am.version = *m.Version
-			}
+			am := AvailableModel{Name: *m.Name, Format: derefStr(m.Format), Version: derefStr(m.Version)}
 			if m.LifecycleStatus != nil {
-				am.lifecycleStatus = string(*m.LifecycleStatus)
+				am.LifecycleStatus = string(*m.LifecycleStatus)
 			}
 			for _, s := range m.SKUs {
 				if s != nil && s.Name != nil {
-					am.skus = append(am.skus, *s.Name)
+					am.SKUs = append(am.SKUs, *s.Name)
+				}
+			}
+			if len(m.Capabilities) > 0 {
+				am.Capabilities = make(map[string]string, len(m.Capabilities))
+				for k, v := range m.Capabilities {
+					am.Capabilities[k] = derefStr(v)
 				}
 			}
 			models = append(models, am)
 		}
 	}
-
-	log.Printf("DynamicModelSelector: found %d models in account %s", len(models), accountName)
+	log.Printf("FoundryResolver: found %d models in account %s", len(models), accountName)
 	return models, nil
-}
-
-// pickModel selects the best available model for the given role from a list.
-func pickModel(models []availableModel, role ModelRole) (ModelSpec, error) {
-	var prefs []struct{ name, format string }
-	switch role {
-	case ModelRoleChat:
-		prefs = chatPreference
-	case ModelRoleEmbedding:
-		prefs = embeddingPreference
-	default:
-		return ModelSpec{}, fmt.Errorf("%w: %s", ErrUnknownModelRole, role)
-	}
-
-	for _, pref := range prefs {
-		best := findBest(models, pref.name, pref.format)
-		if best != nil {
-			sku := "GlobalStandard"
-			for _, sk := range best.skus {
-				if sk == "Standard" {
-					sku = "Standard"
-					break
-				}
-			}
-			log.Printf("DynamicModelSelector: selected %s (%s, v%s, %s) for %s", best.name, best.format, best.version, sku, role)
-			return ModelSpec{
-				Name:    best.name,
-				Format:  best.format,
-				Version: best.version,
-				SKU:     sku,
-			}, nil
-		}
-	}
-
-	return ModelSpec{}, fmt.Errorf("%w: %s role", ErrNoSuitableModel, role)
-}
-
-// findBest returns the highest-version deployable model matching name and format.
-func findBest(models []availableModel, name, format string) *availableModel {
-	var best *availableModel
-	for i := range models {
-		m := &models[i]
-		if !strings.EqualFold(m.name, name) || !strings.EqualFold(m.format, format) {
-			continue
-		}
-		if !isDeployable(m.lifecycleStatus) {
-			continue
-		}
-		if best == nil || m.version > best.version {
-			best = m
-		}
-	}
-	return best
 }
 
 // isDeployable reports whether a model version can still be deployed for the
@@ -276,9 +294,8 @@ func findBest(models []availableModel, name, format string) *availableModel {
 // Every other status (GenerallyAvailable, Stable, Preview, or an empty/unknown
 // value) is treated as deployable, so an absent status never over-filters.
 func isDeployable(lifecycleStatus string) bool {
-	// Match case-insensitively — findBest already distrusts Azure's casing for
-	// name/format, and a denylist can only ever err toward eligible, so this
-	// never over-filters an absent/unknown status.
+	// Match case-insensitively — a denylist can only ever err toward
+	// eligible, so this never over-filters an absent/unknown status.
 	switch {
 	case strings.EqualFold(lifecycleStatus, string(armcognitiveservices.ModelLifecycleStatusDeprecating)),
 		strings.EqualFold(lifecycleStatus, string(armcognitiveservices.ModelLifecycleStatusDeprecated)):
@@ -286,6 +303,21 @@ func isDeployable(lifecycleStatus string) bool {
 	default:
 		return true
 	}
+}
+
+// isPreview reports whether a revision is a preview, which a floating
+// candidate selects only with allow-preview.
+func isPreview(lifecycleStatus string) bool {
+	return strings.EqualFold(lifecycleStatus, string(armcognitiveservices.ModelLifecycleStatusPreview))
+}
+
+func containsFold(list []string, s string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func derefStr(s *string) string {

@@ -50,6 +50,7 @@ func fullService() compose.ServiceConfig {
 		HealthCheck:   &compose.HealthCheckConfig{Test: []string{"CMD", "true"}},
 		Image:         pulumi.String("nginx:alpine"),
 		LLM:           &compose.LlmConfig{},
+		Models:        map[string]*compose.ServiceModelConfig{"chat": {ModelVar: "CHAT_MODEL", EndpointVar: "CHAT_URL"}},
 		NetworkMode:   "service:app",
 		Networks: map[compose.NetworkID]compose.ServiceNetworkConfig{
 			compose.DefaultNetwork: {Aliases: []string{"web"}},

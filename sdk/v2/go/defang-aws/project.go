@@ -48,6 +48,7 @@ func NewProject(ctx *pulumi.Context,
 type projectArgs struct {
 	Aws                *AWSConfig                       `pulumi:"aws"`
 	Etag               *string                          `pulumi:"etag"`
+	Models             map[string]compose.ModelConfig   `pulumi:"models"`
 	Networks           map[string]compose.NetworkConfig `pulumi:"networks"`
 	Services           map[string]compose.ServiceConfig `pulumi:"services"`
 	WaitForSteadyState *bool                            `pulumi:"waitForSteadyState"`
@@ -57,6 +58,7 @@ type projectArgs struct {
 type ProjectArgs struct {
 	Aws                AWSConfigPtrInput
 	Etag               *string
+	Models             compose.ModelConfigMapInput
 	Networks           compose.NetworkConfigMapInput
 	Services           compose.ServiceConfigMapInput
 	WaitForSteadyState *bool

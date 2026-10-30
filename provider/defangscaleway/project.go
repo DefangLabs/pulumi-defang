@@ -20,7 +20,9 @@ type Project struct{}
 type ProjectInputs struct {
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
-	Etag     string           `pulumi:"etag,optional"     yaml:"etag,omitempty"`
+	// Models map: name -> model (top-level Compose `models:`)
+	Models compose.Models `pulumi:"models,optional" yaml:"models,omitempty"`
+	Etag   string         `pulumi:"etag,optional"   yaml:"etag,omitempty"`
 }
 
 // ProjectOutputs holds the outputs of the Project component.
@@ -79,6 +81,11 @@ func buildProject(
 	infra.Etag = args.Etag
 	infra.PluginIdentity = pluginID
 
+	services, err := providerscaleway.PrepareModels(ctx, args.Services, args.Models, infra.Region, pluginID, childOpts...)
+	if err != nil {
+		return nil, err
+	}
+
 	configProvider := compose.ConfigProvider(&compose.PulumiConfigProvider{})
 	if ctx.DryRun() {
 		configProvider = &compose.DryRunConfigProvider{}
@@ -90,8 +97,8 @@ func buildProject(
 	endpoints := pulumi.StringMap{}
 	dependencies := map[string]pulumi.Resource{}
 	var serviceOutputs []any
-	for _, svcName := range common.TopologicalSort(args.Services) {
-		svc := args.Services[svcName]
+	for _, svcName := range common.TopologicalSort(services) {
+		svc := services[svcName]
 		var deps []pulumi.Resource
 		for dep := range svc.DependsOn {
 			if r, ok := dependencies[dep]; ok {
