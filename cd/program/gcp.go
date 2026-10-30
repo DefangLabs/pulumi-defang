@@ -80,6 +80,9 @@ func toGCPArgs(cf *compose.Project, etag string) *defanggcp.ProjectArgs {
 		}
 		args.Networks = nm
 	}
+	if len(cf.Models) > 0 {
+		args.Models = toGCPModels(cf.Models)
+	}
 	if etag != "" {
 		e := etag
 		args.Etag = &e
@@ -199,6 +202,9 @@ func toGCPServiceArgs(svc compose.ServiceConfig) gcpcompose.ServiceConfigArgs {
 	if svc.LLM != nil {
 		args.Llm = gcpcompose.LlmConfigArgs{}
 	}
+	if len(svc.Models) > 0 {
+		args.Models = toGCPServiceModels(svc.Models)
+	}
 	if len(svc.Volumes) > 0 {
 		volumes := make(gcpcompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
 		for _, v := range svc.Volumes {
@@ -238,4 +244,39 @@ func saveProjectPbGCP(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Res
 		ContentType: pulumi.String(protobufContentType),
 	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
 	return err
+}
+
+// toGCPModels converts the top-level Compose models, with the seeds the CD
+// established from stack state.
+func toGCPModels(models compose.Models) gcpcompose.ModelConfigMap {
+	out := make(gcpcompose.ModelConfigMap, len(models))
+	for name, m := range models {
+		args := gcpcompose.ModelConfigArgs{Model: pulumi.String(m.Model)}
+		if seed := m.Seed; seed != nil {
+			args.Seed = gcpcompose.ModelTargetArgs{
+				Model:    pulumi.String(seed.Model),
+				Version:  pulumi.String(seed.Version),
+				Location: pulumi.String(seed.Location),
+				Format:   pulumi.String(seed.Format),
+				Sku:      pulumi.String(seed.Sku),
+				Existed:  pulumi.Bool(seed.Existed),
+			}
+		}
+		out[name] = args
+	}
+	return out
+}
+
+// toGCPServiceModels converts a service's model bindings.
+func toGCPServiceModels(models map[string]*compose.ServiceModelConfig) gcpcompose.ServiceModelConfigMap {
+	out := make(gcpcompose.ServiceModelConfigMap, len(models))
+	for name, m := range models {
+		args := gcpcompose.ServiceModelConfigArgs{}
+		if m != nil {
+			args.ModelVar = pulumi.String(m.ModelVar)
+			args.EndpointVar = pulumi.String(m.EndpointVar)
+		}
+		out[name] = args
+	}
+	return out
 }

@@ -1,22 +1,18 @@
 package azure
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	cognitiveservices "github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/network/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3"
-	"github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi-random/sdk/v4/go/random"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
-
-// ErrModelSelectorUnavailable is returned from CreateLLMDeployment when the
-// selector is nil (typically during `pulumi preview`, which skips ARM queries).
-var ErrModelSelectorUnavailable = errors.New("model selector not available (preview mode?)")
 
 // LLMInfra holds a shared Azure AI Foundry account for all LLM services.
 type LLMInfra struct {
@@ -36,16 +32,9 @@ type LLMInfra struct {
 	// "Another operation is being performed on the parent resource" if two
 	// Deployments on the same Account run in parallel.
 	lastDeployment pulumi.Resource
-
-	// ModelSelector picks models at deploy time based on region availability.
-	// Listing is deferred until the Account's Name output resolves, so the
-	// ARM list call only runs after Azure has finished creating the account.
-	ModelSelector ModelSelector
 }
 
-// CreateLLMInfra creates an Azure AI Foundry hub (Account with Kind "AIServices") and
-// builds a lazy ModelSelector that will query the account for available models
-// after it has been created.
+// CreateLLMInfra creates an Azure AI Foundry hub (Account with Kind "AIServices").
 func CreateLLMInfra(
 	ctx *pulumi.Context,
 	name string,
@@ -139,59 +128,34 @@ func CreateLLMInfra(
 		return strings.TrimRight(ep, "/") + "/openai/v1/"
 	}).(pulumi.StringOutput)
 
-	// Skip the selector during preview — its lazy ARM ListModels call fires
-	// as soon as rgName+accountName are known, which can happen during
-	// `pulumi preview` if the names are static Strings (they're unknown
-	// here, but a cautious guard is cheaper than debugging preview-time
-	// ARM slowness). Consumers get ErrModelSelectorUnavailable in preview.
-	var selector ModelSelector
-	if ctx.DryRun() {
-		selector = &StaticModelSelector{}
-	} else {
-		selector = NewDynamicModelSelector(
-			config.GetSubscriptionId(ctx),
-			infra.ResourceGroup.Name.ToStringOutput(),
-			account.Name.ToStringOutput(),
-		)
-	}
-
 	return &LLMInfra{
-		Account:       account,
-		APIKey:        apiKey,
-		BaseURL:       baseURL,
-		ModelSelector: selector,
+		Account: account,
+		APIKey:  apiKey,
+		BaseURL: baseURL,
 	}, nil
 }
 
-// CreateLLMDeployment creates an Azure AI model deployment under the shared Foundry account.
-// deploymentName should be the Defang model alias (e.g. "chat-default", "embedding-default")
-// so that requests with model="{alias}" route to this deployment automatically.
+// CreateLLMDeployment records the model selection for a planned request and
+// creates the Azure AI model deployment for it under the shared Foundry
+// account. deploymentName is the name applications send as "model" (the
+// request), so requests route to this deployment.
 func CreateLLMDeployment(
 	ctx *pulumi.Context,
+	serviceName string,
 	deploymentName string,
-	modelAlias string,
+	plan common.ModelPlan,
+	seed *compose.ModelTarget,
 	llmInfra *LLMInfra,
 	infra *SharedInfra,
+	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
-) error {
-	if llmInfra.ModelSelector == nil {
-		return ErrModelSelectorUnavailable
+) (*common.ModelSelectionResult, error) {
+	// The selection lists the account's models, so it waits for the account.
+	sel, err := common.RegisterModelSelection(ctx, "defang-azure", serviceName, plan, "",
+		llmInfra.Account.ID().ToStringOutput(), seed, pluginID, opts...)
+	if err != nil {
+		return nil, err
 	}
-	specOutput := selectModelForAlias(modelAlias, llmInfra.ModelSelector)
-
-	// Chained ApplyT over an AnyOutput requires `any` as the applier's input —
-	// pulumi's reflection reads the Output's inner type as `interface{}` when
-	// the source was produced via `pulumi.All(...).ApplyT(...)`.
-	pickField := func(get func(ModelSpec) string) pulumi.StringOutput {
-		return specOutput.ApplyT(func(raw any) (string, error) {
-			spec, _ := raw.(ModelSpec)
-			return get(spec), nil
-		}).(pulumi.StringOutput)
-	}
-	modelFormat := pickField(func(s ModelSpec) string { return s.Format })
-	modelName := pickField(func(s ModelSpec) string { return s.Name })
-	modelVersion := pickField(func(s ModelSpec) string { return s.Version })
-	modelSKU := pickField(func(s ModelSpec) string { return s.SKU })
 
 	// Azure serializes deployments on a single AI Services Account — parallel
 	// NewDeployment calls fail with 409 "Another operation is being performed
@@ -207,21 +171,21 @@ func CreateLLMDeployment(
 		DeploymentName:    pulumi.String(deploymentName),
 		Properties: &cognitiveservices.DeploymentPropertiesArgs{
 			Model: &cognitiveservices.DeploymentModelArgs{
-				Format:  modelFormat.ToStringPtrOutput(),
-				Name:    modelName.ToStringPtrOutput(),
-				Version: modelVersion.ToStringPtrOutput(),
+				Format:  sel.Format.ToStringPtrOutput(),
+				Name:    sel.Model.ToStringPtrOutput(),
+				Version: sel.Version.ToStringPtrOutput(),
 			},
 		},
 		Sku: &cognitiveservices.SkuArgs{
-			Name:     modelSKU,
+			Name:     sel.Sku,
 			Capacity: pulumi.Int(LLMDeploymentCapacity.Get(ctx)),
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
+		return nil, fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
 	llmInfra.lastDeployment = deployment
-	return nil
+	return sel, nil
 }
 
 // subDomainPrefixRe matches characters to strip from an AI Foundry custom
@@ -239,18 +203,6 @@ func llmSubDomainPrefix(name string) string {
 		prefix = "llm"
 	}
 	return prefix
-}
-
-// selectModelForAlias maps a Defang model alias to an Output of ModelSpec.
-func selectModelForAlias(alias string, selector ModelSelector) pulumi.Output {
-	var role ModelRole
-	switch {
-	case strings.Contains(alias, "embedding"):
-		role = ModelRoleEmbedding
-	default:
-		role = ModelRoleChat
-	}
-	return selector.SelectModel(role)
 }
 
 // createLLMPrivateEndpoint provisions a private endpoint for the AI Foundry

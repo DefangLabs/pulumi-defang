@@ -710,6 +710,444 @@ func (o LlmConfigPtrOutput) Elem() LlmConfigOutput {
 	}).(LlmConfigOutput)
 }
 
+type ModelCandidate struct {
+	AllowPreview *bool   `pulumi:"allowPreview"`
+	Format       *string `pulumi:"format"`
+	Location     *string `pulumi:"location"`
+	Model        string  `pulumi:"model"`
+	Role         *string `pulumi:"role"`
+	Sku          *string `pulumi:"sku"`
+	Version      *string `pulumi:"version"`
+}
+
+// ModelCandidateInput is an input type that accepts ModelCandidateArgs and ModelCandidateOutput values.
+// You can construct a concrete instance of `ModelCandidateInput` via:
+//
+//	ModelCandidateArgs{...}
+type ModelCandidateInput interface {
+	pulumi.Input
+
+	ToModelCandidateOutput() ModelCandidateOutput
+	ToModelCandidateOutputWithContext(context.Context) ModelCandidateOutput
+}
+
+type ModelCandidateArgs struct {
+	AllowPreview pulumi.BoolPtrInput   `pulumi:"allowPreview"`
+	Format       pulumi.StringPtrInput `pulumi:"format"`
+	Location     pulumi.StringPtrInput `pulumi:"location"`
+	Model        pulumi.StringInput    `pulumi:"model"`
+	Role         pulumi.StringPtrInput `pulumi:"role"`
+	Sku          pulumi.StringPtrInput `pulumi:"sku"`
+	Version      pulumi.StringPtrInput `pulumi:"version"`
+}
+
+func (ModelCandidateArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*ModelCandidate)(nil)).Elem()
+}
+
+func (i ModelCandidateArgs) ToModelCandidateOutput() ModelCandidateOutput {
+	return i.ToModelCandidateOutputWithContext(context.Background())
+}
+
+func (i ModelCandidateArgs) ToModelCandidateOutputWithContext(ctx context.Context) ModelCandidateOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelCandidateOutput)
+}
+
+// ModelCandidateArrayInput is an input type that accepts ModelCandidateArray and ModelCandidateArrayOutput values.
+// You can construct a concrete instance of `ModelCandidateArrayInput` via:
+//
+//	ModelCandidateArray{ ModelCandidateArgs{...} }
+type ModelCandidateArrayInput interface {
+	pulumi.Input
+
+	ToModelCandidateArrayOutput() ModelCandidateArrayOutput
+	ToModelCandidateArrayOutputWithContext(context.Context) ModelCandidateArrayOutput
+}
+
+type ModelCandidateArray []ModelCandidateInput
+
+func (ModelCandidateArray) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]ModelCandidate)(nil)).Elem()
+}
+
+func (i ModelCandidateArray) ToModelCandidateArrayOutput() ModelCandidateArrayOutput {
+	return i.ToModelCandidateArrayOutputWithContext(context.Background())
+}
+
+func (i ModelCandidateArray) ToModelCandidateArrayOutputWithContext(ctx context.Context) ModelCandidateArrayOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelCandidateArrayOutput)
+}
+
+type ModelCandidateOutput struct{ *pulumi.OutputState }
+
+func (ModelCandidateOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*ModelCandidate)(nil)).Elem()
+}
+
+func (o ModelCandidateOutput) ToModelCandidateOutput() ModelCandidateOutput {
+	return o
+}
+
+func (o ModelCandidateOutput) ToModelCandidateOutputWithContext(ctx context.Context) ModelCandidateOutput {
+	return o
+}
+
+func (o ModelCandidateOutput) AllowPreview() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v ModelCandidate) *bool { return v.AllowPreview }).(pulumi.BoolPtrOutput)
+}
+
+func (o ModelCandidateOutput) Format() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelCandidate) *string { return v.Format }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelCandidateOutput) Location() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelCandidate) *string { return v.Location }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelCandidateOutput) Model() pulumi.StringOutput {
+	return o.ApplyT(func(v ModelCandidate) string { return v.Model }).(pulumi.StringOutput)
+}
+
+func (o ModelCandidateOutput) Role() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelCandidate) *string { return v.Role }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelCandidateOutput) Sku() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelCandidate) *string { return v.Sku }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelCandidateOutput) Version() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelCandidate) *string { return v.Version }).(pulumi.StringPtrOutput)
+}
+
+type ModelCandidateArrayOutput struct{ *pulumi.OutputState }
+
+func (ModelCandidateArrayOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*[]ModelCandidate)(nil)).Elem()
+}
+
+func (o ModelCandidateArrayOutput) ToModelCandidateArrayOutput() ModelCandidateArrayOutput {
+	return o
+}
+
+func (o ModelCandidateArrayOutput) ToModelCandidateArrayOutputWithContext(ctx context.Context) ModelCandidateArrayOutput {
+	return o
+}
+
+func (o ModelCandidateArrayOutput) Index(i pulumi.IntInput) ModelCandidateOutput {
+	return pulumi.All(o, i).ApplyT(func(vs []interface{}) ModelCandidate {
+		return vs[0].([]ModelCandidate)[vs[1].(int)]
+	}).(ModelCandidateOutput)
+}
+
+type ModelConfig struct {
+	Model string       `pulumi:"model"`
+	Seed  *ModelTarget `pulumi:"seed"`
+}
+
+// ModelConfigInput is an input type that accepts ModelConfigArgs and ModelConfigOutput values.
+// You can construct a concrete instance of `ModelConfigInput` via:
+//
+//	ModelConfigArgs{...}
+type ModelConfigInput interface {
+	pulumi.Input
+
+	ToModelConfigOutput() ModelConfigOutput
+	ToModelConfigOutputWithContext(context.Context) ModelConfigOutput
+}
+
+type ModelConfigArgs struct {
+	Model pulumi.StringInput  `pulumi:"model"`
+	Seed  ModelTargetPtrInput `pulumi:"seed"`
+}
+
+func (ModelConfigArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*ModelConfig)(nil)).Elem()
+}
+
+func (i ModelConfigArgs) ToModelConfigOutput() ModelConfigOutput {
+	return i.ToModelConfigOutputWithContext(context.Background())
+}
+
+func (i ModelConfigArgs) ToModelConfigOutputWithContext(ctx context.Context) ModelConfigOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelConfigOutput)
+}
+
+// ModelConfigMapInput is an input type that accepts ModelConfigMap and ModelConfigMapOutput values.
+// You can construct a concrete instance of `ModelConfigMapInput` via:
+//
+//	ModelConfigMap{ "key": ModelConfigArgs{...} }
+type ModelConfigMapInput interface {
+	pulumi.Input
+
+	ToModelConfigMapOutput() ModelConfigMapOutput
+	ToModelConfigMapOutputWithContext(context.Context) ModelConfigMapOutput
+}
+
+type ModelConfigMap map[string]ModelConfigInput
+
+func (ModelConfigMap) ElementType() reflect.Type {
+	return reflect.TypeOf((*map[string]ModelConfig)(nil)).Elem()
+}
+
+func (i ModelConfigMap) ToModelConfigMapOutput() ModelConfigMapOutput {
+	return i.ToModelConfigMapOutputWithContext(context.Background())
+}
+
+func (i ModelConfigMap) ToModelConfigMapOutputWithContext(ctx context.Context) ModelConfigMapOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelConfigMapOutput)
+}
+
+type ModelConfigOutput struct{ *pulumi.OutputState }
+
+func (ModelConfigOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*ModelConfig)(nil)).Elem()
+}
+
+func (o ModelConfigOutput) ToModelConfigOutput() ModelConfigOutput {
+	return o
+}
+
+func (o ModelConfigOutput) ToModelConfigOutputWithContext(ctx context.Context) ModelConfigOutput {
+	return o
+}
+
+func (o ModelConfigOutput) Model() pulumi.StringOutput {
+	return o.ApplyT(func(v ModelConfig) string { return v.Model }).(pulumi.StringOutput)
+}
+
+func (o ModelConfigOutput) Seed() ModelTargetPtrOutput {
+	return o.ApplyT(func(v ModelConfig) *ModelTarget { return v.Seed }).(ModelTargetPtrOutput)
+}
+
+type ModelConfigMapOutput struct{ *pulumi.OutputState }
+
+func (ModelConfigMapOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*map[string]ModelConfig)(nil)).Elem()
+}
+
+func (o ModelConfigMapOutput) ToModelConfigMapOutput() ModelConfigMapOutput {
+	return o
+}
+
+func (o ModelConfigMapOutput) ToModelConfigMapOutputWithContext(ctx context.Context) ModelConfigMapOutput {
+	return o
+}
+
+func (o ModelConfigMapOutput) MapIndex(k pulumi.StringInput) ModelConfigOutput {
+	return pulumi.All(o, k).ApplyT(func(vs []interface{}) ModelConfig {
+		return vs[0].(map[string]ModelConfig)[vs[1].(string)]
+	}).(ModelConfigOutput)
+}
+
+type ModelTarget struct {
+	Existed  *bool   `pulumi:"existed"`
+	Format   *string `pulumi:"format"`
+	Location *string `pulumi:"location"`
+	Model    *string `pulumi:"model"`
+	Sku      *string `pulumi:"sku"`
+	Version  *string `pulumi:"version"`
+}
+
+// ModelTargetInput is an input type that accepts ModelTargetArgs and ModelTargetOutput values.
+// You can construct a concrete instance of `ModelTargetInput` via:
+//
+//	ModelTargetArgs{...}
+type ModelTargetInput interface {
+	pulumi.Input
+
+	ToModelTargetOutput() ModelTargetOutput
+	ToModelTargetOutputWithContext(context.Context) ModelTargetOutput
+}
+
+type ModelTargetArgs struct {
+	Existed  pulumi.BoolPtrInput   `pulumi:"existed"`
+	Format   pulumi.StringPtrInput `pulumi:"format"`
+	Location pulumi.StringPtrInput `pulumi:"location"`
+	Model    pulumi.StringPtrInput `pulumi:"model"`
+	Sku      pulumi.StringPtrInput `pulumi:"sku"`
+	Version  pulumi.StringPtrInput `pulumi:"version"`
+}
+
+func (ModelTargetArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*ModelTarget)(nil)).Elem()
+}
+
+func (i ModelTargetArgs) ToModelTargetOutput() ModelTargetOutput {
+	return i.ToModelTargetOutputWithContext(context.Background())
+}
+
+func (i ModelTargetArgs) ToModelTargetOutputWithContext(ctx context.Context) ModelTargetOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelTargetOutput)
+}
+
+func (i ModelTargetArgs) ToModelTargetPtrOutput() ModelTargetPtrOutput {
+	return i.ToModelTargetPtrOutputWithContext(context.Background())
+}
+
+func (i ModelTargetArgs) ToModelTargetPtrOutputWithContext(ctx context.Context) ModelTargetPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelTargetOutput).ToModelTargetPtrOutputWithContext(ctx)
+}
+
+// ModelTargetPtrInput is an input type that accepts ModelTargetArgs, ModelTargetPtr and ModelTargetPtrOutput values.
+// You can construct a concrete instance of `ModelTargetPtrInput` via:
+//
+//	        ModelTargetArgs{...}
+//
+//	or:
+//
+//	        nil
+type ModelTargetPtrInput interface {
+	pulumi.Input
+
+	ToModelTargetPtrOutput() ModelTargetPtrOutput
+	ToModelTargetPtrOutputWithContext(context.Context) ModelTargetPtrOutput
+}
+
+type modelTargetPtrType ModelTargetArgs
+
+func ModelTargetPtr(v *ModelTargetArgs) ModelTargetPtrInput {
+	return (*modelTargetPtrType)(v)
+}
+
+func (*modelTargetPtrType) ElementType() reflect.Type {
+	return reflect.TypeOf((**ModelTarget)(nil)).Elem()
+}
+
+func (i *modelTargetPtrType) ToModelTargetPtrOutput() ModelTargetPtrOutput {
+	return i.ToModelTargetPtrOutputWithContext(context.Background())
+}
+
+func (i *modelTargetPtrType) ToModelTargetPtrOutputWithContext(ctx context.Context) ModelTargetPtrOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ModelTargetPtrOutput)
+}
+
+type ModelTargetOutput struct{ *pulumi.OutputState }
+
+func (ModelTargetOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*ModelTarget)(nil)).Elem()
+}
+
+func (o ModelTargetOutput) ToModelTargetOutput() ModelTargetOutput {
+	return o
+}
+
+func (o ModelTargetOutput) ToModelTargetOutputWithContext(ctx context.Context) ModelTargetOutput {
+	return o
+}
+
+func (o ModelTargetOutput) ToModelTargetPtrOutput() ModelTargetPtrOutput {
+	return o.ToModelTargetPtrOutputWithContext(context.Background())
+}
+
+func (o ModelTargetOutput) ToModelTargetPtrOutputWithContext(ctx context.Context) ModelTargetPtrOutput {
+	return o.ApplyTWithContext(ctx, func(_ context.Context, v ModelTarget) *ModelTarget {
+		return &v
+	}).(ModelTargetPtrOutput)
+}
+
+func (o ModelTargetOutput) Existed() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v ModelTarget) *bool { return v.Existed }).(pulumi.BoolPtrOutput)
+}
+
+func (o ModelTargetOutput) Format() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelTarget) *string { return v.Format }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetOutput) Location() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelTarget) *string { return v.Location }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetOutput) Model() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelTarget) *string { return v.Model }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetOutput) Sku() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelTarget) *string { return v.Sku }).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetOutput) Version() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ModelTarget) *string { return v.Version }).(pulumi.StringPtrOutput)
+}
+
+type ModelTargetPtrOutput struct{ *pulumi.OutputState }
+
+func (ModelTargetPtrOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((**ModelTarget)(nil)).Elem()
+}
+
+func (o ModelTargetPtrOutput) ToModelTargetPtrOutput() ModelTargetPtrOutput {
+	return o
+}
+
+func (o ModelTargetPtrOutput) ToModelTargetPtrOutputWithContext(ctx context.Context) ModelTargetPtrOutput {
+	return o
+}
+
+func (o ModelTargetPtrOutput) Elem() ModelTargetOutput {
+	return o.ApplyT(func(v *ModelTarget) ModelTarget {
+		if v != nil {
+			return *v
+		}
+		var ret ModelTarget
+		return ret
+	}).(ModelTargetOutput)
+}
+
+func (o ModelTargetPtrOutput) Existed() pulumi.BoolPtrOutput {
+	return o.ApplyT(func(v *ModelTarget) *bool {
+		if v == nil {
+			return nil
+		}
+		return v.Existed
+	}).(pulumi.BoolPtrOutput)
+}
+
+func (o ModelTargetPtrOutput) Format() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ModelTarget) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Format
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetPtrOutput) Location() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ModelTarget) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Location
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetPtrOutput) Model() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ModelTarget) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Model
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetPtrOutput) Sku() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ModelTarget) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Sku
+	}).(pulumi.StringPtrOutput)
+}
+
+func (o ModelTargetPtrOutput) Version() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v *ModelTarget) *string {
+		if v == nil {
+			return nil
+		}
+		return v.Version
+	}).(pulumi.StringPtrOutput)
+}
+
 type NetworkConfig struct {
 	Internal *bool `pulumi:"internal"`
 }
@@ -1528,6 +1966,7 @@ type ServiceConfig struct {
 	HealthCheck     *HealthCheckConfig              `pulumi:"healthCheck"`
 	Image           *string                         `pulumi:"image"`
 	Llm             *LlmConfig                      `pulumi:"llm"`
+	Models          map[string]ServiceModelConfig   `pulumi:"models"`
 	NetworkMode     *string                         `pulumi:"networkMode"`
 	Networks        map[string]ServiceNetworkConfig `pulumi:"networks"`
 	ObjectStore     *ObjectStoreConfig              `pulumi:"objectStore"`
@@ -1568,6 +2007,7 @@ type ServiceConfigArgs struct {
 	HealthCheck     HealthCheckConfigPtrInput     `pulumi:"healthCheck"`
 	Image           pulumi.StringPtrInput         `pulumi:"image"`
 	Llm             LlmConfigPtrInput             `pulumi:"llm"`
+	Models          ServiceModelConfigMapInput    `pulumi:"models"`
 	NetworkMode     pulumi.StringPtrInput         `pulumi:"networkMode"`
 	Networks        ServiceNetworkConfigMapInput  `pulumi:"networks"`
 	ObjectStore     ObjectStoreConfigPtrInput     `pulumi:"objectStore"`
@@ -1684,6 +2124,10 @@ func (o ServiceConfigOutput) Image() pulumi.StringPtrOutput {
 
 func (o ServiceConfigOutput) Llm() LlmConfigPtrOutput {
 	return o.ApplyT(func(v ServiceConfig) *LlmConfig { return v.Llm }).(LlmConfigPtrOutput)
+}
+
+func (o ServiceConfigOutput) Models() ServiceModelConfigMapOutput {
+	return o.ApplyT(func(v ServiceConfig) map[string]ServiceModelConfig { return v.Models }).(ServiceModelConfigMapOutput)
 }
 
 func (o ServiceConfigOutput) NetworkMode() pulumi.StringPtrOutput {
@@ -1856,6 +2300,106 @@ func (o ServiceDependencyMapOutput) MapIndex(k pulumi.StringInput) ServiceDepend
 	return pulumi.All(o, k).ApplyT(func(vs []interface{}) ServiceDependency {
 		return vs[0].(map[string]ServiceDependency)[vs[1].(string)]
 	}).(ServiceDependencyOutput)
+}
+
+type ServiceModelConfig struct {
+	EndpointVar *string `pulumi:"endpointVar"`
+	ModelVar    *string `pulumi:"modelVar"`
+}
+
+// ServiceModelConfigInput is an input type that accepts ServiceModelConfigArgs and ServiceModelConfigOutput values.
+// You can construct a concrete instance of `ServiceModelConfigInput` via:
+//
+//	ServiceModelConfigArgs{...}
+type ServiceModelConfigInput interface {
+	pulumi.Input
+
+	ToServiceModelConfigOutput() ServiceModelConfigOutput
+	ToServiceModelConfigOutputWithContext(context.Context) ServiceModelConfigOutput
+}
+
+type ServiceModelConfigArgs struct {
+	EndpointVar pulumi.StringPtrInput `pulumi:"endpointVar"`
+	ModelVar    pulumi.StringPtrInput `pulumi:"modelVar"`
+}
+
+func (ServiceModelConfigArgs) ElementType() reflect.Type {
+	return reflect.TypeOf((*ServiceModelConfig)(nil)).Elem()
+}
+
+func (i ServiceModelConfigArgs) ToServiceModelConfigOutput() ServiceModelConfigOutput {
+	return i.ToServiceModelConfigOutputWithContext(context.Background())
+}
+
+func (i ServiceModelConfigArgs) ToServiceModelConfigOutputWithContext(ctx context.Context) ServiceModelConfigOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ServiceModelConfigOutput)
+}
+
+// ServiceModelConfigMapInput is an input type that accepts ServiceModelConfigMap and ServiceModelConfigMapOutput values.
+// You can construct a concrete instance of `ServiceModelConfigMapInput` via:
+//
+//	ServiceModelConfigMap{ "key": ServiceModelConfigArgs{...} }
+type ServiceModelConfigMapInput interface {
+	pulumi.Input
+
+	ToServiceModelConfigMapOutput() ServiceModelConfigMapOutput
+	ToServiceModelConfigMapOutputWithContext(context.Context) ServiceModelConfigMapOutput
+}
+
+type ServiceModelConfigMap map[string]ServiceModelConfigInput
+
+func (ServiceModelConfigMap) ElementType() reflect.Type {
+	return reflect.TypeOf((*map[string]ServiceModelConfig)(nil)).Elem()
+}
+
+func (i ServiceModelConfigMap) ToServiceModelConfigMapOutput() ServiceModelConfigMapOutput {
+	return i.ToServiceModelConfigMapOutputWithContext(context.Background())
+}
+
+func (i ServiceModelConfigMap) ToServiceModelConfigMapOutputWithContext(ctx context.Context) ServiceModelConfigMapOutput {
+	return pulumi.ToOutputWithContext(ctx, i).(ServiceModelConfigMapOutput)
+}
+
+type ServiceModelConfigOutput struct{ *pulumi.OutputState }
+
+func (ServiceModelConfigOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*ServiceModelConfig)(nil)).Elem()
+}
+
+func (o ServiceModelConfigOutput) ToServiceModelConfigOutput() ServiceModelConfigOutput {
+	return o
+}
+
+func (o ServiceModelConfigOutput) ToServiceModelConfigOutputWithContext(ctx context.Context) ServiceModelConfigOutput {
+	return o
+}
+
+func (o ServiceModelConfigOutput) EndpointVar() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServiceModelConfig) *string { return v.EndpointVar }).(pulumi.StringPtrOutput)
+}
+
+func (o ServiceModelConfigOutput) ModelVar() pulumi.StringPtrOutput {
+	return o.ApplyT(func(v ServiceModelConfig) *string { return v.ModelVar }).(pulumi.StringPtrOutput)
+}
+
+type ServiceModelConfigMapOutput struct{ *pulumi.OutputState }
+
+func (ServiceModelConfigMapOutput) ElementType() reflect.Type {
+	return reflect.TypeOf((*map[string]ServiceModelConfig)(nil)).Elem()
+}
+
+func (o ServiceModelConfigMapOutput) ToServiceModelConfigMapOutput() ServiceModelConfigMapOutput {
+	return o
+}
+
+func (o ServiceModelConfigMapOutput) ToServiceModelConfigMapOutputWithContext(ctx context.Context) ServiceModelConfigMapOutput {
+	return o
+}
+
+func (o ServiceModelConfigMapOutput) MapIndex(k pulumi.StringInput) ServiceModelConfigOutput {
+	return pulumi.All(o, k).ApplyT(func(vs []interface{}) ServiceModelConfig {
+		return vs[0].(map[string]ServiceModelConfig)[vs[1].(string)]
+	}).(ServiceModelConfigOutput)
 }
 
 type ServiceNetworkConfig struct {
@@ -2185,6 +2729,12 @@ func init() {
 	pulumi.RegisterInputType(reflect.TypeOf((*HealthCheckConfigPtrInput)(nil)).Elem(), HealthCheckConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*LlmConfigInput)(nil)).Elem(), LlmConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*LlmConfigPtrInput)(nil)).Elem(), LlmConfigArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ModelCandidateInput)(nil)).Elem(), ModelCandidateArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ModelCandidateArrayInput)(nil)).Elem(), ModelCandidateArray{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ModelConfigInput)(nil)).Elem(), ModelConfigArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ModelConfigMapInput)(nil)).Elem(), ModelConfigMap{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ModelTargetInput)(nil)).Elem(), ModelTargetArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ModelTargetPtrInput)(nil)).Elem(), ModelTargetArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*NetworkConfigInput)(nil)).Elem(), NetworkConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*NetworkConfigMapInput)(nil)).Elem(), NetworkConfigMap{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ObjectStoreConfigInput)(nil)).Elem(), ObjectStoreConfigArgs{})
@@ -2201,6 +2751,8 @@ func init() {
 	pulumi.RegisterInputType(reflect.TypeOf((*ServiceConfigMapInput)(nil)).Elem(), ServiceConfigMap{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServiceDependencyInput)(nil)).Elem(), ServiceDependencyArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServiceDependencyMapInput)(nil)).Elem(), ServiceDependencyMap{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ServiceModelConfigInput)(nil)).Elem(), ServiceModelConfigArgs{})
+	pulumi.RegisterInputType(reflect.TypeOf((*ServiceModelConfigMapInput)(nil)).Elem(), ServiceModelConfigMap{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServiceNetworkConfigInput)(nil)).Elem(), ServiceNetworkConfigArgs{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServiceNetworkConfigMapInput)(nil)).Elem(), ServiceNetworkConfigMap{})
 	pulumi.RegisterInputType(reflect.TypeOf((*ServicePortConfigInput)(nil)).Elem(), ServicePortConfigArgs{})
@@ -2215,6 +2767,12 @@ func init() {
 	pulumi.RegisterOutputType(HealthCheckConfigPtrOutput{})
 	pulumi.RegisterOutputType(LlmConfigOutput{})
 	pulumi.RegisterOutputType(LlmConfigPtrOutput{})
+	pulumi.RegisterOutputType(ModelCandidateOutput{})
+	pulumi.RegisterOutputType(ModelCandidateArrayOutput{})
+	pulumi.RegisterOutputType(ModelConfigOutput{})
+	pulumi.RegisterOutputType(ModelConfigMapOutput{})
+	pulumi.RegisterOutputType(ModelTargetOutput{})
+	pulumi.RegisterOutputType(ModelTargetPtrOutput{})
 	pulumi.RegisterOutputType(NetworkConfigOutput{})
 	pulumi.RegisterOutputType(NetworkConfigMapOutput{})
 	pulumi.RegisterOutputType(ObjectStoreConfigOutput{})
@@ -2231,6 +2789,8 @@ func init() {
 	pulumi.RegisterOutputType(ServiceConfigMapOutput{})
 	pulumi.RegisterOutputType(ServiceDependencyOutput{})
 	pulumi.RegisterOutputType(ServiceDependencyMapOutput{})
+	pulumi.RegisterOutputType(ServiceModelConfigOutput{})
+	pulumi.RegisterOutputType(ServiceModelConfigMapOutput{})
 	pulumi.RegisterOutputType(ServiceNetworkConfigOutput{})
 	pulumi.RegisterOutputType(ServiceNetworkConfigMapOutput{})
 	pulumi.RegisterOutputType(ServicePortConfigOutput{})

@@ -352,7 +352,10 @@ func buildTemplate(
 
 	// Build command/args
 	commands := compose.ToPulumiStringArray(svc.Entrypoint)
-	cmdArgs := compose.ToPulumiStringArray(svc.Command)
+	var cmdArgs pulumi.StringArrayInput = compose.ToPulumiStringArray(svc.Command)
+	if svc.GeneratedCommand != nil {
+		cmdArgs = svc.GeneratedCommand // a managed model gateway's resolved command
+	}
 
 	// Cloud Run config from recipe
 	maxInstances := svc.GetReplicas()

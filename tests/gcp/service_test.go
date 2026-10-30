@@ -400,7 +400,8 @@ func TestConstructGcpCloudRunServiceEmitsSecretRefs(t *testing.T) {
 
 	// MIXED's underlying Secret resource must hold the fully-interpolated
 	// value, not the raw "prefix${CONFIG}suffix" template.
-	secretRes := findTypeWhere(records, "gcp:secretmanager/secretVersion:SecretVersion", func(property.Map) bool { return true })
+	secretRes := findTypeWhere(records, "gcp:secretmanager/secretVersion:SecretVersion",
+		func(property.Map) bool { return true })
 	require.NotNil(t, secretRes, "expected a new SecretVersion for MIXED")
 	assert.NotContains(t, secretRes.inputs.Get("secretData").AsString(), "${CONFIG}",
 		"the secret must hold the interpolated value, not the raw template")

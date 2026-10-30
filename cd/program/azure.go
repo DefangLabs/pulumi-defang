@@ -307,6 +307,9 @@ func toAzureArgs(cf *compose.Project, domain, etag string) *defangazure.ProjectA
 		}
 		args.Networks = nm
 	}
+	if len(cf.Models) > 0 {
+		args.Models = toAzureModels(cf.Models)
+	}
 	if etag != "" {
 		e := etag
 		args.Etag = &e
@@ -430,6 +433,9 @@ func toAzureServiceArgs(svc compose.ServiceConfig) azurecompose.ServiceConfigArg
 	if svc.LLM != nil {
 		args.Llm = azurecompose.LlmConfigArgs{}
 	}
+	if len(svc.Models) > 0 {
+		args.Models = toAzureServiceModels(svc.Models)
+	}
 	if len(svc.Volumes) > 0 {
 		volumes := make(azurecompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
 		for _, v := range svc.Volumes {
@@ -480,4 +486,39 @@ func saveProjectPbAzure(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.R
 		ContentType:       pulumi.String(protobufContentType),
 	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
 	return err
+}
+
+// toAzureModels converts the top-level Compose models, with the seeds the CD
+// established from stack state.
+func toAzureModels(models compose.Models) azurecompose.ModelConfigMap {
+	out := make(azurecompose.ModelConfigMap, len(models))
+	for name, m := range models {
+		args := azurecompose.ModelConfigArgs{Model: pulumi.String(m.Model)}
+		if seed := m.Seed; seed != nil {
+			args.Seed = azurecompose.ModelTargetArgs{
+				Model:    pulumi.String(seed.Model),
+				Version:  pulumi.String(seed.Version),
+				Location: pulumi.String(seed.Location),
+				Format:   pulumi.String(seed.Format),
+				Sku:      pulumi.String(seed.Sku),
+				Existed:  pulumi.Bool(seed.Existed),
+			}
+		}
+		out[name] = args
+	}
+	return out
+}
+
+// toAzureServiceModels converts a service's model bindings.
+func toAzureServiceModels(models map[string]*compose.ServiceModelConfig) azurecompose.ServiceModelConfigMap {
+	out := make(azurecompose.ServiceModelConfigMap, len(models))
+	for name, m := range models {
+		args := azurecompose.ServiceModelConfigArgs{}
+		if m != nil {
+			args.ModelVar = pulumi.String(m.ModelVar)
+			args.EndpointVar = pulumi.String(m.EndpointVar)
+		}
+		out[name] = args
+	}
+	return out
 }

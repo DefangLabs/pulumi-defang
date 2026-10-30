@@ -1,0 +1,13 @@
+# What a CLI before the model contract (DefangLabs/defang 24d233cc,
+# byoc/scaleway/fixup.go) uploads on Scaleway: model services and bindings are
+# deleted and the concrete model IDs are written into the consumers.
+name: modeldemo
+services:
+  app:
+    environment:
+      CHAT_MODEL: qwen3-235b-a22b-instruct-2507
+      CHAT_URL: https://proxy.example/v1/
+      EMBED_BASE_URL: https://api.scaleway.ai/v1/
+      EMBED_MODEL_NAME: bge-multilingual-gemma2
+      OPENAI_API_KEY: null
+    image: app

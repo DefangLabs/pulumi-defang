@@ -112,6 +112,72 @@
     "defang-azure:compose:LlmConfig": {
       "type": "object"
     },
+    "defang-azure:compose:ModelCandidate": {
+      "properties": {
+        "allowPreview": {
+          "type": "boolean"
+        },
+        "format": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "model"
+      ]
+    },
+    "defang-azure:compose:ModelConfig": {
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "seed": {
+          "$ref": "#/types/defang-azure:compose:ModelTarget"
+        }
+      },
+      "type": "object",
+      "required": [
+        "model"
+      ]
+    },
+    "defang-azure:compose:ModelTarget": {
+      "properties": {
+        "existed": {
+          "type": "boolean"
+        },
+        "format": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "defang-azure:compose:NetworkConfig": {
       "properties": {
         "internal": {
@@ -228,6 +294,12 @@
         "llm": {
           "$ref": "#/types/defang-azure:compose:LlmConfig"
         },
+        "models": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-azure:compose:ServiceModelConfig"
+          }
+        },
         "networkMode": {
           "type": "string"
         },
@@ -292,6 +364,17 @@
         },
         "required": {
           "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "defang-azure:compose:ServiceModelConfig": {
+      "properties": {
+        "endpointVar": {
+          "type": "string"
+        },
+        "modelVar": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -458,6 +541,95 @@
         "encodedTaskContent"
       ]
     },
+    "defang-azure:index:ModelSelection": {
+      "description": "The model selected for a managed model service. Created by Project; unchanged inputs keep the selected model, and refresh never re-resolves it.",
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-azure:compose:ModelCandidate"
+          }
+        },
+        "format": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "seed": {
+          "$ref": "#/types/defang-azure:compose:ModelTarget"
+        },
+        "selectedRole": {
+          "type": "string"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "source",
+        "candidates",
+        "model",
+        "version",
+        "location",
+        "format",
+        "sku",
+        "selectedRole"
+      ],
+      "inputProperties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/types/defang-azure:compose:ModelCandidate"
+          }
+        },
+        "region": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "seed": {
+          "$ref": "#/types/defang-azure:compose:ModelTarget"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "requiredInputs": [
+        "request",
+        "source",
+        "candidates"
+      ]
+    },
     "defang-azure:index:Postgres": {
       "properties": {
         "endpoint": {
@@ -533,6 +705,12 @@
         "etag": {
           "type": "string",
           "plain": true
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/types/defang-azure:compose:ModelConfig"
+          }
         },
         "networks": {
           "type": "object",

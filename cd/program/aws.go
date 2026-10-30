@@ -100,6 +100,9 @@ func toAWSArgs(cf *compose.Project, etag string) *defangaws.ProjectArgs {
 		}
 		args.Networks = nm
 	}
+	if len(cf.Models) > 0 {
+		args.Models = toAWSModels(cf.Models)
+	}
 	if etag != "" {
 		e := etag
 		args.Etag = &e
@@ -219,6 +222,9 @@ func toAWSServiceArgs(svc compose.ServiceConfig) awscompose.ServiceConfigArgs {
 	if svc.LLM != nil {
 		args.Llm = awscompose.LlmConfigArgs{}
 	}
+	if len(svc.Models) > 0 {
+		args.Models = toAWSServiceModels(svc.Models)
+	}
 	if len(svc.Volumes) > 0 {
 		volumes := make(awscompose.ServiceVolumeConfigArray, 0, len(svc.Volumes))
 		for _, v := range svc.Volumes {
@@ -281,4 +287,39 @@ func saveProjectPbAWS(ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Res
 		ContentType:   pulumi.String(protobufContentType),
 	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
 	return err
+}
+
+// toAWSModels converts the top-level Compose models, with the seeds the CD
+// established from stack state.
+func toAWSModels(models compose.Models) awscompose.ModelConfigMap {
+	out := make(awscompose.ModelConfigMap, len(models))
+	for name, m := range models {
+		args := awscompose.ModelConfigArgs{Model: pulumi.String(m.Model)}
+		if seed := m.Seed; seed != nil {
+			args.Seed = awscompose.ModelTargetArgs{
+				Model:    pulumi.String(seed.Model),
+				Version:  pulumi.String(seed.Version),
+				Location: pulumi.String(seed.Location),
+				Format:   pulumi.String(seed.Format),
+				Sku:      pulumi.String(seed.Sku),
+				Existed:  pulumi.Bool(seed.Existed),
+			}
+		}
+		out[name] = args
+	}
+	return out
+}
+
+// toAWSServiceModels converts a service's model bindings.
+func toAWSServiceModels(models map[string]*compose.ServiceModelConfig) awscompose.ServiceModelConfigMap {
+	out := make(awscompose.ServiceModelConfigMap, len(models))
+	for name, m := range models {
+		args := awscompose.ServiceModelConfigArgs{}
+		if m != nil {
+			args.ModelVar = pulumi.String(m.ModelVar)
+			args.EndpointVar = pulumi.String(m.EndpointVar)
+		}
+		out[name] = args
+	}
+	return out
 }

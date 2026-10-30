@@ -1,0 +1,41 @@
+# What a CLI before the model contract (DefangLabs/defang 24d233cc) uploads
+# for the compose.yaml next to this file on GCP (with `model: chat-default`:
+# older CLIs did not resolve the `ai/` spelling).
+name: modeldemo
+services:
+  app:
+    depends_on:
+      chat: {condition: service_started, required: true}
+      embed: {condition: service_started, required: true}
+    environment:
+      CHAT_MODEL: vertex_ai/gemini-3.5-flash
+      CHAT_URL: https://proxy.example/v1/
+      EMBED_BASE_URL: http://embed:4000/v1/
+      EMBED_MODEL_NAME: vertex_ai/gemini-embedding-001
+      OPENAI_API_KEY: networkisalreadyprivate
+    image: app
+    networks: {default: null, model_provider_private: null}
+  chat:
+    command: [--drop_params, --model, vertex_ai/gemini-3.5-flash, --alias, chat-default]
+    deploy: {resources: {reservations: {cpus: 0.5, memory: "2147483648"}}}
+    environment: {LITELLM_MASTER_KEY: networkisalreadyprivate, VERTEXAI_LOCATION: global, VERTEXAI_PROJECT: my-project}
+    image: litellm/litellm:v1.92.0
+    networks: {model_provider_private: null}
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+  embed:
+    command: [--drop_params, --model, vertex_ai/gemini-embedding-001, --alias, embedding-default]
+    deploy: {resources: {reservations: {cpus: 0.5, memory: "2147483648"}}}
+    environment: {LITELLM_MASTER_KEY: networkisalreadyprivate, VERTEXAI_LOCATION: us-central1, VERTEXAI_PROJECT: my-project}
+    image: litellm/litellm:v1.92.0
+    networks: {model_provider_private: null}
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+networks:
+  default: {name: modeldemo_default}
+  model_provider_private: {name: model_provider_private}
+models:
+  chat:
+    model: chat-default
+  embed:
+    model: embedding-default

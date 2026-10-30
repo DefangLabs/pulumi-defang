@@ -108,6 +108,9 @@ func toScalewayArgs(cf *compose.Project, etag string) *defangscaleway.ProjectArg
 		}
 		args.Networks = nm
 	}
+	if len(cf.Models) > 0 {
+		args.Models = toScalewayModels(cf.Models)
+	}
 	if etag != "" {
 		e := etag
 		args.Etag = &e
@@ -210,5 +213,43 @@ func toScalewayServiceArgs(svc compose.ServiceConfig) scalewaycompose.ServiceCon
 	if svc.LLM != nil {
 		args.Llm = scalewaycompose.LlmConfigArgs{}
 	}
+	if len(svc.Models) > 0 {
+		args.Models = toScalewayServiceModels(svc.Models)
+	}
 	return args
+}
+
+// toScalewayModels converts the top-level Compose models, with the seeds the CD
+// established from stack state.
+func toScalewayModels(models compose.Models) scalewaycompose.ModelConfigMap {
+	out := make(scalewaycompose.ModelConfigMap, len(models))
+	for name, m := range models {
+		args := scalewaycompose.ModelConfigArgs{Model: pulumi.String(m.Model)}
+		if seed := m.Seed; seed != nil {
+			args.Seed = scalewaycompose.ModelTargetArgs{
+				Model:    pulumi.String(seed.Model),
+				Version:  pulumi.String(seed.Version),
+				Location: pulumi.String(seed.Location),
+				Format:   pulumi.String(seed.Format),
+				Sku:      pulumi.String(seed.Sku),
+				Existed:  pulumi.Bool(seed.Existed),
+			}
+		}
+		out[name] = args
+	}
+	return out
+}
+
+// toScalewayServiceModels converts a service's model bindings.
+func toScalewayServiceModels(models map[string]*compose.ServiceModelConfig) scalewaycompose.ServiceModelConfigMap {
+	out := make(scalewaycompose.ServiceModelConfigMap, len(models))
+	for name, m := range models {
+		args := scalewaycompose.ServiceModelConfigArgs{}
+		if m != nil {
+			args.ModelVar = pulumi.String(m.ModelVar)
+			args.EndpointVar = pulumi.String(m.EndpointVar)
+		}
+		out[name] = args
+	}
+	return out
 }

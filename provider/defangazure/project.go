@@ -29,6 +29,8 @@ type ProjectInputs struct {
 	// Services map: name -> service config
 	Services compose.Services `pulumi:"services"          yaml:"services"`
 	Networks compose.Networks `pulumi:"networks,optional" yaml:"networks,omitempty"`
+	// Models map: name -> model (top-level Compose `models:`)
+	Models compose.Models `pulumi:"models,optional" yaml:"models,omitempty"`
 	// Domain is the delegate domain for the project (e.g. "myproj-stack.tenant.defang.app").
 	// When non-empty and a public DNS zone of that name already exists in the project
 	// resource group (created by the CLI's PrepareDomainDelegation), every ingress
@@ -229,7 +231,7 @@ func createServiceResources(
 	managedEndpoints map[string]pulumi.StringOutput,
 	serviceHosts map[string]pulumi.StringOutput,
 	serviceIds pulumi.StringMap,
-	llmModels map[string]string,
+	llmModels map[string]azureModel,
 	dnsZones map[string]string,
 	pluginID common.PluginIdentity,
 	childOpts []pulumi.ResourceOption,
@@ -263,9 +265,9 @@ func createServiceResources(
 		}
 		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-		modelAlias := llmModels[svcName]
-		if err := providerazure.CreateLLMDeployment(
-			ctx, modelAlias, modelAlias, infra.LLMInfra, infra, svcOpts...,
+		model := llmModels[svcName]
+		if _, err := providerazure.CreateLLMDeployment(
+			ctx, svcName, model.deployment, model.plan, model.seed, infra.LLMInfra, infra, pluginID, svcOpts...,
 		); err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("creating LLM deployment for %s: %w", svcName, err)
 		}
@@ -602,7 +604,11 @@ func (*Project) Construct(
 	// version is pinned on purpose — see common.PluginIdentityFrom.
 	pluginID := common.PluginIdentityFrom(opts)
 
-	infra, llmModels, err := setupSharedInfra(ctx, name, inputs, parentOpt)
+	infra, llmAliases, err := setupSharedInfra(ctx, name, inputs, parentOpt)
+	if err != nil {
+		return nil, err
+	}
+	llmModels, err := planModels(ctx, inputs.Services, inputs.Models, llmAliases)
 	if err != nil {
 		return nil, err
 	}
@@ -690,6 +696,43 @@ func llmModelAlias(svcName string, services compose.Services) string {
 		}
 	}
 	return svcName // fallback: use service name as deployment name
+}
+
+// azureModel is a planned model deployment.
+type azureModel struct {
+	deployment string // Foundry deployment name: what applications send as "model"
+	plan       common.ModelPlan
+	seed       *compose.ModelTarget
+}
+
+// planModels plans each LLM service's model deployment. A CLI-generated
+// gateway requests its Compose model, whose application-facing name the CLI
+// gave the consumers; an older payload carries its alias (aliases), which
+// stays the deployment name.
+func planModels(
+	ctx *pulumi.Context, services compose.Services, models compose.Models, aliases map[string]string,
+) (map[string]azureModel, error) {
+	planned := make(map[string]azureModel, len(aliases))
+	if len(aliases) == 0 {
+		return planned, nil
+	}
+	recipe, err := common.ReadModelRecipe(ctx, providerazure.ModelCloud)
+	if err != nil {
+		return nil, err
+	}
+	for name, alias := range common.Sorted(aliases) {
+		request, deployment := alias, alias
+		if common.IsManagedGateway(name, services[name], models) {
+			request = models[name].Model
+			deployment = common.NormalizeModelRequest(request)
+		}
+		plan, err := common.PlanModelRequest(providerazure.ModelCloud, request, recipe)
+		if err != nil {
+			return nil, fmt.Errorf("model %q: %w", name, err)
+		}
+		planned[name] = azureModel{deployment: deployment, plan: plan, seed: models[name].Seed}
+	}
+	return planned, nil
 }
 
 // aliasFromCommand returns the value following "--alias" in the LiteLLM command the CLI

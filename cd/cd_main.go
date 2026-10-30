@@ -76,9 +76,14 @@ func cdMain(ctx context.Context, args ...string) error {
 			}
 			// FIXME: what to do when Compose project name does not match PROJECT env var?
 		}
-		stack, err = auto.UpsertStackInlineSource(ctx, stackName, projectName, program.NewRun(projectUpdate))
+		var seeds program.ModelSeeds
+		stack, err = auto.UpsertStackInlineSource(ctx, stackName, projectName,
+			program.NewRun(projectUpdate, func() program.ModelSeeds { return seeds }))
 		if err != nil {
 			return pulumiErr(err)
+		}
+		if seeds, err = modelSeeds(ctx, stack, projectUpdate.GetCompose(), projectName); err != nil {
+			return err
 		}
 		// Set stack-level config (provider settings, defang config)
 		configJson, err := stackConfigJson(projectUpdate.Recipe.GetPulumiConfig())
@@ -325,4 +330,24 @@ func collectEvents(ctx context.Context, eventsUploadUrl string, jsonOutput bool)
 		}
 	}()
 	return eventsChannel, func() { <-done }
+}
+
+// modelSeeds reads the stack's current state so the first deployment that
+// persists model selections keeps the models already deployed (see
+// program.SeedsFromState). A new stack has no state and no seeds.
+func modelSeeds(
+	ctx context.Context, stack auto.Stack, composeYAML []byte, projectName string,
+) (program.ModelSeeds, error) {
+	if len(composeYAML) == 0 {
+		return program.ModelSeeds{}, nil
+	}
+	state, err := stack.Export(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading stack state for model selection: %w", pulumiErr(err))
+	}
+	seeds, err := program.SeedsFromState(state.Deployment, composeYAML, projectName)
+	if err != nil {
+		return nil, fmt.Errorf("establishing deployed models: %w", err)
+	}
+	return seeds, nil
 }
