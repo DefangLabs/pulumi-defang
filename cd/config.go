@@ -85,7 +85,6 @@ const defaultAutonamingSuffix = "${project}-${stack}-${name}-${hex(7)}"
 var errAutonamingObject = errors.New("autonaming config entry must be an object")
 
 const scalewayProvider = "scaleway"
-const scalewayZoneKey = "scaleway:zone"
 const autonamingResourcesKey = "resources"
 const scalewayRegistryType = "scaleway:registry/namespace:Namespace"
 const scalewayRegistryPattern = "defang-${name}-${hex(7)}"
@@ -251,9 +250,9 @@ func addStackConfigFromEnv(config configMap) error {
 		config["scaleway:projectId"] = configValue{Value: scwProject}
 		config["scaleway:region"] = configValue{Value: scwRegion}
 		if zone := os.Getenv("SCW_DEFAULT_ZONE"); zone != "" {
-			config[scalewayZoneKey] = configValue{Value: zone}
-		} else if _, configured := config[scalewayZoneKey]; !configured {
-			config[scalewayZoneKey] = configValue{Value: scwRegion + "-1"}
+			config["scaleway:zone"] = configValue{Value: zone}
+		} else if _, configured := config["scaleway:zone"]; !configured {
+			config["scaleway:zone"] = configValue{Value: scwRegion + "-1"}
 		}
 	} else if awsRegion != "" {
 		providers = append(providers, "aws")

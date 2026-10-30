@@ -645,7 +645,7 @@ func TestScalewayStackConfigWithS3Region(t *testing.T) {
 				wantRegion = "fr-par"
 			}
 			require.Equal(t, wantRegion, cfg["scaleway:region"].Value)
-			require.Equal(t, wantRegion+"-1", cfg[scalewayZoneKey].Value)
+			require.Equal(t, wantRegion+"-1", cfg["scaleway:zone"].Value)
 			require.NotContains(t, cfg, "aws:region")
 		})
 	}
@@ -671,7 +671,7 @@ func TestScalewayStackConfigZonePrecedence(t *testing.T) {
 				require.NoError(t, unmarshalRecipe("config:\n  scaleway:zone: "+tt.recipeZone, cfg))
 			}
 			require.NoError(t, addStackConfigFromEnv(cfg))
-			require.Equal(t, tt.want, cfg[scalewayZoneKey].Value)
+			require.Equal(t, tt.want, cfg["scaleway:zone"].Value)
 		})
 	}
 }

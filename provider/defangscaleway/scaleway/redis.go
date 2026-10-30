@@ -21,6 +21,7 @@ var (
 	errRedisVersionsUnavailable = errors.New(
 		"no supported Scaleway Redis versions available; choose another deployment zone",
 	)
+	errRedisVersionTooOld = errors.New("no Scaleway Redis version satisfies the requested image version")
 )
 
 type RedisResult struct {
@@ -75,6 +76,56 @@ func redisClusterSize(svc compose.ServiceConfig) int {
 		return 2
 	}
 	return int(replicas)
+}
+
+// requestedRedisVersion returns the minimum version implied by the image tag
+// ("redis:7.2" -> 7.2.0, "7-alpine" -> 7.0.0), or nil if the tag is absent or
+// not numeric (e.g. "latest").
+func requestedRedisVersion(svc compose.ServiceConfig) *semver.Version {
+	img := svc.StaticImage()
+	if img == nil {
+		return nil
+	}
+	tag, _, _ := strings.Cut(compose.ParseImageTag(*img), "-")
+	parts := strings.Split(strings.TrimPrefix(tag, "v"), ".")
+	if len(parts) > 3 {
+		return nil
+	}
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	v, err := semver.ParseTolerant(strings.Join(parts, "."))
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
+// selectRedisVersion picks the oldest catalog version that is not older than
+// the requested one, so the cluster never runs an older engine than Compose
+// asked for and is upgraded as little as possible. With no requested version,
+// the newest catalog version is used.
+func selectRedisVersion(requested *semver.Version, catalog []redis.GetClusterVersionsVersion) (string, error) {
+	if len(catalog) == 0 {
+		return "", errRedisVersionsUnavailable
+	}
+	var best *semver.Version
+	for _, entry := range catalog {
+		parsed, err := semver.Parse(entry.Version)
+		if err != nil {
+			return "", fmt.Errorf("parsing Scaleway Redis version %q: %w", entry.Version, err)
+		}
+		if requested != nil && parsed.LT(*requested) {
+			continue
+		}
+		if best == nil || (requested != nil && parsed.LT(*best)) || (requested == nil && parsed.GT(*best)) {
+			best = &parsed
+		}
+	}
+	if best == nil {
+		return "", fmt.Errorf("%w: Compose requests Redis %s or newer", errRedisVersionTooOld, requested)
+	}
+	return best.String(), nil
 }
 
 func RedisAddressFromConnectionString(s string) string {
@@ -135,7 +186,8 @@ func CreateRedis(
 	}
 
 	// Scaleway retires engine versions independently of Compose image tags.
-	// Resolve its current supported version in the cluster's own zone.
+	// Pick from its current catalog in the cluster's own zone; the image tag
+	// is a minimum, see selectRedisVersion.
 	var invokeOpts []pulumi.InvokeOption
 	for _, option := range opts {
 		if invokeOption, ok := option.(pulumi.InvokeOption); ok {
@@ -153,17 +205,11 @@ func CreateRedis(
 	if len(versions.Versions) == 0 {
 		return nil, errRedisVersionsUnavailable
 	}
-	var latest semver.Version
-	for _, version := range versions.Versions {
-		parsed, parseErr := semver.Parse(version.Version)
-		if parseErr != nil {
-			return nil, fmt.Errorf("parsing Scaleway Redis version %q: %w", version.Version, parseErr)
-		}
-		if parsed.GT(latest) {
-			latest = parsed
-		}
+	version, err := selectRedisVersion(requestedRedisVersion(svc), versions.Versions)
+	if err != nil {
+		return nil, err
 	}
-	args.Version = pulumi.String(latest.String())
+	args.Version = pulumi.String(version)
 
 	// Catalog rotation must not migrate an existing cluster on an unchanged deploy.
 	clusterOpts := common.MergeOptions(opts, pulumi.IgnoreChanges([]string{redisVersionProperty}))

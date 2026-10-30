@@ -51,6 +51,7 @@ func (m *redisCatalogMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap
 func TestCreateRedisUsesSupportedVersion(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
+		image       string
 		versions    []string
 		wantVersion string
 		apiErr      error
@@ -58,20 +59,29 @@ func TestCreateRedisUsesSupportedVersion(t *testing.T) {
 	}{
 		{name: "current catalog", versions: []string{testRedisVersion}, wantVersion: testRedisVersion},
 		{name: "catalog changes", versions: []string{"9.0.1"}, wantVersion: "9.0.1"},
-		{name: "unordered catalog", versions: []string{"8.9.1", "8.10.0", testRedisVersion}, wantVersion: "8.10.0"},
+		{name: "unordered catalog", image: "redis:latest", versions: []string{"8.9.1", "8.10.0", testRedisVersion}, wantVersion: "8.10.0"},
+		{name: "image is a minimum", image: "redis:8.9", versions: []string{testRedisVersion, "8.10.0", "8.9.1"}, wantVersion: "8.9.1"},
+		{name: "image with suffix", image: "redis:8-alpine", versions: []string{"9.0.1", testRedisVersion}, wantVersion: testRedisVersion},
+		{name: "oldest satisfying", versions: []string{"8.9.1", "8.10.0", testRedisVersion}, wantVersion: testRedisVersion},
+		{name: "unversioned tag", image: "redis:latest", versions: []string{"8.9.1", testRedisVersion}, wantVersion: "8.9.1"},
+		{name: "catalog older than image", image: "redis:9", versions: []string{testRedisVersion}, wantErr: "no Scaleway Redis version satisfies"},
 		{name: "no available versions", wantErr: "no supported Scaleway Redis versions"},
 		{name: "invalid version", versions: []string{"invalid"}, wantErr: "parsing Scaleway Redis version"},
 		{name: "API failure", apiErr: os.ErrPermission, wantErr: "permission denied"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			mocks := &redisCatalogMocks{versions: tt.versions, err: tt.apiErr}
+			image := "redis:6.2"
+			if tt.image != "" {
+				image = tt.image
+			}
 			err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 				pn, err := network.NewPrivateNetwork(ctx, "pn", &network.PrivateNetworkArgs{})
 				if err != nil {
 					return err
 				}
 				_, err = CreateRedis(ctx, &mockConfigProvider{}, "cache", compose.ServiceConfig{
-					Image:       compose.ImageFromPtr(ptr("redis:6.2")),
+					Image:       compose.ImageFromPtr(ptr(image)),
 					Redis:       &compose.RedisConfig{},
 					Environment: compose.Environment{redisPasswordKey: pulumi.String("secret")},
 				}, &SharedInfra{Zone: "nl-ams-1", PrivateNetwork: pn})
