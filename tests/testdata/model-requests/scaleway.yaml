@@ -1,10 +1,5 @@
-# Contract v2 payload a new CLI uploads to the CD on Scaleway for compose.yaml
-# next to this file (provider-contract.md section 3; amendment C): no model
-# services, top-level models and explicit bindings kept, direct endpoint and
-# API key reference written, supplied model variables left absent. Derived
-# from the CLI golden
-# src/pkg/cli/client/byoc/scaleway/testdata/model-requests.scaleway.golden by
-# the agreed v2 rules; keep it byte-compatible once the CLI regenerates it.
+# Copied verbatim from the Defang CLI golden payload src/pkg/cli/client/byoc/scaleway/testdata/model-requests.scaleway.golden
+# (DefangLabs/defang#2312, a8213a4f): what a new CLI uploads to the CD (contract v2).
 name: modeldemo
 services:
   app:

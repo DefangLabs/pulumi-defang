@@ -1,9 +1,5 @@
-# Contract v2 payload a new CLI uploads to the CD on AWS for compose.yaml next
-# to this file (provider-contract.md section 3; contract-v2-proposal.md with
-# amendments A-D). Derived from the CLI golden
-# src/pkg/cli/compose/testdata/model-requests/compose.yaml.aws.golden
-# (DefangLabs/defang codex/recipe-model-defaults) by the agreed v2 rules; keep
-# it byte-compatible with that golden once the CLI regenerates it.
+# Copied verbatim from the Defang CLI golden payload src/pkg/cli/compose/testdata/model-requests/compose.yaml.aws.golden
+# (DefangLabs/defang#2312, a8213a4f): what a new CLI uploads to the CD (contract v2).
 name: modeldemo
 services:
   app:
@@ -90,6 +86,7 @@ services:
           memory: "2147483648"
     environment:
       AWS_REGION: us-west-2
+      LITELLM_LOG: DEBUG
       LITELLM_MASTER_KEY: networkisalreadyprivate
     image: litellm/litellm:v1.92.0
     networks:

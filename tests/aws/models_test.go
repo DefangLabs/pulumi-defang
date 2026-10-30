@@ -135,6 +135,7 @@ func TestAwsModelRequestsFromCLIPayload(t *testing.T) {
 		"us.amazon.nova-2-lite-v1:0"}, run.containers["exact"].Command)
 	assert.Equal(t, "us-west-2", run.env("chat")["AWS_REGION"], "the CLI's region hint is kept")
 	assert.Equal(t, "networkisalreadyprivate", run.env("chat")["LITELLM_MASTER_KEY"])
+	assert.Equal(t, "DEBUG", run.env("large")["LITELLM_LOG"], "deprecated provider: settings reach the gateway")
 
 	// The literal values applications receive.
 	app := run.env("app")
