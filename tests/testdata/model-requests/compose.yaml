@@ -1,4 +1,4 @@
-# The Compose file the CLI goldens next to it were generated from (CLI testdata/model-requests/compose.yaml).
+# The Compose file the CLI goldens next to it were generated from (CLI testdata/model-requests/compose.yaml, a8213a4f).
 # One application exercising every model-request shape; the same file feeds the
 # payload tests for every cloud.
 name: modeldemo
@@ -22,7 +22,9 @@ services:
       chat:
         model_var: WORKER_CHAT_MODEL
       exact:
-  large:
+  large: # the deprecated syntax; its settings carry over to the gateway
+    environment:
+      LITELLM_LOG: DEBUG
     provider:
       type: model
       options:
