@@ -663,6 +663,7 @@ func TestScalewayStackConfigZonePrecedence(t *testing.T) {
 		{"environment overrides recipe", recipeZone, defaultZone, defaultZone},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			unsetenv(t, "GCLOUD_PROJECT", "GCP_PROJECT", "AZURE_SUBSCRIPTION_ID")
 			t.Setenv("SCW_DEFAULT_PROJECT_ID", "scaleway-project")
 			t.Setenv("SCW_DEFAULT_REGION", "nl-ams")
 			t.Setenv("SCW_DEFAULT_ZONE", tt.envZone)
@@ -674,6 +675,16 @@ func TestScalewayStackConfigZonePrecedence(t *testing.T) {
 			require.Equal(t, tt.want, cfg["scaleway:zone"].Value)
 		})
 	}
+}
+
+func TestScalewayStackConfigRegionFromZone(t *testing.T) {
+	unsetenv(t, "GCLOUD_PROJECT", "GCP_PROJECT", "AZURE_SUBSCRIPTION_ID", "SCW_DEFAULT_REGION", "SCW_DEFAULT_ZONE")
+	t.Setenv("SCW_DEFAULT_PROJECT_ID", "scaleway-project")
+	cfg := configMap{}
+	require.NoError(t, unmarshalRecipe("config:\n  scaleway:zone: nl-ams-2", cfg))
+	require.NoError(t, addStackConfigFromEnv(cfg))
+	require.Equal(t, "nl-ams", cfg["scaleway:region"].Value)
+	require.Equal(t, "nl-ams-2", cfg["scaleway:zone"].Value)
 }
 
 func TestScalewayRecipeRegistryAutonaming(t *testing.T) {
