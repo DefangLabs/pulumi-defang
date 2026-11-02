@@ -82,7 +82,9 @@ func cdMain(ctx context.Context, args ...string) error {
 		if err != nil {
 			return pulumiErr(err)
 		}
-		if seeds, err = modelSeeds(ctx, stack, projectUpdate.GetCompose(), projectName); err != nil {
+		if seeds, err = modelSeeds(
+			ctx, stack, projectUpdate.GetCompose(), projectName, projectUpdate.GetProvider(),
+		); err != nil {
 			return err
 		}
 		// Set stack-level config (provider settings, defang config)
@@ -336,9 +338,12 @@ func collectEvents(ctx context.Context, eventsUploadUrl string, jsonOutput bool)
 // persists model selections keeps the models already deployed (see
 // program.SeedsFromState). A new stack has no state and no seeds.
 func modelSeeds(
-	ctx context.Context, stack auto.Stack, composeYAML []byte, projectName string,
+	ctx context.Context, stack auto.Stack, composeYAML []byte, projectName string, provider defangv1.Provider,
 ) (program.ModelSeeds, error) {
-	if len(composeYAML) == 0 {
+	// Scaleway model selection has never shipped, so there are no existing
+	// Scaleway deployments to migrate. Do not inspect stack state or seed a
+	// new selection from legacy consumer environment values.
+	if len(composeYAML) == 0 || provider == defangv1.Provider_SCALEWAY {
 		return program.ModelSeeds{}, nil
 	}
 	state, err := stack.Export(ctx)
