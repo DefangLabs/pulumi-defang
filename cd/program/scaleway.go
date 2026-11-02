@@ -219,23 +219,11 @@ func toScalewayServiceArgs(svc compose.ServiceConfig) scalewaycompose.ServiceCon
 	return args
 }
 
-// toScalewayModels converts the top-level Compose models, with the seeds the CD
-// established from stack state.
+// toScalewayModels converts the top-level Compose models.
 func toScalewayModels(models compose.Models) scalewaycompose.ModelConfigMap {
 	out := make(scalewaycompose.ModelConfigMap, len(models))
 	for name, m := range models {
-		args := scalewaycompose.ModelConfigArgs{Model: pulumi.String(m.Model)}
-		if seed := m.Seed; seed != nil {
-			args.Seed = scalewaycompose.ModelTargetArgs{
-				Model:    pulumi.String(seed.Model),
-				Version:  pulumi.String(seed.Version),
-				Location: pulumi.String(seed.Location),
-				Format:   pulumi.String(seed.Format),
-				Sku:      pulumi.String(seed.Sku),
-				Existed:  pulumi.Bool(seed.Existed),
-			}
-		}
-		out[name] = args
+		out[name] = scalewaycompose.ModelConfigArgs{Model: pulumi.String(m.Model)}
 	}
 	return out
 }

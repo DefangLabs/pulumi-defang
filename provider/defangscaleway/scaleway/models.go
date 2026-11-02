@@ -61,7 +61,7 @@ func PrepareModels(
 		if err != nil {
 			return nil, fmt.Errorf("model %q: %w", name, err)
 		}
-		sel, err := common.RegisterModelSelection(ctx, "defang-scaleway", name, plan, region, nil, model.Seed,
+		sel, err := common.RegisterModelSelection(ctx, "defang-scaleway", name, plan, region, nil, nil,
 			pluginID, opts...)
 		if err != nil {
 			return nil, err
