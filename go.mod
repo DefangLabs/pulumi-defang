@@ -45,10 +45,10 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.29.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.29.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
-	github.com/pulumi/pulumi-go-provider v1.7.0
+	github.com/pulumi/pulumi-go-provider v1.8.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.4
-	github.com/pulumi/pulumi/pkg/v3 v3.270.0
-	github.com/pulumi/pulumi/sdk/v3 v3.271.0
+	github.com/pulumi/pulumi/pkg/v3 v3.272.0
+	github.com/pulumi/pulumi/sdk/v3 v3.272.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.306.0
 	google.golang.org/grpc v1.84.0
@@ -152,7 +152,7 @@ require (
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
-	github.com/pulumi/pulumi-cloud-sdk/go v1.20260924.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20261023.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumiverse/pulumi-scaleway/sdk v1.58.0
@@ -206,7 +206,7 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	lukechampine.com/frand v1.5.1 // indirect
 )
