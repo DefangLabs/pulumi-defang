@@ -17,12 +17,12 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.2
 	github.com/DefangLabs/defang/src v0.0.0-20261027003503-1cc7519e3ad7
-	github.com/aws/aws-sdk-go-v2 v1.47.3
+	github.com/aws/aws-sdk-go-v2 v1.47.5
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.5
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.66.5
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0
-	github.com/aws/smithy-go v1.28.5
+	github.com/aws/smithy-go v1.28.7
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.51.1
