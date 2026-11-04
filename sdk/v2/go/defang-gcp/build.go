@@ -92,6 +92,12 @@ func (BuildState) ElementType() reflect.Type {
 	return reflect.TypeOf((*buildState)(nil)).Elem()
 }
 
+// BuildExists checks whether an existing Build resource with the given ID exists.
+func BuildExists(ctx *pulumi.Context,
+	id pulumi.StringInput, state *BuildState, opts ...pulumi.ResourceOption) pulumi.BoolOutput {
+	return ctx.ExistsResource("defang-gcp:index:Build", id, state, "", opts...)
+}
+
 type buildArgs struct {
 	DiskSizeGb     *int              `pulumi:"diskSizeGb"`
 	Images         []string          `pulumi:"images"`
