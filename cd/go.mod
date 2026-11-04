@@ -22,10 +22,10 @@ require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
 	github.com/aws/aws-sdk-go-v2/config v1.33.12
-	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.5
+	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/pulumi/pulumi-aws/sdk/v7 v7.51.1
+	github.com/pulumi/pulumi-aws/sdk/v7 v7.52.1
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.29.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.29.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.29.0
@@ -181,11 +181,11 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.29.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.29.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.29.0 // indirect
-	github.com/pulumi/pulumi-cloud-sdk/go v1.20260924.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20261023.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.4 // indirect
-	github.com/pulumiverse/pulumi-scaleway/sdk v1.58.0
+	github.com/pulumiverse/pulumi-scaleway/sdk v1.60.0
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/ross96D/cancelreader v0.2.6 // indirect
@@ -234,9 +234,9 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	google.golang.org/api v0.306.0 // indirect
+	google.golang.org/api v0.309.0 // indirect
 	google.golang.org/genproto v0.0.0-20260715232425-e75dac1f907d // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
