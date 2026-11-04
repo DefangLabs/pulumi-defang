@@ -6,7 +6,7 @@ replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 
 require (
 	cloud.google.com/go/cloudbuild v1.35.0
-	cloud.google.com/go/longrunning v1.3.0
+	cloud.google.com/go/longrunning v1.4.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3 v3.1.0
