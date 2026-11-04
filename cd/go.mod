@@ -185,7 +185,7 @@ require (
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.4 // indirect
-	github.com/pulumiverse/pulumi-scaleway/sdk v1.58.0
+	github.com/pulumiverse/pulumi-scaleway/sdk v1.60.0
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/ross96D/cancelreader v0.2.6 // indirect
