@@ -22,7 +22,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.5
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.66.5
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0
-	github.com/aws/smithy-go v1.28.5
+	github.com/aws/smithy-go v1.28.7
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.51.1
