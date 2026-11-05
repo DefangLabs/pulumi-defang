@@ -29,8 +29,8 @@ const modelSelectionTypeSuffix = ":index:ModelSelection"
 
 // SeedsFromState establishes, for every Compose model in composeYAML, the
 // model it is currently deployed with according to the stack's checkpoint (the
-// deployment object of `pulumi stack export`). The CD caller bypasses this
-// helper for Scaleway because recipe-based selection has not shipped there.
+// deployment object of `pulumi stack export`). Scaleway reads no seeds:
+// recipe-based selection has not shipped there, so there is nothing to migrate.
 // For the other clouds, a persisted selection needs no seed; the first upgrade
 // of an existing deployment uses one so an embedding model is never replaced
 // silently. Existed without Model means the service exists but its target could
