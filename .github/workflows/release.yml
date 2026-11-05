@@ -154,8 +154,20 @@ jobs:
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
 
+      - name: Fetch the Pulumi CLI pin from the release commit
+        # main, checked out above, may not have this release's .pulumi.version.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          ref: ${{ github.sha }}
+          path: .pulumi-pin
+          sparse-checkout: .pulumi.version
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version-file: .pulumi-pin/.pulumi.version
 
       - name: Regenerate examples
         run: make examples
