@@ -147,24 +147,6 @@ func TestSeedsFromState(t *testing.T) {
 			Model: "text-embedding-3-small", Version: "1", Format: "OpenAI", Sku: "Standard", Existed: true,
 		}, seeds["embed"])
 	})
-
-	t.Run("scaleway-consumer-env", func(t *testing.T) {
-		app := urnPrefix + "defang-scaleway:index:Project$defang-scaleway:index:Service::app"
-		state := checkpoint(t,
-			map[string]any{"urn": app, "type": "defang-scaleway:index:Service"},
-			map[string]any{
-				"urn": app + "$scaleway:containers/container:Container::app", "parent": app,
-				"type": "scaleway:containers/container:Container",
-				"inputs": map[string]any{"environmentVariables": map[string]any{
-					"EMBED_MODEL_NAME": "bge-multilingual-gemma2", "CHAT_MODEL": "qwen3-235b-a22b-instruct-2507",
-				}},
-			},
-		)
-		seeds, err := SeedsFromState(state, modelPayload(t, "scaleway.yaml"), "modeldemo")
-		require.NoError(t, err)
-		assert.Equal(t, &compose.ModelTarget{Model: "bge-multilingual-gemma2", Existed: true}, seeds["embed"])
-		assert.Equal(t, &compose.ModelTarget{Model: "qwen3-235b-a22b-instruct-2507", Existed: true}, seeds["chat"])
-	})
 }
 
 func TestSeedsFromStateWithoutTarget(t *testing.T) {

@@ -29,11 +29,12 @@ const modelSelectionTypeSuffix = ":index:ModelSelection"
 
 // SeedsFromState establishes, for every Compose model in composeYAML, the
 // model it is currently deployed with according to the stack's checkpoint (the
-// deployment object of `pulumi stack export`). A model whose selection is
-// already persisted needs no seed. The first upgrade of an existing
-// deployment uses the seed so an embedding model is never replaced silently;
-// Existed without Model means the service exists but its target could not be
-// established, which stops an embedding migration.
+// deployment object of `pulumi stack export`). Scaleway reads no seeds:
+// recipe-based selection has not shipped there, so there is nothing to migrate.
+// For the other clouds, a persisted selection needs no seed; the first upgrade
+// of an existing deployment uses one so an embedding model is never replaced
+// silently. Existed without Model means the service exists but its target could
+// not be established, which stops an embedding migration.
 func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (ModelSeeds, error) {
 	if len(deployment) == 0 {
 		return ModelSeeds{}, nil
@@ -84,11 +85,6 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 			} else {
 				seedFromGatewayCommand(seed, r.Inputs)
 			}
-		}
-		if !seed.Existed {
-			// Direct inference (Scaleway): no model service was ever deployed;
-			// an older CLI wrote the model into the consumers' environment.
-			seedFromConsumers(seed, name, project.Services, state.Resources, under)
 		}
 		if seed.Existed {
 			seeds[name] = seed
@@ -185,41 +181,6 @@ func gatewayTarget(target string) string {
 		}
 	}
 	return target
-}
-
-// seedFromConsumers reads the model an older CLI injected into the
-// containers of the services bound to model. Only the variable each binding
-// names is read.
-func seedFromConsumers(
-	seed *compose.ModelTarget, model string, services compose.Services, resources []stateResource,
-	under func(*stateResource, string) bool,
-) {
-	values := map[string]bool{}
-	for consumer, svc := range services {
-		binding := svc.Models[model]
-		if binding == nil || binding.ModelVar == "" {
-			continue
-		}
-		for i := range resources {
-			r := &resources[i]
-			if r.Type != "scaleway:containers/container:Container" || !under(r, consumer) {
-				continue
-			}
-			env, _ := r.Inputs["environmentVariables"].(map[string]any)
-			if v, ok := env[binding.ModelVar].(string); ok && v != "" {
-				values[v] = true
-			}
-		}
-	}
-	if len(values) == 0 {
-		return
-	}
-	seed.Existed = true
-	if len(values) == 1 {
-		for v := range values {
-			seed.Model = v
-		}
-	}
 }
 
 // applySeeds attaches each seed to its Compose model.
