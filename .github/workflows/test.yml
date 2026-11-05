@@ -40,6 +40,8 @@ jobs:
 
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version-file: .pulumi.version
 
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
@@ -114,6 +116,9 @@ jobs:
     #     derivable artifacts, so it doesn't need to re-trigger CI (and won't,
     #     since pushes via GITHUB_TOKEN don't fire workflows by design).
     #   Fork PRs and direct pushes (e.g. admin to main): fail with a clear diff.
+    # gen-sdk output depends on the Pulumi CLI version, and the generated code
+    # must compile against the pulumi/sdk/v3 in go.mod, so .pulumi.version pins
+    # the CLI. Bump the two together.
     name: Regenerate schema and Go SDK
     runs-on: ubuntu-latest
     permissions:
@@ -135,6 +140,8 @@ jobs:
 
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version-file: .pulumi.version
 
       - run: make provider schema go_sdk
 

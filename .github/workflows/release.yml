@@ -156,6 +156,8 @@ jobs:
 
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version-file: .pulumi.version
 
       - name: Regenerate examples
         run: make examples
