@@ -80,6 +80,12 @@ func (ModelSelectionState) ElementType() reflect.Type {
 	return reflect.TypeOf((*modelSelectionState)(nil)).Elem()
 }
 
+// ModelSelectionExists checks whether an existing ModelSelection resource with the given ID exists.
+func ModelSelectionExists(ctx *pulumi.Context,
+	id pulumi.StringInput, state *ModelSelectionState, opts ...pulumi.ResourceOption) pulumi.BoolOutput {
+	return ctx.ExistsResource("defang-scaleway:index:ModelSelection", id, state, "", opts...)
+}
+
 type modelSelectionArgs struct {
 	Candidates []compose.ModelCandidate `pulumi:"candidates"`
 	Region     *string                  `pulumi:"region"`
