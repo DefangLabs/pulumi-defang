@@ -90,6 +90,12 @@ func (BuildState) ElementType() reflect.Type {
 	return reflect.TypeOf((*buildState)(nil)).Elem()
 }
 
+// BuildExists checks whether an existing Build resource with the given ID exists.
+func BuildExists(ctx *pulumi.Context,
+	id pulumi.StringInput, state *BuildState, opts ...pulumi.ResourceOption) pulumi.BoolOutput {
+	return ctx.ExistsResource("defang-scaleway:index:Build", id, state, "", opts...)
+}
+
 type buildArgs struct {
 	Args         map[string]string `pulumi:"args"`
 	Destination  string            `pulumi:"destination"`
