@@ -30,7 +30,7 @@ require (
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.29.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.29.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.29.0
-	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
+	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.2
 	github.com/pulumi/pulumi/sdk/v3 v3.273.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -75,7 +75,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.103.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 // indirect

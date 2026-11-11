@@ -112,8 +112,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 h1:WOp5De9iWdEHDPh2Kb0tBP3vGBm/
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8/go.mod h1:z8W8YgfhbWl62XqcTtK+CxPrE+iHGRVUOtrrbIOp7ZY=
 github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.7 h1:YuzS/7LMfm5Y6t6IUwAjufV8KJn44g1U7psqB+B0HZo=
 github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.7/go.mod h1:fWetWaG0uZ1/MCuu8NEe5ExL+KmUXa15qvfNd7QZXt4=
-github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0 h1:vAy42FJg9NS2pV7ok2vqdWHXV3gnmnjJw23+mMbQ4hI=
-github.com/aws/aws-sdk-go-v2/service/ecs v1.102.0/go.mod h1:6SgP8Uxeur6i0CsNeRBZQspNH5R8atwoG1+To27rkmQ=
+github.com/aws/aws-sdk-go-v2/service/ecs v1.103.0 h1:zUdXVAJyeTVcxCuCog8kawDq4FT900KMpeDWtj+JzTI=
+github.com/aws/aws-sdk-go-v2/service/ecs v1.103.0/go.mod h1:jjuJTYCyu/HPuJ0/SccHi+0I4VJFWxTPVxU7HpuZdPw=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 h1:MCIR6iZaCKO4UE0hUvoWWLI6JVjppopV64JfAJaMjng=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23/go.mod h1:pphWFS+z0MmIPivj8c/6bATd1Z+Av7Ust75DPdEFsPA=
 github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.7 h1:CwvFlKw0uUScfgOMflXSRZa+ayXgOf6wk7lhyMemQYU=
@@ -413,8 +413,8 @@ github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 h1:NxCXxRvzhUJP9
 github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3/go.mod h1:jw9NcyRXjv5V2HHHJlqUBdXFCFiLfZoCChWEn38LR2A=
 github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 h1:rik9L2SIpsoDenY51MkogR6GWgu/0Sy/XmyQmKWNUqU=
 github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8/go.mod h1:eph7BPNPkEIIK882/Ll4dbeHl5wZEc/UvTcUW0CK1UY=
-github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0 h1:52GsX1s6UymbSxCge2X/7uKvplAKlm4608FJK0+W9PM=
-github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0/go.mod h1:QLjjZ26lmpa1HpUqSi1ykMm7ops+6nXF9HF3SaL7w1Y=
+github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.2 h1:GoggZN6TNHqih8A+3B0k0wsYBAIj1HqV8wfxBEnn128=
+github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.2/go.mod h1:TlpXRjL1x0YikLFevF+HsK+9JESsNtfJq0+EctDDiTk=
 github.com/pulumi/pulumi-random/sdk/v4 v4.21.4 h1:j+8/B+itNUHaOF7FNcdpV6qXGAg58WSzPo+RBYnUv8w=
 github.com/pulumi/pulumi-random/sdk/v4 v4.21.4/go.mod h1:SQiqL8U7t62k2vdQVI9RajYzAg2OzBIW7Ta9mEKfRwM=
 github.com/pulumi/pulumi/sdk/v3 v3.273.0 h1:sPgrrkrLBETzvEp381czqegfP2bLDReHxr3phogB1/Y=
