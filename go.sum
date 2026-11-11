@@ -424,8 +424,8 @@ github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.30.0 h1:2Sf2kdU0YErYw6
 github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.30.0/go.mod h1:Yx9X+4SGRMZj8KzVr0vevsOx6e+eXGPZpXVwfDi61dA=
 github.com/pulumi/pulumi-azure-native-sdk/v3 v3.30.0 h1:2UD+rW9/ddm+GVdF/dUw2ZswaSPJ99mEGyyDqgVHVKs=
 github.com/pulumi/pulumi-azure-native-sdk/v3 v3.30.0/go.mod h1:uama5sNC6cETJlZo8yeAQYoNl/LXe5LifboTthg9+Wo=
-github.com/pulumi/pulumi-cloud-sdk/go v1.20261023.0 h1:ktztW03U2HxEzh2/phKEcNr2B/3wOvcy9zlUdm0aMYs=
-github.com/pulumi/pulumi-cloud-sdk/go v1.20261023.0/go.mod h1:NPA79X6Wmyr5zNKd+N+RiVJN8duwIrRmIaed8HCL9EM=
+github.com/pulumi/pulumi-cloud-sdk/go v1.20261027.1310 h1:nYCOZXdNoM3f6uXZb8jypR82LRZSZizdvEkjh45FCZw=
+github.com/pulumi/pulumi-cloud-sdk/go v1.20261027.1310/go.mod h1:NPA79X6Wmyr5zNKd+N+RiVJN8duwIrRmIaed8HCL9EM=
 github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 h1:NxCXxRvzhUJP9dIvlpNlZKt/A3NHu3i9pC5XO+i8bR0=
 github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3/go.mod h1:jw9NcyRXjv5V2HHHJlqUBdXFCFiLfZoCChWEn38LR2A=
 github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 h1:rik9L2SIpsoDenY51MkogR6GWgu/0Sy/XmyQmKWNUqU=
@@ -438,8 +438,8 @@ github.com/pulumi/pulumi-random/sdk/v4 v4.21.4 h1:j+8/B+itNUHaOF7FNcdpV6qXGAg58W
 github.com/pulumi/pulumi-random/sdk/v4 v4.21.4/go.mod h1:SQiqL8U7t62k2vdQVI9RajYzAg2OzBIW7Ta9mEKfRwM=
 github.com/pulumi/pulumi/pkg/v3 v3.272.0 h1:XFglY9nrbjc7m9jdzLf38JFUOkdGbF9EyIX+HKGiKm4=
 github.com/pulumi/pulumi/pkg/v3 v3.272.0/go.mod h1:P2Y8kr5WQkmYWnTIZs0qRQI+tg+q/VwCHIRmOW0NkLc=
-github.com/pulumi/pulumi/sdk/v3 v3.273.0 h1:sPgrrkrLBETzvEp381czqegfP2bLDReHxr3phogB1/Y=
-github.com/pulumi/pulumi/sdk/v3 v3.273.0/go.mod h1:hAA51YEkaI0O0yYBqcVCfaz7F7Mv3uyAmdjXsxnYa6A=
+github.com/pulumi/pulumi/sdk/v3 v3.274.0 h1:fmXISTS5nm4xhxjUGkDEvIAVT0T1xdiVBGo6rXFJ2o8=
+github.com/pulumi/pulumi/sdk/v3 v3.274.0/go.mod h1:OOGpSXKEdPGkwN/iXJf7x40KRLbjINKP5E3OiR0dtes=
 github.com/pulumiverse/pulumi-scaleway/sdk v1.60.0 h1:LACKtCjKdi5FVwsvtqz0RIKftNAp9+Onyy1v4U9LrFI=
 github.com/pulumiverse/pulumi-scaleway/sdk v1.60.0/go.mod h1:N+yu2TbxzWDECYs6bL1UnFtirRqQp9yYTChEWjB0bt4=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=

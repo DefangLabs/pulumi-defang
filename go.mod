@@ -48,7 +48,7 @@ require (
 	github.com/pulumi/pulumi-go-provider v1.8.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.4
 	github.com/pulumi/pulumi/pkg/v3 v3.272.0
-	github.com/pulumi/pulumi/sdk/v3 v3.273.0
+	github.com/pulumi/pulumi/sdk/v3 v3.274.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.309.0
 	google.golang.org/grpc v1.85.0
@@ -152,7 +152,7 @@ require (
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
-	github.com/pulumi/pulumi-cloud-sdk/go v1.20261023.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20261027.1310 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumiverse/pulumi-scaleway/sdk v1.60.0
