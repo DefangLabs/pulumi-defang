@@ -25,6 +25,8 @@ jobs:
 
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version-file: .pulumi.version
 
       - name: Check README examples are in sync
         run: scripts/check-readme-examples.sh
@@ -93,6 +95,7 @@ jobs:
   regen:
     # Regeneration must not push a new PR head after the other checks have
     # started: the required gate must validate the commit being merged.
+    # Use the CLI version pinned alongside the proposed merge's SDK.
     name: Regenerate schema and Go SDK
     runs-on: ubuntu-latest
     permissions:
@@ -104,6 +107,8 @@ jobs:
         uses: ./.github/actions/setup-go
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
+        with:
+          pulumi-version-file: .pulumi.version
       - run: make provider schema go_sdk
       - name: Check for generated changes
         run: |

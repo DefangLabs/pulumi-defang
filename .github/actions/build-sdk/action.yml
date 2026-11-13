@@ -17,6 +17,8 @@ runs:
 
     - name: Install Pulumi CLI
       uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+      with:
+        pulumi-version-file: .pulumi.version
 
     - if: ${{ inputs.language == 'nodejs' }}
       name: Setup Node
