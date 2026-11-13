@@ -4,21 +4,6 @@ on:
     branches:
       - main
   pull_request:
-    paths:
-      - "cd/**"
-      - "provider/**"
-      - "sdk/v2/**"
-      - "tests/**"
-      - "examples/*-yaml/**"
-      - "examples/config-interpolation/**"
-      - "examples/multi-cloud/**"
-      - "go.mod"
-      - "go.sum"
-      - "Makefile"
-      - "Dockerfile"
-      - ".github/actions/build-sdk/**"
-      - ".github/actions/setup-go/**"
-      - ".github/workflows/test.yml"
 
 env:
   IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/cd
@@ -69,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ${{ fromJson(github.event_name == 'pull_request' && '["go"]' || '["nodejs","python","dotnet","go"]') }}
+        language: [nodejs, python, dotnet, go]
         provider:
           - aws
           - gcp
@@ -108,72 +93,31 @@ jobs:
     #     fi
 
   regen:
-    # Keep committed schema and Go SDK in sync with source. Schemas are
-    # deterministic (version-less, see defang-*.mk), so any diff is a real
-    # source change that needs regenerating.
-    #   Same-repo PRs: auto-commit the regen back to the branch. The original
-    #     run already validated the source; the auto-commit only touches
-    #     derivable artifacts, so it doesn't need to re-trigger CI (and won't,
-    #     since pushes via GITHUB_TOKEN don't fire workflows by design).
-    #   Fork PRs and direct pushes (e.g. admin to main): fail with a clear diff.
-    # gen-sdk output depends on the Pulumi CLI version, and the generated code
-    # must compile against the pulumi/sdk/v3 in go.mod, so .pulumi.version pins
-    # the CLI. Bump the two together.
+    # Regeneration must not push a new PR head after the other checks have
+    # started: the required gate must validate the commit being merged.
+    # Use the CLI version pinned alongside the proposed merge's SDK.
     name: Regenerate schema and Go SDK
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Checkout PR branch or pushed ref
+      - name: Checkout proposed merge
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-        with:
-          # Same-repo PRs check out the branch (needed to auto-commit); fork
-          # PRs check out the head SHA — the branch only exists on the fork,
-          # but GitHub mirrors PR head commits into the base repo.
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || github.event.pull_request.head.sha || github.ref }}
-          # Only same-repo PRs push (the auto-commit); fork PRs and direct
-          # pushes never do, so don't leave the token in .git/config there.
-          persist-credentials: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
-
-      - name: Fetch the Pulumi CLI pin from the workflow's commit
-        # The branch's own pin matches its go.mod, so it wins; only a PR head
-        # that predates .pulumi.version falls back to the workflow's commit.
-        if: hashFiles('.pulumi.version') == ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-        with:
-          ref: ${{ github.sha }}
-          path: .pulumi-pin
-          sparse-checkout: .pulumi.version
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
         with:
-          pulumi-version-file: ${{ hashFiles('.pulumi.version') != '' && '.pulumi.version' || '.pulumi-pin/.pulumi.version' }}
-
+          pulumi-version-file: .pulumi.version
       - run: make provider schema go_sdk
-
-      - name: Commit and push (same-repo PR) or fail on drift
+      - name: Check for generated changes
         run: |
-          git add provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/
-          if git diff --cached --quiet; then
-            echo "No regenerated changes."
-            exit 0
+          if ! git diff --exit-code -- provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/; then
+            echo "::error::Schema or Go SDK is out of date; regenerate and commit it."
+            exit 1
           fi
-          # Auto-commit only on same-repo PRs; fork PRs and push events fail.
-          if [ "${{ github.event_name }}" = "pull_request" ] && \
-             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: regenerate schema and Go SDK"
-            git push
-          else
-            >&2 echo "error: schema or Go SDK is out of date. Run 'make schema go_sdk' locally and commit the result."
-            git diff --cached --stat
+          if [ -n "$(git ls-files --others --exclude-standard -- sdk/v2/)" ]; then
+            echo "::error::Regeneration created untracked SDK files; commit them."
             exit 1
           fi
 
@@ -209,8 +153,8 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        # Fork-PR tokens can't write org packages; forks build without pushing.
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        # Fork and Dependabot PR tokens cannot write packages; build without pushing.
+        if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
@@ -234,7 +178,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: . # build context must be repo root to include generated Go SDK
-          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          push: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
           target: all
           build-args: BINARIES=prebuilt
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
@@ -255,3 +199,21 @@ jobs:
           cd_image_azure: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           # cd_image_cb: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           # cd_image_gcp: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+
+  ci:
+    name: ci
+    if: always() && github.event_name == 'pull_request'
+    needs: [test, build_sdks, regen, build_image]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require provider tests, SDK builds, regeneration and image build
+        env:
+          TEST: ${{ needs.test.result }}
+          SDKS: ${{ needs.build_sdks.result }}
+          REGEN: ${{ needs.regen.result }}
+          IMAGE: ${{ needs.build_image.result }}
+        run: |
+          for result in "$TEST" "$SDKS" "$REGEN" "$IMAGE"; do
+            test "$result" = success || exit 1
+          done
