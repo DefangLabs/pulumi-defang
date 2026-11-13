@@ -7,7 +7,7 @@ replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 require (
 	cloud.google.com/go/cloudbuild v1.35.0
 	cloud.google.com/go/longrunning v1.4.0
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.24.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3 v3.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
@@ -18,40 +18,40 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.2
 	github.com/DefangLabs/defang/src v0.0.0-20261027003503-1cc7519e3ad7
 	github.com/aws/aws-sdk-go-v2 v1.47.5
-	github.com/aws/aws-sdk-go-v2/config v1.33.12
-	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.7
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.67.1
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.103.0
+	github.com/aws/aws-sdk-go-v2/config v1.33.13
+	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.8
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.67.2
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.103.1
 	github.com/aws/smithy-go v1.28.7
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/compose-spec/compose-go/v2 v2.16.2
-	github.com/pulumi/pulumi-aws/sdk/v7 v7.52.1
+	github.com/pulumi/pulumi-aws/sdk/v7 v7.53.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.11.0
-	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/monitor/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.29.0
-	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.29.0
-	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.0
+	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/containerregistry/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/dbforpostgresql/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/dns/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/keyvault/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/managedidentity/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/monitor/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/network/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/privatedns/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/redisenterprise/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/resources/v3 v3.30.0
+	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.30.0
+	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.2
 	github.com/pulumi/pulumi-go-provider v1.8.0
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.4
-	github.com/pulumi/pulumi/pkg/v3 v3.272.0
-	github.com/pulumi/pulumi/sdk/v3 v3.273.0
+	github.com/pulumi/pulumi/pkg/v3 v3.274.0
+	github.com/pulumi/pulumi/sdk/v3 v3.274.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.309.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -70,16 +70,16 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.12 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.13 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.12.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.39.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.12.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.39.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -119,7 +119,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.2 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
 	github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -152,7 +152,7 @@ require (
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/inflector v0.1.1 // indirect
-	github.com/pulumi/pulumi-cloud-sdk/go v1.20261023.0 // indirect
+	github.com/pulumi/pulumi-cloud-sdk/go v1.20261027.1310 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumiverse/pulumi-scaleway/sdk v1.60.0
@@ -176,8 +176,8 @@ require (
 	github.com/zclconf/go-cty v1.16.3 // indirect
 	go.mongodb.org/mongo-driver v1.17.10 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.69.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.69.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.70.0 // indirect
+	go.opentelemetry.io/collector/pdata v1.70.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0 // indirect
@@ -194,7 +194,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/mod v0.42.0 // indirect
@@ -206,7 +206,7 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
 	lukechampine.com/frand v1.5.1 // indirect
 )
