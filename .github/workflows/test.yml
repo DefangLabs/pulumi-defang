@@ -91,55 +91,28 @@ jobs:
     #     fi
 
   regen:
-    # Keep committed schema and Go SDK in sync with source. Schemas are
-    # deterministic (version-less, see defang-*.mk), so any diff is a real
-    # source change that needs regenerating.
-    #   Same-repo PRs: auto-commit the regen back to the branch. The original
-    #     run already validated the source; the auto-commit only touches
-    #     derivable artifacts, so it doesn't need to re-trigger CI (and won't,
-    #     since pushes via GITHUB_TOKEN don't fire workflows by design).
-    #   Fork PRs and direct pushes (e.g. admin to main): fail with a clear diff.
+    # Regeneration must not push a new PR head after the other checks have
+    # started: the required gate must validate the commit being merged.
     name: Regenerate schema and Go SDK
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Checkout PR branch or pushed ref
+      - name: Checkout proposed merge
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-        with:
-          # Same-repo PRs check out the branch (needed to auto-commit); fork
-          # PRs check out the head SHA — the branch only exists on the fork,
-          # but GitHub mirrors PR head commits into the base repo.
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref || github.event.pull_request.head.sha || github.ref }}
-          # Only same-repo PRs push (the auto-commit); fork PRs and direct
-          # pushes never do, so don't leave the token in .git/config there.
-          persist-credentials: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-
       - name: Setup Go build environment
         uses: ./.github/actions/setup-go
-
       - name: Install Pulumi CLI
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7.0.0
-
       - run: make provider schema go_sdk
-
-      - name: Commit and push (same-repo PR) or fail on drift
+      - name: Check for generated changes
         run: |
-          git add provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/
-          if git diff --cached --quiet; then
-            echo "No regenerated changes."
-            exit 0
+          if ! git diff --exit-code -- provider/cmd/pulumi-resource-defang-*/schema.json sdk/v2/; then
+            echo "::error::Schema or Go SDK is out of date; regenerate and commit it."
+            exit 1
           fi
-          # Auto-commit only on same-repo PRs; fork PRs and push events fail.
-          if [ "${{ github.event_name }}" = "pull_request" ] && \
-             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: regenerate schema and Go SDK"
-            git push
-          else
-            >&2 echo "error: schema or Go SDK is out of date. Run 'make schema go_sdk' locally and commit the result."
-            git diff --cached --stat
+          if [ -n "$(git ls-files --others --exclude-standard -- sdk/v2/)" ]; then
+            echo "::error::Regeneration created untracked SDK files; commit them."
             exit 1
           fi
 
