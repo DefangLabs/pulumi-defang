@@ -237,6 +237,7 @@ Per-provider build logic is in `defang-{aws,gcp,azure}.mk`.
 
 - `README.md`'s code blocks are regenerated from `examples/*/` by `scripts/check-readme-examples.sh --update` (run via `make README.md`). Don't hand-edit the embedded snippets — edit the example files and regenerate.
 - `sdk/v2/**` is generated from provider schemas (see SDK Generation Flow). Treat it as build output that must be committed alongside the source change that produced it.
+- CI generates the SDKs with the Pulumi CLI version in `.pulumi.version`. The generated code must compile against `github.com/pulumi/pulumi/sdk/v3` in `go.mod`, so bump the two together. Pulumi CLI 3.274 emits `ctx.ExistsResource(..., pulumi.StringInput, ...)`, which SDK 3.273 and earlier don't accept.
 
 ### Tooling
 
