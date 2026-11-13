@@ -84,7 +84,7 @@ jobs:
           cache: restore
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           distribution: goreleaser # either 'goreleaser' (default) or 'goreleaser-pro'
           args: -p 2 release
@@ -108,13 +108,13 @@ jobs:
       - name: Compress SDK folder
         run: tar -zcf sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz -C sdk/${{ matrix.language }}/defang-${{ matrix.provider }} .
       - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.language }}-${{ matrix.provider }}-sdk.tar.gz
           path: ${{ github.workspace}}/sdk/${{ matrix.language }}-${{ matrix.provider }}.tar.gz
       - if: ${{ matrix.language == 'python' && env.PUBLISH_PYPI == 'true' }}
         name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: ${{github.workspace}}/sdk/python/defang-${{ matrix.provider }}/bin/dist
       - if: ${{ matrix.language == 'nodejs' && env.PUBLISH_NPM == 'true' }}
@@ -229,7 +229,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -272,7 +272,7 @@ jobs:
 
       - name: Log in to Scaleway Container Registry
         if: matrix.clouds == 'scaleway' || matrix.clouds == 'all'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: rg.fr-par.scw.cloud
           username: nologin
