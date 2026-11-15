@@ -178,7 +178,12 @@ COPY --link --from=bin-azure /out/pulumi-resource-defang-azure /tmp/
 RUN pulumi plugin install resource defang-azure ${PROVIDER_VERSION} -f /tmp/pulumi-resource-defang-azure
 
 FROM plugins-base AS plugins-scaleway-upstream
-RUN pulumi plugin install resource scaleway $(grep 'pulumiverse/pulumi-scaleway/sdk' go.mod | awk '{print $2}') --server github://api.github.com/pulumiverse
+# This plugin is downloaded from the GitHub API, whose anonymous rate limit CI
+# runners share. The optional github_token build secret authenticates the
+# download; builds without it still work, unauthenticated.
+RUN --mount=type=secret,id=github_token \
+    if [ -s /run/secrets/github_token ]; then export GITHUB_TOKEN="$(cat /run/secrets/github_token)"; fi && \
+    pulumi plugin install resource scaleway $(grep 'pulumiverse/pulumi-scaleway/sdk' go.mod | awk '{print $2}') --server github://api.github.com/pulumiverse
 
 FROM plugins-base AS plugins-scaleway-defang
 ARG PROVIDER_VERSION
