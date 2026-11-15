@@ -161,11 +161,11 @@ func seedFromFoundryDeployment(seed *compose.ModelTarget, r *stateResource) {
 }
 
 // seedFromGatewayCommand finds the LiteLLM `--model <target>` argument of a
-// gateway, wherever the cloud resource keeps it: an ECS task definition's
-// container command (a JSON string), Cloud Run container args, or the docker
-// command line of a Compute Engine instance template's cloud-init. Environment
-// values are never read as commands. GCP's VERTEXAI_LOCATION comes from the
-// same command line or from a Cloud Run env entry.
+// gateway, wherever the cloud resource keeps it: an ECS container's `command`
+// (inside a JSON string), Cloud Run container `args`, or the docker command
+// line of a Compute Engine instance template's cloud-init. Environment values
+// and health checks are never read as commands. GCP's VERTEXAI_LOCATION comes
+// from the same command line or from a Cloud Run env entry.
 func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 	var walk func(v any)
 	walk = func(v any) {
@@ -175,19 +175,20 @@ func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 		switch t := v.(type) {
 		case map[string]any:
 			for key, child := range t {
-				if key == "environment" || key == "env" || key == "envs" {
+				lower := strings.ToLower(key)
+				switch {
+				case lower == "environment" || lower == "env" || lower == "envs":
 					walkEnv(seed, child)
-					continue
+				case strings.Contains(lower, "health") || strings.Contains(lower, "probe"):
+					// a health check's command is not the gateway's
+				case lower == "command" || lower == "args":
+					readModelArg(seed, child)
+				default:
+					walk(child)
 				}
-				walk(child)
 			}
 		case []any:
-			for i, child := range t {
-				if s, _ := child.(string); s == "--model" && i+1 < len(t) {
-					if target, ok := t[i+1].(string); ok && seed.Model == "" {
-						seed.Model = gatewayTarget(target)
-					}
-				}
+			for _, child := range t {
 				walk(child)
 			}
 		case string:
@@ -214,6 +215,18 @@ func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 		}
 	}
 	walk(inputs)
+}
+
+// readModelArg reads the target after `--model` in a container's command or
+// args list.
+func readModelArg(seed *compose.ModelTarget, command any) {
+	args, _ := command.([]any)
+	for i, arg := range args {
+		if s, _ := arg.(string); s == "--model" && i+1 < len(args) && seed.Model == "" {
+			seed.Model, _ = args[i+1].(string)
+			seed.Model = gatewayTarget(seed.Model)
+		}
+	}
 }
 
 // walkEnv reads only VERTEXAI_LOCATION from an environment list of

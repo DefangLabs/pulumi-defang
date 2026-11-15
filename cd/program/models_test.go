@@ -178,7 +178,7 @@ func TestSeedsFromStateReadsOnlyTheGateway(t *testing.T) {
 		assert.NotContains(t, seeds, "modeldemo")
 	})
 
-	t.Run("environment-is-not-a-command", func(t *testing.T) {
+	t.Run("environment-and-health-check-are-not-the-command", func(t *testing.T) {
 		svc := urnPrefix + "defang-aws:index:Service::chat"
 		containerDefs, err := json.Marshal([]map[string]any{{
 			"name": "chat",
@@ -186,6 +186,9 @@ func TestSeedsFromStateReadsOnlyTheGateway(t *testing.T) {
 				{"name": "EXAMPLE_ARGS", "value": "docker run x --model bedrock/amazon.titan-embed-text-v1"},
 			},
 			"command": []string{"--drop_params", "--model", "bedrock/amazon.titan-embed-text-v2:0"},
+			"healthCheck": map[string]any{
+				"command": []string{"CMD", "probe", "--model", "bedrock/amazon.titan-embed-text-v1"},
+			},
 		}})
 		require.NoError(t, err)
 		state := checkpoint(t,
