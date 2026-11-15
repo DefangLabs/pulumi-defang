@@ -315,6 +315,8 @@ jobs:
           build-args: |
             CD_VERSION=${{ github.ref_name }}
             PROVIDER_VERSION=${{ github.ref_name }}
+          # Authenticates the Scaleway plugin download (see the Dockerfile).
+          secrets: github_token=${{ github.token }}
           tags: ${{ env.IMAGE_TAGS }}
           cache-from: type=gha,scope=${{ github.workflow }}-amd64
           cache-to: type=gha,scope=${{ github.workflow }}-amd64,mode=max

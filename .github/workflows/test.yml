@@ -181,6 +181,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
           target: all
           build-args: BINARIES=prebuilt
+          # Authenticates the Scaleway plugin download (see the Dockerfile).
+          secrets: github_token=${{ github.token }}
           tags: ${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
           # No layer cache: with the binaries prebuilt, every remaining step is
           # a 10-15s download, while exporting the cache took 1-4 minutes and
