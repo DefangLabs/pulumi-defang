@@ -111,6 +111,7 @@ func buildProject(
 		return nil, fmt.Errorf("failed to build GCP infrastructure: %w", err)
 	}
 	config.Etag = args.Etag
+	config.Networks = args.Networks
 
 	if err := providergcp.EnableGcpAPIs(ctx, childOpts...); err != nil {
 		return nil, err

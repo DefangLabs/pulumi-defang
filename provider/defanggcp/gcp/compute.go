@@ -98,9 +98,12 @@ func CreateComputeEngine(
 	// the version they read exists and their identity can access it.
 	templateOpts := computeTemplateOptions(parentOpt, args.PolicyDeps, secretMembers,
 		derivedSecretVersionDependencies(mainPlan, sidecarPlans))
+	// A private service reaches the internet through the project's Cloud NAT
+	// rather than an external address of its own.
+	externalIP := gcpConfig.PublicIP == nil || !needNATGateway(gcpConfig.Networks, &svc)
 	instanceTemplate, err := createInstanceTemplate(
 		ctx, serviceName, serviceName, machineType, getComputeBootImage(svc), cloudInit,
-		args.SA, args.Triggers, gcpConfig, iamDeps, templateOpts...)
+		args.SA, args.Triggers, gcpConfig, externalIP, iamDeps, templateOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -245,14 +248,17 @@ func createInstanceTemplate(
 	sa *ServiceIdentity,
 	triggers pulumi.StringMapInput,
 	gcpConfig *SharedInfra,
+	externalIP bool,
 	iamDeps pulumi.ResourceArrayOutput,
 	opts ...pulumi.ResourceOption,
 ) (*compute.InstanceTemplate, error) {
 	network := &compute.InstanceTemplateNetworkInterfaceArgs{
 		Subnetwork: gcpConfig.SubnetId,
-		AccessConfigs: compute.InstanceTemplateNetworkInterfaceAccessConfigArray{
+	}
+	if externalIP {
+		network.AccessConfigs = compute.InstanceTemplateNetworkInterfaceAccessConfigArray{
 			&compute.InstanceTemplateNetworkInterfaceAccessConfigArgs{},
-		},
+		}
 	}
 	if gcpConfig.PublicIP == nil {
 		// standalone: no project VPC — run on the default network
