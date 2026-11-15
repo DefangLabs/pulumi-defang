@@ -8,6 +8,8 @@ package azure
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 	"testing"
 
@@ -154,7 +156,7 @@ func TestAzureModelRequestsFromCLIPayload(t *testing.T) {
 
 	// A pinned version is deployed exactly.
 	assert.Equal(t, deployment{"text-embedding-3-small", "1", "OpenAI", "Standard"}, run.deployed(t, "embedding-default"))
-	assert.Equal(t, common.ModelRoleEmbedding, run.selections.Selected["embed"].SelectedRole)
+	assert.Equal(t, common.ModelRoleEmbedding, run.selections.Selected["embedding-default"].SelectedRole)
 
 	// The literal model name applications send is the deployment name.
 	app := run.env(t, "app")
@@ -214,7 +216,7 @@ models:
 	run := constructAzureModels(t, payload, "")
 	assert.Equal(t, deployment{"Phi-4", "10", "Microsoft", "GlobalStandard"}, run.deployed(t, "Phi-4"))
 	assert.Equal(t, "Phi-4", run.env(t, "app")["PHI_MODEL"])
-	assert.Equal(t, common.ModelSourceNative, run.selections.Inputs["phi"].Source)
+	assert.Equal(t, common.ModelSourceNative, run.selections.Inputs["Phi-4"].Source)
 }
 
 func TestAzureRepeatedRequestSharesADeployment(t *testing.T) {
@@ -243,12 +245,32 @@ models:
   secondary:
     model: chat-default
 `
+	// Before "primary" existed, "secondary" alone had the same selection: an
+	// earlier-sorting service joining it does not replace the selection.
+	alone := `
+services:
+  app:
+    image: app
+    ports: [{mode: ingress, target: 8080}]
+    environment: {B_MODEL: chat-default}
+    models: {secondary: {model_var: B_MODEL}}
+  secondary:
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+models:
+  secondary:
+    model: chat-default
+`
+	before := constructAzureModels(t, alone, "")
+	assert.Equal(t, []string{"chat-default"}, slices.Collect(maps.Keys(before.selections.Selected)))
+
 	run := constructAzureModels(t, payload, "")
 	assert.Equal(t, 1, run.registered, "one Foundry deployment for a repeated request")
 	assert.Equal(t, "gpt-5.1", run.deployed(t, "chat-default").model)
-	// One selection, owned by the first service by name, decides the model.
-	assert.Contains(t, run.selections.Selected, "primary")
-	assert.NotContains(t, run.selections.Selected, "secondary")
+	// One selection, named after the deployment rather than a service, decides
+	// the model, so adding or removing a service sharing it never replaces it.
+	assert.Equal(t, []string{"chat-default"}, slices.Collect(maps.Keys(run.selections.Selected)))
 }
 
 func TestAzureLegacyCLIPayload(t *testing.T) {

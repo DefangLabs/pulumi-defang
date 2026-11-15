@@ -109,7 +109,7 @@ services:
 ## Persistence
 
 Each model gets a `ModelSelection` resource (`defang-<cloud>:index:ModelSelection`,
-named after the model). Its inputs are the request and that request's recipe
+named after the model; on Azure, named after its Foundry deployment). Its inputs are the request and that request's recipe
 entry, not the whole recipe.
 
 - Unchanged inputs keep the recorded model, with no catalog call. Refresh never
@@ -128,7 +128,8 @@ entry, not the whole recipe.
   embedding model is deployed but its model cannot be read, the deployment
   stops and asks for the model to be pinned.
 - On Azure, models with the same request share one deployment and one
-  `ModelSelection`, owned by the first of their services by name.
+  `ModelSelection`. Adding or removing a model that shares them keeps the
+  recorded target.
 - Scaleway model selection has not shipped before this change, so Scaleway
   does not migrate a selection from an existing deployment. A new Scaleway
   deployment resolves its model from the selected recipe.

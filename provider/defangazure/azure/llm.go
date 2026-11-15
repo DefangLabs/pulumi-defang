@@ -141,7 +141,6 @@ func CreateLLMInfra(
 // request), so requests route to this deployment.
 func CreateLLMDeployment(
 	ctx *pulumi.Context,
-	serviceName string,
 	deploymentName string,
 	plan common.ModelPlan,
 	seed *compose.ModelTarget,
@@ -151,8 +150,11 @@ func CreateLLMDeployment(
 	opts ...pulumi.ResourceOption,
 ) (*common.ModelSelectionResult, error) {
 	// The selection lists the account's models, so it waits for the account.
-	sel, err := common.RegisterModelSelection(ctx, "defang-azure", serviceName, plan, "",
-		llmInfra.Account.ID().ToStringOutput(), seed, pluginID, opts...)
+	// Like the deployment, it is named after the deployment and parented to the
+	// account: services that share the deployment can come and go without
+	// replacing it.
+	sel, err := common.RegisterModelSelection(ctx, "defang-azure", deploymentName, plan, "",
+		llmInfra.Account.ID().ToStringOutput(), seed, pluginID, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
 		return nil, err
 	}

@@ -268,7 +268,7 @@ func createServiceResources(
 		// Models with the same request share one deployment and one selection.
 		if model := llmModels[svcName]; model.owner {
 			if _, err := providerazure.CreateLLMDeployment(
-				ctx, svcName, model.deployment, model.plan, model.seed, infra.LLMInfra, infra, pluginID, svcOpts...,
+				ctx, model.deployment, model.plan, model.seed, infra.LLMInfra, infra, pluginID, svcOpts...,
 			); err != nil {
 				return pulumi.StringOutput{}, fmt.Errorf("creating LLM deployment for %s: %w", svcName, err)
 			}

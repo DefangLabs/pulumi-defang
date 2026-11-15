@@ -205,6 +205,27 @@ func TestSeedsFromStateReadsOnlyTheGateway(t *testing.T) {
 		}
 	})
 
+	t.Run("cloud-init-quoted-env", func(t *testing.T) {
+		// GCE writes env flags with Go %q quoting before the image.
+		svc := urnPrefix + "defang-gcp:index:Service::embed"
+		userData := "#cloud-config\nwrite_files:\n  - content: |\n      ExecStart=/usr/bin/docker run --pull=always " +
+			`--rm --name=embed -e "EXAMPLE_ARGS=check --model vertex_ai/old" -e "VERTEXAI_LOCATION=europe-west4" ` +
+			"litellm/litellm:v1.92.0 --drop_params --model vertex_ai/gemini-embedding-001 --alias embed\n" +
+			"      ExecStop=/usr/bin/docker stop embed\n"
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-gcp:index:Service"},
+			map[string]any{
+				"urn": svc + "$gcp:compute/instanceTemplate:InstanceTemplate::embed", "parent": svc,
+				"type":   "gcp:compute/instanceTemplate:InstanceTemplate",
+				"inputs": map[string]any{"metadata": map[string]any{"user-data": userData}},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "gcp.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Model: "gemini-embedding-001", Location: "europe-west4", Existed: true},
+			seeds["embed"])
+	})
+
 	t.Run("cloud-run-env-location", func(t *testing.T) {
 		svc := urnPrefix + "defang-gcp:index:Service::embed"
 		state := checkpoint(t,
@@ -240,6 +261,20 @@ func TestSeedsFromStateWithoutTarget(t *testing.T) {
 		seeds, err := SeedsFromState(state, modelPayload(t, "aws.yaml"), "modeldemo")
 		require.NoError(t, err)
 		assert.NotContains(t, seeds, "chat")
+	})
+
+	t.Run("azure-selection-is-named-after-its-deployment", func(t *testing.T) {
+		llm := urnPrefix + "defang-azure:index:LLM::embed"
+		state := checkpoint(t,
+			map[string]any{"urn": llm, "type": "defang-azure:index:LLM"},
+			map[string]any{
+				"urn":  urnPrefix + "defang-azure:index:ModelSelection::embedding-default",
+				"type": "defang-azure:index:ModelSelection",
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "azure.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.NotContains(t, seeds, "embed")
 	})
 
 	t.Run("existing-service-without-known-target", func(t *testing.T) {

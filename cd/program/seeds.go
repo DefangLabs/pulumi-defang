@@ -3,6 +3,7 @@ package program
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
@@ -70,7 +71,9 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 
 	seeds := ModelSeeds{}
 	for name := range project.Models {
-		if selectionExists(state.Resources, name) {
+		// An Azure selection is named after its Foundry deployment.
+		if selectionExists(state.Resources, name, "") ||
+			selectionExists(state.Resources, foundryDeploymentName(project, name), "defang-azure") {
 			continue
 		}
 		seed := &compose.ModelTarget{}
@@ -112,9 +115,12 @@ func urnName(urn string) string {
 	return urn
 }
 
-func selectionExists(resources []stateResource, service string) bool {
+// selectionExists reports whether a ModelSelection named name exists, of
+// package pkg when pkg is set.
+func selectionExists(resources []stateResource, name, pkg string) bool {
 	for _, r := range resources {
-		if strings.HasSuffix(r.Type, modelSelectionTypeSuffix) && urnName(r.URN) == service {
+		if strings.HasSuffix(r.Type, modelSelectionTypeSuffix) && urnName(r.URN) == name &&
+			(pkg == "" || strings.HasPrefix(r.Type, pkg+":")) {
 			return true
 		}
 	}
@@ -200,21 +206,81 @@ func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 					return
 				}
 			}
-			if !strings.Contains(t, "docker run") {
+			_, line, ok := strings.Cut(t, "docker run ")
+			if !ok {
 				return // only a cloud-init docker command line is parsed as a command
 			}
-			fields := strings.Fields(t)
-			for i, f := range fields {
-				if f == "--model" && i+1 < len(fields) && seed.Model == "" {
-					seed.Model = gatewayTarget(fields[i+1])
+			line, _, _ = strings.Cut(line, "\n")
+			args := shellFields(line)
+			for i, arg := range args {
+				if arg == "--model" && i+1 < len(args) && seed.Model == "" {
+					seed.Model = gatewayTarget(args[i+1])
 				}
-				if loc, ok := strings.CutPrefix(f, "VERTEXAI_LOCATION="); ok && seed.Location == "" {
-					seed.Location = strings.Trim(loc, `'"`)
+				if arg == "-e" && i+1 < len(args) && seed.Location == "" {
+					if loc, ok := strings.CutPrefix(args[i+1], "VERTEXAI_LOCATION="); ok {
+						seed.Location = loc
+					}
 				}
 			}
 		}
 	}
 	walk(inputs)
+}
+
+// shellFields splits a command line into arguments, keeping quoted text,
+// such as the `-e "KEY=value"` flags of a cloud-init docker command (Go %q
+// quoting), as one argument.
+func shellFields(line string) []string {
+	var args []string
+	var cur strings.Builder
+	inArg := false
+	for i := 0; i < len(line); i++ {
+		switch c := line[i]; c {
+		case '"':
+			inArg = true
+			if j := closingQuote(line, i); j > i {
+				if unq, err := strconv.Unquote(line[i : j+1]); err == nil {
+					cur.WriteString(unq)
+				} else {
+					cur.WriteString(line[i+1 : j])
+				}
+				i = j
+			}
+		case '\'':
+			inArg = true
+			if j := strings.IndexByte(line[i+1:], '\''); j >= 0 {
+				cur.WriteString(line[i+1 : i+1+j])
+				i += j + 1
+			}
+		case ' ', '\t':
+			if inArg {
+				args = append(args, cur.String())
+				cur.Reset()
+				inArg = false
+			}
+		default:
+			inArg = true
+			cur.WriteByte(c)
+		}
+	}
+	if inArg {
+		args = append(args, cur.String())
+	}
+	return args
+}
+
+// closingQuote returns the index of the double quote that closes the one at
+// line[start], skipping backslash escapes, or -1.
+func closingQuote(line string, start int) int {
+	for i := start + 1; i < len(line); i++ {
+		switch line[i] {
+		case '\\':
+			i++
+		case '"':
+			return i
+		}
+	}
+	return -1
 }
 
 // readModelArg reads the target after `--model` in a container's command or
