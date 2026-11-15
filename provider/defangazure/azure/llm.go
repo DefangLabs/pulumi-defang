@@ -138,7 +138,8 @@ func CreateLLMInfra(
 // CreateLLMDeployment records the model selection for a planned request and
 // creates the Azure AI model deployment for it under the shared Foundry
 // account. deploymentName is the name applications send as "model" (the
-// request), so requests route to this deployment.
+// request), so requests route to this deployment. The returned output is the
+// deployment's name, known only once the deployment is in place.
 func CreateLLMDeployment(
 	ctx *pulumi.Context,
 	deploymentName string,
@@ -149,7 +150,7 @@ func CreateLLMDeployment(
 	infra *SharedInfra,
 	pluginID common.PluginIdentity,
 	opts ...pulumi.ResourceOption,
-) (*common.ModelSelectionResult, error) {
+) (pulumi.StringOutput, error) {
 	// The selection lists the account's models, so it waits for the account.
 	// Like the deployment, it is named after the deployment and parented to the
 	// account: services that share the deployment can come and go without
@@ -157,7 +158,7 @@ func CreateLLMDeployment(
 	sel, err := common.RegisterModelSelection(ctx, "defang-azure", deploymentName, plan, "",
 		llmInfra.Account.ID().ToStringOutput(), seed, pluginID, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return nil, err
+		return pulumi.StringOutput{}, err
 	}
 
 	// Azure serializes deployments on a single AI Services Account — parallel
@@ -168,18 +169,30 @@ func CreateLLMDeployment(
 		opts = append(opts, pulumi.DependsOn([]pulumi.Resource{llmInfra.lastDeployment}))
 	}
 
-	// A model that changed its request onto this deployment switches to its
-	// target, which for an embedding model needs an exact request, as a request
-	// change does on every cloud. The selection may already exist, shared with
-	// other models, so this is checked here rather than when it is created.
+	// A model that changed its request onto this deployment switches to the
+	// target the selection holds, which for an embedding model needs an exact
+	// request, as a request change does on every cloud, and that target must be
+	// the pinned one. The selection may already exist, shared with other models,
+	// so this is checked here rather than when it is created.
 	var name pulumi.StringInput = pulumi.String(deploymentName)
-	if switched && !ModelCloud.IsExact(plan.Candidates) {
-		name = sel.SelectedRole.ApplyT(func(role string) (string, error) {
-			if role == common.ModelRoleEmbedding {
+	if switched {
+		exact := ModelCloud.IsExact(plan.Candidates)
+		name = pulumi.All(sel.SelectedRole, sel.Model, sel.Version).ApplyT(func(v []any) (string, error) {
+			role, model, version := v[0].(string), v[1].(string), v[2].(string)
+			if role != common.ModelRoleEmbedding {
+				return deploymentName, nil
+			}
+			if !exact {
 				return "", fmt.Errorf("%w: a model now requests %q, whose embedding model is already deployed; "+
 					"switching an embedding model needs an exact target: use a recipe key with one exact "+
 					"candidate (a pinned version), and regenerate stored vectors", common.ErrEmbeddingMigration,
 					plan.Request)
+			}
+			if pin := plan.Candidates[0]; !strings.EqualFold(model, pin.Model) || version != pin.Version {
+				return "", fmt.Errorf("%w: a model now requests %q, which other models share and which keeps its "+
+					"embedding model %s version %s, not the pinned %s version %s; request a name of its own "+
+					"with that pin, and regenerate stored vectors", common.ErrEmbeddingMigration, plan.Request,
+					model, version, pin.Model, pin.Version)
 			}
 			return deploymentName, nil
 		}).(pulumi.StringOutput)
@@ -202,10 +215,10 @@ func CreateLLMDeployment(
 		},
 	}, append(opts, pulumi.Parent(llmInfra.Account))...)
 	if err != nil {
-		return nil, fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
+		return pulumi.StringOutput{}, fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
 	llmInfra.lastDeployment = deployment
-	return sel, nil
+	return deployment.Name, nil
 }
 
 // subDomainPrefixRe matches characters to strip from an AI Foundry custom

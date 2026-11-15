@@ -264,21 +264,10 @@ func createServiceResources(
 		if err := ctx.RegisterComponentResource("defang-azure:index:LLM", svcName, comp, childOpts...); err != nil {
 			return pulumi.StringOutput{}, fmt.Errorf("registering Azure LLM component %s: %w", svcName, err)
 		}
-		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
-
-		// Models with the same request share one deployment and one selection.
-		if model := llmModels[svcName]; model.owner {
-			if _, err := providerazure.CreateLLMDeployment(
-				ctx, model.deployment, model.plan, model.seed, model.switched, infra.LLMInfra, infra, pluginID, svcOpts...,
-			); err != nil {
-				return pulumi.StringOutput{}, fmt.Errorf("creating LLM deployment for %s: %w", svcName, err)
-			}
-		}
-
 		managedEndpoints[svcName] = infra.LLMInfra.BaseURL
 		endpoint = infra.LLMInfra.BaseURL
 		// The CD reads this back to tell when the model's request changes.
-		componentOutputs["deployment"] = pulumi.String(llmModels[svcName].deployment)
+		componentOutputs["deployment"] = llmModels[svcName].recorded
 
 	default:
 		// Container service path uses the typed *ServiceOutputs so the runtime
@@ -616,6 +605,9 @@ func (*Project) Construct(
 	if err != nil {
 		return nil, err
 	}
+	if err := createLLMDeployments(ctx, llmModels, infra, pluginID, childOpts...); err != nil {
+		return nil, err
+	}
 
 	endpoints := pulumi.StringMap{}
 	serviceIds := pulumi.StringMap{}
@@ -714,6 +706,9 @@ type azureModel struct {
 	// owner included, changed its request onto it: its seed is a deployed model
 	// with no known target. Switching an embedding model needs an exact request.
 	switched bool
+	// recorded is the deployment's name once the deployment is in place; the
+	// LLM component records it, so a failed switch is not recorded as done.
+	recorded pulumi.StringOutput
 }
 
 // planModels plans each LLM service's model deployment. A CLI-generated
@@ -760,6 +755,37 @@ func planModels(
 		}
 	}
 	return planned, nil
+}
+
+// createLLMDeployments creates each shared deployment, with its selection,
+// from the model that owns it, and gives every model the deployment's recorded
+// name. Both are parented to the AI account, so the owning service does not
+// change their identity.
+func createLLMDeployments(
+	ctx *pulumi.Context, planned map[string]azureModel, infra *providerazure.SharedInfra,
+	pluginID common.PluginIdentity,
+	opts ...pulumi.ResourceOption,
+) error {
+	if infra.LLMInfra == nil {
+		return nil // an LLM service then fails with ErrLLMInfraNotCreated
+	}
+	recorded := map[string]pulumi.StringOutput{}
+	for name, m := range common.Sorted(planned) {
+		if !m.owner {
+			continue
+		}
+		out, err := providerazure.CreateLLMDeployment(
+			ctx, m.deployment, m.plan, m.seed, m.switched, infra.LLMInfra, infra, pluginID, opts...)
+		if err != nil {
+			return fmt.Errorf("creating LLM deployment for %s: %w", name, err)
+		}
+		recorded[m.deployment] = out
+	}
+	for name, m := range planned {
+		m.recorded = recorded[m.deployment]
+		planned[name] = m
+	}
+	return nil
 }
 
 // aliasFromCommand returns the value following "--alias" in the LiteLLM command the CLI
