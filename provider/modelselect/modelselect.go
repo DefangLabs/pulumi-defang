@@ -97,17 +97,23 @@ func (ms ModelSelector) Create(
 			p.GetLogger(ctx).Warningf("embedding model %q keeps its deployed target %s; the recipe now maps it to %s. "+
 				"To migrate, request the new model explicitly and regenerate stored vectors.",
 				in.Request, describeTarget(*seed), describeTarget(state.Target()))
-			restoreSeed(&state, *seed)
 		}
+		restoreSeed(&state, *seed)
 	}
 	return infer.CreateResponse[common.ModelSelectionState]{ID: in.Request, Output: state}, nil
 }
 
-// restoreSeed records the deployed target. A seed whose location could not be
-// read keeps the resolved location rather than an empty one.
+// restoreSeed records the deployed target, including a location, format or
+// SKU that differs from the resolved one. A field the seed could not read
+// keeps the resolved value rather than an empty one.
 func restoreSeed(state *common.ModelSelectionState, seed compose.ModelTarget) {
-	if seed.Location == "" {
-		seed.Location = state.Location
+	resolved := state.Target()
+	for _, f := range []struct{ seed, resolved *string }{
+		{&seed.Location, &resolved.Location}, {&seed.Format, &resolved.Format}, {&seed.Sku, &resolved.Sku},
+	} {
+		if *f.seed == "" {
+			*f.seed = *f.resolved
+		}
 	}
 	state.SetTarget(seed)
 }

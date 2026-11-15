@@ -219,7 +219,7 @@ models:
 
 func TestAzureRepeatedRequestSharesADeployment(t *testing.T) {
 	// Two Compose models with the same request: applications of both send
-	// "chat-default", so one deployment serves them.
+	// "chat-default", so one deployment and one selection serve them.
 	payload := `
 services:
   app:
@@ -246,8 +246,9 @@ models:
 	run := constructAzureModels(t, payload, "")
 	assert.Equal(t, 1, run.registered, "one Foundry deployment for a repeated request")
 	assert.Equal(t, "gpt-5.1", run.deployed(t, "chat-default").model)
+	// One selection, owned by the first service by name, decides the model.
 	assert.Contains(t, run.selections.Selected, "primary")
-	assert.Contains(t, run.selections.Selected, "secondary")
+	assert.NotContains(t, run.selections.Selected, "secondary")
 }
 
 func TestAzureLegacyCLIPayload(t *testing.T) {

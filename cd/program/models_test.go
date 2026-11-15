@@ -127,11 +127,15 @@ func TestSeedsFromState(t *testing.T) {
 	})
 
 	t.Run("azure-foundry-deployment", func(t *testing.T) {
+		// The deployment is parented to the shared account, not to the LLM
+		// component; it is found by its name, the model applications send.
 		llm := urnPrefix + "defang-azure:index:Project$defang-azure:index:LLM::embed"
+		account := urnPrefix + "defang-azure:index:Project$azure-native:cognitiveservices:Account::ai"
 		state := checkpoint(t,
 			map[string]any{"urn": llm, "type": "defang-azure:index:LLM"},
+			map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
 			map[string]any{
-				"urn": llm + "$azure-native:cognitiveservices:Deployment::embedding-default", "parent": llm,
+				"urn": account + "$azure-native:cognitiveservices:Deployment::embedding-default", "parent": account,
 				"type": "azure-native:cognitiveservices:Deployment",
 				"outputs": map[string]any{
 					"properties": map[string]any{"model": map[string]any{

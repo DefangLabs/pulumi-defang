@@ -265,11 +265,13 @@ func createServiceResources(
 		}
 		svcOpts := []pulumi.ResourceOption{pulumi.Parent(comp)}
 
-		model := llmModels[svcName]
-		if _, err := providerazure.CreateLLMDeployment(
-			ctx, svcName, model.deployment, model.plan, model.seed, infra.LLMInfra, infra, pluginID, svcOpts...,
-		); err != nil {
-			return pulumi.StringOutput{}, fmt.Errorf("creating LLM deployment for %s: %w", svcName, err)
+		// Models with the same request share one deployment and one selection.
+		if model := llmModels[svcName]; model.owner {
+			if _, err := providerazure.CreateLLMDeployment(
+				ctx, svcName, model.deployment, model.plan, model.seed, infra.LLMInfra, infra, pluginID, svcOpts...,
+			); err != nil {
+				return pulumi.StringOutput{}, fmt.Errorf("creating LLM deployment for %s: %w", svcName, err)
+			}
 		}
 
 		managedEndpoints[svcName] = infra.LLMInfra.BaseURL
@@ -703,6 +705,9 @@ type azureModel struct {
 	deployment string // Foundry deployment name: what applications send as "model"
 	plan       common.ModelPlan
 	seed       *compose.ModelTarget
+	// owner is set on the one LLM service, first by name, that selects the
+	// model and creates the deployment; others with the same deployment use it.
+	owner bool
 }
 
 // planModels plans each LLM service's model deployment. A CLI-generated
@@ -731,6 +736,15 @@ func planModels(
 			return nil, fmt.Errorf("model %q: %w", name, err)
 		}
 		planned[name] = azureModel{deployment: deployment, plan: plan, seed: models[name].Seed}
+	}
+	// Sorted iteration makes the first service with each deployment its owner.
+	owned := map[string]bool{}
+	for name, m := range common.Sorted(planned) {
+		if !owned[m.deployment] {
+			owned[m.deployment] = true
+			m.owner = true
+			planned[name] = m
+		}
 	}
 	return planned, nil
 }

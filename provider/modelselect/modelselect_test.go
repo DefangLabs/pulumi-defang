@@ -267,6 +267,13 @@ func TestFirstUpgradeSeedOfAnAlias(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "embed:1", state.Model)
 	assert.Equal(t, "us-central1", state.Location)
+
+	// The same model keeps the location it is deployed in.
+	same := inputs("embedding-default", "embedding", compose.ModelCandidate{Model: "embed:1"})
+	same.Seed = &compose.ModelTarget{Model: "embed:1", Location: "europe-west4", Existed: true}
+	state, err = create(same)
+	require.NoError(t, err)
+	assert.Equal(t, "europe-west4", state.Location)
 }
 
 type locatedResolver struct{}

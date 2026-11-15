@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 )
 
@@ -82,10 +83,14 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 			if seed.Model != "" {
 				continue
 			}
-			if r.Type == "azure-native:cognitiveservices:Deployment" {
+			seedFromGatewayCommand(seed, r.Inputs)
+		}
+		// An Azure Foundry deployment is parented to the shared AI account, not
+		// to its LLM component; it is named after the model applications send.
+		if seed.Model == "" {
+			if r := foundryDeployment(state.Resources, foundryDeploymentName(project, name)); r != nil {
+				seed.Existed = true
 				seedFromFoundryDeployment(seed, r)
-			} else {
-				seedFromGatewayCommand(seed, r.Inputs)
 			}
 		}
 		if seed.Existed {
@@ -114,6 +119,30 @@ func selectionExists(resources []stateResource, service string) bool {
 		}
 	}
 	return false
+}
+
+const foundryDeploymentType = "azure-native:cognitiveservices:Deployment"
+
+// foundryDeploymentName is the deployment an LLM service uses on Azure: the
+// alias of an older CLI's gateway, otherwise the normalized model request.
+func foundryDeploymentName(project *compose.Project, name string) string {
+	if svc, ok := project.Services[name]; ok {
+		for i, arg := range svc.Command {
+			if arg == "--alias" && i+1 < len(svc.Command) {
+				return svc.Command[i+1]
+			}
+		}
+	}
+	return common.NormalizeModelRequest(project.Models[name].Model)
+}
+
+func foundryDeployment(resources []stateResource, deploymentName string) *stateResource {
+	for i := range resources {
+		if resources[i].Type == foundryDeploymentType && urnName(resources[i].URN) == deploymentName {
+			return &resources[i]
+		}
+	}
+	return nil
 }
 
 // seedFromFoundryDeployment reads an Azure AI Foundry deployment's model.

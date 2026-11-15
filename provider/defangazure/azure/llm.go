@@ -26,10 +26,6 @@ type LLMInfra struct {
 	// Compatible with OpenAI SDK's base_url parameter.
 	BaseURL pulumi.StringOutput
 
-	// deployments are the Deployment names already registered under this
-	// account: models that request the same name share one deployment.
-	deployments map[string]bool
-
 	// lastDeployment is the most recently-registered Deployment under this
 	// account; subsequent CreateLLMDeployment calls DependsOn it to serialize
 	// Azure's per-account deployment operations. Azure returns 409
@@ -161,12 +157,6 @@ func CreateLLMDeployment(
 		return nil, err
 	}
 
-	// Applications send the deployment name as their model, so a second model
-	// with the same request uses the deployment the first one created.
-	if llmInfra.deployments[deploymentName] {
-		return sel, nil
-	}
-
 	// Azure serializes deployments on a single AI Services Account — parallel
 	// NewDeployment calls fail with 409 "Another operation is being performed
 	// on the parent resource". Chain each new deployment on the previously-
@@ -195,10 +185,6 @@ func CreateLLMDeployment(
 		return nil, fmt.Errorf("creating Azure AI Foundry deployment %s: %w", deploymentName, err)
 	}
 	llmInfra.lastDeployment = deployment
-	if llmInfra.deployments == nil {
-		llmInfra.deployments = map[string]bool{}
-	}
-	llmInfra.deployments[deploymentName] = true
 	return sel, nil
 }
 

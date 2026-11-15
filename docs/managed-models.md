@@ -122,11 +122,13 @@ entry, not the whole recipe.
   stored vectors have to be regenerated.
 - On the first deployment with this resource for an existing AWS, GCP, or
   Azure project, the CD reads the model each service runs from stack state and
-  seeds the record with it. A built-in alias keeps that embedding model even
+  seeds the record with it (on Azure, from the Foundry deployment named after
+  the request). A built-in alias keeps that embedding model even
   when its recipe entry has one exact candidate, or no longer resolves. If an
   embedding model is deployed but its model cannot be read, the deployment
   stops and asks for the model to be pinned.
-- Models with the same request share one Azure deployment.
+- On Azure, models with the same request share one deployment and one
+  `ModelSelection`, owned by the first of their services by name.
 - Scaleway model selection has not shipped before this change, so Scaleway
   does not migrate a selection from an existing deployment. A new Scaleway
   deployment resolves its model from the selected recipe.
