@@ -1,2 +1,2 @@
-pulumi-defang-gcp==2.10.5
+pulumi-defang-gcp==2.11.0
 pulumi>=3.0.0,<4.0.0

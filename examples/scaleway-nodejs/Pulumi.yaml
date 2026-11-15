@@ -1,7 +1,19 @@
 name: defang-scaleway
 runtime: nodejs
-description: Example using defang-scaleway to deploy services to Scaleway
-
+description: 'End-to-end Scaleway demo: public web -> public api -> managed Postgres'
+config:
+  API_IMAGE:
+    type: string
+  API_URL:
+    type: string
+  DATABASE_URL:
+    type: string
+    secret: true
+  POSTGRES_PASSWORD:
+    type: string
+    secret: true
+  WEB_IMAGE:
+    type: string
 plugins:
   providers:
     - name: defang-scaleway
