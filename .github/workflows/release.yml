@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write # Allows writing releases
   packages: write # Allows publishing packages
-  id-token: write # Required for requesting the JWT before publishing to Pypi and NPM
+  id-token: write # Required for requesting the JWT before publishing to PyPI, npm and NuGet
   pull-requests: write # Allows creating PRs for regenerated examples
 
 env:
@@ -20,10 +20,9 @@ env:
   # Authentication is handled via npm Trusted Publishers (no token required).
   PUBLISH_NPM: true
   NPM_REGISTRY_URL: https://registry.npmjs.org
-  # IF YOU NEED TO PUBLISH A NUGET PACKAGE THEN ENSURE AN NUGET_PUBLISH_KEY
-  # SECRET IS SET AND PUBLISH_NUGET: TRUE. IF YOU WANT TO PUBLISH TO AN ALTERNATIVE
-  # NPM REGISTRY THEN ENSURE THE NPM_REGISTRY_URL IS CHANGED
-  NUGET_PUBLISH_KEY: ${{ secrets.NUGET_PUBLISH_KEY }}
+  # IF YOU NEED TO PUBLISH A NUGET PACKAGE THEN ENSURE PUBLISH_NUGET: TRUE.
+  # Authentication is handled via NuGet Trusted Publishing (no API key required).
+  NUGET_USER: lionello
   NUGET_FEED_URL: https://api.nuget.org/v3/index.json
   PUBLISH_NUGET: true
   # IF YOU NEED TO PUBLISH A PYPI PACKAGE THEN ENSURE PUBLISH_PYPI: TRUE.
@@ -124,9 +123,15 @@ jobs:
           npm publish --access public --tag "$DIST_TAG"
         working-directory: ${{github.workspace}}/sdk/nodejs/defang-${{ matrix.provider }}/bin
       - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
+        name: Log in to NuGet
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ env.NUGET_USER }}
+      - if: ${{ matrix.language == 'dotnet' && env.PUBLISH_NUGET == 'true' }}
         name: publish nuget package
         run: |
-          dotnet nuget push ${{github.workspace}}/sdk/dotnet/defang-${{ matrix.provider }}/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ env.NUGET_PUBLISH_KEY }}
+          dotnet nuget push ${{github.workspace}}/sdk/dotnet/defang-${{ matrix.provider }}/bin/Debug/*.nupkg -s ${{ env.NUGET_FEED_URL }} -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           echo "done publishing packages"
     strategy:
       fail-fast: false
