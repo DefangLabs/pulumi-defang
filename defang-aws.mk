@@ -5,7 +5,10 @@ NODE_MODULE_NAME := @defang-io/pulumi-defang-aws
 NUGET_PKG_NAME   := DefangLabs.defang-aws
 
 PROVIDER        := pulumi-resource-${PACK}
-LATEST_TAG      := $(shell git tag --sort=creatordate | tail -n1)
+# The tag being built (a tag-push workflow's ref, or a tag on the checked-out
+# commit) sets the version. Otherwise the newest tag does: a re-run of an older
+# release must never build a later version.
+LATEST_TAG      := $(or $(if $(filter tag,$(GITHUB_REF_TYPE)),$(GITHUB_REF_NAME)),$(shell git describe --tags --exact-match 2>/dev/null),$(shell git tag --sort=creatordate | tail -n1))
 VERSION_PREFIX  := $(shell echo $(LATEST_TAG) | sed -E 's/v?([^-]+).*/\1/')
 IS_PRERELEASE   := $(shell echo $(LATEST_TAG) | grep -q "alpha\|beta\|rc\|preview"; echo $$?)
 VERSION         ?= $(shell pulumictl get version --version-prefix $(VERSION_PREFIX) $(if $(filter 0,$(IS_PRERELEASE)),--is-prerelease) | sed -E 's/\.([0-9]{10})(\+|$$)/\2/')
