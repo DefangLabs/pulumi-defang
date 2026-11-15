@@ -63,6 +63,7 @@ type azureModelRun struct {
 	selections  *testutil.ModelSelections
 	deployments map[string]property.Map // deployment name → inputs
 	registered  int                     // Deployment registrations, repeats included
+	listed      int                     // account catalog listings
 	apps        map[string]property.Map // container app → inputs
 }
 
@@ -96,11 +97,27 @@ func (r *azureModelRun) env(t *testing.T, app string) map[string]string {
 
 func constructAzureModels(t *testing.T, payload, recipe string) *azureModelRun {
 	t.Helper()
+	return redeployAzureModels(t, payload, recipe, foundryCatalog, nil)
+}
+
+// redeployAzureModels constructs payload against catalog; selections in
+// prior, the state of an earlier deployment, are updated instead of created.
+func redeployAzureModels(
+	t *testing.T, payload, recipe string, catalog []azureprov.AvailableModel,
+	prior map[string]common.ModelSelectionState,
+) *azureModelRun {
+	t.Helper()
 
 	run := &azureModelRun{deployments: map[string]property.Map{}, apps: map[string]property.Map{}}
-	run.selections = &testutil.ModelSelections{Selector: modelselect.ModelSelector{
-		Cloud:         azureprov.ModelCloud,
-		Resolver:      &azureprov.FoundryResolver{List: foundryList(t)},
+	run.selections = &testutil.ModelSelections{Prior: prior, Selector: modelselect.ModelSelector{
+		Cloud: azureprov.ModelCloud,
+		Resolver: &azureprov.FoundryResolver{
+			List: func(_ context.Context, sub, rg, acct string) ([]azureprov.AvailableModel, error) {
+				assert.Equal(t, []string{"sub-1", "rg-1", "acct-1"}, []string{sub, rg, acct})
+				run.listed++
+				return catalog, nil
+			},
+		},
 		ScopeRequired: true,
 	}}
 	var mu sync.Mutex
@@ -264,10 +281,22 @@ models:
 `
 	before := constructAzureModels(t, alone, "")
 	assert.Equal(t, []string{"chat-default"}, slices.Collect(maps.Keys(before.selections.Selected)))
+	assert.Equal(t, "2025-11-13", before.deployed(t, "chat-default").version)
 
-	run := constructAzureModels(t, payload, "")
+	// A newer revision appears, then "primary", which sorts first, joins: the
+	// shared selection is the same resource and keeps its target unread.
+	newer := append(slices.Clone(foundryCatalog), azureprov.AvailableModel{
+		Name: "gpt-5.1", Format: "OpenAI", Version: "2026-02-01", LifecycleStatus: generallyAvailable,
+		SKUs: []string{"GlobalStandard"}, Capabilities: map[string]string{"chatCompletion": "true"},
+	})
+	run := redeployAzureModels(t, payload, "", newer, before.selections.State)
+	assert.Equal(t, 0, run.listed, "unchanged selection inputs never list the catalog")
 	assert.Equal(t, 1, run.registered, "one Foundry deployment for a repeated request")
-	assert.Equal(t, "gpt-5.1", run.deployed(t, "chat-default").model)
+	assert.Equal(t, deployment{"gpt-5.1", "2025-11-13", "OpenAI", "GlobalStandard"}, run.deployed(t, "chat-default"))
+
+	// Without the earlier state the new revision would be chosen.
+	fresh := redeployAzureModels(t, payload, "", newer, nil)
+	assert.Equal(t, "2026-02-01", fresh.deployed(t, "chat-default").version)
 	// One selection, named after the deployment rather than a service, decides
 	// the model, so adding or removing a service sharing it never replaces it.
 	assert.Equal(t, []string{"chat-default"}, slices.Collect(maps.Keys(run.selections.Selected)))

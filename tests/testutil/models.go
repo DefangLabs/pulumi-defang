@@ -155,34 +155,59 @@ func fromProperty(pv property.Value, v reflect.Value) {
 // real selection lifecycle with the given resolver, recording each result.
 type ModelSelections struct {
 	Selector modelselect.ModelSelector
+	// Prior is the state of an earlier deployment, keyed like State: a
+	// selection found there is updated, as the engine would, not created.
+	Prior map[string]common.ModelSelectionState
 
 	mu       sync.Mutex
 	Inputs   map[string]common.ModelSelectionInputs
 	Selected map[string]common.ModelSelectionState
+	// State keys each selection by its parent URN and name, its identity.
+	State map[string]common.ModelSelectionState
 }
 
-// Handle creates args if it is a ModelSelection and returns its outputs.
+// Handle creates or updates args if it is a ModelSelection and returns its
+// outputs.
 func (m *ModelSelections) Handle(args integration.MockResourceArgs) (property.Map, bool, error) {
 	if !strings.HasSuffix(string(args.TypeToken), ":index:"+common.ModelSelectionType) {
 		return property.Map{}, false, nil
 	}
 	var in common.ModelSelectionInputs
 	fromProperty(property.New(args.Inputs), reflect.ValueOf(&in).Elem())
-	resp, err := m.Selector.Create(context.Background(), infer.CreateRequest[common.ModelSelectionInputs]{
-		Name: args.Name, Inputs: in,
-	})
-	if err != nil {
-		return property.Map{}, true, err
+	key := args.Name
+	if args.RegisterRPC != nil {
+		key = args.RegisterRPC.GetParent() + "::" + args.Name
+	}
+	var out common.ModelSelectionState
+	if old, ok := m.Prior[key]; ok {
+		resp, err := m.Selector.Update(context.Background(),
+			infer.UpdateRequest[common.ModelSelectionInputs, common.ModelSelectionState]{
+				ID: old.Request, State: old, Inputs: in,
+			})
+		if err != nil {
+			return property.Map{}, true, err
+		}
+		out = resp.Output
+	} else {
+		resp, err := m.Selector.Create(context.Background(), infer.CreateRequest[common.ModelSelectionInputs]{
+			Name: args.Name, Inputs: in,
+		})
+		if err != nil {
+			return property.Map{}, true, err
+		}
+		out = resp.Output
 	}
 	m.mu.Lock()
 	if m.Inputs == nil {
 		m.Inputs = map[string]common.ModelSelectionInputs{}
 		m.Selected = map[string]common.ModelSelectionState{}
+		m.State = map[string]common.ModelSelectionState{}
 	}
 	m.Inputs[args.Name] = in
-	m.Selected[args.Name] = resp.Output
+	m.Selected[args.Name] = out
+	m.State[key] = out
 	m.mu.Unlock()
-	return SelectionOutputs(resp.Output), true, nil
+	return SelectionOutputs(out), true, nil
 }
 
 // SelectionOutputs encodes a selection state as resource outputs. Every
