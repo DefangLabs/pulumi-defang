@@ -21,11 +21,14 @@ var errInvalidDNSRecord = errors.New("invalid DNS record in wildcard cert author
 
 // SharedInfra holds project-level GCP resources shared across all services.
 type SharedInfra struct {
-	Region            string
-	GcpProject        string // GCP project ID, used for IAM bindings
-	Domain            string // delegate domain (e.g. "example.com"); empty when not configured
-	VpcId             pulumi.StringOutput
-	SubnetId          pulumi.StringOutput
+	Region     string
+	GcpProject string // GCP project ID, used for IAM bindings
+	Domain     string // delegate domain (e.g. "example.com"); empty when not configured
+	VpcId      pulumi.StringOutput
+	SubnetId   pulumi.StringOutput
+	// SubnetCidr is the subnet's range: Compute Engine instances and Cloud Run
+	// (Direct VPC egress) reach private services from addresses in it.
+	SubnetCidr        pulumi.StringOutput
 	PublicIP          *compute.GlobalAddress
 	WildcardCertId    pulumi.StringInput // non-nil when a domain is configured
 	PublicZoneId      pulumi.StringInput // managed zone name; non-nil when a domain is configured
@@ -40,6 +43,8 @@ type SharedInfra struct {
 	// Etag is the deployment ID supplied by the CD program; empty for
 	// standalone Service callers.
 	Etag string
+	// Networks are the project's Compose networks; nil for standalone callers.
+	Networks compose.Networks
 }
 
 // EnableGcpAPIs enables the GCP APIs required by the project. Project is
@@ -193,6 +198,7 @@ func BuildGlobalConfig(
 		ProjectName: projectName,
 		VpcId:       vpc.ID().ToStringOutput(),
 		SubnetId:    subnet.ID().ToStringOutput(),
+		SubnetCidr:  subnet.IpCidrRange,
 		PublicIP:    publicIP,
 		PrivateZone: privateZone.Name.ToStringOutput(),
 	}

@@ -376,7 +376,7 @@ func createInternalLoadBalancer(
 					service.Name,
 					&compute.FirewallArgs{
 						Network:      config.VpcId,
-						SourceRanges: pulumi.StringArray{pulumi.String("0.0.0.0/0")}, // TODO: Can this be stricter?
+						SourceRanges: hostPortSources(config, service.Config),
 						Allows:       firewallAllows,
 						TargetTags: pulumi.StringArray{
 							pulumi.String(service.Name), // Matching compute.go instance template tag
@@ -910,6 +910,16 @@ var pathMatcherNameRegex = regexp.MustCompile(`[^a-z0-9-]`)
 
 // RegionUrlMap: field 'resource.pathMatchers[0].name' must be a match of regex '(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)'
 // Which is lowercase alphanumeric, with optional dashes, and must start with a letter and end with a letter or number.
+// hostPortSources is where a host-mode service's ports accept traffic from:
+// anywhere for a public service, else only the project subnet, which its
+// instances and Cloud Run services connect from.
+func hostPortSources(config *SharedInfra, service compose.ServiceConfig) pulumi.StringArray {
+	if AcceptsPublicTraffic(config.Networks, service) {
+		return pulumi.StringArray{pulumi.String("0.0.0.0/0")}
+	}
+	return pulumi.StringArray{config.SubnetCidr}
+}
+
 func pathMatcherName(name string) string {
 	name = strings.ToLower(name)
 	name = pathMatcherNameRegex.ReplaceAllLiteralString(name, "-") // Replace non-alphanumeric and non-dash with dash

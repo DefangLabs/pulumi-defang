@@ -699,6 +699,7 @@ func TestCreateInstanceTemplateUsesBareServiceName(t *testing.T) {
 			&ServiceIdentity{Email: pulumi.String("test@example.com")},
 			nil,
 			testInfra(ctx),
+			true,
 			pulumi.ResourceArrayOutput{},
 		)
 		return err
