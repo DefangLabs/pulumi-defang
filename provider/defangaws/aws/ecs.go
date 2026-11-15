@@ -741,6 +741,12 @@ func CreateECSService(
 		privateZoneIdx = len(allInputs)
 		allInputs = append(allInputs, infra.PrivateZoneID)
 	}
+	// A managed model gateway's command depends on the resolved model.
+	commandIdx := -1
+	if svc.GeneratedCommand != nil {
+		commandIdx = len(allInputs)
+		allInputs = append(allInputs, svc.GeneratedCommand)
+	}
 	secretsIdx := -1
 	if args.Secrets != nil {
 		secretsIdx = len(allInputs)
@@ -863,6 +869,10 @@ func CreateECSService(
 			}
 		}
 		logConfiguration := logConfigurationFor(containerName)
+		command := svc.Command
+		if commandIdx >= 0 {
+			command = all[commandIdx].([]string)
+		}
 
 		// NOTE: dnsSearchDomains is NOT supported on Fargate with awsvpc network mode.
 		// Instead, we rewrite environment variables to use FQDNs at the provider level.
@@ -873,7 +883,7 @@ func CreateECSService(
 			PortMappings:     portMappings,
 			Environment:      envVars,
 			Secrets:          mainSecrets,
-			Command:          svc.Command,
+			Command:          command,
 			EntryPoint:       svc.Entrypoint,
 			DependsOn:        buildDependsOn(svc.DependsOn, args.Sidecars, infra.Etag),
 			HealthCheck:      healthCheck,

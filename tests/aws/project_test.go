@@ -54,9 +54,9 @@ func TestConstructAwsProjectFoldsSidecars(t *testing.T) {
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
 			mu.Lock()
 			switch string(args.TypeToken) {
-			case "aws:ecs/taskDefinition:TaskDefinition":
+			case ecsTaskDefinitionType:
 				taskDefs = append(taskDefs, args.Inputs)
-			case "aws:ecs/service:Service":
+			case ecsServiceType:
 				ecsServices++
 			default:
 			}

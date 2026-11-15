@@ -1,6 +1,7 @@
 package defangscaleway
 
 import (
+	"github.com/DefangLabs/pulumi-defang/provider/common"
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/infer"
 	"github.com/pulumi/pulumi-go-provider/middleware/schema"
@@ -19,6 +20,8 @@ func Provider() p.Provider {
 	return infer.Provider(infer.Options{
 		Resources: []infer.InferredResource{
 			infer.Resource[*Build, BuildInputs, BuildState](&Build{}),
+			infer.Resource[*ModelSelection, common.ModelSelectionInputs, common.ModelSelectionState](
+				newModelSelection()),
 		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),

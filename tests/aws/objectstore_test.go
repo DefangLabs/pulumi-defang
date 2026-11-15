@@ -89,7 +89,7 @@ func newBucketArnMock() (*bucketArnMock, *integration.MockResourceMonitor) {
 				if policy, ok := args.Inputs.GetOk("policy"); ok && policy.IsString() {
 					m.policies[args.Name] = policy.AsString()
 				}
-			case "aws:ecs/service:Service":
+			case ecsServiceType:
 				m.ecsNames = append(m.ecsNames, args.Name)
 			}
 			return args.Name, args.Inputs, nil

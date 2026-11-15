@@ -38,6 +38,8 @@ require (
 	google.golang.org/protobuf v1.36.12
 )
 
+require github.com/aws/aws-sdk-go-v2/service/bedrock v1.74.3 // indirect
+
 require (
 	cel.dev/expr v0.25.3 // indirect
 	cloud.google.com/go v0.123.0 // indirect

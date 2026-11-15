@@ -21,6 +21,8 @@ func Provider() p.Provider {
 	return infer.Provider(infer.Options{
 		Resources: []infer.InferredResource{
 			infer.Resource[*Build, BuildArgs, BuildState](&Build{}),
+			infer.Resource[*ModelSelection, common.ModelSelectionInputs, common.ModelSelectionState](
+				newModelSelection()),
 		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),

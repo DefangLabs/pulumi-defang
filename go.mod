@@ -56,6 +56,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+require github.com/aws/aws-sdk-go-v2/service/bedrock v1.74.3
+
 require (
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.24.1-0.20261001053825-dbc26066f70a // indirect

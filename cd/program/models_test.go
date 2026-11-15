@@ -1,0 +1,342 @@
+package program
+
+import (
+	"encoding/json"
+	"io/fs"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/DefangLabs/pulumi-defang/provider/compose"
+	awscompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws/compose"
+	scalewaycompose "github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-scaleway/compose"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// The payloads the provider tests deploy; parsed here with the CD's own
+// decoder, the path every real deployment takes.
+func modelPayload(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := fs.ReadFile(os.DirFS("../../tests/testdata/model-requests"), name)
+	require.NoError(t, err)
+	return data
+}
+
+func TestParseModelPayloads(t *testing.T) {
+	for _, fixture := range []string{"aws.yaml", "gcp.yaml", "azure.yaml", "scaleway.yaml"} {
+		t.Run(fixture, func(t *testing.T) {
+			project, err := parseCompose(modelPayload(t, fixture), "modeldemo")
+			require.NoError(t, err)
+			assert.Equal(t, "ai/chat-default", project.Models["chat"].Model)
+			assert.Equal(t, "chat-large", project.Models["large"].Model)
+			assert.Equal(t, &compose.ServiceModelConfig{ModelVar: "EMBED_MODEL_NAME", EndpointVar: "EMBED_BASE_URL"},
+				project.Services["app"].Models["embed"])
+			if fixture != "scaleway.yaml" {
+				assert.NotNil(t, project.Services["chat"].LLM, "scalar x-defang-llm")
+				assert.Empty(t, project.Services["chat"].Command)
+			}
+		})
+	}
+	legacy, err := parseCompose(modelPayload(t, "legacy-aws.yaml"), "modeldemo")
+	require.NoError(t, err)
+	assert.Equal(t, "--model", legacy.Services["chat"].Command[1])
+	assert.NotNil(t, legacy.Services["custom"].LLM, "an object x-defang-llm still decodes")
+}
+
+func TestToArgsCarryModels(t *testing.T) {
+	project, err := parseCompose(modelPayload(t, "aws.yaml"), "modeldemo")
+	require.NoError(t, err)
+	applySeeds(project, ModelSeeds{"embed": {Model: "amazon.titan-embed-text-v2:0", Existed: true}})
+
+	args := toAWSArgs(project, "etag")
+	models, ok := args.Models.(awscompose.ModelConfigMap)
+	require.True(t, ok)
+	require.Len(t, models, 4)
+	chat := models["chat"].(awscompose.ModelConfigArgs)
+	assert.Equal(t, pulumi.String("ai/chat-default"), chat.Model)
+	assert.Nil(t, chat.Seed)
+	seed := models["embed"].(awscompose.ModelConfigArgs).Seed.(awscompose.ModelTargetArgs)
+	assert.Equal(t, pulumi.String("amazon.titan-embed-text-v2:0"), seed.Model)
+	assert.Equal(t, pulumi.Bool(true), seed.Existed)
+
+	app := args.Services.(awscompose.ServiceConfigMap)["app"].(awscompose.ServiceConfigArgs)
+	binding := app.Models.(awscompose.ServiceModelConfigMap)["chat"].(awscompose.ServiceModelConfigArgs)
+	assert.Equal(t, pulumi.String("CHAT_MODEL"), binding.ModelVar)
+	assert.Equal(t, pulumi.String("CHAT_URL"), binding.EndpointVar)
+
+	scw, err := parseCompose(modelPayload(t, "scaleway.yaml"), "modeldemo")
+	require.NoError(t, err)
+	scwArgs := toScalewayArgs(scw, "etag")
+	assert.Len(t, scwArgs.Models.(scalewaycompose.ModelConfigMap), 4)
+	worker := scwArgs.Services.(scalewaycompose.ServiceConfigMap)["worker"].(scalewaycompose.ServiceConfigArgs)
+	assert.Len(t, worker.Models.(scalewaycompose.ServiceModelConfigMap), 3)
+}
+
+// checkpoint builds the deployment object of `pulumi stack export`.
+func checkpoint(t *testing.T, resources ...map[string]any) []byte {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"resources": resources})
+	require.NoError(t, err)
+	return data
+}
+
+const urnPrefix = "urn:pulumi:prod::modeldemo::"
+
+func TestSeedsFromState(t *testing.T) {
+	project := "urn:pulumi:prod::modeldemo::defang-aws:index:Project::modeldemo"
+
+	t.Run("aws-task-definition", func(t *testing.T) {
+		chatSvc := urnPrefix + "defang-aws:index:Project$defang-aws:index:Service::chat"
+		containerDefs, err := json.Marshal([]map[string]any{{
+			"name": "chat", "command": []string{"--drop_params", "--model", "bedrock/amazon.titan-embed-text-v2:0",
+				"--alias", "embedding-default"},
+		}})
+		require.NoError(t, err)
+		state := checkpoint(t,
+			map[string]any{"urn": project, "type": "defang-aws:index:Project"},
+			map[string]any{"urn": chatSvc, "type": "defang-aws:index:Service", "parent": project},
+			map[string]any{
+				"urn": chatSvc + "$aws:ecs/taskDefinition:TaskDefinition::chat", "type": "aws:ecs/taskDefinition:TaskDefinition",
+				"parent": chatSvc, "inputs": map[string]any{"containerDefinitions": string(containerDefs)},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "aws.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Model: "amazon.titan-embed-text-v2:0", Existed: true}, seeds["chat"])
+		assert.NotContains(t, seeds, "embed", "a model never deployed has no seed")
+	})
+
+	t.Run("gcp-cloud-init", func(t *testing.T) {
+		svc := urnPrefix + "defang-gcp:index:Project$defang-gcp:index:Service::embed"
+		userData := "ExecStart=/usr/bin/docker run --pull=always --rm --name=embed -p 4000:4000/tcp " +
+			"-e VERTEXAI_LOCATION=us-central1 -e VERTEXAI_PROJECT=p litellm/litellm:v1.92.0 --drop_params " +
+			"--model vertex_ai/gemini-embedding-001 --alias embedding-default"
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-gcp:index:Service"},
+			map[string]any{
+				"urn": svc + "$gcp:compute/instanceTemplate:InstanceTemplate::embed", "parent": svc,
+				"type":   "gcp:compute/instanceTemplate:InstanceTemplate",
+				"inputs": map[string]any{"metadata": map[string]any{"user-data": userData}},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "gcp.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Model: "gemini-embedding-001", Location: "us-central1", Existed: true},
+			seeds["embed"])
+	})
+
+	t.Run("azure-foundry-deployment", func(t *testing.T) {
+		// The deployment is parented to the shared account, not to the LLM
+		// component; it is found by its name, the model applications send.
+		llm := urnPrefix + "defang-azure:index:Project$defang-azure:index:LLM::embed"
+		account := urnPrefix + "defang-azure:index:Project$azure-native:cognitiveservices:Account::ai"
+		state := checkpoint(t,
+			map[string]any{"urn": llm, "type": "defang-azure:index:LLM"},
+			map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+			map[string]any{
+				"urn": account + "$azure-native:cognitiveservices:Deployment::embedding-default", "parent": account,
+				"type": "azure-native:cognitiveservices:Deployment",
+				"outputs": map[string]any{
+					"properties": map[string]any{"model": map[string]any{
+						"name": "text-embedding-3-small", "version": "1", "format": "OpenAI",
+					}},
+					"sku": map[string]any{"name": "Standard"},
+				},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "azure.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{
+			Model: "text-embedding-3-small", Version: "1", Format: "OpenAI", Sku: "Standard", Existed: true,
+		}, seeds["embed"])
+	})
+}
+
+func TestSeedsFromStateReadsOnlyTheGateway(t *testing.T) {
+	t.Run("project-named-like-the-model", func(t *testing.T) {
+		// A model named "modeldemo" in project "modeldemo": the project component
+		// is not a gateway, so its unrelated services seed nothing.
+		project := urnPrefix + "defang-aws:index:Project::modeldemo"
+		svc := urnPrefix + "defang-aws:index:Project$defang-aws:index:Service::other"
+		containerDefs, err := json.Marshal([]map[string]any{{
+			"name": "other", "command": []string{"--model", "bedrock/amazon.titan-embed-text-v1"},
+		}})
+		require.NoError(t, err)
+		state := checkpoint(t,
+			map[string]any{"urn": project, "type": "defang-aws:index:Project"},
+			map[string]any{"urn": svc, "type": "defang-aws:index:Service", "parent": project},
+			map[string]any{
+				"urn": svc + "$aws:ecs/taskDefinition:TaskDefinition::other", "type": "aws:ecs/taskDefinition:TaskDefinition",
+				"parent": svc, "inputs": map[string]any{"containerDefinitions": string(containerDefs)},
+			},
+		)
+		payload := []byte("name: modeldemo\nmodels:\n  modeldemo:\n    model: ai/embedding-default\n" +
+			"services:\n  app:\n    image: app\n")
+		seeds, err := SeedsFromState(state, payload, "modeldemo")
+		require.NoError(t, err)
+		assert.NotContains(t, seeds, "modeldemo")
+	})
+
+	t.Run("environment-and-health-check-are-not-the-command", func(t *testing.T) {
+		svc := urnPrefix + "defang-aws:index:Service::chat"
+		containerDefs, err := json.Marshal([]map[string]any{{
+			"name": "chat",
+			"environment": []map[string]any{
+				{"name": "EXAMPLE_ARGS", "value": "docker run x --model bedrock/amazon.titan-embed-text-v1"},
+			},
+			"command": []string{"--drop_params", "--model", "bedrock/amazon.titan-embed-text-v2:0"},
+			"healthCheck": map[string]any{
+				"command": []string{"CMD", "probe", "--model", "bedrock/amazon.titan-embed-text-v1"},
+			},
+		}})
+		require.NoError(t, err)
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-aws:index:Service"},
+			map[string]any{
+				"urn": svc + "$aws:ecs/taskDefinition:TaskDefinition::chat", "type": "aws:ecs/taskDefinition:TaskDefinition",
+				"parent": svc, "inputs": map[string]any{"containerDefinitions": string(containerDefs)},
+			},
+		)
+		for range 20 { // map order varies between runs
+			seeds, err := SeedsFromState(state, modelPayload(t, "aws.yaml"), "modeldemo")
+			require.NoError(t, err)
+			assert.Equal(t, "amazon.titan-embed-text-v2:0", seeds["chat"].Model)
+		}
+	})
+
+	t.Run("cloud-init-quoted-env", func(t *testing.T) {
+		// GCE writes env flags with Go %q quoting before the image.
+		svc := urnPrefix + "defang-gcp:index:Service::embed"
+		userData := "#cloud-config\nwrite_files:\n  - content: |\n      ExecStart=/usr/bin/docker run --pull=always " +
+			`--rm --name=embed -e "EXAMPLE_ARGS=check --model vertex_ai/old" -e "VERTEXAI_LOCATION=europe-west4" ` +
+			"litellm/litellm:v1.92.0 --drop_params --model vertex_ai/gemini-embedding-001 --alias embed\n" +
+			"      ExecStop=/usr/bin/docker stop embed\n"
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-gcp:index:Service"},
+			map[string]any{
+				"urn": svc + "$gcp:compute/instanceTemplate:InstanceTemplate::embed", "parent": svc,
+				"type":   "gcp:compute/instanceTemplate:InstanceTemplate",
+				"inputs": map[string]any{"metadata": map[string]any{"user-data": userData}},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "gcp.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Model: "gemini-embedding-001", Location: "europe-west4", Existed: true},
+			seeds["embed"])
+	})
+
+	t.Run("cloud-run-env-location", func(t *testing.T) {
+		svc := urnPrefix + "defang-gcp:index:Service::embed"
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-gcp:index:Service"},
+			map[string]any{
+				"urn": svc + "$gcp:cloudrunv2/service:Service::embed", "parent": svc,
+				"type": "gcp:cloudrunv2/service:Service",
+				"inputs": map[string]any{"template": map[string]any{"containers": []any{map[string]any{
+					"args": []any{"--drop_params", "--model", "vertex_ai/gemini-embedding-001", "--alias", "embed"},
+					"envs": []any{
+						map[string]any{"name": "VERTEXAI_PROJECT", "value": "p"},
+						map[string]any{"name": "VERTEXAI_LOCATION", "value": "us-central1"},
+					},
+				}}}},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "gcp.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Model: "gemini-embedding-001", Location: "us-central1", Existed: true},
+			seeds["embed"])
+	})
+}
+
+func TestSeedsFromStateWithoutTarget(t *testing.T) {
+	t.Run("persisted-selection-needs-no-seed", func(t *testing.T) {
+		svc := urnPrefix + "defang-aws:index:Service::chat"
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-aws:index:Service"},
+			map[string]any{
+				"urn": urnPrefix + "defang-aws:index:ModelSelection::chat", "type": "defang-aws:index:ModelSelection",
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "aws.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.NotContains(t, seeds, "chat")
+	})
+
+	t.Run("azure-selection-is-named-after-its-deployment", func(t *testing.T) {
+		llm := urnPrefix + "defang-azure:index:LLM::embed"
+		state := checkpoint(t,
+			map[string]any{"urn": llm, "type": "defang-azure:index:LLM"},
+			map[string]any{
+				"urn":  urnPrefix + "defang-azure:index:ModelSelection::embedding-default",
+				"type": "defang-azure:index:ModelSelection",
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "azure.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.NotContains(t, seeds, "embed")
+	})
+
+	t.Run("azure-model-key-is-not-a-selection-name", func(t *testing.T) {
+		// Model "embed" requests embedding-default; another model requests a
+		// deployment named "embed". That selection does not make "embed"'s own
+		// deployment look recorded.
+		account := urnPrefix + "azure-native:cognitiveservices:Account::ai"
+		state := checkpoint(t,
+			map[string]any{"urn": urnPrefix + "defang-azure:index:LLM::embed", "type": "defang-azure:index:LLM"},
+			map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+			map[string]any{
+				"urn": urnPrefix + "defang-azure:index:ModelSelection::embed", "type": "defang-azure:index:ModelSelection",
+			},
+			map[string]any{
+				"urn": account + "$azure-native:cognitiveservices:Deployment::embedding-default", "parent": account,
+				"type": "azure-native:cognitiveservices:Deployment",
+				"outputs": map[string]any{
+					"properties": map[string]any{"model": map[string]any{"name": "text-embedding-3-small", "version": "1"}},
+				},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "azure.yaml"), "modeldemo")
+		require.NoError(t, err)
+		require.Contains(t, seeds, "embed")
+		assert.Equal(t, "text-embedding-3-small", seeds["embed"].Model)
+	})
+
+	t.Run("azure-request-change-is-an-unknown-target", func(t *testing.T) {
+		// "embed" used to request the model "embed" and now requests another
+		// name: its new deployment has no selection, the old one is not its
+		// model key's, and the existing LLM component makes the migration need
+		// an exact target.
+		account := urnPrefix + "azure-native:cognitiveservices:Account::ai"
+		state := checkpoint(t,
+			map[string]any{"urn": urnPrefix + "defang-azure:index:LLM::embed", "type": "defang-azure:index:LLM"},
+			map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+			map[string]any{
+				"urn":  account + "$defang-azure:index:ModelSelection::embed",
+				"type": "defang-azure:index:ModelSelection", "parent": account,
+			},
+		)
+		payload := strings.Replace(string(modelPayload(t, "azure.yaml")),
+			"  embed:\n    model: embedding-default\n", "  embed:\n    model: embedding-next\n", 1)
+		require.Contains(t, payload, "embedding-next")
+		seeds, err := SeedsFromState(state, []byte(payload), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Existed: true}, seeds["embed"])
+	})
+
+	t.Run("existing-service-without-known-target", func(t *testing.T) {
+		svc := urnPrefix + "defang-aws:index:Service::embed"
+		state := checkpoint(t, map[string]any{"urn": svc, "type": "defang-aws:index:Service"})
+		seeds, err := SeedsFromState(state, modelPayload(t, "aws.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Existed: true}, seeds["embed"],
+			"existence without a target stops embedding migration")
+	})
+
+	t.Run("new-stack", func(t *testing.T) {
+		seeds, err := SeedsFromState(nil, modelPayload(t, "aws.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Empty(t, seeds)
+	})
+}

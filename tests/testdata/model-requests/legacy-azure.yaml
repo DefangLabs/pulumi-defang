@@ -1,0 +1,34 @@
+# What a CLI before the model contract (DefangLabs/defang 24d233cc) uploads
+# for the compose.yaml next to this file on Azure: the bare alias, resolved by
+# the provider at deploy time.
+name: modeldemo
+services:
+  app:
+    depends_on:
+      chat: {condition: service_started, required: true}
+      embed: {condition: service_started, required: true}
+    environment:
+      CHAT_MODEL: chat-default
+      CHAT_URL: http://chat:4000/v1/
+      EMBED_BASE_URL: http://embed:4000/v1/
+      EMBED_MODEL_NAME: embedding-default
+      OPENAI_API_KEY: networkisalreadyprivate
+    image: app
+    ports: [{mode: ingress, target: 8080}]
+  chat:
+    command: [--drop_params, --model, chat-default, --alias, chat-default]
+    environment: {LITELLM_MASTER_KEY: networkisalreadyprivate}
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+  embed:
+    command: [--drop_params, --model, embedding-default, --alias, embedding-default]
+    environment: {LITELLM_MASTER_KEY: networkisalreadyprivate}
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+models:
+  chat:
+    model: chat-default
+  embed:
+    model: embedding-default
