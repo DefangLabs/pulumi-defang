@@ -144,6 +144,7 @@ func CreateLLMDeployment(
 	deploymentName string,
 	plan common.ModelPlan,
 	seed *compose.ModelTarget,
+	switched bool,
 	llmInfra *LLMInfra,
 	infra *SharedInfra,
 	pluginID common.PluginIdentity,
@@ -167,10 +168,27 @@ func CreateLLMDeployment(
 		opts = append(opts, pulumi.DependsOn([]pulumi.Resource{llmInfra.lastDeployment}))
 	}
 
+	// A model that changed its request onto this deployment switches to its
+	// target, which for an embedding model needs an exact request, as a request
+	// change does on every cloud. The selection may already exist, shared with
+	// other models, so this is checked here rather than when it is created.
+	var name pulumi.StringInput = pulumi.String(deploymentName)
+	if switched && !ModelCloud.IsExact(plan.Candidates) {
+		name = sel.SelectedRole.ApplyT(func(role string) (string, error) {
+			if role == common.ModelRoleEmbedding {
+				return "", fmt.Errorf("%w: a model now requests %q, whose embedding model is already deployed; "+
+					"switching an embedding model needs an exact target: use a recipe key with one exact "+
+					"candidate (a pinned version), and regenerate stored vectors", common.ErrEmbeddingMigration,
+					plan.Request)
+			}
+			return deploymentName, nil
+		}).(pulumi.StringOutput)
+	}
+
 	deployment, err := cognitiveservices.NewDeployment(ctx, deploymentName, &cognitiveservices.DeploymentArgs{
 		AccountName:       llmInfra.Account.Name,
 		ResourceGroupName: infra.ResourceGroup.Name,
-		DeploymentName:    pulumi.String(deploymentName),
+		DeploymentName:    name,
 		Properties: &cognitiveservices.DeploymentPropertiesArgs{
 			Model: &cognitiveservices.DeploymentModelArgs{
 				Format:  sel.Format.ToStringPtrOutput(),
