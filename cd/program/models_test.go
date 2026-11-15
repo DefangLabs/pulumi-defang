@@ -149,6 +149,78 @@ func TestSeedsFromState(t *testing.T) {
 	})
 }
 
+func TestSeedsFromStateReadsOnlyTheGateway(t *testing.T) {
+	t.Run("project-named-like-the-model", func(t *testing.T) {
+		// A model named "modeldemo" in project "modeldemo": the project component
+		// is not a gateway, so its unrelated services seed nothing.
+		project := urnPrefix + "defang-aws:index:Project::modeldemo"
+		svc := urnPrefix + "defang-aws:index:Project$defang-aws:index:Service::other"
+		containerDefs, err := json.Marshal([]map[string]any{{
+			"name": "other", "command": []string{"--model", "bedrock/amazon.titan-embed-text-v1"},
+		}})
+		require.NoError(t, err)
+		state := checkpoint(t,
+			map[string]any{"urn": project, "type": "defang-aws:index:Project"},
+			map[string]any{"urn": svc, "type": "defang-aws:index:Service", "parent": project},
+			map[string]any{
+				"urn": svc + "$aws:ecs/taskDefinition:TaskDefinition::other", "type": "aws:ecs/taskDefinition:TaskDefinition",
+				"parent": svc, "inputs": map[string]any{"containerDefinitions": string(containerDefs)},
+			},
+		)
+		payload := []byte("name: modeldemo\nmodels:\n  modeldemo:\n    model: ai/embedding-default\n" +
+			"services:\n  app:\n    image: app\n")
+		seeds, err := SeedsFromState(state, payload, "modeldemo")
+		require.NoError(t, err)
+		assert.NotContains(t, seeds, "modeldemo")
+	})
+
+	t.Run("environment-is-not-a-command", func(t *testing.T) {
+		svc := urnPrefix + "defang-aws:index:Service::chat"
+		containerDefs, err := json.Marshal([]map[string]any{{
+			"name": "chat",
+			"environment": []map[string]any{
+				{"name": "EXAMPLE_ARGS", "value": "docker run x --model bedrock/amazon.titan-embed-text-v1"},
+			},
+			"command": []string{"--drop_params", "--model", "bedrock/amazon.titan-embed-text-v2:0"},
+		}})
+		require.NoError(t, err)
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-aws:index:Service"},
+			map[string]any{
+				"urn": svc + "$aws:ecs/taskDefinition:TaskDefinition::chat", "type": "aws:ecs/taskDefinition:TaskDefinition",
+				"parent": svc, "inputs": map[string]any{"containerDefinitions": string(containerDefs)},
+			},
+		)
+		for range 20 { // map order varies between runs
+			seeds, err := SeedsFromState(state, modelPayload(t, "aws.yaml"), "modeldemo")
+			require.NoError(t, err)
+			assert.Equal(t, "amazon.titan-embed-text-v2:0", seeds["chat"].Model)
+		}
+	})
+
+	t.Run("cloud-run-env-location", func(t *testing.T) {
+		svc := urnPrefix + "defang-gcp:index:Service::embed"
+		state := checkpoint(t,
+			map[string]any{"urn": svc, "type": "defang-gcp:index:Service"},
+			map[string]any{
+				"urn": svc + "$gcp:cloudrunv2/service:Service::embed", "parent": svc,
+				"type": "gcp:cloudrunv2/service:Service",
+				"inputs": map[string]any{"template": map[string]any{"containers": []any{map[string]any{
+					"args": []any{"--drop_params", "--model", "vertex_ai/gemini-embedding-001", "--alias", "embed"},
+					"envs": []any{
+						map[string]any{"name": "VERTEXAI_PROJECT", "value": "p"},
+						map[string]any{"name": "VERTEXAI_LOCATION", "value": "us-central1"},
+					},
+				}}}},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "gcp.yaml"), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Model: "gemini-embedding-001", Location: "us-central1", Existed: true},
+			seeds["embed"])
+	})
+}
+
 func TestSeedsFromStateWithoutTarget(t *testing.T) {
 	t.Run("persisted-selection-needs-no-seed", func(t *testing.T) {
 		svc := urnPrefix + "defang-aws:index:Service::chat"

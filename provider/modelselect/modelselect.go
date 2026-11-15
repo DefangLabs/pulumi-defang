@@ -71,12 +71,23 @@ func (ms ModelSelector) Create(
 		return infer.CreateResponse[common.ModelSelectionState]{ID: in.Request,
 			Output: common.ModelSelectionState{ModelSelectionInputs: in}}, nil
 	}
+	// A built-in alias is the request the deployment already had, whatever its
+	// recipe entry now holds, so only another request can name a new target.
+	seed := in.Seed
+	protected := seed != nil && seed.Existed &&
+		(common.IsBuiltinModelAlias(in.Request) || !ms.Cloud.IsExact(in.Candidates))
 	state, err := ms.Resolve(ctx, in)
 	if err != nil {
+		if protected && seed.Model != "" && in.Role == common.ModelRoleEmbedding {
+			p.GetLogger(ctx).Warningf("embedding model %q keeps its deployed target %s; its recipe entry does not "+
+				"resolve: %v", in.Request, describeTarget(*seed), err)
+			state.SetTarget(*seed)
+			state.SelectedRole = in.Role
+			return infer.CreateResponse[common.ModelSelectionState]{ID: in.Request, Output: state}, nil
+		}
 		return infer.CreateResponse[common.ModelSelectionState]{}, err
 	}
-	if seed := in.Seed; seed != nil && seed.Existed && state.SelectedRole == common.ModelRoleEmbedding &&
-		!ms.Cloud.IsExact(in.Candidates) {
+	if protected && state.SelectedRole == common.ModelRoleEmbedding {
 		if seed.Model == "" {
 			return infer.CreateResponse[common.ModelSelectionState]{}, fmt.Errorf("%w: embedding model %q is already "+
 				"deployed but its current target cannot be established; pin it with a native exact model ID or a "+
@@ -86,10 +97,19 @@ func (ms ModelSelector) Create(
 			p.GetLogger(ctx).Warningf("embedding model %q keeps its deployed target %s; the recipe now maps it to %s. "+
 				"To migrate, request the new model explicitly and regenerate stored vectors.",
 				in.Request, describeTarget(*seed), describeTarget(state.Target()))
-			state.SetTarget(*seed)
+			restoreSeed(&state, *seed)
 		}
 	}
 	return infer.CreateResponse[common.ModelSelectionState]{ID: in.Request, Output: state}, nil
+}
+
+// restoreSeed records the deployed target. A seed whose location could not be
+// read keeps the resolved location rather than an empty one.
+func restoreSeed(state *common.ModelSelectionState, seed compose.ModelTarget) {
+	if seed.Location == "" {
+		seed.Location = state.Location
+	}
+	state.SetTarget(seed)
 }
 
 // Update re-resolves only when the request or its recipe entry changed, and
@@ -109,6 +129,15 @@ func (ms ModelSelector) Update(
 	}
 	if old.Model == "" || role != common.ModelRoleEmbedding {
 		state, err := ms.Resolve(ctx, in)
+		// An exact model resolved without the catalog has no recorded role; it
+		// may have been an embedding model, so the switch must still be explicit.
+		if err == nil && old.Model != "" && old.SelectedRole == "" && state.SelectedRole == common.ModelRoleEmbedding &&
+			!sameTarget(old.Target(), state.Target()) && !ms.Cloud.IsExact(in.Candidates) {
+			return infer.UpdateResponse[common.ModelSelectionState]{}, fmt.Errorf("%w: model was %q (%s), whose role "+
+				"was not recorded; switching to embedding model %q needs an exact target: use a native exact model ID "+
+				"or a recipe key with one exact candidate", common.ErrEmbeddingMigration, old.Request,
+				describeTarget(old.Target()), in.Request)
+		}
 		return infer.UpdateResponse[common.ModelSelectionState]{Output: state}, err
 	}
 

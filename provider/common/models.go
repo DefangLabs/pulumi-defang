@@ -61,6 +61,12 @@ var builtinModelRoles = map[string]string{
 	"embedding-default": ModelRoleEmbedding,
 }
 
+// IsBuiltinModelAlias reports whether a normalized request is a built-in alias.
+func IsBuiltinModelAlias(request string) bool {
+	_, ok := builtinModelRoles[request]
+	return ok
+}
+
 // ModelCloud describes one provider's recipe rules and compatibility defaults.
 type ModelCloud struct {
 	// Name is the cloud name used in messages, e.g. "aws".

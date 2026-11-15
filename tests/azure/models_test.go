@@ -60,6 +60,7 @@ type deployment struct{ model, version, format, sku string }
 type azureModelRun struct {
 	selections  *testutil.ModelSelections
 	deployments map[string]property.Map // deployment name → inputs
+	registered  int                     // Deployment registrations, repeats included
 	apps        map[string]property.Map // container app → inputs
 }
 
@@ -113,6 +114,7 @@ func constructAzureModels(t *testing.T, payload, recipe string) *azureModelRun {
 			}
 			if args.TypeToken == "azure-native:cognitiveservices:Deployment" {
 				run.deployments[args.Inputs.Get("deploymentName").AsString()] = args.Inputs
+				run.registered++
 			}
 			if args.TypeToken == "azure-native:app:ContainerApp" {
 				run.apps[args.Name] = args.Inputs
@@ -213,6 +215,39 @@ models:
 	assert.Equal(t, deployment{"Phi-4", "10", "Microsoft", "GlobalStandard"}, run.deployed(t, "Phi-4"))
 	assert.Equal(t, "Phi-4", run.env(t, "app")["PHI_MODEL"])
 	assert.Equal(t, common.ModelSourceNative, run.selections.Inputs["phi"].Source)
+}
+
+func TestAzureRepeatedRequestSharesADeployment(t *testing.T) {
+	// Two Compose models with the same request: applications of both send
+	// "chat-default", so one deployment serves them.
+	payload := `
+services:
+  app:
+    image: app
+    ports: [{mode: ingress, target: 8080}]
+    environment: {A_MODEL: chat-default, A_URL: "http://primary:4000/v1/", B_MODEL: chat-default}
+    models:
+      primary: {model_var: A_MODEL, endpoint_var: A_URL}
+      secondary: {model_var: B_MODEL}
+  primary:
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+  secondary:
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+models:
+  primary:
+    model: ai/chat-default
+  secondary:
+    model: chat-default
+`
+	run := constructAzureModels(t, payload, "")
+	assert.Equal(t, 1, run.registered, "one Foundry deployment for a repeated request")
+	assert.Equal(t, "gpt-5.1", run.deployed(t, "chat-default").model)
+	assert.Contains(t, run.selections.Selected, "primary")
+	assert.Contains(t, run.selections.Selected, "secondary")
 }
 
 func TestAzureLegacyCLIPayload(t *testing.T) {

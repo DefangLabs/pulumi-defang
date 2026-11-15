@@ -44,7 +44,7 @@ config:
 | `location` | GCP | Vertex AI location; defaults to the stack region. |
 | `version` | Azure | Exact model revision. A pinned candidate is used or the deployment fails; it never falls through. |
 | `format` | Azure | Model format, e.g. `OpenAI`. Required when a name exists in several formats. |
-| `sku` | Azure | Deployment SKU. Default: `Standard` if offered, else `GlobalStandard`. |
+| `sku` | Azure | Deployment SKU. Default: `Standard` if offered, else `GlobalStandard`. Without a `version`, the highest revision that offers it is used. |
 | `allow-preview` | Azure | Lets a candidate without `version` pick a preview revision. |
 
 Unknown fields, fields on the wrong cloud, empty lists and role conflicts are
@@ -122,8 +122,11 @@ entry, not the whole recipe.
   stored vectors have to be regenerated.
 - On the first deployment with this resource for an existing AWS, GCP, or
   Azure project, the CD reads the model each service runs from stack state and
-  seeds the record with it. If an embedding model is deployed but its model
-  cannot be read, the deployment stops and asks for the model to be pinned.
+  seeds the record with it. A built-in alias keeps that embedding model even
+  when its recipe entry has one exact candidate, or no longer resolves. If an
+  embedding model is deployed but its model cannot be read, the deployment
+  stops and asks for the model to be pinned.
+- Models with the same request share one Azure deployment.
 - Scaleway model selection has not shipped before this change, so Scaleway
   does not migrate a selection from an existing deployment. A new Scaleway
   deployment resolves its model from the selected recipe.

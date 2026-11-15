@@ -230,6 +230,81 @@ func TestFirstUpgradeSeed(t *testing.T) {
 	assert.Equal(t, "embed:1", state.Model)
 }
 
+func TestFirstUpgradeSeedOfAnAlias(t *testing.T) {
+	r := &fakeResolver{unavailable: map[string]bool{"embed": true}}
+	ms := ModelSelector{Cloud: exactCloud, Resolver: r}
+	create := func(in common.ModelSelectionInputs) (common.ModelSelectionState, error) {
+		resp, err := ms.Create(context.Background(), createRequest{Inputs: in})
+		return resp.Output, err
+	}
+
+	// One exact candidate under the same built-in alias is a recipe change,
+	// not a request to migrate.
+	exact := inputs("embedding-default", "embedding", compose.ModelCandidate{Model: "embed-v2", Version: "3"})
+	exact.Seed = &compose.ModelTarget{Model: "embed:1", Existed: true}
+	state, err := create(exact)
+	require.NoError(t, err)
+	assert.Equal(t, "embed:1", state.Model)
+	assert.Empty(t, state.Version)
+
+	// A known seed survives a recipe entry that no longer resolves.
+	gone := inputs("embedding-default", "embedding", compose.ModelCandidate{Model: "embed"})
+	gone.Seed = &compose.ModelTarget{Model: "embed:1", Existed: true}
+	state, err = create(gone)
+	require.NoError(t, err)
+	assert.Equal(t, "embed:1", state.Model)
+	assert.Equal(t, common.ModelRoleEmbedding, state.SelectedRole)
+
+	gone.Seed = &compose.ModelTarget{Existed: true}
+	_, err = create(gone)
+	require.ErrorIs(t, err, common.ErrModelUnavailable, "without a known target the error stands")
+
+	// A seed whose location could not be read keeps the resolved location.
+	located := inputs("embedding-default", "embedding", compose.ModelCandidate{Model: "embed-v2"})
+	located.Seed = &compose.ModelTarget{Model: "embed:1", Existed: true}
+	ms.Resolver = locatedResolver{}
+	state, err = create(located)
+	require.NoError(t, err)
+	assert.Equal(t, "embed:1", state.Model)
+	assert.Equal(t, "us-central1", state.Location)
+}
+
+type locatedResolver struct{}
+
+func (locatedResolver) ResolveCandidate(
+	_ context.Context, _ common.ModelSelectionInputs, c compose.ModelCandidate,
+) (common.ResolvedModel, error) {
+	return common.ResolvedModel{Target: compose.ModelTarget{Model: c.Model, Location: "us-central1"}}, nil
+}
+
+func TestUnrecordedRoleCannotSwitchToEmbedding(t *testing.T) {
+	r := &fakeResolver{
+		latest: map[string]string{"embed-g1": "embed-g1:4"},
+		roles:  map[string]string{"embed-g1:4": common.ModelRoleEmbedding},
+	}
+	ms := ModelSelector{Cloud: exactCloud, Resolver: r}
+	// An exact native model resolved without the catalog records no role.
+	old := common.ModelSelectionState{
+		ModelSelectionInputs: common.ModelSelectionInputs{
+			Request: "embed-v2:0", Source: common.ModelSourceNative,
+			Candidates: []compose.ModelCandidate{{Model: "embed-v2", Version: "0"}},
+		},
+	}
+	old.SetTarget(compose.ModelTarget{Model: "embed-v2", Version: "0"})
+
+	floating := common.ModelSelectionInputs{
+		Request: "embed-g1", Source: common.ModelSourceNative, Candidates: []compose.ModelCandidate{{Model: "embed-g1"}},
+	}
+	_, err := ms.Update(context.Background(), updateRequest{State: old, Inputs: floating})
+	require.ErrorIs(t, err, common.ErrEmbeddingMigration)
+
+	exact := floating
+	exact.Candidates = []compose.ModelCandidate{{Model: "embed-g1", Version: "4"}}
+	resp, err := ms.Update(context.Background(), updateRequest{State: old, Inputs: exact})
+	require.NoError(t, err)
+	assert.Equal(t, "embed-g1:4", resp.Output.Model)
+}
+
 func TestDeferredUntilScopeKnown(t *testing.T) {
 	r := &fakeResolver{}
 	ms := ModelSelector{Cloud: exactCloud, Resolver: r, ScopeRequired: true}

@@ -55,10 +55,12 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 	for i := range state.Resources {
 		byURN[state.Resources[i].URN] = &state.Resources[i]
 	}
-	// under reports whether r is the named service's component or one of its descendants.
+	// under reports whether r is the named gateway's component or one of its
+	// descendants. Only a service or LLM component owns a gateway: a project
+	// named like the model does not.
 	under := func(r *stateResource, service string) bool {
 		for cur := r; cur != nil; cur = byURN[cur.Parent] {
-			if urnName(cur.URN) == service && strings.HasPrefix(cur.Type, "defang-") {
+			if urnName(cur.URN) == service && isGatewayComponent(cur.Type) {
 				return true
 			}
 		}
@@ -91,6 +93,11 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 		}
 	}
 	return seeds, nil
+}
+
+func isGatewayComponent(typ string) bool {
+	return strings.HasPrefix(typ, "defang-") &&
+		(strings.HasSuffix(typ, ":index:Service") || strings.HasSuffix(typ, ":index:LLM"))
 }
 
 func urnName(urn string) string {
@@ -126,25 +133,30 @@ func seedFromFoundryDeployment(seed *compose.ModelTarget, r *stateResource) {
 
 // seedFromGatewayCommand finds the LiteLLM `--model <target>` argument of a
 // gateway, wherever the cloud resource keeps it: an ECS task definition's
-// container definitions (a JSON string), Cloud Run container args, or the
-// docker command line of a Compute Engine instance template's cloud-init.
+// container command (a JSON string), Cloud Run container args, or the docker
+// command line of a Compute Engine instance template's cloud-init. Environment
+// values are never read as commands. GCP's VERTEXAI_LOCATION comes from the
+// same command line or from a Cloud Run env entry.
 func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 	var walk func(v any)
 	walk = func(v any) {
-		if seed.Model != "" {
+		if seed.Model != "" && seed.Location != "" {
 			return
 		}
 		switch t := v.(type) {
 		case map[string]any:
-			for _, child := range t {
+			for key, child := range t {
+				if key == "environment" || key == "env" || key == "envs" {
+					walkEnv(seed, child)
+					continue
+				}
 				walk(child)
 			}
 		case []any:
 			for i, child := range t {
 				if s, _ := child.(string); s == "--model" && i+1 < len(t) {
-					if target, ok := t[i+1].(string); ok {
+					if target, ok := t[i+1].(string); ok && seed.Model == "" {
 						seed.Model = gatewayTarget(target)
-						return
 					}
 				}
 				walk(child)
@@ -158,9 +170,12 @@ func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 					return
 				}
 			}
+			if !strings.Contains(t, "docker run") {
+				return // only a cloud-init docker command line is parsed as a command
+			}
 			fields := strings.Fields(t)
 			for i, f := range fields {
-				if f == "--model" && i+1 < len(fields) {
+				if f == "--model" && i+1 < len(fields) && seed.Model == "" {
 					seed.Model = gatewayTarget(fields[i+1])
 				}
 				if loc, ok := strings.CutPrefix(f, "VERTEXAI_LOCATION="); ok && seed.Location == "" {
@@ -170,6 +185,18 @@ func seedFromGatewayCommand(seed *compose.ModelTarget, inputs map[string]any) {
 		}
 	}
 	walk(inputs)
+}
+
+// walkEnv reads only VERTEXAI_LOCATION from an environment list of
+// {name, value} entries.
+func walkEnv(seed *compose.ModelTarget, env any) {
+	list, _ := env.([]any)
+	for _, e := range list {
+		entry, _ := e.(map[string]any)
+		if name, _ := entry["name"].(string); name == "VERTEXAI_LOCATION" && seed.Location == "" {
+			seed.Location, _ = entry["value"].(string)
+		}
+	}
 }
 
 // gatewayTarget strips the LiteLLM provider prefix from a gateway target.

@@ -108,20 +108,14 @@ func (r *FoundryResolver) ResolveCandidate(
 	if err != nil {
 		return common.ResolvedModel{}, err
 	}
-	sku := c.Sku
-	switch {
-	case sku == "":
-		// The existing default: Standard when offered, else GlobalStandard.
-		sku = "GlobalStandard"
-		for _, s := range m.SKUs {
-			if s == "Standard" {
-				sku = "Standard"
-				break
-			}
+	sku := pickSku(m, c.Sku)
+	if sku == "" {
+		want := c.Sku
+		if want == "" {
+			want = "Standard or GlobalStandard"
 		}
-	case !containsFold(m.SKUs, sku):
 		return common.ResolvedModel{}, fmt.Errorf("%w: %s version %s does not offer SKU %s (offered: %s)",
-			common.ErrModelUnavailable, m.Name, m.Version, sku, strings.Join(m.SKUs, ", "))
+			common.ErrModelUnavailable, m.Name, m.Version, want, strings.Join(m.SKUs, ", "))
 	}
 	log.Printf("FoundryResolver: selected %s (%s, v%s, %s) for %s", m.Name, m.Format, m.Version, sku, in.Request)
 	return common.ResolvedModel{
@@ -170,7 +164,8 @@ func pickRevision(models []AvailableModel, c compose.ModelCandidate) (*Available
 
 	var best *AvailableModel
 	for _, m := range named {
-		if !isDeployable(m.LifecycleStatus) || (isPreview(m.LifecycleStatus) && !c.AllowPreview) {
+		if !isDeployable(m.LifecycleStatus) || (isPreview(m.LifecycleStatus) && !c.AllowPreview) ||
+			pickSku(m, c.Sku) == "" {
 			continue
 		}
 		if best == nil || common.CompareRevisions(m.Version, best.Version) > 0 {
@@ -178,10 +173,37 @@ func pickRevision(models []AvailableModel, c compose.ModelCandidate) (*Available
 		}
 	}
 	if best == nil {
-		return nil, fmt.Errorf("%w: %s has no deployable revision (preview revisions need allow-preview)",
-			common.ErrModelUnavailable, describeCandidate(c))
+		return nil, fmt.Errorf("%w: %s has no deployable revision%s (preview revisions need allow-preview)",
+			common.ErrModelUnavailable, describeCandidate(c), skuSuffix(c.Sku))
 	}
 	return best, nil
+}
+
+// pickSku returns the SKU to deploy revision m with: the requested one, or
+// by default Standard when offered, else GlobalStandard. It returns "" when
+// the revision does not offer it. A revision that lists no SKUs is assumed to
+// offer the default.
+func pickSku(m *AvailableModel, requested string) string {
+	switch {
+	case requested != "":
+		if containsFold(m.SKUs, requested) {
+			return requested
+		}
+		return ""
+	case len(m.SKUs) == 0 || containsFold(m.SKUs, "GlobalStandard") && !containsFold(m.SKUs, "Standard"):
+		return "GlobalStandard"
+	case containsFold(m.SKUs, "Standard"):
+		return "Standard"
+	default:
+		return ""
+	}
+}
+
+func skuSuffix(sku string) string {
+	if sku == "" {
+		return ""
+	}
+	return " offering SKU " + sku
 }
 
 func describeCandidate(c compose.ModelCandidate) string {

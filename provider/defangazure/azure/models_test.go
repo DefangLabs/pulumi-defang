@@ -253,6 +253,43 @@ func TestRecipeSelection(t *testing.T) {
 	})
 }
 
+func TestSkuSelection(t *testing.T) {
+	chat := map[string]string{"chatCompletion": "true"}
+	models := []AvailableModel{
+		{Name: "phi", Format: "Microsoft", Version: "9", LifecycleStatus: "GenerallyAvailable",
+			SKUs: []string{"Standard"}, Capabilities: chat},
+		{Name: "phi", Format: "Microsoft", Version: "10", LifecycleStatus: "GenerallyAvailable",
+			SKUs: []string{"GlobalStandard"}, Capabilities: chat},
+		{Name: "zonal", Format: "OpenAI", Version: "1", LifecycleStatus: "GenerallyAvailable",
+			SKUs: []string{"DataZoneStandard"}, Capabilities: chat},
+		{Name: "gpt-4.1", Format: "OpenAI", Version: "2025-04-14", LifecycleStatus: "GenerallyAvailable",
+			SKUs: []string{"Standard"}, Capabilities: chat},
+	}
+	recipe, err := common.ParseModelRecipe(ModelCloud, `{
+		"standard-phi": [{"model": "phi", "sku": "Standard"}],
+		"pinned-phi": [{"model": "phi", "version": "10", "sku": "Standard"}, {"model": "gpt-4.1"}],
+		"zonal-first": [{"model": "zonal"}, {"model": "gpt-4.1"}]
+	}`)
+	require.NoError(t, err)
+
+	t.Run("requested-sku-picks-an-older-revision", func(t *testing.T) {
+		state, err := selectWith(t, models, "standard-phi", recipe)
+		require.NoError(t, err)
+		assert.Equal(t, "9", state.Version)
+		assert.Equal(t, "Standard", state.Sku)
+	})
+	t.Run("pinned-version-without-the-sku-fails", func(t *testing.T) {
+		_, err := selectWith(t, models, "pinned-phi", recipe)
+		require.ErrorIs(t, err, common.ErrModelUnavailable)
+	})
+	t.Run("default-sku-must-be-offered", func(t *testing.T) {
+		state, err := selectWith(t, models, "zonal-first", recipe)
+		require.NoError(t, err)
+		assert.Equal(t, "gpt-4.1", state.Model, "a revision offering neither default SKU is skipped")
+		assert.Equal(t, "Standard", state.Sku)
+	})
+}
+
 func TestParseAccountID(t *testing.T) {
 	account, err := parseAccountID(testAccountID)
 	require.NoError(t, err)
