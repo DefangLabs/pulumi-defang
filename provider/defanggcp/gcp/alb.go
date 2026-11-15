@@ -914,7 +914,7 @@ var pathMatcherNameRegex = regexp.MustCompile(`[^a-z0-9-]`)
 // anywhere for a public service, else only the project subnet, which its
 // instances and Cloud Run services connect from.
 func hostPortSources(config *SharedInfra, service compose.ServiceConfig) pulumi.StringArray {
-	if AcceptsPublicTraffic(config.Networks, service) {
+	if common.AcceptPublicTraffic(config.Networks, service) {
 		return pulumi.StringArray{pulumi.String("0.0.0.0/0")}
 	}
 	return pulumi.StringArray{config.SubnetCidr}

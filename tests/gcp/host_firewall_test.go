@@ -96,12 +96,18 @@ func TestPrivateHostModeServiceAcceptsOnlyTheSubnet(t *testing.T) {
 }
 
 func TestModelGatewayIsPrivate(t *testing.T) {
-	// A managed model gateway serves the project's services, so it is private
-	// even with a host port in the default network.
-	run := constructHostMode(t, testutil.ServicesMap(map[string]property.Value{
-		"chat": hostService(map[string]property.Value{
-			"llm": property.New(property.NewMap(map[string]property.Value{})),
-		}),
+	// The CLI puts a managed model gateway in a private network of its own,
+	// shared only with the services that use it; that is what makes it private.
+	run := constructHostMode(t, property.NewMap(map[string]property.Value{
+		"services": property.New(property.NewMap(map[string]property.Value{
+			"chat": hostService(map[string]property.Value{
+				"llm": property.New(property.NewMap(map[string]property.Value{})),
+				"networks": property.New(property.NewMap(map[string]property.Value{
+					"model_provider_private": property.New(property.NewMap(map[string]property.Value{})),
+				})),
+			}),
+		})),
+		"networks": nonInternalNetworks("default", "model_provider_private"),
 	}))
 	assert.Equal(t, []string{projectSubnetCidr}, run.trafficSources(t, "chat"))
 	assert.False(t, run.externalIP(t, "chat"), "egress goes through Cloud NAT")

@@ -17,18 +17,11 @@ func NeedNATGateway(networks compose.Networks, services compose.Services) bool {
 }
 
 func needNATGateway(networks compose.Networks, service *compose.ServiceConfig) bool {
-	return !AcceptsPublicTraffic(networks, *service) && // services with public IPs do not need a NAT GW
+	return !common.AcceptPublicTraffic(networks, *service) && // services with public IPs do not need a NAT GW
 		common.AllowEgress(networks, *service) &&
 		!common.IsManagedService(*service) &&
 		!IsCloudRunService(service) &&
 		!isCloudRunJob(service)
-}
-
-// AcceptsPublicTraffic reports whether a service is reachable from the
-// internet. A managed model gateway (x-defang-llm) serves only the project's
-// own services, so it is private in any network.
-func AcceptsPublicTraffic(networks compose.Networks, service compose.ServiceConfig) bool {
-	return common.AcceptPublicTraffic(networks, service) && service.LLM == nil
 }
 
 func IsCloudRunService(service *compose.ServiceConfig) bool {
