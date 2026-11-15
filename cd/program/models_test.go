@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -275,6 +276,53 @@ func TestSeedsFromStateWithoutTarget(t *testing.T) {
 		seeds, err := SeedsFromState(state, modelPayload(t, "azure.yaml"), "modeldemo")
 		require.NoError(t, err)
 		assert.NotContains(t, seeds, "embed")
+	})
+
+	t.Run("azure-model-key-is-not-a-selection-name", func(t *testing.T) {
+		// Model "embed" requests embedding-default; another model requests a
+		// deployment named "embed". That selection does not make "embed"'s own
+		// deployment look recorded.
+		account := urnPrefix + "azure-native:cognitiveservices:Account::ai"
+		state := checkpoint(t,
+			map[string]any{"urn": urnPrefix + "defang-azure:index:LLM::embed", "type": "defang-azure:index:LLM"},
+			map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+			map[string]any{
+				"urn": urnPrefix + "defang-azure:index:ModelSelection::embed", "type": "defang-azure:index:ModelSelection",
+			},
+			map[string]any{
+				"urn": account + "$azure-native:cognitiveservices:Deployment::embedding-default", "parent": account,
+				"type": "azure-native:cognitiveservices:Deployment",
+				"outputs": map[string]any{
+					"properties": map[string]any{"model": map[string]any{"name": "text-embedding-3-small", "version": "1"}},
+				},
+			},
+		)
+		seeds, err := SeedsFromState(state, modelPayload(t, "azure.yaml"), "modeldemo")
+		require.NoError(t, err)
+		require.Contains(t, seeds, "embed")
+		assert.Equal(t, "text-embedding-3-small", seeds["embed"].Model)
+	})
+
+	t.Run("azure-request-change-is-an-unknown-target", func(t *testing.T) {
+		// "embed" used to request the model "embed" and now requests another
+		// name: its new deployment has no selection, the old one is not its
+		// model key's, and the existing LLM component makes the migration need
+		// an exact target.
+		account := urnPrefix + "azure-native:cognitiveservices:Account::ai"
+		state := checkpoint(t,
+			map[string]any{"urn": urnPrefix + "defang-azure:index:LLM::embed", "type": "defang-azure:index:LLM"},
+			map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+			map[string]any{
+				"urn":  account + "$defang-azure:index:ModelSelection::embed",
+				"type": "defang-azure:index:ModelSelection", "parent": account,
+			},
+		)
+		payload := strings.Replace(string(modelPayload(t, "azure.yaml")),
+			"  embed:\n    model: embedding-default\n", "  embed:\n    model: embedding-next\n", 1)
+		require.Contains(t, payload, "embedding-next")
+		seeds, err := SeedsFromState(state, []byte(payload), "modeldemo")
+		require.NoError(t, err)
+		assert.Equal(t, &compose.ModelTarget{Existed: true}, seeds["embed"])
 	})
 
 	t.Run("existing-service-without-known-target", func(t *testing.T) {

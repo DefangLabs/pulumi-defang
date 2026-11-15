@@ -129,7 +129,8 @@ entry, not the whole recipe.
   stops and asks for the model to be pinned.
 - On Azure, models with the same request share one deployment and one
   `ModelSelection`. Adding or removing a model that shares them keeps the
-  recorded target.
+  recorded target. A changed request is a new deployment: for an embedding
+  model it needs an exact target, as on the other clouds.
 - Scaleway model selection has not shipped before this change, so Scaleway
   does not migrate a selection from an existing deployment. A new Scaleway
   deployment resolves its model from the selected recipe.

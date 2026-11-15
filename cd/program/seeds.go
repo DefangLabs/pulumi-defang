@@ -71,9 +71,10 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 
 	seeds := ModelSeeds{}
 	for name := range project.Models {
-		// An Azure selection is named after its Foundry deployment.
-		if selectionExists(state.Resources, name, "") ||
-			selectionExists(state.Resources, foundryDeploymentName(project, name), "defang-azure") {
+		// An Azure selection is named after its Foundry deployment; the other
+		// clouds name it after the model.
+		if selectionExists(state.Resources, name, false) ||
+			selectionExists(state.Resources, foundryDeploymentName(project, name), true) {
 			continue
 		}
 		seed := &compose.ModelTarget{}
@@ -115,12 +116,12 @@ func urnName(urn string) string {
 	return urn
 }
 
-// selectionExists reports whether a ModelSelection named name exists, of
-// package pkg when pkg is set.
-func selectionExists(resources []stateResource, name, pkg string) bool {
+// selectionExists reports whether a ModelSelection named name exists, among
+// Azure's selections or among the other clouds'.
+func selectionExists(resources []stateResource, name string, azure bool) bool {
 	for _, r := range resources {
 		if strings.HasSuffix(r.Type, modelSelectionTypeSuffix) && urnName(r.URN) == name &&
-			(pkg == "" || strings.HasPrefix(r.Type, pkg+":")) {
+			strings.HasPrefix(r.Type, "defang-azure:") == azure {
 			return true
 		}
 	}
