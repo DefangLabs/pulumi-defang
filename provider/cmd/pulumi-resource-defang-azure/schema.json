@@ -541,6 +541,27 @@
         "encodedTaskContent"
       ]
     },
+    "defang-azure:index:CustomDomainRelease": {
+      "description": "Removes a Container App's custom domain bindings and managed certificates before the app is deleted. Created by Project.",
+      "properties": {
+        "containerAppId": {
+          "type": "string",
+          "description": "ARM resource ID of the Container App."
+        }
+      },
+      "required": [
+        "containerAppId"
+      ],
+      "inputProperties": {
+        "containerAppId": {
+          "type": "string",
+          "description": "ARM resource ID of the Container App."
+        }
+      },
+      "requiredInputs": [
+        "containerAppId"
+      ]
+    },
     "defang-azure:index:ModelSelection": {
       "description": "The model selected for a managed model service. Created by Project; unchanged inputs keep the selected model, and refresh never re-resolves it.",
       "properties": {
