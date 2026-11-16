@@ -127,6 +127,11 @@ jobs:
     needs:
       - build_sdks
     environment: defang-staging
+    # Serialize per ref so an older main build can't overwrite the staging cd_image_* configs
+    # written by a newer one; don't cancel, so a running build finishes its write.
+    concurrency:
+      group: build-image-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
