@@ -152,6 +152,9 @@ func cdMain(ctx context.Context, args ...string) error {
 
 	switch command {
 	case client.CdCommandUp:
+		if subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID"); subscriptionID != "" {
+			registerAzureResourceProviders(ctx, subscriptionID)
+		}
 		evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
 		defer waitEvents()
 		upOpts := []optup.Option{
