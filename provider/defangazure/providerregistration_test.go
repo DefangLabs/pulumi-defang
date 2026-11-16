@@ -158,15 +158,20 @@ func TestResourceProviderRegistrationRead(t *testing.T) {
 	f := newFakeProviders(map[string]string{nsApp: "Unregistered"})
 	r := &ResourceProviderRegistration{newClient: func(string) (providersAPI, error) { return f, nil }}
 	in := ResourceProviderRegistrationInputs{SubscriptionID: "sub-1", Namespace: nsApp}
+	// A lookup or import passes only the ID.
 	resp, err := r.Read(context.Background(),
 		infer.ReadRequest[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState]{
-			ID:     "/subscriptions/sub-1/providers/Microsoft.App",
-			Inputs: in,
-			State:  ResourceProviderRegistrationState{ResourceProviderRegistrationInputs: in, RegistrationState: "Registered"},
+			ID: "/subscriptions/sub-1/providers/Microsoft.App",
 		})
 	require.NoError(t, err)
 	assert.Equal(t, "Unregistered", resp.State.RegistrationState)
+	assert.Equal(t, in, resp.Inputs)
+	assert.Equal(t, in, resp.State.ResourceProviderRegistrationInputs)
 	assert.Empty(t, f.registered, "refresh must not register")
+
+	_, err = r.Read(context.Background(),
+		infer.ReadRequest[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState]{ID: "bogus"})
+	require.ErrorIs(t, err, ErrInvalidProviderRegistrationID)
 }
 
 func TestRequiredResourceProviders(t *testing.T) {

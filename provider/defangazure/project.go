@@ -14,7 +14,6 @@ import (
 	"github.com/pulumi/pulumi-azure-native-sdk/monitor/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
-	azureconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -300,13 +299,21 @@ func createServiceResources(
 	return endpoint, nil
 }
 
-// createProjectResourceGroup creates (or imports) the project's resource group.
+// createProjectResourceGroup creates (or imports) the project's resource
+// group, after registering the resource provider namespaces the project uses.
 func createProjectResourceGroup(
 	ctx *pulumi.Context,
 	name string,
+	namespaces []string,
+	pluginID common.PluginIdentity,
 	childOpt pulumi.ResourceOrInvokeOption,
-	dependsOn []pulumi.Resource,
 ) (*resources.ResourceGroup, error) {
+	registrations, err := registerResourceProviders(ctx, name, subscriptionID(ctx, childOpt), namespaces,
+		pluginID, childOpt)
+	if err != nil {
+		return nil, err
+	}
+
 	projectRG := providerazure.ProjectResourceGroupName(ctx, name)
 
 	rgArgs := &resources.ResourceGroupArgs{
@@ -323,7 +330,7 @@ func createProjectResourceGroup(
 	// new orphan-resource cost.
 	// Every project resource uses this RG, so making it wait for the resource
 	// provider registrations makes all of them wait.
-	rgOpts := []pulumi.ResourceOption{childOpt, pulumi.RetainOnDelete(true), pulumi.DependsOn(dependsOn)}
+	rgOpts := []pulumi.ResourceOption{childOpt, pulumi.RetainOnDelete(true), pulumi.DependsOn(registrations)}
 
 	if existingRG, err := resources.LookupResourceGroup(ctx, &resources.LookupResourceGroupArgs{
 		ResourceGroupName: projectRG,
@@ -476,13 +483,8 @@ func setupSharedInfra(
 ) (*providerazure.SharedInfra, map[string]string, error) {
 	types := detectServiceTypes(inputs.Services)
 
-	registrations, err := registerResourceProviders(ctx, projectName, subscriptionID(ctx, parentOpt),
+	rg, err := createProjectResourceGroup(ctx, projectName,
 		requiredResourceProviders(types, inputs.Services), pluginID, parentOpt)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rg, err := createProjectResourceGroup(ctx, projectName, parentOpt, registrations)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -820,12 +822,9 @@ func fqdnToHTTPS(fqdn string) string {
 	return "https://" + fqdn
 }
 
-// subscriptionID returns the subscription the azure-native provider deploys
-// to: its subscriptionId config when set, else the one of its credentials.
+// subscriptionID returns the subscription of the azure-native provider that
+// the Project's resources use (the invoke inherits it through the parent).
 func subscriptionID(ctx *pulumi.Context, opt pulumi.InvokeOption) pulumi.StringInput {
-	if sub := azureconfig.GetSubscriptionId(ctx); sub != "" {
-		return pulumi.String(sub)
-	}
 	return authorization.GetClientConfigOutput(ctx, opt).SubscriptionId()
 }
 

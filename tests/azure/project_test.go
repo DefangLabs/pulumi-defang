@@ -12,6 +12,7 @@ import (
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/integration"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
 
@@ -343,14 +344,23 @@ func TestConstructAzureProjectUDPUsesVMScaleSet(t *testing.T) {
 func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
 	var mu sync.Mutex
 	registrations := map[string]string{} // namespace -> subscriptionId
+	var registrationNames []string
 	var rgDeps []string
 	mock := &integration.MockResourceMonitor{
+		// The subscription comes from the Project's azure-native provider.
+		CallF: func(args integration.MockCallArgs) (property.Map, error) {
+			if args.Token == "azure-native:authorization:getClientConfig" {
+				return property.NewMap(map[string]property.Value{"subscriptionId": property.New("sub-1")}), nil
+			}
+			return property.Map{}, nil
+		},
 		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			switch string(args.TypeToken) {
 			case defangazure.ResourceProviderRegistrationType:
 				registrations[args.Inputs.Get("namespace").AsString()] = args.Inputs.Get("subscriptionId").AsString()
+				registrationNames = append(registrationNames, args.Name)
 			case "azure-native:resources:ResourceGroup":
 				if args.RegisterRPC != nil {
 					rgDeps = args.RegisterRPC.GetDependencies()
@@ -362,8 +372,7 @@ func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
 	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
 
 	_, err := server.Construct(p.ConstructRequest{
-		Urn:    testutil.AzureURN("Project"),
-		Config: testutil.StackConfig("azure-native:subscriptionId", "sub-1"),
+		Urn: testutil.AzureURN("Project"),
 		Inputs: testutil.ServicesMap(map[string]property.Value{
 			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
 		}),
@@ -376,8 +385,11 @@ func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
 	}
 	require.NotContains(t, registrations, "Microsoft.DBforPostgreSQL", "only namespaces the project uses")
 
-	require.Len(t, rgDeps, len(registrations), "resource group depends on every registration: %v", rgDeps)
+	depNames := make([]string, 0, len(rgDeps))
 	for _, dep := range rgDeps {
-		require.Contains(t, dep, "ResourceProviderRegistration")
+		urn := resource.URN(dep)
+		require.Equal(t, defangazure.ResourceProviderRegistrationType, string(urn.Type()))
+		depNames = append(depNames, urn.Name())
 	}
+	require.ElementsMatch(t, registrationNames, depNames, "resource group depends on exactly the registrations")
 }

@@ -27,7 +27,11 @@ const (
 	providerRegistrationPeriod = 5 * time.Second
 )
 
-var ErrProviderRegistrationTimedOut = errors.New("resource provider registration did not finish in time")
+var (
+	ErrProviderRegistrationTimedOut  = errors.New("resource provider registration did not finish in time")
+	ErrInvalidProviderRegistrationID = errors.New(
+		"invalid resource provider registration ID, want /subscriptions/<id>/providers/<namespace>")
+)
 
 // ResourceProviderRegistration makes sure an Azure resource provider namespace
 // is registered on the subscription before resources of that namespace are
@@ -80,6 +84,16 @@ func providerRegistrationID(subscriptionID, namespace string) string {
 	return "/subscriptions/" + subscriptionID + "/providers/" + namespace
 }
 
+// parseProviderRegistrationID is the inverse of providerRegistrationID.
+func parseProviderRegistrationID(id string) (ResourceProviderRegistrationInputs, error) {
+	parts := strings.Split(id, "/")
+	if len(parts) != 5 || parts[0] != "" || !strings.EqualFold(parts[1], "subscriptions") ||
+		!strings.EqualFold(parts[3], "providers") || parts[2] == "" || parts[4] == "" {
+		return ResourceProviderRegistrationInputs{}, fmt.Errorf("%w: %q", ErrInvalidProviderRegistrationID, id)
+	}
+	return ResourceProviderRegistrationInputs{SubscriptionID: parts[2], Namespace: parts[4]}, nil
+}
+
 // Create registers the namespace if needed and waits until it is registered.
 func (r *ResourceProviderRegistration) Create(
 	ctx context.Context, req infer.CreateRequest[ResourceProviderRegistrationInputs],
@@ -112,11 +126,18 @@ func (r *ResourceProviderRegistration) Read(
 	req infer.ReadRequest[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState],
 ) (infer.ReadResponse[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState], error) {
 	resp := infer.ReadResponse[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState](req)
-	client, err := r.client(req.State.SubscriptionID)
+	// A lookup or import passes only the ID.
+	in, err := parseProviderRegistrationID(req.ID)
 	if err != nil {
 		return resp, err
 	}
-	state, err := providerState(ctx, client, req.State.Namespace)
+	resp.Inputs = in
+	resp.State.ResourceProviderRegistrationInputs = in
+	client, err := r.client(in.SubscriptionID)
+	if err != nil {
+		return resp, err
+	}
+	state, err := providerState(ctx, client, in.Namespace)
 	if err != nil {
 		return resp, err
 	}
