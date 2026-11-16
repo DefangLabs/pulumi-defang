@@ -197,9 +197,10 @@ jobs:
         with:
           project: ecs
           stack: awsstagingoidc
-          command: config set -e cd_image_azure cd_image_aws_v2 cd_image_gcp_v2
+          command: config set -e cd_image_azure cd_image_scaleway cd_image_aws_v2 cd_image_gcp_v2
         env:
           cd_image_azure: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+          cd_image_scaleway: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_aws_v2: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_gcp_v2: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
 
