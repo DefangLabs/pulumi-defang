@@ -155,21 +155,43 @@ func TestResourceProviderRegistrationCreate(t *testing.T) {
 }
 
 func TestResourceProviderRegistrationRead(t *testing.T) {
-	f := newFakeProviders(map[string]string{nsApp: "Unregistered"})
-	r := &ResourceProviderRegistration{newClient: func(string) (providersAPI, error) { return f, nil }}
+	const id = "/subscriptions/sub-1/providers/Microsoft.App"
+	read := func(t *testing.T, state string) infer.ReadResponse[ResourceProviderRegistrationInputs,
+		ResourceProviderRegistrationState] {
+		t.Helper()
+		f := newFakeProviders(map[string]string{nsApp: state})
+		r := &ResourceProviderRegistration{newClient: func(string) (providersAPI, error) { return f, nil }}
+		// A lookup or import passes only the ID.
+		resp, err := r.Read(context.Background(),
+			infer.ReadRequest[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState]{ID: id})
+		require.NoError(t, err)
+		assert.Empty(t, f.registered, "refresh must not register")
+		return resp
+	}
 	in := ResourceProviderRegistrationInputs{SubscriptionID: "sub-1", Namespace: nsApp}
-	// A lookup or import passes only the ID.
-	resp, err := r.Read(context.Background(),
-		infer.ReadRequest[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState]{
-			ID: "/subscriptions/sub-1/providers/Microsoft.App",
-		})
-	require.NoError(t, err)
-	assert.Equal(t, "Unregistered", resp.State.RegistrationState)
-	assert.Equal(t, in, resp.Inputs)
-	assert.Equal(t, in, resp.State.ResourceProviderRegistrationInputs)
-	assert.Empty(t, f.registered, "refresh must not register")
 
-	_, err = r.Read(context.Background(),
+	for _, state := range []string{registeredState, registeringState} {
+		t.Run(state, func(t *testing.T) {
+			resp := read(t, state)
+			assert.Equal(t, id, resp.ID)
+			assert.Equal(t, state, resp.State.RegistrationState)
+			assert.Equal(t, in, resp.Inputs)
+			assert.Equal(t, in, resp.State.ResourceProviderRegistrationInputs)
+		})
+	}
+
+	// Unregistered outside Pulumi: gone from state, so the next up registers again.
+	for _, state := range []string{"Unregistered", "NotRegistered", "Unregistering"} {
+		t.Run(state, func(t *testing.T) {
+			resp := read(t, state)
+			assert.Empty(t, resp.ID)
+		})
+	}
+
+	r := &ResourceProviderRegistration{newClient: func(string) (providersAPI, error) {
+		return newFakeProviders(map[string]string{}), nil
+	}}
+	_, err := r.Read(context.Background(),
 		infer.ReadRequest[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState]{ID: "bogus"})
 	require.ErrorIs(t, err, ErrInvalidProviderRegistrationID)
 }

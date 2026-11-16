@@ -141,6 +141,11 @@ func (r *ResourceProviderRegistration) Read(
 	if err != nil {
 		return resp, err
 	}
+	// Unregistered outside Pulumi: report the resource as gone, so the next
+	// up creates it again and so registers the namespace again.
+	if !strings.EqualFold(state, registeredState) && !strings.EqualFold(state, registeringState) {
+		return infer.ReadResponse[ResourceProviderRegistrationInputs, ResourceProviderRegistrationState]{}, nil
+	}
 	resp.State.RegistrationState = state
 	return resp, nil
 }
