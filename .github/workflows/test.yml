@@ -193,11 +193,30 @@ jobs:
           # a 10-15s download, while exporting the cache took 1-4 minutes and
           # several GB of the repo's Actions cache quota.
 
+      # The concurrency group stops simultaneous writes but not an older run writing after a
+      # newer one, so only the build of the branch's current head writes. A failed lookup fails
+      # the job instead of writing.
+      - name: Check this build is still the branch head
+        id: head
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          head="$(gh api "repos/${REPO}/commits/${BRANCH}" --jq .sha)"
+          if [ "$head" = "$SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Not writing staging cd_image_* configs: ${SHA} is no longer the head of ${BRANCH} (${head})"
+          fi
+
       # Pin the staging CD image refs (digests) in the Defang Fabric. Only on main-branch
       # pushes — PR runs would otherwise have every contributor overwrite the staging config.
       # AWS and GCP use the _v2 configs: cd_image_cb and cd_image_gcp still hold the defang-mvp CD.
       - name: Set cd_image_ configs in Defang
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.head.outputs.current == 'true'
         uses: DefangLabs/defang-github-action@981924edd6d4dec17d6ddb03e956174223bcec55 # v2.5.0
         with:
           project: ecs
