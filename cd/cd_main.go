@@ -227,6 +227,7 @@ func cdMain(ctx context.Context, args ...string) error {
 		if pulumiDebug {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
 		}
+		releaseAzureCustomDomains(ctx, stack, pulumiTargets)
 		_, err = stack.Destroy(ctx, destroyOpts...)
 		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
 		if err != nil {
@@ -350,4 +351,23 @@ func modelSeeds(
 		return nil, fmt.Errorf("establishing deployed models: %w", err)
 	}
 	return seeds, nil
+}
+
+// releaseAzureCustomDomains unbinds the out-of-band custom domains and
+// managed certificates from the Azure Container Apps the destroy deletes.
+// See program.ReleaseAzureCustomDomains. A no-op for stacks of other clouds.
+func releaseAzureCustomDomains(ctx context.Context, stack auto.Stack, targets []string) {
+	state, err := stack.Export(ctx)
+	if err != nil {
+		warn("Failed to read stack state before destroy:", err)
+		return
+	}
+	appIDs, err := program.AzureContainerAppsToRelease(state.Deployment, targets)
+	if err != nil {
+		warn(err)
+		return
+	}
+	program.ReleaseAzureCustomDomains(ctx, appIDs, func(format string, args ...any) {
+		Println(fmt.Sprintf(format, args...))
+	})
 }
