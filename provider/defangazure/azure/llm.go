@@ -1,9 +1,12 @@
 package azure
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/DefangLabs/pulumi-defang/provider/common"
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
@@ -106,10 +109,21 @@ func CreateLLMInfra(
 	// but ListAccountKeys won't succeed until the account is actually
 	// provisioned. Threading keysOut.Key1() into the PE's PrivateLinkServiceId
 	// gates PE creation on real account readiness.
-	keysOut := cognitiveservices.ListAccountKeysOutput(ctx, cognitiveservices.ListAccountKeysOutputArgs{
-		AccountName:       account.Name,
-		ResourceGroupName: infra.ResourceGroup.Name,
-	}, pulumi.Parent(account))
+	//
+	// After an update (even tags only) the account can still be non-terminal,
+	// and listKeys then fails with 409 RequestConflict; listAccountKeysWhenReady
+	// retries that until the account settles.
+	keysOut := pulumi.All(account.Name, infra.ResourceGroup.Name).ApplyTWithContext(ctx.Context(),
+		func(goCtx context.Context, v []any) (cognitiveservices.ListAccountKeysResult, error) {
+			args := &cognitiveservices.ListAccountKeysArgs{AccountName: v[0].(string), ResourceGroupName: v[1].(string)}
+			res, err := listAccountKeysWhenReady(goCtx, func() (*cognitiveservices.ListAccountKeysResult, error) {
+				return cognitiveservices.ListAccountKeys(ctx, args, pulumi.Parent(account))
+			}, listKeysRetryDelays, sleepCtx)
+			if err != nil {
+				return cognitiveservices.ListAccountKeysResult{}, err
+			}
+			return *res, nil
+		}).(cognitiveservices.ListAccountKeysResultOutput)
 
 	if useVNet {
 		if err := createLLMPrivateEndpoint(ctx, name, account, keysOut, infra, opts...); err != nil {
@@ -123,6 +137,7 @@ func CreateLLMInfra(
 		}
 		return ""
 	}).(pulumi.StringOutput)
+	apiKey = pulumi.ToSecret(apiKey).(pulumi.StringOutput)
 
 	baseURL := account.Properties.Endpoint().ApplyT(func(ep string) string {
 		return strings.TrimRight(ep, "/") + "/openai/v1/"
@@ -352,4 +367,53 @@ func createLLMPrivatelinkZone(
 		return nil, nil, fmt.Errorf("creating %s private DNS zone: %w", zoneName, err)
 	}
 	return zone, append(opts, pulumi.Parent(zone)), nil
+}
+
+// listKeysRetryDelays bounds the wait for a non-terminal account (~10 minutes).
+var listKeysRetryDelays = func() []time.Duration {
+	const steady = 19
+	delays := make([]time.Duration, 0, 3+steady)
+	delays = append(delays, 5*time.Second, 10*time.Second, 20*time.Second)
+	for range steady {
+		delays = append(delays, 30*time.Second)
+	}
+	return delays
+}()
+
+// isProvisioningConflict reports whether err is Azure's 409 RequestConflict,
+// returned while the account's provisioning state is not yet terminal.
+func isProvisioningConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "RequestConflict")
+}
+
+// listAccountKeysWhenReady calls list, retrying after each delay while it
+// fails with a provisioning conflict. Other errors return at once.
+func listAccountKeysWhenReady[T any](
+	ctx context.Context,
+	list func() (T, error),
+	delays []time.Duration,
+	sleep func(context.Context, time.Duration) error,
+) (T, error) {
+	res, err := list()
+	for _, d := range delays {
+		if !isProvisioningConflict(err) {
+			break
+		}
+		if serr := sleep(ctx, d); serr != nil {
+			return res, errors.Join(err, serr)
+		}
+		res, err = list()
+	}
+	return res, err
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
