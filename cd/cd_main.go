@@ -154,6 +154,9 @@ func cdMain(ctx context.Context, args ...string) error {
 	case client.CdCommandUp:
 		if subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID"); subscriptionID != "" {
 			registerAzureResourceProviders(ctx, subscriptionID)
+			if err := ctx.Err(); err != nil {
+				return err // canceled while registering; don't start an update
+			}
 		}
 		evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
 		defer waitEvents()
