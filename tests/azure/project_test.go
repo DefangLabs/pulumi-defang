@@ -12,6 +12,7 @@ import (
 
 	p "github.com/pulumi/pulumi-go-provider"
 	"github.com/pulumi/pulumi-go-provider/integration"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
 
@@ -369,4 +370,57 @@ func TestConstructAzureProjectPublicAppGetsCustomDomainRelease(t *testing.T) {
 
 	require.Equal(t, property.New(appID), releases[0].inputs.Get("containerAppId"),
 		"containerAppId must be the app's ID, so the release depends on the app")
+}
+
+// TestConstructAzureProjectRegistersResourceProviders checks that a Project
+// registers the resource provider namespaces it uses (Microsoft.Insights for
+// the Container Apps diagnostic setting among them) and that the project
+// resource group, which every other resource uses, waits for them.
+func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
+	var mu sync.Mutex
+	registrations := map[string]string{} // namespace -> subscriptionId
+	var registrationURNs []string
+	var rgDeps []string
+	mock := &integration.MockResourceMonitor{
+		// The subscription comes from the Project's azure-native provider.
+		CallF: func(args integration.MockCallArgs) (property.Map, error) {
+			if args.Token == "azure-native:authorization:getClientConfig" {
+				return property.NewMap(map[string]property.Value{"subscriptionId": property.New("sub-1")}), nil
+			}
+			return property.Map{}, nil
+		},
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			switch string(args.TypeToken) {
+			case defangazure.ResourceProviderRegistrationType:
+				registrations[args.Inputs.Get("namespace").AsString()] = args.Inputs.Get("subscriptionId").AsString()
+				parent := resource.URN(args.RegisterRPC.GetParent())
+				registrationURNs = append(registrationURNs, string(resource.NewURN(
+					parent.Stack(), parent.Project(), parent.QualifiedType(), args.TypeToken, args.Name)))
+			case "azure-native:resources:ResourceGroup":
+				if args.RegisterRPC != nil {
+					rgDeps = args.RegisterRPC.GetDependencies()
+				}
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+		}),
+	})
+	require.NoError(t, err)
+
+	for _, ns := range []string{"Microsoft.App", "Microsoft.Insights", "Microsoft.OperationalInsights"} {
+		require.Contains(t, registrations, ns)
+		require.Equal(t, "sub-1", registrations[ns])
+	}
+	require.NotContains(t, registrations, "Microsoft.DBforPostgreSQL", "only namespaces the project uses")
+
+	require.ElementsMatch(t, registrationURNs, rgDeps, "resource group depends on exactly the registrations")
 }
