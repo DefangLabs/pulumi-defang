@@ -344,7 +344,7 @@ func TestConstructAzureProjectUDPUsesVMScaleSet(t *testing.T) {
 func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
 	var mu sync.Mutex
 	registrations := map[string]string{} // namespace -> subscriptionId
-	var registrationNames []string
+	var registrationURNs []string
 	var rgDeps []string
 	mock := &integration.MockResourceMonitor{
 		// The subscription comes from the Project's azure-native provider.
@@ -360,7 +360,9 @@ func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
 			switch string(args.TypeToken) {
 			case defangazure.ResourceProviderRegistrationType:
 				registrations[args.Inputs.Get("namespace").AsString()] = args.Inputs.Get("subscriptionId").AsString()
-				registrationNames = append(registrationNames, args.Name)
+				parent := resource.URN(args.RegisterRPC.GetParent())
+				registrationURNs = append(registrationURNs, string(resource.NewURN(
+					parent.Stack(), parent.Project(), parent.QualifiedType(), args.TypeToken, args.Name)))
 			case "azure-native:resources:ResourceGroup":
 				if args.RegisterRPC != nil {
 					rgDeps = args.RegisterRPC.GetDependencies()
@@ -385,11 +387,5 @@ func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
 	}
 	require.NotContains(t, registrations, "Microsoft.DBforPostgreSQL", "only namespaces the project uses")
 
-	depNames := make([]string, 0, len(rgDeps))
-	for _, dep := range rgDeps {
-		urn := resource.URN(dep)
-		require.Equal(t, defangazure.ResourceProviderRegistrationType, string(urn.Type()))
-		depNames = append(depNames, urn.Name())
-	}
-	require.ElementsMatch(t, registrationNames, depNames, "resource group depends on exactly the registrations")
+	require.ElementsMatch(t, registrationURNs, rgDeps, "resource group depends on exactly the registrations")
 }
