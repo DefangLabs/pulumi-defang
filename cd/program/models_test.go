@@ -250,6 +250,44 @@ func TestSeedsFromStateReadsOnlyTheGateway(t *testing.T) {
 	})
 }
 
+// An Azure model whose request changes onto a deployment another model
+// already has a selection for still gets a seed, so the provider can require
+// an exact request for the switch.
+func TestSeedsFromStateAzureRequestChangeOntoASharedDeployment(t *testing.T) {
+	// "embed" used to request embedding-default and now requests "shared".
+	account := urnPrefix + "azure-native:cognitiveservices:Account::ai"
+	llm := map[string]any{
+		"urn": urnPrefix + "defang-azure:index:LLM::embed", "type": "defang-azure:index:LLM",
+		"outputs": map[string]any{"deployment": "embedding-default"},
+	}
+	state := checkpoint(t, llm,
+		map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+		map[string]any{
+			"urn":  account + "$defang-azure:index:ModelSelection::shared",
+			"type": "defang-azure:index:ModelSelection", "parent": account,
+		},
+	)
+	payload := strings.Replace(string(modelPayload(t, "azure.yaml")),
+		"  embed:\n    model: embedding-default\n", "  embed:\n    model: shared\n", 1)
+	require.Contains(t, payload, "model: shared")
+	seeds, err := SeedsFromState(state, []byte(payload), "modeldemo")
+	require.NoError(t, err)
+	assert.Equal(t, &compose.ModelTarget{Existed: true}, seeds["embed"])
+
+	// An unchanged request keeps using its own selection: no seed.
+	llm["outputs"] = map[string]any{"deployment": "shared"}
+	state = checkpoint(t, llm,
+		map[string]any{"urn": account, "type": "azure-native:cognitiveservices:Account"},
+		map[string]any{
+			"urn":  account + "$defang-azure:index:ModelSelection::shared",
+			"type": "defang-azure:index:ModelSelection", "parent": account,
+		},
+	)
+	seeds, err = SeedsFromState(state, []byte(payload), "modeldemo")
+	require.NoError(t, err)
+	assert.NotContains(t, seeds, "embed")
+}
+
 func TestSeedsFromStateWithoutTarget(t *testing.T) {
 	t.Run("persisted-selection-needs-no-seed", func(t *testing.T) {
 		svc := urnPrefix + "defang-aws:index:Service::chat"

@@ -107,6 +107,18 @@ func redeployAzureModels(
 	prior map[string]common.ModelSelectionState,
 ) *azureModelRun {
 	t.Helper()
+	run, err := deployAzureModels(t, testutil.ComposeInputs(t, payload), recipe, catalog, prior)
+	require.NoError(t, err)
+	return run
+}
+
+// deployAzureModels constructs the project inputs against catalog and returns
+// the construction error.
+func deployAzureModels(
+	t *testing.T, inputs property.Map, recipe string, catalog []azureprov.AvailableModel,
+	prior map[string]common.ModelSelectionState,
+) (*azureModelRun, error) {
+	t.Helper()
 
 	run := &azureModelRun{deployments: map[string]property.Map{}, apps: map[string]property.Map{}}
 	run.selections = &testutil.ModelSelections{Prior: prior, Selector: modelselect.ModelSelector{
@@ -149,10 +161,9 @@ func redeployAzureModels(
 	_, err := server.Construct(p.ConstructRequest{
 		Urn:    testutil.AzureURN("Project"),
 		Config: config,
-		Inputs: testutil.ComposeInputs(t, payload),
+		Inputs: inputs,
 	})
-	require.NoError(t, err)
-	return run
+	return run, err
 }
 
 func TestAzureModelRequestsFromCLIPayload(t *testing.T) {
@@ -311,4 +322,67 @@ func TestAzureLegacyCLIPayload(t *testing.T) {
 	assert.Equal(t, "text-embedding-3-small", run.deployed(t, "embedding-default").model,
 		"embedding is never guessed from a substring")
 	assert.Equal(t, "chat-default", run.env(t, "app")["CHAT_MODEL"])
+}
+
+// withSeed gives Compose model name the seed the CD sends for a model whose
+// request changed: a deployed model with no known target.
+func withSeed(inputs property.Map, name string) property.Map {
+	models := inputs.Get("models").AsMap()
+	model := models.Get(name).AsMap().Set("seed",
+		property.New(property.NewMap(map[string]property.Value{"existed": property.New(true)})))
+	return inputs.Set("models", property.New(models.Set(name, property.New(model))))
+}
+
+func TestAzureRequestChangeOntoASharedDeployment(t *testing.T) {
+	// "primary" deploys the unpinned embedding request "shared"; "secondary"
+	// then changes its request to "shared" and joins that existing selection.
+	payload := func(secondary string) string {
+		return `
+services:
+  app:
+    image: app
+    ports: [{mode: ingress, target: 8080}]
+    environment: {A_MODEL: shared, B_MODEL: ` + secondary + `}
+    models:
+      primary: {model_var: A_MODEL}
+      secondary: {model_var: B_MODEL}
+  primary:
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+  secondary:
+    image: litellm/litellm:v1.92.0
+    ports: [{mode: host, target: 4000, protocol: tcp}]
+    x-defang-llm: true
+models:
+  primary:
+    model: shared
+  secondary:
+    model: ` + secondary + `
+`
+	}
+	const floating = `{"shared": [{"model": "text-embedding-3-small", "format": "OpenAI"}],
+		"embed-old": [{"model": "text-embedding-3-small", "format": "OpenAI", "version": "1"}]}`
+	before := redeployAzureModels(t, payload("embed-old"), floating, foundryCatalog, nil)
+	require.Contains(t, before.selections.Selected, "shared")
+	prior := before.selections.State
+
+	t.Run("unpinned-request-is-refused", func(t *testing.T) {
+		_, err := deployAzureModels(t, withSeed(testutil.ComposeInputs(t, payload("shared")), "secondary"),
+			floating, foundryCatalog, prior)
+		require.ErrorContains(t, err, common.ErrEmbeddingMigration.Error())
+	})
+	t.Run("unchanged-requests-deploy", func(t *testing.T) {
+		// Without the CD's seed, nothing changed request: "secondary" has used
+		// "shared" before.
+		_, err := deployAzureModels(t, testutil.ComposeInputs(t, payload("shared")), floating, foundryCatalog, prior)
+		require.NoError(t, err)
+	})
+	t.Run("exact-request-switches", func(t *testing.T) {
+		const pinned = `{"shared": [{"model": "text-embedding-3-small", "format": "OpenAI", "version": "1"}],
+			"embed-old": [{"model": "text-embedding-3-small", "format": "OpenAI", "version": "1"}]}`
+		_, err := deployAzureModels(t, withSeed(testutil.ComposeInputs(t, payload("shared")), "secondary"),
+			pinned, foundryCatalog, prior)
+		require.NoError(t, err)
+	})
 }

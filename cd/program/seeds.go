@@ -71,6 +71,15 @@ func SeedsFromState(deployment []byte, composeYAML []byte, projectName string) (
 
 	seeds := ModelSeeds{}
 	for name := range project.Models {
+		// An Azure model whose request changed uses another deployment, which
+		// may already have a selection, shared with other models. It switches to
+		// that deployment's model, so it gets a seed with no known target: the
+		// provider then accepts the switch of an embedding model only for an
+		// exact request, as on the other clouds.
+		if prev := llmDeployment(state.Resources, name); prev != "" && prev != foundryDeploymentName(project, name) {
+			seeds[name] = &compose.ModelTarget{Existed: true}
+			continue
+		}
 		// An Azure selection is named after its Foundry deployment; the other
 		// clouds name it after the model.
 		if selectionExists(state.Resources, name, false) ||
@@ -141,6 +150,18 @@ func foundryDeploymentName(project *compose.Project, name string) string {
 		}
 	}
 	return common.NormalizeModelRequest(project.Models[name].Model)
+}
+
+// llmDeployment is the Foundry deployment an Azure LLM component recorded
+// when it was last deployed, or "" when it recorded none.
+func llmDeployment(resources []stateResource, service string) string {
+	for _, r := range resources {
+		if r.Type == "defang-azure:index:LLM" && urnName(r.URN) == service {
+			deployment, _ := r.Outputs["deployment"].(string)
+			return deployment
+		}
+	}
+	return ""
 }
 
 func foundryDeployment(resources []stateResource, deploymentName string) *stateResource {
