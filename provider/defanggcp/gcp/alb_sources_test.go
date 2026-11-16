@@ -7,8 +7,9 @@ import (
 )
 
 func TestInternalLBSourceRanges(t *testing.T) {
-	var got []string
-	for _, r := range internalLBSourceRanges(pulumi.String("100.64.0.0/24")) {
+	ranges := internalLBSourceRanges(pulumi.String("100.64.0.0/24"))
+	got := make([]string, 0, len(ranges))
+	for _, r := range ranges {
 		s, ok := r.(pulumi.String)
 		if !ok {
 			t.Fatalf("unexpected range type %T", r)
