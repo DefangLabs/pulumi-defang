@@ -29,38 +29,57 @@ const (
 // reports the just-unbound certificate as in use. A var so tests can shorten it.
 var certInUseRetryDelay = 10 * time.Second
 
+// releaseStateResource is the part of a checkpoint resource that
+// AzureContainerAppsToRelease reads.
+type releaseStateResource struct {
+	URN          string         `json:"urn"`
+	Type         string         `json:"type"`
+	Parent       string         `json:"parent"`
+	Dependencies []string       `json:"dependencies"`
+	DeletedWith  string         `json:"deletedWith"`
+	Outputs      map[string]any `json:"outputs"`
+}
+
 // AzureContainerAppsToRelease returns the ARM IDs of the Container Apps in the
 // stack checkpoint (the deployment object of `pulumi stack export`) that a
 // destroy with the given targets deletes. With no targets, that is every
-// Container App. With targets, it is each app whose URN, or the URN of one of
-// its ancestors, is a target.
+// Container App. With targets, it is the targets and, as with
+// optdestroy.TargetDependents, everything that transitively depends on them
+// through a parent, dependency or deletedWith edge.
 func AzureContainerAppsToRelease(deployment []byte, targets []string) ([]string, error) {
 	if len(deployment) == 0 {
 		return nil, nil
 	}
-	var state stateDeployment
+	var state struct {
+		Resources []releaseStateResource `json:"resources"`
+	}
 	if err := json.Unmarshal(deployment, &state); err != nil {
 		return nil, fmt.Errorf("reading stack state: %w", err)
 	}
-	byURN := make(map[string]*stateResource, len(state.Resources))
-	for i := range state.Resources {
-		byURN[state.Resources[i].URN] = &state.Resources[i]
+	selected := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		selected[t] = true
 	}
-	targeted := func(r *stateResource) bool {
-		if len(targets) == 0 {
-			return true
-		}
-		for cur := r; cur != nil; cur = byURN[cur.Parent] {
-			if slices.Contains(targets, cur.URN) {
-				return true
+	dependsOnSelected := func(r *releaseStateResource) bool {
+		return selected[r.Parent] || selected[r.DeletedWith] ||
+			slices.ContainsFunc(r.Dependencies, func(d string) bool { return selected[d] })
+	}
+	// Checkpoints list a resource after its dependencies, so one pass is
+	// normally enough; iterate to a fixed point so order doesn't matter.
+	for changed := len(targets) > 0; changed; {
+		changed = false
+		for i := range state.Resources {
+			r := &state.Resources[i]
+			if !selected[r.URN] && dependsOnSelected(r) {
+				selected[r.URN] = true
+				changed = true
 			}
 		}
-		return false
 	}
 	var ids []string
 	for i := range state.Resources {
 		r := &state.Resources[i]
-		if r.Type != containerAppType || !targeted(r) {
+		if r.Type != containerAppType || (len(targets) > 0 && !selected[r.URN]) {
 			continue
 		}
 		if id, _ := r.Outputs["id"].(string); id != "" {

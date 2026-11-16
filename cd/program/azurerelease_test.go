@@ -30,12 +30,13 @@ const (
 	workerURN     = testURNPrefix + serviceT + "::worker"
 	acaT          = serviceT + "$azure-native:app:ContainerApp"
 	envURN        = testURNPrefix + "defang-azure:index:Project$azure-native:app:ManagedEnvironment::p"
+	dbURN         = testURNPrefix + "defang-azure:index:Project$azure-native:dbforpostgresql:Server::db"
 )
 
 func testState(t *testing.T) []byte {
 	t.Helper()
-	res := func(urn, typ, parent, id string) map[string]any {
-		r := map[string]any{"urn": urn, "type": typ, "parent": parent}
+	res := func(urn, typ, parent, id string, deps ...string) map[string]any {
+		r := map[string]any{"urn": urn, "type": typ, "parent": parent, "dependencies": deps}
 		if id != "" {
 			r["outputs"] = map[string]any{"id": id}
 		}
@@ -43,11 +44,14 @@ func testState(t *testing.T) []byte {
 	}
 	b, err := json.Marshal(map[string]any{"resources": []any{
 		res(projectURN, "defang-azure:index:Project", "", ""),
+		// The environment is listed after the app on purpose: selection must
+		// not depend on checkpoint order.
 		res(appURN, "defang-azure:index:Service", projectURN, ""),
-		res(testURNPrefix+acaT+"::app", containerAppType, appURN, testAppID),
+		res(testURNPrefix+acaT+"::app", containerAppType, appURN, testAppID, envURN),
 		res(workerURN, "defang-azure:index:Service", projectURN, ""),
 		res(testURNPrefix+acaT+"::worker", containerAppType, workerURN, testWorkerID),
 		res(envURN, "azure-native:app:ManagedEnvironment", projectURN, "env"),
+		res(dbURN, "azure-native:dbforpostgresql:Server", projectURN, "db"),
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +71,8 @@ func TestAzureContainerAppsToRelease(t *testing.T) {
 		{"service component", []string{appURN}, []string{testAppID}},
 		{"container app", []string{testURNPrefix + acaT + "::worker"}, []string{testWorkerID}},
 		{"project", []string{projectURN}, []string{testAppID, testWorkerID}},
-		{"unrelated", []string{envURN}, nil},
+		{"dependency", []string{envURN}, []string{testAppID}},
+		{"unrelated", []string{dbURN}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -136,9 +141,10 @@ func TestReleaseCustomDomains_UnbindsBeforeDeletingCert(t *testing.T) {
 		inUse: 2,
 	}
 	releaseCustomDomains(t.Context(), api, []string{testAppID, testWorkerID}, t.Logf)
+	const deleteCert = "delete proj/mc-proj-app-1234"
 	want := []string{
 		"get app", "clear app",
-		"delete proj/mc-proj-app-1234", "delete proj/mc-proj-app-1234", "delete proj/mc-proj-app-1234",
+		deleteCert, deleteCert, deleteCert, // two CertificateInUse retries
 		"get worker",
 	}
 	if !slices.Equal(api.calls, want) {
