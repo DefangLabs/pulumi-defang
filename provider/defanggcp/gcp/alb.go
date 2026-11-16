@@ -143,6 +143,34 @@ func createInternalLoadBalancer(
 	services []LBServiceEntry,
 	opts ...pulumi.ResourceOption,
 ) error {
+	// The proxy-only subnet is created on first use: the backend firewall
+	// below needs its CIDR, which can be a user-provided, non-RFC-1918 range.
+	var proxySubnet *compute.Subnetwork
+	getProxySubnet := func() (*compute.Subnetwork, error) {
+		if proxySubnet != nil {
+			return proxySubnet, nil
+		}
+		var err error
+		if config.ProxySubnetId != "" {
+			proxySubnet, err = compute.GetSubnetwork(ctx,
+				"managed-proxy-subnet",
+				pulumi.ID(config.ProxySubnetId), nil, opts...,
+			)
+		} else {
+			proxySubnet, err = compute.NewSubnetwork(ctx,
+				"managed-proxy-subnet",
+				&compute.SubnetworkArgs{
+					Purpose:     pulumi.String("REGIONAL_MANAGED_PROXY"),
+					IpCidrRange: pulumi.String("10.10.0.0/16"),
+					Region:      pulumi.String(config.Region),
+					Role:        pulumi.String("ACTIVE"),
+					Network:     config.VpcId,
+				},
+				opts...,
+			)
+		}
+		return proxySubnet, err
+	}
 	var internalAlbServices []string
 	var firstPrivateBackendID pulumi.StringPtrInput
 	var privateHostRules compute.RegionUrlMapHostRuleArray
@@ -253,17 +281,17 @@ func createInternalLoadBalancer(
 						healthCheckPort, port.Target, errHealthCheckPortMismatch)
 				}
 
+				proxy, err := getProxySubnet()
+				if err != nil {
+					return err
+				}
 				firewall, err := compute.NewFirewall(ctx,
 					service.Name,
 					&compute.FirewallArgs{
 						Network: config.VpcId,
 						// Fixed health check IP ranges for internal passthrough NLB:
 						// https://cloud.google.com/load-balancing/docs/health-checks#firewall_rules
-						SourceRanges: pulumi.StringArray{
-							pulumi.String("130.211.0.0/22"),
-							pulumi.String("35.191.0.0/16"),
-							pulumi.String("0.0.0.0/0"), // Allow traffic from LB backend.  TODO: Can this be stricter?
-						},
+						SourceRanges: internalLBSourceRanges(proxy.IpCidrRange),
 						Allows: compute.FirewallAllowArray{&compute.FirewallAllowArgs{
 							Protocol: pulumi.String(portProto),
 							Ports:    pulumi.StringArray{pulumi.String(portTargetStr)},
@@ -515,26 +543,7 @@ func createInternalLoadBalancer(
 	}
 
 	if len(internalAlbServices) > 0 {
-		var regionalManagedProxySubnet *compute.Subnetwork
-		var err error
-		if config.ProxySubnetId != "" {
-			regionalManagedProxySubnet, err = compute.GetSubnetwork(ctx,
-				"managed-proxy-subnet",
-				pulumi.ID(config.ProxySubnetId), nil, opts...,
-			)
-		} else {
-			regionalManagedProxySubnet, err = compute.NewSubnetwork(ctx,
-				"managed-proxy-subnet",
-				&compute.SubnetworkArgs{
-					Purpose:     pulumi.String("REGIONAL_MANAGED_PROXY"),
-					IpCidrRange: pulumi.String("10.10.0.0/16"),
-					Region:      pulumi.String(config.Region),
-					Role:        pulumi.String("ACTIVE"),
-					Network:     config.VpcId,
-				},
-				opts...,
-			)
-		}
+		regionalManagedProxySubnet, err := getProxySubnet()
 		if err != nil {
 			return err
 		}
@@ -918,6 +927,22 @@ func hostPortSources(config *SharedInfra, service compose.ServiceConfig) pulumi.
 		return pulumi.StringArray{pulumi.String("0.0.0.0/0")}
 	}
 	return pulumi.StringArray{config.SubnetCidr}
+}
+
+// internalLBSourceRanges are the sources an internal load balancer's backend
+// admits: Google's health checkers, the internal Application Load Balancer's
+// proxy-only subnet (which can be a non-RFC-1918 range) and private addresses
+// for VPC clients. The VM has an external IP, so 0.0.0.0/0 would let the
+// internet bypass the load balancer.
+func internalLBSourceRanges(proxyCidr pulumi.StringInput) pulumi.StringArray {
+	return pulumi.StringArray{
+		pulumi.String("130.211.0.0/22"),
+		pulumi.String("35.191.0.0/16"),
+		proxyCidr,
+		pulumi.String("10.0.0.0/8"),
+		pulumi.String("172.16.0.0/12"),
+		pulumi.String("192.168.0.0/16"),
+	}
 }
 
 func pathMatcherName(name string) string {
