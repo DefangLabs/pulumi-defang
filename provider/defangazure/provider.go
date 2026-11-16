@@ -23,6 +23,8 @@ func Provider() p.Provider {
 			infer.Resource[*Build, BuildInputs, BuildState](&Build{}),
 			infer.Resource[*ModelSelection, common.ModelSelectionInputs, common.ModelSelectionState](
 				newModelSelection()),
+			infer.Resource[*CustomDomainRelease, CustomDomainReleaseInputs, CustomDomainReleaseState](
+				&CustomDomainRelease{}),
 		},
 		Components: []infer.InferredComponent{
 			infer.Component[*Project, ProjectInputs, *ProjectOutputs](&Project{}),

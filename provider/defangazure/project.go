@@ -286,6 +286,14 @@ func createServiceResources(
 		if err != nil {
 			return pulumi.StringOutput{}, err
 		}
+		// The CD binds managed certificates to public apps outside Pulumi;
+		// this releases them before the app is deleted.
+		if svc.HasIngressPorts() && !providerazure.IsVirtualMachineService(&svc) {
+			err = providerazure.RegisterCustomDomainRelease(ctx, svcName, svcComp.AppID, pluginID, pulumi.Parent(svcComp))
+			if err != nil {
+				return pulumi.StringOutput{}, err
+			}
+		}
 		serviceIds[svcName] = svcComp.AppID
 		return svcComp.Endpoint, nil
 	}

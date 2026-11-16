@@ -23,8 +23,8 @@
 // binding stay with the CLI's IssueCert flow (defang/src/pkg/cli/client/byoc/
 // azure/cert.go), which already sequences register-with-Disabled → cert →
 // re-bind-with-SniEnabled correctly. See defang/defangdomain.md for the
-// design notes. Because Pulumi doesn't own them, the CD also removes the
-// binding and cert before `compose down` (cd/program/azurerelease.go).
+// design notes. Because Pulumi doesn't own them, a CustomDomainRelease
+// (customdomainrelease.go) removes them before the app is deleted.
 
 package azure
 

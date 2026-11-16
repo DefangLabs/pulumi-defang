@@ -1,8 +1,7 @@
-package program
+package azure
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,79 +13,43 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armappcontainers "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/DefangLabs/pulumi-defang/provider/common"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 const (
-	containerAppType       = "azure-native:app:ContainerApp"
 	managedCertificateType = "Microsoft.App/managedEnvironments/managedCertificates"
 
-	// releaseAppTimeout bounds the work for one Container App, so a stuck ARM
-	// call can't stall the destroy that follows.
-	releaseAppTimeout = 5 * time.Minute
+	// releaseTimeout bounds the release of one Container App.
+	releaseTimeout = 5 * time.Minute
 )
 
 // certInUseRetryDelay is the wait between delete attempts while Azure still
 // reports the just-unbound certificate as in use. A var so tests can shorten it.
 var certInUseRetryDelay = 10 * time.Second
 
-// releaseStateResource is the part of a checkpoint resource that
-// AzureContainerAppsToRelease reads.
-type releaseStateResource struct {
-	URN          string         `json:"urn"`
-	Type         string         `json:"type"`
-	Parent       string         `json:"parent"`
-	Dependencies []string       `json:"dependencies"`
-	DeletedWith  string         `json:"deletedWith"`
-	Outputs      map[string]any `json:"outputs"`
-}
+// CustomDomainReleaseType is the type token of the CustomDomainRelease resource.
+const CustomDomainReleaseType = "defang-azure:index:CustomDomainRelease"
 
-// AzureContainerAppsToRelease returns the ARM IDs of the Container Apps in the
-// stack checkpoint (the deployment object of `pulumi stack export`) that a
-// destroy with the given targets deletes. With no targets, that is every
-// Container App. With targets, it is the targets and, as with
-// optdestroy.TargetDependents, everything that transitively depends on them
-// through a parent, dependency or deletedWith edge.
-func AzureContainerAppsToRelease(deployment []byte, targets []string) ([]string, error) {
-	if len(deployment) == 0 {
-		return nil, nil
+// RegisterCustomDomainRelease registers a CustomDomainRelease for the Container
+// App. It takes the app's ID as input, so Pulumi deletes it before the app and
+// its Delete can remove the custom domain bindings and managed certificates
+// that the CD adds outside Pulumi (see customdomain.go).
+func RegisterCustomDomainRelease(
+	ctx *pulumi.Context,
+	serviceName string,
+	containerAppID pulumi.StringInput,
+	pluginID common.PluginIdentity,
+	opts ...pulumi.ResourceOption,
+) error {
+	var res pulumi.CustomResourceState
+	err := ctx.RegisterResource(CustomDomainReleaseType, serviceName, pulumi.Map{
+		"containerAppId": containerAppID,
+	}, &res, pluginID.ResourceOptions(opts...)...)
+	if err != nil {
+		return fmt.Errorf("registering custom domain release for %s: %w", serviceName, err)
 	}
-	var state struct {
-		Resources []releaseStateResource `json:"resources"`
-	}
-	if err := json.Unmarshal(deployment, &state); err != nil {
-		return nil, fmt.Errorf("reading stack state: %w", err)
-	}
-	selected := make(map[string]bool, len(targets))
-	for _, t := range targets {
-		selected[t] = true
-	}
-	dependsOnSelected := func(r *releaseStateResource) bool {
-		return selected[r.Parent] || selected[r.DeletedWith] ||
-			slices.ContainsFunc(r.Dependencies, func(d string) bool { return selected[d] })
-	}
-	// Checkpoints list a resource after its dependencies, so one pass is
-	// normally enough; iterate to a fixed point so order doesn't matter.
-	for changed := len(targets) > 0; changed; {
-		changed = false
-		for i := range state.Resources {
-			r := &state.Resources[i]
-			if !selected[r.URN] && dependsOnSelected(r) {
-				selected[r.URN] = true
-				changed = true
-			}
-		}
-	}
-	var ids []string
-	for i := range state.Resources {
-		r := &state.Resources[i]
-		if r.Type != containerAppType || (len(targets) > 0 && !selected[r.URN]) {
-			continue
-		}
-		if id, _ := r.Outputs["id"].(string); id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
+	return nil
 }
 
 // customDomainAPI is the subset of the Container Apps ARM API that
@@ -97,42 +60,22 @@ type customDomainAPI interface {
 	deleteManagedCert(ctx context.Context, cert *arm.ResourceID) error
 }
 
-// ReleaseAzureCustomDomains removes the custom domain bindings from each
-// Container App and then deletes the managed certificates they used.
-//
-// The CD program binds these out of band (provisionCerts / aca.IssueCert), so
-// they are not in the Pulumi state and destroy does not sequence them. Without
-// this step Azure keeps the app delete in progress indefinitely and refuses to
-// delete the certificate (CertificateInUse) while the binding exists; the
-// managed environment delete then also fails. Run this before the destroy.
-//
-// Failures are logged and do not stop the destroy: destroy can still succeed
-// without this step (for example, when the app has no bindings).
-func ReleaseAzureCustomDomains(ctx context.Context, appIDs []string, log func(string, ...any)) {
-	if len(appIDs) == 0 {
-		return
+// ReleaseCustomDomains removes the custom domain bindings from the Container
+// App and then deletes the managed certificates they used. Without this,
+// Azure keeps the app delete in progress indefinitely and refuses to delete
+// the certificate (CertificateInUse) while the binding exists.
+func ReleaseCustomDomains(ctx context.Context, containerAppID string, log func(string, ...any)) error {
+	app, err := arm.ParseResourceID(containerAppID)
+	if err != nil {
+		return fmt.Errorf("parsing Container App ID %q: %w", containerAppID, err)
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		log("custom domains: cannot release bindings before destroy: %v", err)
-		return
+		return fmt.Errorf("creating Azure credential: %w", err)
 	}
-	releaseCustomDomains(ctx, &armCustomDomainAPI{cred: cred}, appIDs, log)
-}
-
-func releaseCustomDomains(ctx context.Context, api customDomainAPI, appIDs []string, log func(string, ...any)) {
-	for _, appID := range appIDs {
-		app, err := arm.ParseResourceID(appID)
-		if err != nil {
-			log("custom domains: skipping %q: %v", appID, err)
-			continue
-		}
-		appCtx, cancel := context.WithTimeout(ctx, releaseAppTimeout)
-		if err := releaseApp(appCtx, api, app, log); err != nil {
-			log("custom domains: release on %s failed: %v", app.Name, err)
-		}
-		cancel()
-	}
+	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
+	defer cancel()
+	return releaseApp(ctx, &armCustomDomainAPI{cred: cred}, app, log)
 }
 
 func releaseApp(ctx context.Context, api customDomainAPI, app *arm.ResourceID, log func(string, ...any)) error {
@@ -167,7 +110,7 @@ func releaseApp(ctx context.Context, api customDomainAPI, app *arm.ResourceID, l
 		}
 	}
 
-	log("Removing custom domains %s from %s before destroy", strings.Join(names, ", "), app.Name)
+	log("Removing custom domains %s from %s before deleting it", strings.Join(names, ", "), app.Name)
 	if err := api.clearCustomDomains(ctx, app); err != nil {
 		return fmt.Errorf("removing custom domains: %w", err)
 	}
@@ -213,7 +156,9 @@ type armCustomDomainAPI struct {
 	cred azcore.TokenCredential
 }
 
-func (a *armCustomDomainAPI) customDomains(ctx context.Context, app *arm.ResourceID) ([]*armappcontainers.CustomDomain, error) {
+func (a *armCustomDomainAPI) customDomains(
+	ctx context.Context, app *arm.ResourceID,
+) ([]*armappcontainers.CustomDomain, error) {
 	client, err := armappcontainers.NewContainerAppsClient(app.SubscriptionID, a.cred, nil)
 	if err != nil {
 		return nil, err

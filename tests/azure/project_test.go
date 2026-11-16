@@ -335,3 +335,31 @@ func TestConstructAzureProjectUDPUsesVMScaleSet(t *testing.T) {
 	}
 	require.Equal(t, map[string]int{"Tcp": 1, "Udp": 1}, protocols)
 }
+
+func TestConstructAzureProjectPublicAppGetsCustomDomainRelease(t *testing.T) {
+	mock, records := collectResources()
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn: testutil.AzureURN("Project"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"web":    testutil.ServiceWithPorts("nginx", testutil.IngressPort(80)),
+			"worker": testutil.ServiceWithImage("busybox"),
+		}),
+	})
+	require.NoError(t, err)
+
+	var releases []resourceRecord
+	for _, r := range *records {
+		if r.typ == "defang-azure:index:CustomDomainRelease" {
+			releases = append(releases, r)
+		}
+	}
+	require.Len(t, releases, 1, "only the public app binds custom domains")
+	require.Equal(t, "web", releases[0].name)
+
+	// The mock returns each resource's name as its ID.
+	require.NotNil(t, findTypeWhere(*records, "azure-native:app:ContainerApp", func(property.Map) bool { return true }))
+	require.Equal(t, property.New("web"), releases[0].inputs.Get("containerAppId"),
+		"containerAppId must be the app's ID, so the release depends on the app")
+}
