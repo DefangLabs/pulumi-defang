@@ -188,19 +188,20 @@ jobs:
           # a 10-15s download, while exporting the cache took 1-4 minutes and
           # several GB of the repo's Actions cache quota.
 
-      # Pin the staging Azure CD image ref (digest) in the Defang Fabric. Only on main-branch
+      # Pin the staging CD image refs (digests) in the Defang Fabric. Only on main-branch
       # pushes — PR runs would otherwise have every contributor overwrite the staging config.
+      # AWS and GCP use the _v2 configs: cd_image_cb and cd_image_gcp still hold the defang-mvp CD.
       - name: Set cd_image_ configs in Defang
         if: github.event_name == 'push'
         uses: DefangLabs/defang-github-action@981924edd6d4dec17d6ddb03e956174223bcec55 # v2.5.0
         with:
           project: ecs
           stack: awsstagingoidc
-          command: config set -e cd_image_azure # cd_image_cb cd_image_gcp"
+          command: config set -e cd_image_azure cd_image_aws_v2 cd_image_gcp_v2
         env:
           cd_image_azure: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
-          # cd_image_cb: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
-          # cd_image_gcp: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+          cd_image_aws_v2: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
+          cd_image_gcp_v2: ${{ env.IMAGE_REPO }}@${{ steps.build-push.outputs.digest }}
 
   ci:
     name: ci
