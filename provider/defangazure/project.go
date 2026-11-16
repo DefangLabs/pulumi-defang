@@ -10,9 +10,11 @@ import (
 	"github.com/DefangLabs/pulumi-defang/provider/compose"
 	providerazure "github.com/DefangLabs/pulumi-defang/provider/defangazure/azure"
 	"github.com/pulumi/pulumi-azure-native-sdk/app/v3"
+	"github.com/pulumi/pulumi-azure-native-sdk/authorization/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/monitor/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/operationalinsights/v3"
 	"github.com/pulumi/pulumi-azure-native-sdk/resources/v3"
+	azureconfig "github.com/pulumi/pulumi-azure-native-sdk/v3/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -303,6 +305,7 @@ func createProjectResourceGroup(
 	ctx *pulumi.Context,
 	name string,
 	childOpt pulumi.ResourceOrInvokeOption,
+	dependsOn []pulumi.Resource,
 ) (*resources.ResourceGroup, error) {
 	projectRG := providerazure.ProjectResourceGroupName(ctx, name)
 
@@ -318,7 +321,9 @@ func createProjectResourceGroup(
 	// preserves user secrets. The CLI already keeps this RG around between
 	// deploys (it hosts the Pulumi state storage account too), so there's no
 	// new orphan-resource cost.
-	rgOpts := []pulumi.ResourceOption{childOpt, pulumi.RetainOnDelete(true)}
+	// Every project resource uses this RG, so making it wait for the resource
+	// provider registrations makes all of them wait.
+	rgOpts := []pulumi.ResourceOption{childOpt, pulumi.RetainOnDelete(true), pulumi.DependsOn(dependsOn)}
 
 	if existingRG, err := resources.LookupResourceGroup(ctx, &resources.LookupResourceGroupArgs{
 		ResourceGroupName: projectRG,
@@ -466,14 +471,21 @@ func setupSharedInfra(
 	ctx *pulumi.Context,
 	projectName string,
 	inputs ProjectInputs,
+	pluginID common.PluginIdentity,
 	parentOpt pulumi.ResourceOrInvokeOption,
 ) (*providerazure.SharedInfra, map[string]string, error) {
-	rg, err := createProjectResourceGroup(ctx, projectName, parentOpt)
+	types := detectServiceTypes(inputs.Services)
+
+	registrations, err := registerResourceProviders(ctx, projectName, subscriptionID(ctx, parentOpt),
+		requiredResourceProviders(types, inputs.Services), pluginID, parentOpt)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	types := detectServiceTypes(inputs.Services)
+	rg, err := createProjectResourceGroup(ctx, projectName, parentOpt, registrations)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Compute keyVaultURL up front so the ConfigProvider can assemble
 	// ready-to-use secret URLs AND lazy-fetch user config on first access.
@@ -597,7 +609,7 @@ func (*Project) Construct(
 	// version is pinned on purpose — see common.PluginIdentityFrom.
 	pluginID := common.PluginIdentityFrom(opts)
 
-	infra, llmAliases, err := setupSharedInfra(ctx, name, inputs, parentOpt)
+	infra, llmAliases, err := setupSharedInfra(ctx, name, inputs, pluginID, parentOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -806,4 +818,66 @@ func fqdnToHTTPS(fqdn string) string {
 		return ""
 	}
 	return "https://" + fqdn
+}
+
+// subscriptionID returns the subscription the azure-native provider deploys
+// to: its subscriptionId config when set, else the one of its credentials.
+func subscriptionID(ctx *pulumi.Context, opt pulumi.InvokeOption) pulumi.StringInput {
+	if sub := azureconfig.GetSubscriptionId(ctx); sub != "" {
+		return pulumi.String(sub)
+	}
+	return authorization.GetClientConfigOutput(ctx, opt).SubscriptionId()
+}
+
+// Resource provider namespaces.
+const (
+	nsApp                 = "Microsoft.App"
+	nsCache               = "Microsoft.Cache"
+	nsCdn                 = "Microsoft.Cdn"
+	nsCognitiveServices   = "Microsoft.CognitiveServices"
+	nsCompute             = "Microsoft.Compute"
+	nsContainerRegistry   = "Microsoft.ContainerRegistry"
+	nsPostgreSQL          = "Microsoft.DBforPostgreSQL"
+	nsInsights            = "Microsoft.Insights"
+	nsKeyVault            = "Microsoft.KeyVault"
+	nsManagedIdentity     = "Microsoft.ManagedIdentity"
+	nsNetwork             = "Microsoft.Network"
+	nsOperationalInsights = "Microsoft.OperationalInsights"
+)
+
+// requiredResourceProviders lists the resource provider namespaces the
+// project's resources use, so they can be registered first.
+func requiredResourceProviders(types serviceTypes, services compose.Services) []string {
+	namespaces := []string{
+		nsKeyVault,        // project config vault
+		nsManagedIdentity, // Key Vault and service identities
+		nsNetwork,         // DNS zones and records
+	}
+	if types.hasContainerApp {
+		namespaces = append(namespaces,
+			nsApp,
+			nsInsights, // diagnostic setting for the Container Apps logs
+			nsOperationalInsights,
+		)
+	}
+	if types.hasBuild {
+		namespaces = append(namespaces, nsContainerRegistry)
+	}
+	if types.hasLLM {
+		namespaces = append(namespaces, nsCognitiveServices)
+	}
+	if types.hasVM {
+		namespaces = append(namespaces, nsCompute)
+	}
+	if types.pgServiceName != "" {
+		namespaces = append(namespaces, nsPostgreSQL)
+	}
+	if types.redisServiceName != "" {
+		namespaces = append(namespaces, nsCache)
+	}
+	if providerazure.HasWildcardHostname(services) {
+		namespaces = append(namespaces, nsCdn) // Front Door
+	}
+	sort.Strings(namespaces)
+	return namespaces
 }

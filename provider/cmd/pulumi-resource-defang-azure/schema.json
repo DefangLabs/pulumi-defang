@@ -766,6 +766,42 @@
       ],
       "isComponent": true
     },
+    "defang-azure:index:ResourceProviderRegistration": {
+      "description": "Registers an Azure resource provider namespace on the subscription and waits until it is registered. Created by Project. Deleting it does not unregister the namespace.",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "description": "Resource provider namespace, for example Microsoft.Insights."
+        },
+        "registrationState": {
+          "type": "string",
+          "description": "Registration state that Azure reported, for example Registered."
+        },
+        "subscriptionId": {
+          "type": "string",
+          "description": "Azure subscription ID."
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "namespace",
+        "registrationState"
+      ],
+      "inputProperties": {
+        "namespace": {
+          "type": "string",
+          "description": "Resource provider namespace, for example Microsoft.Insights."
+        },
+        "subscriptionId": {
+          "type": "string",
+          "description": "Azure subscription ID."
+        }
+      },
+      "requiredInputs": [
+        "subscriptionId",
+        "namespace"
+      ]
+    },
     "defang-azure:index:Service": {
       "properties": {
         "endpoint": {

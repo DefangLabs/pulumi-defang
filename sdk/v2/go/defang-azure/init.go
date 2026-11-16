@@ -31,6 +31,8 @@ func (m *module) Construct(ctx *pulumi.Context, name, typ, urn string) (r pulumi
 		r = &Project{}
 	case "defang-azure:index:Redis":
 		r = &Redis{}
+	case "defang-azure:index:ResourceProviderRegistration":
+		r = &ResourceProviderRegistration{}
 	case "defang-azure:index:Service":
 		r = &Service{}
 	default:

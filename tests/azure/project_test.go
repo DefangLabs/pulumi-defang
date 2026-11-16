@@ -335,3 +335,49 @@ func TestConstructAzureProjectUDPUsesVMScaleSet(t *testing.T) {
 	}
 	require.Equal(t, map[string]int{"Tcp": 1, "Udp": 1}, protocols)
 }
+
+// TestConstructAzureProjectRegistersResourceProviders checks that a Project
+// registers the resource provider namespaces it uses (Microsoft.Insights for
+// the Container Apps diagnostic setting among them) and that the project
+// resource group, which every other resource uses, waits for them.
+func TestConstructAzureProjectRegistersResourceProviders(t *testing.T) {
+	var mu sync.Mutex
+	registrations := map[string]string{} // namespace -> subscriptionId
+	var rgDeps []string
+	mock := &integration.MockResourceMonitor{
+		NewResourceF: func(args integration.MockResourceArgs) (string, property.Map, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			switch string(args.TypeToken) {
+			case defangazure.ResourceProviderRegistrationType:
+				registrations[args.Inputs.Get("namespace").AsString()] = args.Inputs.Get("subscriptionId").AsString()
+			case "azure-native:resources:ResourceGroup":
+				if args.RegisterRPC != nil {
+					rgDeps = args.RegisterRPC.GetDependencies()
+				}
+			}
+			return args.Name, args.Inputs, nil
+		},
+	}
+	server := testutil.MakeAzureTestServer(integration.WithMocks(mock))
+
+	_, err := server.Construct(p.ConstructRequest{
+		Urn:    testutil.AzureURN("Project"),
+		Config: testutil.StackConfig("azure-native:subscriptionId", "sub-1"),
+		Inputs: testutil.ServicesMap(map[string]property.Value{
+			"app": testutil.ServiceWithPorts("nginx:latest", testutil.IngressPort(8080)),
+		}),
+	})
+	require.NoError(t, err)
+
+	for _, ns := range []string{"Microsoft.App", "Microsoft.Insights", "Microsoft.OperationalInsights"} {
+		require.Contains(t, registrations, ns)
+		require.Equal(t, "sub-1", registrations[ns])
+	}
+	require.NotContains(t, registrations, "Microsoft.DBforPostgreSQL", "only namespaces the project uses")
+
+	require.Len(t, rgDeps, len(registrations), "resource group depends on every registration: %v", rgDeps)
+	for _, dep := range rgDeps {
+		require.Contains(t, dep, "ResourceProviderRegistration")
+	}
+}
