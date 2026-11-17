@@ -147,9 +147,10 @@ func BuildGlobalConfig(
 		return nil, err
 	}
 
-	// Logical name deliberately omits projectName, same as public-dns below: Pulumi's default resource ID already prefixes it with
-	// <pulumi-project>-<stack>, which includes projectName, so repeating it here
-	// risked exceeding GCP's 63-char resource ID limit.
+	// Logical name deliberately omits projectName, same as public-dns below:
+	// Pulumi's default resource ID already prefixes it with <pulumi-project>-<stack>,
+	// which includes projectName, so repeating it here risked exceeding GCP's
+	// 63-char resource ID limit.
 	privateZone, err := createPrivateZone(ctx, projectName, vpc, opts...)
 	if err != nil {
 		return nil, err

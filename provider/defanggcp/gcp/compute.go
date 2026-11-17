@@ -111,7 +111,6 @@ func CreateComputeEngine(
 	if err := createServiceICMPFirewall(ctx, serviceName, svc, gcpConfig, parentOpt); err != nil {
 		return nil, err
 	}
-
 	autoHealing, err := createMIGAutoHealing(
 		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, networkID(gcpConfig),
 		svc.HealthCheck, parentOpt)
