@@ -108,6 +108,9 @@ func CreateComputeEngine(
 		return nil, err
 	}
 
+	if err := createServiceICMPFirewall(ctx, serviceName, svc, gcpConfig, parentOpt); err != nil {
+		return nil, err
+	}
 	autoHealing, err := createMIGAutoHealing(
 		ctx, serviceName, serviceName, healthCheckPort, addHealthCheckSidecar, networkID(gcpConfig),
 		svc.HealthCheck, parentOpt)
@@ -328,6 +331,31 @@ func createInstanceTemplate(
 		return nil, fmt.Errorf("creating instance template for %s: %w", serviceName, err)
 	}
 	return tmpl, nil
+}
+
+// createServiceICMPFirewall admits ICMP (Path MTU Discovery, ping) to one
+// service's instances, as AWS does: only for services with ports, from
+// anywhere only when the service accepts public traffic, else from the subnet.
+// Standalone services run on the default network, which has its own rule.
+func createServiceICMPFirewall(
+	ctx *pulumi.Context, serviceName string, svc compose.ServiceConfig, gcpConfig *SharedInfra,
+	opts ...pulumi.ResourceOption,
+) error {
+	if gcpConfig.PublicIP == nil || len(svc.Ports) == 0 {
+		return nil
+	}
+	if _, err := compute.NewFirewall(ctx, serviceName+"-icmp", &compute.FirewallArgs{
+		Network:      gcpConfig.VpcId,
+		SourceRanges: hostPortSources(gcpConfig, svc),
+		Allows: compute.FirewallAllowArray{
+			&compute.FirewallAllowArgs{Protocol: pulumi.String("icmp")},
+		},
+		TargetTags: pulumi.StringArray{pulumi.String(serviceName)},
+		Direction:  pulumi.String("INGRESS"),
+	}, opts...); err != nil {
+		return fmt.Errorf("creating ICMP firewall for %s: %w", serviceName, err)
+	}
+	return nil
 }
 
 // maxMIGAutoHealingInitialDelaySeconds is GCP's documented ceiling for

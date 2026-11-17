@@ -108,7 +108,7 @@ func TestConstructProject(t *testing.T) {
 	assert.Equal(t, 2, countType(*records, "gcp:compute/globalForwardingRule:GlobalForwardingRule"))
 }
 
-func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
+func TestConstructProjectHasNoVPCWideSSHOrICMPFirewalls(t *testing.T) {
 	mock, records := collectResources()
 	server := testutil.MakeGcpTestServer(integration.WithMocks(mock))
 
@@ -121,35 +121,11 @@ func TestConstructProjectAlwaysCreatesVPCFirewalls(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// SSH firewall rule — match on tcp/22 since several other TCP firewall
-	// rules (MIG health checks, per-service traffic/health-check) also exist.
-	ssh := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
-		allows := m.Get("allows").AsArray()
-		if allows.Len() != 1 {
-			return false
-		}
-		allow := allows.Get(0).AsMap()
-		if allow.Get("protocol").AsString() != "tcp" {
-			return false
-		}
-		ports := allow.Get("ports").AsArray()
-		return ports.Len() == 1 && ports.Get(0).AsString() == "22"
-	})
-	require.NotNil(t, ssh, "expected an SSH firewall rule")
-	assert.Equal(t, "INGRESS", ssh.inputs.Get("direction").AsString())
-	// Logical name must not re-embed the project name: Pulumi's default resource
-	// ID already prefixes <pulumi-project>-<stack>, which includes it, and
-	// doing so again pushed the physical name over GCP's 63-char limit.
-	assert.Equal(t, "allow-ssh", ssh.name)
-
-	// ICMP firewall rule
-	icmp := findTypeWhere(*records, "gcp:compute/firewall:Firewall", func(m property.Map) bool {
-		allows := m.Get("allows").AsArray()
-		return allows.Len() == 1 && allows.Get(0).AsMap().Get("protocol").AsString() == "icmp"
-	})
-	require.NotNil(t, icmp, "expected an ICMP firewall rule")
-	assert.Equal(t, "INGRESS", icmp.inputs.Get("direction").AsString())
-	assert.Equal(t, "allow-icmp", icmp.name)
+	// No VPC-wide SSH or ICMP rules: both used to admit 0.0.0.0/0 to every instance.
+	for _, r := range *records {
+		assert.NotEqual(t, "allow-ssh", r.name)
+		assert.NotEqual(t, "allow-icmp", r.name)
+	}
 }
 
 func TestConstructProjectAlwaysCreatesPrivateDNSZone(t *testing.T) {

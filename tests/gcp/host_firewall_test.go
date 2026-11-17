@@ -50,6 +50,16 @@ func (r *hostModeRun) trafficSources(t *testing.T, service string) []string {
 	return out
 }
 
+// icmpSources returns the source ranges of the service's ICMP firewall.
+func (r *hostModeRun) icmpSources(t *testing.T, service string) []string {
+	t.Helper()
+	var out []string
+	for _, v := range r.named(t, gcpFirewallType, service+"-icmp").Get("sourceRanges").AsArray().All {
+		out = append(out, v.AsString())
+	}
+	return out
+}
+
 // externalIP reports whether the service's instances get an external address.
 func (r *hostModeRun) externalIP(t *testing.T, service string) bool {
 	t.Helper()
@@ -75,6 +85,7 @@ func TestPublicHostModeServiceIsOpen(t *testing.T) {
 		"game": hostService(nil),
 	}))
 	assert.Equal(t, []string{"0.0.0.0/0"}, run.trafficSources(t, "game"))
+	assert.Equal(t, []string{"0.0.0.0/0"}, run.icmpSources(t, "game"))
 	assert.True(t, run.externalIP(t, "game"))
 }
 
@@ -91,6 +102,7 @@ func TestPrivateHostModeServiceAcceptsOnlyTheSubnet(t *testing.T) {
 		"networks": nonInternalNetworks("private"),
 	}))
 	assert.Equal(t, []string{projectSubnetCidr}, run.trafficSources(t, "backend"))
+	assert.Equal(t, []string{projectSubnetCidr}, run.icmpSources(t, "backend"))
 	assert.False(t, run.externalIP(t, "backend"), "egress goes through Cloud NAT")
 	assert.Equal(t, 1, countType(run.records, "gcp:compute/routerNat:RouterNat"))
 }
