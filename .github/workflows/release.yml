@@ -343,6 +343,11 @@ jobs:
           stack: awsprod1oidc
           command: "config set -e cd_image_${{ matrix.clouds }}${{ (matrix.clouds == 'aws' || matrix.clouds == 'gcp') && '_v2' || '' }}"
         env:
+          # ECR uses a different AWS account. Let the awsprod1oidc stack select
+          # its own role instead of inheriting the ECR push credentials.
+          AWS_ACCESS_KEY_ID: ""
+          AWS_SECRET_ACCESS_KEY: ""
+          AWS_SESSION_TOKEN: ""
           cd_image_aws_v2: ${{ env.AWS_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_azure: ${{ env.AZURE_REPO }}@${{ steps.build-push.outputs.digest }}
           cd_image_gcp_v2: ${{ env.GCP_REPO }}@${{ steps.build-push.outputs.digest }}
