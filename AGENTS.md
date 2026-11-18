@@ -209,6 +209,28 @@ failures from the moment an instance booted, with no declared grace period,
 which aborted an Azure VMSS rolling upgrade in production over a
 slow-but-otherwise-healthy new instance: DefangLabs/station, 2026-10-22.)
 
+### Adding a new cloud provider: register it in the Pulumi Registry
+
+A provider is not in the Pulumi Registry until it is listed in
+[`community-packages/package-list.json`](https://github.com/pulumi/registry/blob/master/community-packages/package-list.json)
+in `pulumi/registry`. Shipping release archives, SDKs and a CD image does
+**not** do this. Scaleway shipped in v2.10.x and was missing from the
+registry until this step was done (the `defang` package page there is
+deprecated and only points at the per-cloud packages).
+
+For every new `defang-<cloud>` package, open a PR against `pulumi/registry`
+(use the community-package PR template) that adds exactly one entry:
+
+```json
+{ "repoSlug": "DefangLabs/pulumi-defang", "schemaFile": "provider/cmd/pulumi-resource-defang-<cloud>/schema.json" }
+```
+
+Before opening it, check that a `v`-prefixed release contains the schema path
+and that the SDKs are published (npm `@defang-io/pulumi-defang-<cloud>`, PyPI
+`pulumi-defang-<cloud>`, NuGet `DefangLabs.Defang<Cloud>`, e.g. `DefangLabs.DefangScaleway`). After it merges, Pulumi's bot opens the
+"Publish Package Metadata defang-<cloud>@vX.Y.Z" PRs on each release.
+Check `https://www.pulumi.com/registry/packages/defang-<cloud>/` returns 200.
+
 ### Pulumi inputs and outputs
 
 - Pulumi input types should use native types or `pulumi.*Input` types, no `pulumi.*Output`!
