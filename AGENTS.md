@@ -227,7 +227,7 @@ For every new `defang-<cloud>` package, open a PR against `pulumi/registry`
 
 Before opening it, check that a `v`-prefixed release contains the schema path
 and that the SDKs are published (npm `@defang-io/pulumi-defang-<cloud>`, PyPI
-`pulumi-defang-<cloud>`, NuGet). After it merges, Pulumi's bot opens the
+`pulumi-defang-<cloud>`, NuGet `DefangLabs.Defang<Cloud>`, e.g. `DefangLabs.DefangScaleway`). After it merges, Pulumi's bot opens the
 "Publish Package Metadata defang-<cloud>@vX.Y.Z" PRs on each release.
 Check `https://www.pulumi.com/registry/packages/defang-<cloud>/` returns 200.
 
