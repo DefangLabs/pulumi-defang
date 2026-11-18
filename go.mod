@@ -14,7 +14,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.2
 	github.com/DefangLabs/defang/src v0.0.0-20261027003503-1cc7519e3ad7
 	github.com/aws/aws-sdk-go-v2 v1.47.5
