@@ -14,8 +14,9 @@ Defang ships one provider package per cloud, all with the same Compose-shaped in
 - **`defang-aws`** — deploys to AWS (ECS Fargate, ALB, RDS, ElastiCache, …)
 - **`defang-gcp`** — deploys to Google Cloud (Cloud Run / Compute Engine, Cloud SQL, Memorystore, …)
 - **`defang-azure`** — deploys to Azure (Container Apps, Azure Database, Azure Cache, …)
+- **`defang-scaleway`** — deploys to Scaleway (Serverless Containers, managed Postgres and Redis, …)
 
-The examples below use `defang-aws`; swap in the `defang-gcp` or `defang-azure` package of your language to target another cloud — the `Project` inputs are the same.
+The examples below use `defang-aws`; swap in the `defang-gcp`, `defang-azure` or `defang-scaleway` package of your language to target another cloud — the `Project` inputs are the same.
 
 ## Example usage
 
