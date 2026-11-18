@@ -56,7 +56,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/aws/aws-sdk-go-v2/service/bedrock v1.74.3
+require github.com/aws/aws-sdk-go-v2/service/bedrock v1.74.7
 
 require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v2 v2.1.0
 
