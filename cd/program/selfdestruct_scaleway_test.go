@@ -111,7 +111,7 @@ func TestScalewayDeploymentRejectsTTLOverOneYear(t *testing.T) {
 		}
 	}
 	err := pulumi.RunErr(NewRun(deployment), pulumi.WithMocks("app", "dev", &scalewayScheduleMocks{}), configure)
-	require.ErrorIs(t, err, errScalewayTTLTooLong)
+	require.ErrorIs(t, err, errCronTTLTooLong)
 }
 
 type scalewayScheduleMocks struct {

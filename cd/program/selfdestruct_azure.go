@@ -62,7 +62,10 @@ const (
 // on a redeploy deletes them. Failing to create them fails the deploy: a
 // stack that silently outlives its requested TTL is the exact failure mode
 // this feature exists to prevent.
-func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.Duration, dep pulumi.Resource, opts ...pulumi.ResourceOption) error {
+func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.Duration, dep pulumi.Resource, ready pulumi.Output, opts ...pulumi.ResourceOption) error {
+	if err := checkCronTTL(ttl); err != nil {
+		return err
+	}
 	subscriptionID := azconfig.GetSubscriptionId(pctx)
 	if subscriptionID == "" {
 		return fmt.Errorf("defang:ttl is set but AZURE_SUBSCRIPTION_ID is not in Pulumi config")
@@ -87,16 +90,14 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 		return fmt.Errorf("self-destruct: CD job has no resource id")
 	}
 
-	// Round up to the next whole minute: the cron expression has minute
-	// granularity, and truncating would fire up to 59s before now + TTL.
-	fireAt := time.Now().Add(ttl).Truncate(time.Minute).Add(time.Minute)
-	args, err := azureSelfDestructJobArgs(resp.Job, os.Environ(), fireAt, providerazure.ProjectResourceGroupName(pctx, cf.Name), pctx.Stack())
+	// Measured once the project has finished deploying, so a slow deploy
+	// cannot register an expired schedule (the cron repeats annually).
+	deadline := selfDestructDeadlineAfter(pctx, ttl, ready)
+	args, err := azureSelfDestructJobArgs(resp.Job, os.Environ(), deadline, selfDestructCronOf(deadline),
+		providerazure.ProjectResourceGroupName(pctx, cf.Name), pctx.Stack())
 	if err != nil {
 		return fmt.Errorf("self-destruct: %w", err)
 	}
-
-	_ = pctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` on itself at %s (ttl %s); redeploying extends it",
-		fireAt.UTC().Format(time.RFC3339), ttl), nil)
 
 	job, err := app.NewJob(pctx, selfDestructName, args,
 		append(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
@@ -119,7 +120,7 @@ func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time
 
 // azureSelfDestructJobArgs derives the trigger job's inputs from the shared
 // CD job and the current process environment. Pure, for testing.
-func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fireAt time.Time, resourceGroup, stack string) (*app.JobArgs, error) {
+func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, deadline, cron pulumi.StringInput, resourceGroup, stack string) (*app.JobArgs, error) {
 	if cdJob.Properties == nil || cdJob.Properties.EnvironmentID == nil {
 		return nil, fmt.Errorf("CD job has no environment id")
 	}
@@ -160,7 +161,7 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 			Type: pulumi.String("SystemAssigned"),
 		},
 		Tags: pulumi.StringMap{
-			"defang-fire-at": pulumi.String(fireAt.UTC().Format(time.RFC3339)),
+			"defang-fire-at": deadline,
 			"defang-stack":   pulumi.String(stack),
 		},
 		Configuration: app.JobConfigurationArgs{
@@ -168,7 +169,7 @@ func azureSelfDestructJobArgs(cdJob armappcontainers.Job, environ []string, fire
 			ReplicaTimeout:    pulumi.Int(int(selfDestructTimeout.Seconds())),
 			ReplicaRetryLimit: pulumi.Int(1),
 			ScheduleTriggerConfig: app.JobConfigurationScheduleTriggerConfigArgs{
-				CronExpression:         pulumi.String(selfDestructCron(fireAt)),
+				CronExpression:         cron,
 				Parallelism:            pulumi.Int(1),
 				ReplicaCompletionCount: pulumi.Int(1),
 			},

@@ -29,6 +29,9 @@ import (
 // AWS variant it does not depend on the project component, so even a deploy
 // that fails halfway still cleans itself up at the TTL.
 func createGCPSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.Duration, cdImage string, opts ...pulumi.ResourceOption) error {
+	if err := checkCronTTL(ttl); err != nil {
+		return err
+	}
 	if cdImage == "" {
 		return fmt.Errorf("defang:ttl requires defang:cdImage (the DEFANG_CD_IMAGE env var) to re-run this image for the down")
 	}
