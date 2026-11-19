@@ -21,11 +21,13 @@ const CdTimeout = time.Hour
 // maxTTL guards against typo'd far-future dates.
 const maxTTL = 10 * 365 * 24 * time.Hour
 
-// maxCronTTL is the longest TTL a cron schedule can express: cron has no year
-// field, so the schedule would fire at the first anniversary instead.
-const maxCronTTL = 365 * 24 * time.Hour
+// maxCronTTL bounds the TTL a cron schedule can express: cron has no year
+// field, so a deadline at or past one year out would match the first
+// anniversary instead. The deadline is rounded up to a whole minute, so the
+// TTL must leave a minute of headroom below the year.
+const maxCronTTL = 365*24*time.Hour - time.Minute
 
-var errCronTTLTooLong = errors.New("defang:ttl must be shorter than one year on this cloud")
+var errCronTTLTooLong = errors.New("defang:ttl must be shorter than one year minus one minute on this cloud")
 
 // checkCronTTL rejects a TTL that an annual cron schedule cannot honor, so the
 // deploy fails instead of the stack silently outliving its TTL.
