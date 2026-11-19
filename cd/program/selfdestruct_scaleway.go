@@ -62,8 +62,8 @@ func createScalewaySelfDestruct(
 		},
 		RetryPolicy: job.DefinitionRetryPolicyArgs{MaxRetries: pulumi.IntPtr(3)},
 		Env: pulumi.ToStringMap(map[string]string{
-			projectEnv:               ctx.Project(),
-			stackEnv:                 ctx.Stack(),
+			"PROJECT":                ctx.Project(),
+			"STACK":                  ctx.Stack(),
 			"SCW_DEFAULT_PROJECT_ID": projectID,
 			"SCW_DEFAULT_REGION":     region,
 			"DEFANG_STATE_URL":       "s3://" + stateURL.Host,

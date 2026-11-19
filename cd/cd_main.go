@@ -47,19 +47,6 @@ func cdMain(ctx context.Context, args ...string) error {
 		command = client.CdCommand(args[1])
 		commandArgs = args[2:]
 	}
-	if command == "scaleway-ttl" {
-		// The CLI uses this command to make older images reject a Scaleway
-		// TTL instead of silently creating a deployment without teardown.
-		if len(commandArgs) != 2 || (commandArgs[0] != string(client.CdCommandUp) &&
-			commandArgs[0] != string(client.CdCommandPreview)) {
-			return &usageError{msg: "usage: cd scaleway-ttl {up|preview} <payload>"}
-		}
-		if os.Getenv("DEFANG_TTL") == "" {
-			return &usageError{msg: "cd scaleway-ttl requires DEFANG_TTL"}
-		}
-		command = client.CdCommand(commandArgs[0])
-		commandArgs = commandArgs[1:]
-	}
 	if command == cdCommandScalewayScheduledDown {
 		current, err := checkScalewayScheduledDown(ctx, commandArgs)
 		if err != nil || !current {

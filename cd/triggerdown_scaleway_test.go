@@ -19,20 +19,6 @@ import (
 
 const testScalewayProjectUpdateKey = "projects/app/dev/project.pb"
 
-func TestScalewayTTLCommandDispatch(t *testing.T) {
-	t.Setenv("PROJECT", "app")
-	t.Setenv("STACK", "dev")
-	t.Setenv("DEFANG_TTL", "")
-	err := cdMain(t.Context(), cdExecutable, "scaleway-ttl", "up", "invalid-payload")
-	require.ErrorContains(t, err, "requires DEFANG_TTL")
-
-	t.Setenv("DEFANG_TTL", "2h")
-	for _, command := range []string{"up", "preview"} {
-		err = cdMain(t.Context(), cdExecutable, "scaleway-ttl", command, "invalid-payload")
-		require.ErrorContains(t, err, "failed to fetch payload")
-	}
-}
-
 func TestScalewayScheduledDownBeforeDeadline(t *testing.T) {
 	t.Setenv("PROJECT", "app")
 	t.Setenv("STACK", "dev")
