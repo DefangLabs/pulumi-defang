@@ -28,6 +28,8 @@ import (
 // in the external defang-cd job — same shape as the other clouds.
 const cdCommandTriggerDown = client.CdCommand("trigger-down")
 
+const cdExecutable = "/app/cd"
+
 // triggerDown starts `/app/cd down` on the shared defang-cd job with this
 // process's own (already filtered) environment. The trigger job's
 // system-assigned identity holds Contributor on the defang-cd job only.
@@ -52,7 +54,7 @@ func triggerDown(ctx context.Context) error {
 	// the defang-cd job template's ReplicaTimeout, set by the CLI's SetUpJob.
 	execution, err := job.StartJobExecution(ctx, aca.JobRequest{
 		Image:   image,
-		Command: []string{"/app/cd", string(client.CdCommandDown)}, // matches ByocAzure.runCdCommand
+		Command: []string{cdExecutable, string(client.CdCommandDown)}, // matches ByocAzure.runCdCommand
 		Envs:    program.SelfDestructEnv(os.Environ()),
 	})
 	if err != nil {

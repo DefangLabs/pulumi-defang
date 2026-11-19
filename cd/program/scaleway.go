@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/DefangLabs/defang/src/pkg/deployment"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
@@ -19,7 +20,7 @@ import (
 )
 
 func deployScaleway(
-	ctx *pulumi.Context, cf *compose.Project, etag string, projectUpdate *defangv1.ProjectUpdate,
+	ctx *pulumi.Context, cf *compose.Project, etag string, ttl time.Duration, projectUpdate *defangv1.ProjectUpdate,
 ) (pulumi.StringMapOutput, pulumi.StringPtrOutput, error) {
 	// Create an explicit Scaleway provider because pulumi:disable-default-providers
 	// excludes "scaleway" (see cd/cd_main.go).
@@ -53,6 +54,12 @@ func deployScaleway(
 		}).(pulumi.AnyOutput)
 
 		if err := saveProjectPbScaleway(ctx, updatedPb, project, pulumi.Provider(scwProvider)); err != nil {
+			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+	}
+
+	if ttl > 0 {
+		if err := createScalewaySelfDestruct(ctx, ttl, etag, projectUpdate.GetCdVersion(), scwProvider, project); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

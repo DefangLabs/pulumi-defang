@@ -19,6 +19,11 @@ const CdTimeout = time.Hour
 // maxTTL guards against typo'd far-future dates.
 const maxTTL = 10 * 365 * 24 * time.Hour
 
+const (
+	projectEnv = "PROJECT"
+	stackEnv   = "STACK"
+)
+
 // parseTTL interprets the defang:ttl stack config (set from the DEFANG_TTL
 // env var by the CLI). Empty, "never" and "0" mean no self-destruct. Other
 // values are Go durations with an optional whole-days prefix ("12h", "7d",
@@ -66,9 +71,9 @@ var selfDestructEnvExact = map[string]bool{
 	"HOME":                       true,
 	"NO_COLOR":                   true,
 	"NPM_CONFIG_UPDATE_NOTIFIER": true,
-	"PROJECT":                    true,
+	projectEnv:                   true,
 	"REGION":                     true,
-	"STACK":                      true,
+	stackEnv:                     true,
 	"USER":                       true,
 }
 

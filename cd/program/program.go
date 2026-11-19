@@ -64,7 +64,7 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate, seeds ...func() ModelSeeds) p
 		case "azure":
 			endpoints, loadBalancerDns, err = deployAzure(ctx, project, domain, etag, ttl, projectUpdate)
 		case "scaleway":
-			endpoints, loadBalancerDns, err = deployScaleway(ctx, project, etag, projectUpdate)
+			endpoints, loadBalancerDns, err = deployScaleway(ctx, project, etag, ttl, projectUpdate)
 		default:
 			return fmt.Errorf("unsupported provider: %q (must be aws, gcp, azure, or scaleway)", provider)
 		}
