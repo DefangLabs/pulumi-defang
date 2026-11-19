@@ -42,6 +42,9 @@ func deployScaleway(
 	// Upload ProjectUpdate protobuf as a Pulumi-managed object after the
 	// project component has converged so the CLI can read back service status.
 	if projectUpdate != nil {
+		if projectUpdate.GetEtag() == "" {
+			projectUpdate.Etag = etag
+		}
 		updatedPb := project.Endpoints.ApplyT(func(endpoints map[string]string) ([]byte, error) {
 			for _, svc := range projectUpdate.GetServices() {
 				svc.Status = "unknown"

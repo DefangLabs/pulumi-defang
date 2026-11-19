@@ -230,15 +230,12 @@ func cdMain(ctx context.Context, args ...string) error {
 		}
 
 	case client.CdCommandDown, client.CdCommandDestroy:
-		evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
-		defer waitEvents()
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
 			optdestroy.Color(color()),
 			optdestroy.SuppressProgress(),
 			optdestroy.ProgressStreams(progressStream),
 			optdestroy.ErrorProgressStreams(errorProgressStream),
-			optdestroy.EventStreams(evtCh),
 			optdestroy.ContinueOnError(),
 			optdestroy.TargetDependents(),
 			optdestroy.Target(pulumiTargets),
@@ -258,7 +255,17 @@ func cdMain(ctx context.Context, args ...string) error {
 		if pulumiDebug {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
 		}
-		_, err = stack.Destroy(ctx, destroyOpts...)
+		destroy := func() error {
+			evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
+			defer waitEvents()
+			_, err := stack.Destroy(ctx, append(destroyOpts, optdestroy.EventStreams(evtCh))...)
+			return err
+		}
+		if destroyGuard != nil {
+			err = retryScalewayDestroy(ctx, scalewayLockRetryDelay, destroy)
+		} else {
+			err = destroy()
+		}
 		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
 		if err != nil {
 			return pulumiErr(err)

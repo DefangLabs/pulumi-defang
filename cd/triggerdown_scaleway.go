@@ -12,11 +12,17 @@ import (
 	"github.com/DefangLabs/defang/src/pkg/clouds/scaleway"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
 	"github.com/aws/smithy-go"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"google.golang.org/protobuf/proto"
 )
 
 const cdCommandScalewayScheduledDown = client.CdCommand("scaleway-scheduled-down")
+
+const (
+	scalewayLockRetryDelay = 10 * time.Second
+	scalewayLockRetryLimit = 10 * time.Minute
+)
 
 var (
 	errScalewayTriggerAuth = errors.New("scheduled Scaleway teardown requires a project, region, " +
@@ -153,6 +159,30 @@ func scalewayDestroyGuard(ctx context.Context, args []string) pulumi.RunFunc {
 			return errScalewayStaleDeployment
 		}
 		return nil
+	}
+}
+
+func retryScalewayDestroy(ctx context.Context, delay time.Duration, destroy func() error) error {
+	// Limit the time spent waiting for the lock while leaving the running
+	// destroy under the CD job's original deadline.
+	waitCtx, cancel := context.WithTimeout(ctx, scalewayLockRetryLimit)
+	defer cancel()
+
+	for {
+		err := destroy()
+		if !auto.IsConcurrentUpdateError(err) {
+			return err
+		}
+
+		Println("Scheduled Scaleway teardown is waiting for the Pulumi stack lock")
+		select {
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		case <-time.After(delay):
+		}
 	}
 }
 

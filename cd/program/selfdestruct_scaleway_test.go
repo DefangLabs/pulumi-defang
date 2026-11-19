@@ -1,6 +1,7 @@
 package program
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
@@ -17,26 +19,45 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 	t.Setenv("SCW_SECRET_KEY", "secret-value")
 	t.Setenv("DEFANG_EVENTS_UPLOAD_URL", "presigned-url")
 
-	for _, ttl := range []string{"", "9600h"} {
-		t.Run("ttl="+ttl, func(t *testing.T) {
+	const payloadEtag = "deployment-id"
+	for _, tc := range []struct {
+		name        string
+		ttl         string
+		payloadEtag string
+		wantEtag    string
+	}{
+		{name: "no TTL", payloadEtag: payloadEtag, wantEtag: payloadEtag},
+		{name: "payload ETag", ttl: "9600h", payloadEtag: payloadEtag, wantEtag: payloadEtag},
+		{name: "config ETag", ttl: "9600h", wantEtag: "fallback-id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			mocks := &scalewayScheduleMocks{}
 			deployment := &defangv1.ProjectUpdate{
 				CdVersion: "defangio/test-cd",
 				Compose:   []byte("services:\n  web:\n    image: nginx\n"),
-				Etag:      "deployment-id",
+				Etag:      tc.payloadEtag,
 			}
 			before := time.Now().UTC()
 			configure := func(info *pulumi.RunInfo) {
 				info.Config = map[string]string{
 					"defang:provider":    "scaleway",
 					"defang:stateUrl":    "s3://defang-cd-dev?endpoint=https://s3.fr-par.scw.cloud",
-					"defang:ttl":         ttl,
+					"defang:ttl":         tc.ttl,
+					"defang:etag":        "fallback-id",
 					"scaleway:projectId": "project-id",
 					"scaleway:region":    "fr-par",
 				}
 			}
 			require.NoError(t, pulumi.RunErr(NewRun(deployment), pulumi.WithMocks("app", "dev", mocks), configure))
-			if ttl == "" {
+			require.NotEmpty(t, mocks.projectUpdateFile)
+			t.Cleanup(func() { _ = os.Remove(mocks.projectUpdateFile) })
+			data, err := os.ReadFile(mocks.projectUpdateFile)
+			require.NoError(t, err)
+			var persisted defangv1.ProjectUpdate
+			require.NoError(t, proto.Unmarshal(data, &persisted))
+			assert.Equal(t, tc.wantEtag, persisted.GetEtag())
+
+			if tc.ttl == "" {
 				require.Nil(t, mocks.trigger)
 				return
 			}
@@ -48,7 +69,7 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 			require.Len(t, args, 5)
 			assert.Equal(t, ScalewayTriggerDownCommand, args[0].StringValue())
 			assert.Equal(t, "defang-cd-dev", args[1].StringValue())
-			assert.Equal(t, "deployment-id", args[3].StringValue())
+			assert.Equal(t, tc.wantEtag, args[3].StringValue())
 			assert.Equal(t, "projects/app/dev/project.pb", args[4].StringValue())
 			deadline, err := time.Parse(time.RFC3339, args[2].StringValue())
 			require.NoError(t, err)
@@ -72,7 +93,8 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 }
 
 type scalewayScheduleMocks struct {
-	trigger resource.PropertyMap
+	trigger           resource.PropertyMap
+	projectUpdateFile string
 }
 
 func (*scalewayScheduleMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
@@ -82,6 +104,9 @@ func (*scalewayScheduleMocks) Call(args pulumi.MockCallArgs) (resource.PropertyM
 func (m *scalewayScheduleMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	if args.TypeToken == "scaleway:job/definition:Definition" {
 		m.trigger = args.Inputs
+	}
+	if args.Name == "project-pb" {
+		m.projectUpdateFile = args.Inputs["file"].StringValue()
 	}
 	return args.Name + "-id", args.Inputs, nil
 }
