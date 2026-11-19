@@ -40,6 +40,9 @@ phases:
 `
 )
 
+// AWS needs no TTL cap or registration-time deadline: it uses a one-shot at()
+// schedule created at the start of the run, so it cannot fire a year late.
+
 // createAWSSelfDestruct schedules this stack's own `defang cd down`. Unlike
 // the Azure variant it deliberately does NOT depend on the project component:
 // the schedule has no resource-level dependency on it, and arming the trigger

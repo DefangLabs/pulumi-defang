@@ -1,11 +1,13 @@
 package program
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/DefangLabs/defang/src/pkg/timeutils"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 // CdTimeout is the wall-clock ceiling for one CD run. It is shared by the cd
@@ -18,6 +20,47 @@ const CdTimeout = time.Hour
 
 // maxTTL guards against typo'd far-future dates.
 const maxTTL = 10 * 365 * 24 * time.Hour
+
+// maxCronTTL bounds the TTL a cron schedule can express: cron has no year
+// field, so a deadline at or past one year out would match the first
+// anniversary instead. The deadline is rounded up to a whole minute, so the
+// TTL must leave a minute of headroom below the year.
+const maxCronTTL = 365*24*time.Hour - time.Minute
+
+var errCronTTLTooLong = errors.New("defang:ttl must be shorter than one year minus one minute on this cloud")
+
+// checkCronTTL rejects a TTL that an annual cron schedule cannot honor, so the
+// deploy fails instead of the stack silently outliving its TTL.
+func checkCronTTL(ttl time.Duration) error {
+	if ttl >= maxCronTTL {
+		return fmt.Errorf("%w (got %s)", errCronTTLTooLong, ttl)
+	}
+	return nil
+}
+
+// selfDestructDeadlineAfter returns the RFC 3339 deadline for a schedule,
+// measured when ready resolves (the moment the schedule can be registered) and
+// rounded up to the next whole minute, because cron has minute granularity.
+// Measuring it there keeps a slow deploy from registering an expired schedule.
+func selfDestructDeadlineAfter(pctx *pulumi.Context, ttl time.Duration, ready pulumi.Output) pulumi.StringOutput {
+	return ready.ApplyT(func(any) string {
+		fireAt := time.Now().UTC().Add(ttl).Truncate(time.Minute).Add(time.Minute)
+		_ = pctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` on itself at %s (ttl %s); redeploying extends it",
+			fireAt.Format(time.RFC3339), ttl), nil)
+		return fireAt.Format(time.RFC3339)
+	}).(pulumi.StringOutput)
+}
+
+// selfDestructCronOf renders a deadline from selfDestructDeadlineAfter as cron.
+func selfDestructCronOf(deadline pulumi.StringOutput) pulumi.StringOutput {
+	return deadline.ApplyT(func(d string) (string, error) {
+		t, err := time.Parse(time.RFC3339, d)
+		if err != nil {
+			return "", err
+		}
+		return selfDestructCron(t), nil
+	}).(pulumi.StringOutput)
+}
 
 // parseTTL interprets the defang:ttl stack config (set from the DEFANG_TTL
 // env var by the CLI). Empty, "never" and "0" mean no self-destruct. Other

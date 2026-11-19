@@ -36,7 +36,7 @@ func TestAzureSelfDestructJobArgs(t *testing.T) {
 	}
 	fireAt := time.Date(2026, time.August, 17, 14, 30, 0, 0, time.UTC)
 
-	args, err := azureSelfDestructJobArgs(validCdJob(), environ, fireAt, "Defang-myproj-preview-rg", "preview")
+	args, err := azureSelfDestructJobArgs(validCdJob(), environ, pulumi.String(fireAt.Format(time.RFC3339)), pulumi.String(selfDestructCron(fireAt)), "Defang-myproj-preview-rg", "preview")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,13 +96,13 @@ func TestAzureSelfDestructJobArgsValidation(t *testing.T) {
 
 	noEnv := validCdJob()
 	noEnv.Properties.EnvironmentID = nil
-	if _, err := azureSelfDestructJobArgs(noEnv, environ, fireAt, "rg", "s"); err == nil {
+	if _, err := azureSelfDestructJobArgs(noEnv, environ, pulumi.String(fireAt.Format(time.RFC3339)), pulumi.String(selfDestructCron(fireAt)), "rg", "s"); err == nil {
 		t.Error("want error for missing environment id")
 	}
 
 	noImage := validCdJob()
 	noImage.Properties.Template.Containers = nil
-	if _, err := azureSelfDestructJobArgs(noImage, environ, fireAt, "rg", "s"); err == nil {
+	if _, err := azureSelfDestructJobArgs(noImage, environ, pulumi.String(fireAt.Format(time.RFC3339)), pulumi.String(selfDestructCron(fireAt)), "rg", "s"); err == nil {
 		t.Error("want error for missing container image")
 	}
 }

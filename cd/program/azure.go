@@ -84,7 +84,7 @@ func deployAzure(ctx *pulumi.Context, cf *compose.Project, domain, etag string, 
 	// existing) project resource group; every redeploy rewrites the schedule,
 	// extending the stack's life.
 	if ttl > 0 {
-		if err := createAzureSelfDestruct(ctx, cf, ttl, project, pulumi.Provider(azureProvider)); err != nil {
+		if err := createAzureSelfDestruct(ctx, cf, ttl, project, project.Endpoints, pulumi.Provider(azureProvider)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

@@ -26,12 +26,18 @@ import (
 // and thereby terminate its own running execution. trigger-down splits the
 // two roles: the in-stack job stays a short-lived pointer, and the down runs
 // in the external defang-cd job — same shape as the other clouds.
-const cdCommandTriggerDown = client.CdCommand("trigger-down")
+const cdCommandTriggerDown = client.CdCommand(program.TriggerDownCommand)
+
+const cdExecutable = "/app/cd"
 
 // triggerDown starts `/app/cd down` on the shared defang-cd job with this
 // process's own (already filtered) environment. The trigger job's
 // system-assigned identity holds Contributor on the defang-cd job only.
-func triggerDown(ctx context.Context) error {
+// A Scaleway trigger job carries its secret key and is handled separately.
+func triggerDown(ctx context.Context, project, stack string, args []string) error {
+	if os.Getenv("SCW_SECRET_KEY") != "" {
+		return triggerScalewayDown(ctx, project, stack, args)
+	}
 	image := os.Getenv("DEFANG_CD_IMAGE")
 	if image == "" {
 		return errors.New("missing required environment variable: DEFANG_CD_IMAGE")
@@ -52,7 +58,7 @@ func triggerDown(ctx context.Context) error {
 	// the defang-cd job template's ReplicaTimeout, set by the CLI's SetUpJob.
 	execution, err := job.StartJobExecution(ctx, aca.JobRequest{
 		Image:   image,
-		Command: []string{"/app/cd", string(client.CdCommandDown)}, // matches ByocAzure.runCdCommand
+		Command: []string{cdExecutable, string(client.CdCommandDown)}, // matches ByocAzure.runCdCommand
 		Envs:    program.SelfDestructEnv(os.Environ()),
 	})
 	if err != nil {

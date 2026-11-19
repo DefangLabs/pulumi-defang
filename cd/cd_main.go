@@ -18,6 +18,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optrefresh"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -40,8 +41,20 @@ func cdMain(ctx context.Context, args ...string) error {
 	}
 
 	var command client.CdCommand
+	var commandArgs []string
+	var destroyGuard pulumi.RunFunc
 	if len(args) > 1 {
 		command = client.CdCommand(args[1])
+		commandArgs = args[2:]
+	}
+	if command == cdCommandScalewayScheduledDown {
+		current, err := checkScalewayScheduledDown(ctx, commandArgs)
+		if err != nil || !current {
+			return err
+		}
+		command = client.CdCommandDown
+		pulumiTargets = nil // a deployment TTL always removes the complete stack
+		destroyGuard = scalewayDestroyGuard(ctx, commandArgs)
 	}
 
 	var stack auto.Stack
@@ -56,10 +69,10 @@ func cdMain(ctx context.Context, args ...string) error {
 		return nil
 	case client.CdCommandUp, client.CdCommandPreview:
 		// Payload URL from args (like old code): cd <command> <payload>
-		if len(args) <= 2 {
+		if len(commandArgs) == 0 {
 			return &usageError{msg: "missing required argument: payload"}
 		}
-		payload := args[2]
+		payload := commandArgs[0]
 		// Fetch the ProjectUpdate protobuf and pass it through to the Pulumi
 		// program; the program extracts the compose YAML itself and uploads
 		// the protobuf as a Pulumi-managed blob after the deploy succeeds —
@@ -95,7 +108,7 @@ func cdMain(ctx context.Context, args ...string) error {
 			return pulumiErr(err)
 		}
 	case client.CdCommandDestroy, client.CdCommandDown, client.CdCommandRefresh, client.CdCommandCancel, client.CdCommandOutputs:
-		stack, err = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
+		stack, err = auto.SelectStackInlineSource(ctx, stackName, projectName, destroyGuard)
 		if err != nil {
 			return pulumiErr(err)
 		}
@@ -104,8 +117,8 @@ func cdMain(ctx context.Context, args ...string) error {
 		stack, _ = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
 	case cdCommandTriggerDown:
 		// No Pulumi stack: only starts a regular down execution on the
-		// shared CD job (Azure self-destruct; see triggerdown.go).
-		return triggerDown(ctx)
+		// shared CD job (Azure and Scaleway self-destruct; see triggerdown.go).
+		return triggerDown(ctx, projectName, stackName, commandArgs)
 	default:
 		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
 	}
@@ -202,15 +215,12 @@ func cdMain(ctx context.Context, args ...string) error {
 		}
 
 	case client.CdCommandDown, client.CdCommandDestroy:
-		evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
-		defer waitEvents()
 		destroyOpts := []optdestroy.Option{
 			optdestroy.UserAgent(userAgent),
 			optdestroy.Color(color()),
 			optdestroy.SuppressProgress(),
 			optdestroy.ProgressStreams(progressStream),
 			optdestroy.ErrorProgressStreams(errorProgressStream),
-			optdestroy.EventStreams(evtCh),
 			optdestroy.ContinueOnError(),
 			optdestroy.TargetDependents(),
 			optdestroy.Target(pulumiTargets),
@@ -224,10 +234,23 @@ func cdMain(ctx context.Context, args ...string) error {
 		if command == "down" {
 			destroyOpts = append(destroyOpts, optdestroy.Refresh())
 		}
+		if destroyGuard != nil {
+			destroyOpts = append(destroyOpts, optdestroy.RunProgram(true))
+		}
 		if pulumiDebug {
 			destroyOpts = append(destroyOpts, optdestroy.DebugLogging(debugLog))
 		}
-		_, err = stack.Destroy(ctx, destroyOpts...)
+		destroy := func() error {
+			evtCh, waitEvents := collectEvents(ctx, eventsUploadUrl, jsonOutput)
+			defer waitEvents()
+			_, err := stack.Destroy(ctx, append(destroyOpts, optdestroy.EventStreams(evtCh))...)
+			return err
+		}
+		if destroyGuard != nil {
+			err = retryScalewayDestroy(ctx, scalewayLockRetryDelay, destroy)
+		} else {
+			err = destroy()
+		}
 		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
 		if err != nil {
 			return pulumiErr(err)

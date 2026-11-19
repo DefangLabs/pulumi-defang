@@ -1,6 +1,7 @@
 package program
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -122,5 +123,19 @@ func TestSelfDestructEnv(t *testing.T) {
 	got := SelfDestructEnv(environ)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("selfDestructEnv() = %#v, want %#v", got, want)
+	}
+}
+
+func TestCheckCronTTL(t *testing.T) {
+	if err := checkCronTTL(48 * time.Hour); err != nil {
+		t.Errorf("48h: unexpected error %v", err)
+	}
+	if err := checkCronTTL(maxCronTTL - time.Second); err != nil {
+		t.Errorf("just under the limit: unexpected error %v", err)
+	}
+	for _, ttl := range []time.Duration{maxCronTTL, 2 * maxCronTTL} {
+		if err := checkCronTTL(ttl); !errors.Is(err, errCronTTLTooLong) {
+			t.Errorf("checkCronTTL(%s) = %v, want errCronTTLTooLong", ttl, err)
+		}
 	}
 }
