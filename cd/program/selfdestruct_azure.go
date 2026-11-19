@@ -63,9 +63,6 @@ const (
 // stack that silently outlives its requested TTL is the exact failure mode
 // this feature exists to prevent.
 func createAzureSelfDestruct(pctx *pulumi.Context, cf *compose.Project, ttl time.Duration, dep pulumi.Resource, ready pulumi.Output, opts ...pulumi.ResourceOption) error {
-	if err := checkCronTTL(ttl); err != nil {
-		return err
-	}
 	subscriptionID := azconfig.GetSubscriptionId(pctx)
 	if subscriptionID == "" {
 		return fmt.Errorf("defang:ttl is set but AZURE_SUBSCRIPTION_ID is not in Pulumi config")

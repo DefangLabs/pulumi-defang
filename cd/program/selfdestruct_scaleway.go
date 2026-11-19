@@ -30,9 +30,6 @@ func createScalewaySelfDestruct(
 	if err != nil {
 		return err
 	}
-	if err := checkCronTTL(ttl); err != nil {
-		return err
-	}
 	if stateURL == nil || stateURL.Scheme != "s3" || stateURL.Host == "" {
 		return errScalewayStateURL
 	}

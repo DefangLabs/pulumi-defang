@@ -53,6 +53,14 @@ func NewRun(projectUpdate *defangv1.ProjectUpdate, seeds ...func() ModelSeeds) p
 			applySeeds(project, seed())
 		}
 
+		// Reject a TTL the schedule can't express before registering any
+		// resource, so a failed deploy doesn't leave changes applied without it.
+		if provider != "aws" {
+			if err := checkCronTTL(ttl); err != nil {
+				return err
+			}
+		}
+
 		var endpoints pulumi.StringMapOutput
 		var loadBalancerDns pulumi.StringPtrOutput
 
