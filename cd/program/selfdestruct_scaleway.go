@@ -19,7 +19,7 @@ var errScalewayTTLMetadata = errors.New("scheduling Scaleway teardown requires t
 	"reference, and the deployment ID; redeploy with a Defang CLI that supports Scaleway TTL")
 
 func createScalewaySelfDestruct(
-	ctx *pulumi.Context, ttl time.Duration, etag, image string, provider pulumi.ProviderResource, project pulumi.Resource,
+	ctx *pulumi.Context, ttl time.Duration, etag, image string, provider pulumi.ProviderResource, deps []pulumi.Resource,
 ) error {
 	targetJob := os.Getenv("DEFANG_SCW_CD_JOB_NAME")
 	authSecretID := os.Getenv("DEFANG_SCW_CD_SECRET_ID")
@@ -75,7 +75,7 @@ func createScalewaySelfDestruct(
 				Environment:   pulumi.StringPtr("SCW_SECRET_KEY"),
 			},
 		},
-	}, pulumi.Provider(provider), pulumi.DependsOn([]pulumi.Resource{project}))
+	}, pulumi.Provider(provider), pulumi.DependsOn(deps))
 	if err == nil {
 		_ = ctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` at %s (ttl %s)",
 			fireAt.Format(time.RFC3339), ttl), nil)

@@ -41,6 +41,7 @@ func deployScaleway(
 
 	// Upload ProjectUpdate protobuf as a Pulumi-managed object after the
 	// project component has converged so the CLI can read back service status.
+	scheduleDeps := []pulumi.Resource{project}
 	if projectUpdate != nil {
 		if projectUpdate.GetEtag() == "" {
 			projectUpdate.Etag = etag
@@ -56,13 +57,18 @@ func deployScaleway(
 			return proto.Marshal(projectUpdate)
 		}).(pulumi.AnyOutput)
 
-		if err := saveProjectPbScaleway(ctx, updatedPb, project, pulumi.Provider(scwProvider)); err != nil {
+		item, err := saveProjectPbScaleway(ctx, updatedPb, project, pulumi.Provider(scwProvider))
+		if err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
+		}
+		if item != nil {
+			// The scheduled teardown reads this object, so create it after the upload.
+			scheduleDeps = append(scheduleDeps, item)
 		}
 	}
 
 	if ttl > 0 {
-		if err := createScalewaySelfDestruct(ctx, ttl, etag, projectUpdate.GetCdVersion(), scwProvider, project); err != nil {
+		if err := createScalewaySelfDestruct(ctx, ttl, etag, projectUpdate.GetCdVersion(), scwProvider, scheduleDeps); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}
@@ -74,13 +80,13 @@ var errScalewayStateURL = errors.New("DEFANG_STATE_URL must be an s3:// URL with
 
 func saveProjectPbScaleway(
 	ctx *pulumi.Context, data pulumi.AnyOutput, dep pulumi.Resource, opts ...pulumi.ResourceOption,
-) error {
+) (*scaleway.ObjectItem, error) {
 	u, err := parseStateURL(ctx)
 	if err != nil || u == nil {
-		return err
+		return nil, err
 	}
 	if u.Scheme != "s3" || u.Host == "" {
-		return fmt.Errorf("%w, got %q", errScalewayStateURL, u.String())
+		return nil, fmt.Errorf("%w, got %q", errScalewayStateURL, u.String())
 	}
 
 	file := data.ApplyT(func(v any) (string, error) {
@@ -95,7 +101,7 @@ func saveProjectPbScaleway(
 		return hex.EncodeToString(sum[:])
 	}).(pulumi.StringOutput)
 
-	_, err = scaleway.NewObjectItem(ctx, "project-pb", &scaleway.ObjectItemArgs{
+	return scaleway.NewObjectItem(ctx, "project-pb", &scaleway.ObjectItemArgs{
 		Bucket:      pulumi.String(u.Host),
 		Key:         pulumi.String(projectPbKey(ctx)),
 		File:        file,
@@ -104,7 +110,6 @@ func saveProjectPbScaleway(
 		ProjectId:   pulumi.String(scalewayconfig.GetProjectId(ctx)),
 		Region:      pulumi.StringPtr(scalewayconfig.GetRegion(ctx)),
 	}, common.MergeOptions(opts, pulumi.DependsOn([]pulumi.Resource{dep}))...)
-	return err
 }
 
 func toScalewayArgs(cf *compose.Project, etag string) *defangscaleway.ProjectArgs {
