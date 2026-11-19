@@ -117,10 +117,8 @@ func cdMain(ctx context.Context, args ...string) error {
 		stack, _ = auto.SelectStackInlineSource(ctx, stackName, projectName, nil)
 	case cdCommandTriggerDown:
 		// No Pulumi stack: only starts a regular down execution on the
-		// shared CD job (Azure self-destruct; see triggerdown.go).
-		return triggerDown(ctx)
-	case client.CdCommand(program.ScalewayTriggerDownCommand):
-		return triggerScalewayDown(ctx, projectName, stackName, commandArgs)
+		// shared CD job (Azure and Scaleway self-destruct; see triggerdown.go).
+		return triggerDown(ctx, projectName, stackName, commandArgs)
 	default:
 		return &usageError{msg: fmt.Sprintf("unknown command: %s", command)}
 	}

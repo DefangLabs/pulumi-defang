@@ -12,8 +12,9 @@ import (
 	"github.com/pulumiverse/pulumi-scaleway/sdk/go/scaleway/job"
 )
 
-// ScalewayTriggerDownCommand starts a regular down on the shared CD job.
-const ScalewayTriggerDownCommand = "scaleway-trigger-down"
+// TriggerDownCommand is the CD command the self-destruct trigger jobs run. It
+// only starts a regular down on the shared CD job.
+const TriggerDownCommand = "trigger-down"
 
 var errScalewayTTLMetadata = errors.New("scheduling Scaleway teardown requires the deploy job, its Secret Manager " +
 	"reference, and the deployment ID; redeploy with a Defang CLI that supports Scaleway TTL")
@@ -53,7 +54,7 @@ func createScalewaySelfDestruct(
 		Timeout:              pulumi.StringPtr("5m"),
 		StartupCommands:      pulumi.ToStringArray([]string{"/app/cd"}),
 		Args: pulumi.ToStringArray([]string{
-			ScalewayTriggerDownCommand, targetJob, etag, projectPbKey(ctx),
+			TriggerDownCommand, targetJob, etag, projectPbKey(ctx),
 		}),
 		Cron: job.DefinitionCronArgs{
 			Schedule: cron,

@@ -67,7 +67,7 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 			assert.Equal(t, "defangio/test-cd", inputs["imageUri"].StringValue())
 			args := inputs["args"].ArrayValue()
 			require.Len(t, args, 4)
-			assert.Equal(t, ScalewayTriggerDownCommand, args[0].StringValue())
+			assert.Equal(t, TriggerDownCommand, args[0].StringValue())
 			assert.Equal(t, "defang-cd-dev", args[1].StringValue())
 			assert.Equal(t, tc.wantEtag, args[2].StringValue())
 			assert.Equal(t, "projects/app/dev/project.pb", args[3].StringValue())

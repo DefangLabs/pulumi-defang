@@ -44,7 +44,7 @@ type scalewayScheduledDown struct {
 
 func triggerScalewayDown(ctx context.Context, project, stack string, args []string) error {
 	if len(args) != 3 || args[0] == "" || args[1] == "" || args[2] == "" || stack == "" {
-		return &usageError{msg: "usage: cd scaleway-trigger-down <CD job name> <deployment ID> <state key>"}
+		return &usageError{msg: "usage: cd trigger-down <CD job name> <deployment ID> <state key>"}
 	}
 	bucket, err := scalewayStateBucket()
 	if err != nil {

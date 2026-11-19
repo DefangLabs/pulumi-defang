@@ -87,3 +87,11 @@ func TestScalewayScheduledDownStartsCurrentJob(t *testing.T) {
 		})
 	}
 }
+
+func TestTriggerDownRoutesToScaleway(t *testing.T) {
+	t.Setenv("PROJECT", "app")
+	t.Setenv("STACK", "dev")
+	t.Setenv("SCW_SECRET_KEY", "secret")
+	err := cdMain(t.Context(), cdExecutable, string(cdCommandTriggerDown))
+	require.ErrorContains(t, err, "usage: cd trigger-down <CD job name>")
+}
