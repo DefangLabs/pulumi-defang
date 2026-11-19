@@ -42,6 +42,7 @@ func deployScaleway(
 	// Upload ProjectUpdate protobuf as a Pulumi-managed object after the
 	// project component has converged so the CLI can read back service status.
 	scheduleDeps := []pulumi.Resource{project}
+	scheduleReady := []any{project.Endpoints}
 	if projectUpdate != nil {
 		if projectUpdate.GetEtag() == "" {
 			projectUpdate.Etag = etag
@@ -64,11 +65,12 @@ func deployScaleway(
 		if item != nil {
 			// The scheduled teardown reads this object, so create it after the upload.
 			scheduleDeps = append(scheduleDeps, item)
+			scheduleReady = append(scheduleReady, item.ID())
 		}
 	}
 
 	if ttl > 0 {
-		if err := createScalewaySelfDestruct(ctx, ttl, etag, projectUpdate.GetCdVersion(), scwProvider, scheduleDeps); err != nil {
+		if err := createScalewaySelfDestruct(ctx, ttl, etag, projectUpdate.GetCdVersion(), scwProvider, scheduleDeps, pulumi.All(scheduleReady...)); err != nil {
 			return pulumi.StringMapOutput{}, pulumi.StringPtrOutput{}, err
 		}
 	}

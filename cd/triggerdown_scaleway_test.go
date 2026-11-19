@@ -6,11 +6,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DefangLabs/defang/src/pkg/clouds/scaleway"
 	defangv1 "github.com/DefangLabs/defang/src/protos/io/defang/v1"
-	"github.com/DefangLabs/pulumi-defang/cd/program"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,16 +16,6 @@ import (
 )
 
 const testScalewayProjectUpdateKey = "projects/app/dev/project.pb"
-
-func TestScalewayScheduledDownBeforeDeadline(t *testing.T) {
-	t.Setenv("PROJECT", "app")
-	t.Setenv("STACK", "dev")
-	t.Setenv("SCW_SECRET_KEY", "")
-	deadline := time.Now().AddDate(1, 0, 0).UTC().Format(time.RFC3339)
-	args := []string{cdExecutable, program.ScalewayTriggerDownCommand, "defang-cd-dev",
-		deadline, "deployment", testScalewayProjectUpdateKey}
-	require.NoError(t, cdMain(t.Context(), args...))
-}
 
 type scalewayTriggerTransport func(*http.Request) (*http.Response, error)
 

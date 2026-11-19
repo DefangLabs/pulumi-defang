@@ -43,17 +43,9 @@ type scalewayScheduledDown struct {
 }
 
 func triggerScalewayDown(ctx context.Context, project, stack string, args []string) error {
-	if len(args) != 4 || args[0] == "" || args[2] == "" || args[3] == "" || stack == "" {
-		return &usageError{msg: "usage: cd scaleway-trigger-down <CD job name> <deadline> <deployment ID> <state key>"}
+	if len(args) != 3 || args[0] == "" || args[1] == "" || args[2] == "" || stack == "" {
+		return &usageError{msg: "usage: cd scaleway-trigger-down <CD job name> <deployment ID> <state key>"}
 	}
-	fireAt, err := time.Parse(time.RFC3339, args[1])
-	if err != nil {
-		return fmt.Errorf("invalid Scaleway teardown deadline: %w", err)
-	}
-	if time.Now().Before(fireAt) {
-		return nil
-	}
-
 	bucket, err := scalewayStateBucket()
 	if err != nil {
 		return err
@@ -71,8 +63,8 @@ func triggerScalewayDown(ctx context.Context, project, stack string, args []stri
 		project: project,
 		stack:   stack,
 		jobName: args[0],
-		etag:    args[2],
-		key:     args[3],
+		etag:    args[1],
+		key:     args[2],
 	}
 	return down.start(ctx, scw, func(accessKey, key string) ([]byte, error) {
 		storage := scaleway.NewS3Client(region, accessKey, secretKey)

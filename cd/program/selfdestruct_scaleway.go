@@ -15,11 +15,18 @@ import (
 // ScalewayTriggerDownCommand starts a regular down on the shared CD job.
 const ScalewayTriggerDownCommand = "scaleway-trigger-down"
 
+// maxScalewayTTL is the longest TTL a cron schedule can express: it has no
+// year field, so a longer TTL would fire at the first anniversary instead.
+const maxScalewayTTL = 365 * 24 * time.Hour
+
+var errScalewayTTLTooLong = errors.New("Scaleway TTL must be shorter than one year")
+
 var errScalewayTTLMetadata = errors.New("scheduling Scaleway teardown requires the deploy job, its Secret Manager " +
 	"reference, and the deployment ID; redeploy with a Defang CLI that supports Scaleway TTL")
 
 func createScalewaySelfDestruct(
-	ctx *pulumi.Context, ttl time.Duration, etag, image string, provider pulumi.ProviderResource, deps []pulumi.Resource,
+	ctx *pulumi.Context, ttl time.Duration, etag, image string, provider pulumi.ProviderResource,
+	deps []pulumi.Resource, ready pulumi.Output,
 ) error {
 	targetJob := os.Getenv("DEFANG_SCW_CD_JOB_NAME")
 	authSecretID := os.Getenv("DEFANG_SCW_CD_SECRET_ID")
@@ -29,6 +36,9 @@ func createScalewaySelfDestruct(
 	if err != nil {
 		return err
 	}
+	if ttl >= maxScalewayTTL {
+		return errScalewayTTLTooLong
+	}
 	if stateURL == nil || stateURL.Scheme != "s3" || stateURL.Host == "" {
 		return errScalewayStateURL
 	}
@@ -36,9 +46,15 @@ func createScalewaySelfDestruct(
 		return errScalewayTTLMetadata
 	}
 
-	// The cron repeats annually. The dispatcher checks the full UTC deadline
-	// before it can start a down, including for TTLs longer than a year.
-	fireAt := time.Now().UTC().Add(ttl).Truncate(time.Minute).Add(time.Minute)
+	// Measure the TTL from the moment every dependency has finished, so a slow
+	// deploy cannot register an already-expired schedule. The cron repeats
+	// annually, which is why the TTL is capped below one year.
+	cron := ready.ApplyT(func(any) string {
+		fireAt := time.Now().UTC().Add(ttl).Truncate(time.Minute).Add(time.Minute)
+		_ = ctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` at %s (ttl %s)",
+			fireAt.Format(time.RFC3339), ttl), nil)
+		return selfDestructCron(fireAt)
+	}).(pulumi.StringOutput)
 	nameHash := sha256.Sum256([]byte(ctx.Project() + "/" + ctx.Stack()))
 	// The scheduled job belongs to the application stack. The down runs on
 	// the CD job outside that stack so deleting this resource cannot stop it.
@@ -54,10 +70,10 @@ func createScalewaySelfDestruct(
 		Timeout:              pulumi.StringPtr("5m"),
 		StartupCommands:      pulumi.ToStringArray([]string{"/app/cd"}),
 		Args: pulumi.ToStringArray([]string{
-			ScalewayTriggerDownCommand, targetJob, fireAt.Format(time.RFC3339), etag, projectPbKey(ctx),
+			ScalewayTriggerDownCommand, targetJob, etag, projectPbKey(ctx),
 		}),
 		Cron: job.DefinitionCronArgs{
-			Schedule: pulumi.String(selfDestructCron(fireAt)),
+			Schedule: cron,
 			Timezone: pulumi.String("Etc/UTC"),
 		},
 		RetryPolicy: job.DefinitionRetryPolicyArgs{MaxRetries: pulumi.IntPtr(3)},
@@ -76,9 +92,5 @@ func createScalewaySelfDestruct(
 			},
 		},
 	}, pulumi.Provider(provider), pulumi.DependsOn(deps))
-	if err == nil {
-		_ = ctx.Log.Info(fmt.Sprintf("self-destruct: this stack will run `defang cd down` at %s (ttl %s)",
-			fireAt.Format(time.RFC3339), ttl), nil)
-	}
 	return err
 }

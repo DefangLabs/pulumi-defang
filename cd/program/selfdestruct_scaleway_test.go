@@ -27,8 +27,8 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 		wantEtag    string
 	}{
 		{name: "no TTL", payloadEtag: payloadEtag, wantEtag: payloadEtag},
-		{name: "payload ETag", ttl: "9600h", payloadEtag: payloadEtag, wantEtag: payloadEtag},
-		{name: "config ETag", ttl: "9600h", wantEtag: "fallback-id"},
+		{name: "payload ETag", ttl: "48h", payloadEtag: payloadEtag, wantEtag: payloadEtag},
+		{name: "config ETag", ttl: "48h", wantEtag: "fallback-id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mocks := &scalewayScheduleMocks{}
@@ -66,17 +66,18 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 			require.NotNil(t, inputs)
 			assert.Equal(t, "defangio/test-cd", inputs["imageUri"].StringValue())
 			args := inputs["args"].ArrayValue()
-			require.Len(t, args, 5)
+			require.Len(t, args, 4)
 			assert.Equal(t, ScalewayTriggerDownCommand, args[0].StringValue())
 			assert.Equal(t, "defang-cd-dev", args[1].StringValue())
-			assert.Equal(t, tc.wantEtag, args[3].StringValue())
-			assert.Equal(t, "projects/app/dev/project.pb", args[4].StringValue())
-			deadline, err := time.Parse(time.RFC3339, args[2].StringValue())
-			require.NoError(t, err)
-			assert.True(t, deadline.After(before.Add(9600*time.Hour)))
-			assert.Zero(t, deadline.Second())
+			assert.Equal(t, tc.wantEtag, args[2].StringValue())
+			assert.Equal(t, "projects/app/dev/project.pb", args[3].StringValue())
 			cron := inputs["cron"].ObjectValue()
-			assert.Equal(t, selfDestructCron(deadline), cron["schedule"].StringValue())
+			// The deadline is measured when the schedule is registered.
+			var want []string
+			for d := 48*time.Hour + time.Minute; d <= 48*time.Hour+time.Since(before)+2*time.Minute; d += time.Minute {
+				want = append(want, selfDestructCron(before.Add(d).Truncate(time.Minute)))
+			}
+			assert.Contains(t, want, cron["schedule"].StringValue())
 			assert.Equal(t, "Etc/UTC", cron["timezone"].StringValue())
 			env := inputs["env"].ObjectValue()
 			assert.Equal(t, "s3://defang-cd-dev", env["DEFANG_STATE_URL"].StringValue())
@@ -90,6 +91,27 @@ func TestScalewayDeploymentRegistersTeardownOnlyWithTTL(t *testing.T) {
 			assert.Equal(t, "latest", secret["secretVersion"].StringValue())
 		})
 	}
+}
+
+func TestScalewayDeploymentRejectsTTLOverOneYear(t *testing.T) {
+	t.Setenv("DEFANG_SCW_CD_JOB_NAME", "defang-cd-dev")
+	t.Setenv("DEFANG_SCW_CD_SECRET_ID", "secret-id")
+	deployment := &defangv1.ProjectUpdate{
+		CdVersion: "defangio/test-cd",
+		Compose:   []byte("services:\n  web:\n    image: nginx\n"),
+		Etag:      "deployment-id",
+	}
+	configure := func(info *pulumi.RunInfo) {
+		info.Config = map[string]string{
+			"defang:provider":    "scaleway",
+			"defang:stateUrl":    "s3://defang-cd-dev?endpoint=https://s3.fr-par.scw.cloud",
+			"defang:ttl":         "9600h",
+			"scaleway:projectId": "project-id",
+			"scaleway:region":    "fr-par",
+		}
+	}
+	err := pulumi.RunErr(NewRun(deployment), pulumi.WithMocks("app", "dev", &scalewayScheduleMocks{}), configure)
+	require.ErrorIs(t, err, errScalewayTTLTooLong)
 }
 
 type scalewayScheduleMocks struct {
