@@ -36,8 +36,8 @@ Compared against `~/dev/defang-mvp/pulumi/index.ts`.
 - [x] **Output filtering** — all commands pass `SuppressProgress()` + `ProgressStreams`/`ErrorProgressStreams`; `log.go` filters noisy lines (`` `pulumi ``, `press ^C`, `grpc: the client connection is closing`, `will not show as a stack output`). Note: the TS `` `node `` filter was dropped.
 - [x] **Error normalization** — done: `errors.go` `pulumiErr` strips the auto SDK code/stdout/stderr dump down to the `error:` block (and recovers the nested exit code), and `rewriteLockHint` rewrites Pulumi lock errors to suggest `defang cd cancel PROJECT/STACK` instead of `pulumi cancel` (see `errors_test.go`).
 - [ ] **`previewOnly` on destroy/refresh** — TS passes `previewOnly` flag from `DEFANG_PREVIEW` env var. Not implemented.
-- [x] **Upload in `finally`** — `cd_main.go` calls `uploadState` unconditionally before the error check on up/destroy/refresh, and events upload via `defer waitEvents()`, so both upload on error paths too.
-- [x] **`down` uploads events+state** — `down`/`destroy` share a path that uploads state at `cd_main.go:215` plus deferred events.
+- [x] **Upload in `finally`** — events upload via `defer waitEvents()`, so it also happens on error paths.
+- [x] **`down` uploads events** — `down`/`destroy` share a path with a deferred events upload.
 - [x] **Stack select vs upsert** — `cd_main.go` uses `UpsertStackInlineSource` only for up/preview and `SelectStackInlineSource` for destroy/down/refresh/cancel/outputs/list.
 - [x] **Preview always shows diffs** — old GCP code had `optpreview.Diff()` unconditionally; new makes it conditional on `DEFANG_PULUMI_DIFF`
 - [ ] **Hook up `privateDomain`** — `cd/config.go` plumbs `PRIVATE_DOMAIN` → `defang-aws:privateDomain`, but `AWSConfig` doesn't read it; the provider still computes its own `<project>.internal` (`networking.go:28`).
@@ -73,7 +73,6 @@ Captured from `grep -rn -E "(TODO|FIXME):"` across `cd/` and `provider/`. These 
 - [ ] `cd_main.go:77` — what to do when Compose project name doesn't match `PROJECT` env var
 - [ ] `cd_main.go:106` — `USER`-in-lock-file hack for debugging doesn't work on Linux
 - [ ] `cd_main.go:166` — run a refresh on `up` failure to capture partial changes (also tracked above)
-- [ ] `cd_main.go:215` — `uploadState` after destroy prints a warning even on success
 - [ ] `upload.go:74` — skip gzip compression for small bodies
 - [ ] `config.go:126,134,137` — sanitize project name in GCP autonaming patterns
 - [ ] `config.go:194` — configure label-logger (GCP)

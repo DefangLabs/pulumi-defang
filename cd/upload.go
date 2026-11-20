@@ -13,16 +13,15 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 )
 
-// finalUploadTimeout bounds the final events/state upload once it's detached
+// finalUploadTimeout bounds the final events upload once it's detached
 // from the run's own ctx (see detachUploadContext) so a dead network can't
 // hang process exit forever.
 const finalUploadTimeout = 30 * time.Second
 
 // detachUploadContext strips ctx's cancellation. ctx is canceled by SIGINT/
-// SIGTERM/timeout (main.go) right as the final events/state upload starts,
+// SIGTERM/timeout (main.go) right as the final events upload starts,
 // which aborted the upload before anything was written. The final upload is
 // exactly the thing we still want to happen on cancellation, so give it its
 // own bounded timeout instead of inheriting the cancellation it's reacting to.
@@ -41,23 +40,6 @@ func uploadEvents[T any](ctx context.Context, eventsUploadUrl string, engineEven
 	Println("Sending", len(engineEvents), "deployment events to Portal...")
 	if err := doUpload(ctx, eventsUploadUrl, map[string]any{"events": engineEvents}); err != nil {
 		warn("Failed to send events:", err)
-	}
-}
-
-func uploadState(ctx context.Context, statesUploadUrl string, stack auto.Stack) {
-	if statesUploadUrl == "" {
-		return
-	}
-	ctx, cancel := detachUploadContext(ctx)
-	defer cancel()
-	Println("Sending deployment state to Portal...")
-	state, err := stack.Export(ctx)
-	if err != nil {
-		warn("Failed to export stack state:", err)
-		return
-	}
-	if err := doUpload(ctx, statesUploadUrl, state); err != nil {
-		warn("Failed to send state:", err)
 	}
 }
 
