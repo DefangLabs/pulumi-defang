@@ -31,7 +31,6 @@ func cdMain(ctx context.Context, args ...string) error {
 	pulumiDiff := getenvBool("DEFANG_PULUMI_DIFF")
 	pulumiTargets := splitByComma(os.Getenv("DEFANG_PULUMI_TARGETS"))
 	stackName := os.Getenv("STACK")
-	statesUploadUrl := os.Getenv("DEFANG_STATES_UPLOAD_URL")
 
 	if projectName == "" {
 		return &usageError{msg: "missing required environment variable: PROJECT"}
@@ -184,7 +183,6 @@ func cdMain(ctx context.Context, args ...string) error {
 			upOpts = append(upOpts, optup.Diff())
 		}
 		_, err := stack.Up(ctx, upOpts...)
-		uploadState(ctx, statesUploadUrl, stack)
 		if err != nil {
 			// TODO: run a refresh on failure to update the state with any partial changes, like the CLI does
 			return pulumiErr(err)
@@ -251,7 +249,6 @@ func cdMain(ctx context.Context, args ...string) error {
 		} else {
 			err = destroy()
 		}
-		uploadState(ctx, statesUploadUrl, stack) // TODO: this prints a warning if the destroy succeeded
 		if err != nil {
 			return pulumiErr(err)
 		}
@@ -273,7 +270,6 @@ func cdMain(ctx context.Context, args ...string) error {
 			refreshOpts = append(refreshOpts, optrefresh.DebugLogging(debugLog))
 		}
 		_, err := stack.Refresh(ctx, refreshOpts...)
-		uploadState(ctx, statesUploadUrl, stack)
 		if err != nil {
 			return pulumiErr(err)
 		}

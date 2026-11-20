@@ -133,8 +133,6 @@ func testProviderPreview(t *testing.T, provider, accountId string, pulumiConfig 
 
 	eventsFile := t.TempDir() + "/events.json.gz"
 	t.Setenv("DEFANG_EVENTS_UPLOAD_URL", "file://"+eventsFile)
-	statesFile := t.TempDir() + "/states.json.gz"
-	t.Setenv("DEFANG_STATES_UPLOAD_URL", "file://"+statesFile)
 	t.Setenv("DEFANG_PULUMI_DIFF", "true")
 	t.Setenv("DEFANG_PULUMI_DEBUG", "false")
 	t.Setenv("NO_COLOR", "")
