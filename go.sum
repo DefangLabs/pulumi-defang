@@ -344,8 +344,8 @@ github.com/pulumi/inflector v0.1.1 h1:dvlxlWtXwOJTUUtcYDvwnl6Mpg33prhK+7mzeF+Sob
 github.com/pulumi/inflector v0.1.1/go.mod h1:HUFCjcPTz96YtTuUlwG3i3EZG4WlniBvR9bd+iJxCUY=
 github.com/pulumi/pulumi-aws/sdk/v7 v7.53.0 h1:ljztgdpvKkH8cFOHlWS134AUi4I7no33vjZQ/UCSLlU=
 github.com/pulumi/pulumi-aws/sdk/v7 v7.53.0/go.mod h1:i/v1E17u10311HIEeIhYXVPrNxGWPMhCB8pOixU8/Qs=
-github.com/pulumi/pulumi-awsx/sdk/v3 v3.11.0 h1:yvc/5r3m90TjFNF20UgEoOAO7315ZMPGY+jvZPCiPLY=
-github.com/pulumi/pulumi-awsx/sdk/v3 v3.11.0/go.mod h1:izCGsD172CdFQaCfwNkVp7/+8rp+lTGV+UYQHfgHltg=
+github.com/pulumi/pulumi-awsx/sdk/v3 v3.14.0 h1:JUv7im3l5NIgAp++3Hz3nm0jN0Q/0uiKFRoH1smWwf8=
+github.com/pulumi/pulumi-awsx/sdk/v3 v3.14.0/go.mod h1:izCGsD172CdFQaCfwNkVp7/+8rp+lTGV+UYQHfgHltg=
 github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.30.0 h1:3C5o4cAQpIg4p+nzI7PXqr+IANlph1vcteqs9y6+xHA=
 github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.30.0/go.mod h1:CSiI0GKRwVnLysgcAp+cw5myrCp5hou+tTMTRdgJYMg=
 github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.30.0 h1:PxePXdpUJh6OjM6QCXkfc8/UcsXOYZ67RYGCNyKYAi4=
