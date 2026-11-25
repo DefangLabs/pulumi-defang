@@ -21,7 +21,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.18
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.78.8
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.67.6
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.105.1
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.106.0
 	github.com/aws/smithy-go v1.28.9
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/compose-spec/compose-go/v2 v2.17.0
