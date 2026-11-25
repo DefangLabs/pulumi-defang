@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang/cd
 
-go 1.26.10
+go 1.26.11
 
 replace (
 	github.com/DefangLabs/pulumi-defang => ../
@@ -21,19 +21,19 @@ require (
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-aws v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-azure v0.0.0-00010101000000-000000000000
 	github.com/DefangLabs/pulumi-defang/sdk/v2/go/defang-gcp v0.0.0-00010101000000-000000000000
-	github.com/aws/aws-sdk-go-v2/config v1.33.18
+	github.com/aws/aws-sdk-go-v2/config v1.33.19
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.79.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.115.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/pulumi/pulumi-aws/sdk/v7 v7.53.0
+	github.com/pulumi/pulumi-aws/sdk/v7 v7.55.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.30.0
 	github.com/pulumi/pulumi-azure-native-sdk/authorization/v3 v3.30.0
 	github.com/pulumi/pulumi-azure-native-sdk/storage/v3 v3.30.0
 	github.com/pulumi/pulumi-azure-native-sdk/v3 v3.30.0
 	github.com/pulumi/pulumi-gcp/sdk/v9 v9.37.2
-	github.com/pulumi/pulumi/sdk/v3 v3.275.0
+	github.com/pulumi/pulumi/sdk/v3 v3.277.0
 	github.com/stretchr/testify v1.12.1
-	go.yaml.in/yaml/v4 v4.0.0-rc.6
+	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/sync v0.25.0
 	google.golang.org/protobuf v1.36.12
 )
@@ -72,12 +72,12 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.48.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.21.0 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.1 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.9 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.105.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.106.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.13 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 // indirect
@@ -102,13 +102,12 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/compose-spec/compose-go/v2 v2.16.2 // indirect
+	github.com/compose-spec/compose-go/v2 v2.17.0 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/deckarep/golang-set/v2 v2.9.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/djherbis/times v1.5.0 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.39.1-0.20260819172001-e6e3fd93e4be // indirect
@@ -170,7 +169,7 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
-	github.com/pulumi/pulumi-awsx/sdk/v3 v3.11.0 // indirect
+	github.com/pulumi/pulumi-awsx/sdk/v3 v3.14.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cdn/v3 v3.30.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/cognitiveservices/v3 v3.30.0 // indirect
 	github.com/pulumi/pulumi-azure-native-sdk/compute/v3 v3.30.0 // indirect
@@ -187,7 +186,7 @@ require (
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
 	github.com/pulumi/pulumi-random/sdk/v4 v4.21.6 // indirect
-	github.com/pulumiverse/pulumi-scaleway/sdk v1.62.0
+	github.com/pulumiverse/pulumi-scaleway/sdk v1.62.1
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/ross96D/cancelreader v0.2.6 // indirect
@@ -227,16 +226,16 @@ require (
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/mod v0.43.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.38.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/term v0.47.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/term v0.48.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	google.golang.org/api v0.312.0 // indirect
+	google.golang.org/api v0.316.0 // indirect
 	google.golang.org/genproto v0.0.0-20261012220534-4341edf3f941 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261104224025-d1e00e9f33ab // indirect
