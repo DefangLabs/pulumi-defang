@@ -1,6 +1,6 @@
 module github.com/DefangLabs/pulumi-defang
 
-go 1.26.10
+go 1.26.11
 
 replace gopkg.in/yaml.v3 => go.yaml.in/yaml/v3 v3.0.1
 
@@ -24,7 +24,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.105.1
 	github.com/aws/smithy-go v1.28.9
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/compose-spec/compose-go/v2 v2.16.2
+	github.com/compose-spec/compose-go/v2 v2.17.0
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.53.0
 	github.com/pulumi/pulumi-awsx/sdk/v3 v3.14.0
 	github.com/pulumi/pulumi-azure-native-sdk/app/v3 v3.30.0
