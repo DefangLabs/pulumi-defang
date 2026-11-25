@@ -159,7 +159,7 @@ require (
 	github.com/pulumi/pulumi-cloud-sdk/go v1.20261104.0 // indirect
 	github.com/pulumi/pulumi-docker-build/sdk/go/dockerbuild v0.0.3 // indirect
 	github.com/pulumi/pulumi-docker/sdk/v4 v4.5.8 // indirect
-	github.com/pulumiverse/pulumi-scaleway/sdk v1.62.0
+	github.com/pulumiverse/pulumi-scaleway/sdk v1.62.1
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
