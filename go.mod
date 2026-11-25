@@ -50,7 +50,7 @@ require (
 	github.com/pulumi/pulumi/pkg/v3 v3.275.0
 	github.com/pulumi/pulumi/sdk/v3 v3.275.0
 	github.com/stretchr/testify v1.12.1
-	google.golang.org/api v0.312.0
+	google.golang.org/api v0.316.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
